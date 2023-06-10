@@ -3,17 +3,17 @@ using Serilog;
 
 namespace Raft.Core.StateMachine;
 
-public class RaftStateMachine: INodeState
+public class RaftStateMachine: INodeState, IDisposable
 {
-    private readonly Node _node;
     private readonly ILogger _logger;
-    public INodeState CurrentState { get; internal set; }
+    internal Node Node { get; }
+    public INodeState CurrentState { get; internal set; } = null!;
     internal ITimer ElectionTimer { get; }
     internal ITimer HeartbeatTimer { get; }
 
     public RaftStateMachine(Node node, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer)
     {
-        _node = node;
+        Node = node;
         _logger = logger;
         ElectionTimer = electionTimer;
         HeartbeatTimer = heartbeatTimer;
@@ -33,22 +33,69 @@ public class RaftStateMachine: INodeState
 
     internal void GoToFollowerState()
     {
-        var state = new FollowerState(_node, this, _logger);
+        var state = new FollowerState(Node, this, _logger);
         ElectionTimer.Timeout += ElectionTimeoutCallback;
+        CurrentState = state;
+        ElectionTimer.Start();
+    }
+
+    internal void GoToFollowerState(Term term)
+    {
+        var state = new FollowerState(Node, this, _logger);
+        ElectionTimer.Timeout += ElectionTimeoutCallback;
+        Node.CurrentTerm = term;
         CurrentState = state;
         ElectionTimer.Start();
     }
 
     internal void GoToCandidateState()
     {
-        CurrentState = new CandidateState();
+        var state = new CandidateState(this, _logger);
+        CurrentState = state;
+        
+        Node.VotedFor = Node.Id;
+        Node.CurrentTerm = Node.CurrentTerm.Increment();
+        
+        var cts = new CancellationTokenSource();
+        
+        _ = state.RunQuorum(cts.Token)
+                 .ContinueWith(x => cts.Dispose(), cts.Token);
+        
+        ElectionTimer.Timeout += () =>
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                _logger.Verbose("ElectionTimeout для Candidate сработал, но CTS уже вызвал Dispose");
+                return;
+            }
+            _logger.Debug("ElectionTimeout сработал во время сбора кворума. Перехожу в новый Term");
+            GoToCandidateState();
+        };
+
+        ElectionTimer.Reset();
+    }
+    
+    public void GoToLeaderState()
+    {
+        CurrentState = new LeaderState(this, _logger);
         ElectionTimer.Stop();
-        HeartbeatTimer.Stop();
+        HeartbeatTimer.Start();
     }
 
     private void ElectionTimeoutCallback()
     {
+        _logger.Debug("Вызван ElectionTimeout callback. Перехожу в состояние Candidate");
         ElectionTimer.Timeout -= ElectionTimeoutCallback;
         GoToCandidateState();
     }
+
+    public void Dispose()
+    {
+        ElectionTimer.Timeout -= ElectionTimeoutCallback;
+    }
+
 }

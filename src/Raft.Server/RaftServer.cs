@@ -1,5 +1,6 @@
 using Raft.Core;
 using Raft.Core.Commands;
+using Raft.Core.StateMachine;
 using Raft.Timers;
 using Serilog;
 
@@ -23,7 +24,8 @@ public class RaftServer
         var tcs = new TaskCompletionSource();
         await using var _ = token.Register(() => tcs.SetCanceled(token));
 
-        var node = new Node(_logger, electionTimer, heartbeatTimer);
+        _logger.Information("Запускаю сервер Raft");
+        using var stateMachine = new RaftStateMachine(new Node(new PeerId(1)), _logger, electionTimer, heartbeatTimer);
 
         try
         {
@@ -31,11 +33,10 @@ public class RaftServer
         }
         catch (TaskCanceledException taskCanceled)
         {
-            _logger.Information(taskCanceled, "Запрошено заверешение работы приложения");
-            
+            _logger.Information(taskCanceled, "Запрошено завершение работы приложения");
         }
         
         _logger.Information("Узел завершает работу");
-        GC.KeepAlive(node);
+        GC.KeepAlive(stateMachine);
     }
 }

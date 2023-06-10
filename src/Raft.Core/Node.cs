@@ -1,20 +1,18 @@
-using Raft.Core.Commands;
 using Raft.Core.Peer;
-using Raft.Core.StateMachine;
-using Serilog;
 
 namespace Raft.Core;
 
 public class Node
 {
-    private readonly RaftStateMachine _stateMachine;
-    private readonly ILogger _logger;
-
-    public Node(ILogger logger, ITimer electionTimer, ITimer heartbeatTimer)
+    public Node(PeerId id)
     {
-        _logger = logger;
-        _stateMachine = new RaftStateMachine(this, logger, electionTimer, heartbeatTimer);
+        Id = id;
     }
+
+    /// <summary>
+    /// ID текущего узла
+    /// </summary>
+    public PeerId Id { get; }
     
     #region Persistent
 
@@ -52,15 +50,11 @@ public class Node
     public LogEntryInfo LastLogEntry { get; set; }
 
     #endregion
+    
 
     /// <summary>
     /// Другие узлы кластера.
     /// Текущий узел не включается
     /// </summary>
     public IPeer[] Peers { get; set; } = Array.Empty<IPeer>();
-
-    public async Task Apply(HeartbeatRequest request)
-    {
-        await _stateMachine.Apply(request, CancellationToken.None);
-    }
 }

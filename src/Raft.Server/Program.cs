@@ -4,6 +4,7 @@ using Raft.Server;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Verbose()
             .WriteTo.Console()
             .CreateLogger();
 
