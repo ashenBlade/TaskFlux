@@ -42,14 +42,15 @@ public class CandidateState: INodeState
     {
         _logger.Debug("Запускаю кворум для получения большинства голосов");
         var peers = new List<IPeer>(Peers.Length);
+        var term = Node.CurrentTerm;
         peers.AddRange(Node.Peers);
         // Держим в уме узлы, которые не ответили взаимностью
         var swap = new List<IPeer>();
         var votes = 0;
         
-        while (Node.Peers.Length / 2 > votes)
+        while (!QuorumReached())
         {
-            _logger.Debug("Начинаю раунд кворума. Отправляю запросы на {Count} узлов: {Peers}", peers.Count, peers.Select(x => x.Id));
+            _logger.Debug("Начинаю раунд кворума для терма {Term}. Отправляю запросы на {Count} узлов: {Peers}", term, peers.Count, peers.Select(x => x.Id));
             var responses = await RunQuorumRound(peers, token);
             _logger.Debug("От узлов вернулись ответы");
             if (token.IsCancellationRequested)
@@ -63,7 +64,7 @@ public class CandidateState: INodeState
                 // Узел не ответил
                 if (response is null)
                 {
-                    swap.Add(Node.Peers[i]);
+                    swap.Add(peers[i]);
                     _logger.Verbose("Узел {NodeId} не вернул ответ", peers[i].Id);
                 }
                 // Узел согласился
@@ -72,25 +73,35 @@ public class CandidateState: INodeState
                     votes++;
                     _logger.Verbose("Узел {NodeId} отдал голос за", peers[i].Id);
                 }
-                // Узел отказался - у него более высокий Term
-                else if (Node.CurrentTerm < response.CurrentTerm)
-                {
-                    _logger.Verbose("Узел {NodeId} отказался отдавать голос. Его терм {PeerTerm} больше моего {MyTerm}. Перехожу в Follower", peers[i].Id, response.CurrentTerm, Node.CurrentTerm);
-                    _stateMachine.GoToFollowerState(response.CurrentTerm);
-                    return;
-                }
                 else
                 {
-                    _logger.Verbose("Узел {NodeId} отказался отдавать голос, но его Term не больше моего {MyTerm}", peers[i].Id, Node.CurrentTerm);
+                    swap.Add(peers[i]);
+                    _logger.Verbose("Узел {NodeId} не отдал голос за", peers[i].Id);
                 }
             }
-
+            
             ( peers, swap ) = ( swap, peers );
             swap.Clear();
+            
+            if (peers.Count == 0)
+            {
+                if (QuorumReached())
+                {
+                    break;
+                }
+
+                _logger.Debug("Кворум не достигнут и нет узлов, которым можно послать запросы");
+                break;
+            }
         }
         
         _logger.Debug("Кворум собран. Получено {VotesCount} голосов. Перехожду в состояние Leader", votes);
         _stateMachine.GoToLeaderState();
+
+        bool QuorumReached()
+        {
+            return ( Node.Peers.Length / 2 <= votes );
+        }
     }
 
     private IPeer[] Peers =>

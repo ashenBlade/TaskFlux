@@ -15,11 +15,13 @@ public class LeaderState: INodeState
         _stateMachine.HeartbeatTimer.Timeout += SendHeartbeat;
     }
 
-    public void SendHeartbeat()
+    public async void SendHeartbeat()
     {
-        var request = new HeartbeatRequest()
-        { };
-        Task.WhenAll(_stateMachine.Node.Peers.Select(x => x.SendHeartbeat(request, CancellationToken.None)));
+        _logger.Verbose("Отправляю Heartbeat");
+        var request = new HeartbeatRequest();
+        // На Heartbeat пока не отвечаю
+        await Task.WhenAll(_stateMachine.Node.Peers.Select(x => x.SendHeartbeat(request, CancellationToken.None)));
+        _stateMachine.HeartbeatTimer.Start();
     }
     
     public Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token)

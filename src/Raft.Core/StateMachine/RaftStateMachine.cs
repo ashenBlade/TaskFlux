@@ -60,8 +60,8 @@ public class RaftStateMachine: INodeState, IDisposable
         
         _ = state.RunQuorum(cts.Token)
                  .ContinueWith(x => cts.Dispose(), cts.Token);
-        
-        ElectionTimer.Timeout += () =>
+
+        void OnElectionTimerOnTimeout()
         {
             try
             {
@@ -72,9 +72,14 @@ public class RaftStateMachine: INodeState, IDisposable
                 _logger.Verbose("ElectionTimeout для Candidate сработал, но CTS уже вызвал Dispose");
                 return;
             }
+
             _logger.Debug("ElectionTimeout сработал во время сбора кворума. Перехожу в новый Term");
+            cts.Dispose();
+            ElectionTimer.Timeout -= OnElectionTimerOnTimeout;
             GoToCandidateState();
-        };
+        }
+
+        ElectionTimer.Timeout += OnElectionTimerOnTimeout;
 
         ElectionTimer.Reset();
     }
