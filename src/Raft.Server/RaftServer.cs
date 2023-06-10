@@ -1,4 +1,6 @@
 using Raft.Core;
+using Raft.Core.Commands;
+using Raft.Timers;
 using Serilog;
 
 namespace Raft.Server;
@@ -12,12 +14,28 @@ public class RaftServer
         _logger = logger;
     }
 
-    public async Task RunAsync()
+    public async Task RunAsync(CancellationToken token)
     {
-        // Создаем ноду в изначальном состоянии
-        var node = new Node();
+        _logger.Information("Сервер Raft запускается. Создаю узел");
+        using var electionTimer = new SystemTimersTimer(TimeSpan.FromSeconds(5));
+        using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
+
+        var tcs = new TaskCompletionSource();
+        await using var _ = token.Register(() => tcs.SetCanceled(token));
+
+        var node = new Node(_logger, electionTimer, heartbeatTimer);
+
+        try
+        {
+            await tcs.Task;
+        }
+        catch (TaskCanceledException taskCanceled)
+        {
+            _logger.Information(taskCanceled, "Запрошено заверешение работы приложения");
+            
+        }
         
-        //  
-        throw new NotImplementedException();
+        _logger.Information("Узел завершает работу");
+        GC.KeepAlive(node);
     }
 }

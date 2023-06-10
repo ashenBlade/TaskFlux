@@ -6,7 +6,15 @@ using Serilog;
 Log.Logger = new LoggerConfiguration()
             .WriteTo.Console()
             .CreateLogger();
-            
-var server = new RaftServer(Log.Logger);
 
-await server.RunAsync();
+var server = new RaftServer(Log.Logger);
+using var cts = new CancellationTokenSource();
+
+// ReSharper disable once AccessToDisposedClosure
+Console.CancelKeyPress += (_, args) =>
+{
+    cts.Cancel();
+    args.Cancel = true;
+};
+
+await server.RunAsync(cts.Token);
