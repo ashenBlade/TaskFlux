@@ -397,3 +397,6 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 .idea
+
+# Файлы с ILog
+!src/Raft.Core/Log
