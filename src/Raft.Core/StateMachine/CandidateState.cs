@@ -142,7 +142,8 @@ public class CandidateState: INodeState
         node.CurrentTerm = node.CurrentTerm.Increment();
         node.VotedFor = node.Id;
 
-        var state = new CandidateState(stateMachine, Log.ForContext<CandidateState>());
+        var state = new CandidateState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Candidate"));
+        stateMachine.ElectionTimer.Start();
         return state;
     }
 }

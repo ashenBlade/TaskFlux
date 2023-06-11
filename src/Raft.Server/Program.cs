@@ -5,10 +5,10 @@ using Serilog;
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()
-            .WriteTo.Console()
+            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:dd.ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
             .CreateLogger();
 
-var server = new RaftServer(Log.Logger);
+var server = new RaftServer(Log.Logger.ForContext<RaftServer>());
 using var cts = new CancellationTokenSource();
 
 // ReSharper disable once AccessToDisposedClosure

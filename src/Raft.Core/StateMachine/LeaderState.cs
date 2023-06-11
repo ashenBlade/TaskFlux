@@ -8,19 +8,19 @@ internal class LeaderState: INodeState
     private readonly RaftStateMachine _stateMachine;
     private readonly ILogger _logger;
 
-    public LeaderState(RaftStateMachine stateMachine, ILogger logger)
+    private LeaderState(RaftStateMachine stateMachine, ILogger logger)
     {
         _stateMachine = stateMachine;
         _logger = logger;
         _stateMachine.HeartbeatTimer.Timeout += SendHeartbeat;
     }
 
-    public async void SendHeartbeat()
+    // ReSharper disable once CoVariantArrayConversion
+    private void SendHeartbeat()
     {
         _logger.Verbose("Отправляю Heartbeat");
         var request = new HeartbeatRequest();
-        // На Heartbeat пока не отвечаю
-        await Task.WhenAll(_stateMachine.Node.Peers.Select(x => x.SendHeartbeat(request, CancellationToken.None)));
+        Task.WaitAll(_stateMachine.Node.Peers.Select(x => x.SendHeartbeat(request, CancellationToken.None)).ToArray());
         _stateMachine.HeartbeatTimer.Start();
     }
     
@@ -41,7 +41,8 @@ internal class LeaderState: INodeState
 
     public static LeaderState Start(RaftStateMachine stateMachine)
     {
-        var state = new LeaderState(stateMachine, Log.ForContext<LeaderState>());
+        var state = new LeaderState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Leader"));
+        stateMachine.HeartbeatTimer.Start();
         return state;
     }
 }

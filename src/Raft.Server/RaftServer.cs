@@ -5,6 +5,7 @@ using Raft.Core.StateMachine;
 using Raft.Peer;
 using Raft.Timers;
 using Serilog;
+// ReSharper disable ContextualLoggerProblem
 
 namespace Raft.Server;
 
@@ -31,7 +32,7 @@ public class RaftServer
         var node = new Node(new PeerId(1))
         {
             Peers = Enumerable.Range(2, 2)
-                              .Select(i => (IPeer)new LambdaPeer(i, async r =>
+                              .Select(i => (IPeer)new LambdaPeer(i, async _ =>
                                {
                                    await Task.Delay(responseTimeout);
                                    return new HeartbeatResponse();
@@ -40,14 +41,15 @@ public class RaftServer
                                    await Task.Delay(responseTimeout);
                                    return new RequestVoteResponse()
                                    {
-                                       VoteGranted = i % 2 == 1,
+                                       VoteGranted = false,
                                        CurrentTerm = r.CandidateTerm
                                    };
                                }))
                               .ToArray()
         };
-        using var stateMachine = new RaftStateMachine(node, _logger, electionTimer, heartbeatTimer);
-
+        
+        using var stateMachine = new RaftStateMachine(node, _logger.ForContext<RaftStateMachine>(), electionTimer, heartbeatTimer);
+        
         try
         {
             await tcs.Task;

@@ -68,14 +68,16 @@ public class FollowerState: INodeState
 
     public static FollowerState Start(RaftStateMachine stateMachine)
     {
-        var state = new FollowerState(stateMachine, Log.ForContext<FollowerState>());
+        var state = new FollowerState(stateMachine, Log.ForContext("SourceContext", "Follower"));
+        stateMachine.ElectionTimer.Start();
         return state;
     }
 
     private void OnElectionTimerTimeout()
     {
         _stateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
-        _stateMachine.CurrentState = CandidateState.Start(_stateMachine);
+        _stateMachine.ElectionTimer.Stop();
+        _stateMachine.CurrentState = CandidateState.Start(_stateMachine); 
     }
     
     public void Dispose()
