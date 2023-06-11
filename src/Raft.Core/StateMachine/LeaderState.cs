@@ -3,7 +3,7 @@ using Serilog;
 
 namespace Raft.Core.StateMachine;
 
-public class LeaderState: INodeState
+internal class LeaderState: INodeState
 {
     private readonly RaftStateMachine _stateMachine;
     private readonly ILogger _logger;
@@ -32,5 +32,16 @@ public class LeaderState: INodeState
     public Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token)
     {
         throw new NotImplementedException();
+    }
+
+    public void Dispose()
+    {
+        _stateMachine.HeartbeatTimer.Timeout -= SendHeartbeat;
+    }
+
+    public static LeaderState Start(RaftStateMachine stateMachine)
+    {
+        var state = new LeaderState(stateMachine, Log.ForContext<LeaderState>());
+        return state;
     }
 }

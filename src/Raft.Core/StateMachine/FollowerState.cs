@@ -9,11 +9,12 @@ public class FollowerState: INodeState
     private readonly RaftStateMachine _stateMachine;
     private readonly ILogger _logger;
 
-    public FollowerState(Node node, RaftStateMachine stateMachine, ILogger logger)
+    private FollowerState(RaftStateMachine stateMachine, ILogger logger)
     {
-        _node = node;
+        _node = stateMachine.Node;
         _stateMachine = stateMachine;
         _logger = logger;
+        _stateMachine.ElectionTimer.Timeout += OnElectionTimerTimeout;
     }
     
     public async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token)
@@ -63,5 +64,22 @@ public class FollowerState: INodeState
         _stateMachine.ElectionTimer.Reset();
         _logger.Verbose("Получен Heartbeat");
         return new HeartbeatResponse();
+    }
+
+    public static FollowerState Start(RaftStateMachine stateMachine)
+    {
+        var state = new FollowerState(stateMachine, Log.ForContext<FollowerState>());
+        return state;
+    }
+
+    private void OnElectionTimerTimeout()
+    {
+        _stateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
+        _stateMachine.CurrentState = CandidateState.Start(_stateMachine);
+    }
+    
+    public void Dispose()
+    {
+        _stateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
     }
 }
