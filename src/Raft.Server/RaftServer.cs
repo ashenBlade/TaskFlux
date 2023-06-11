@@ -31,21 +31,21 @@ public class RaftServer
         var responseTimeout = TimeSpan.FromSeconds(1);
         var node = new Node(new PeerId(1))
         {
-            Peers = Enumerable.Range(2, 2)
-                              .Select(i => (IPeer)new LambdaPeer(i, async _ =>
-                               {
-                                   await Task.Delay(responseTimeout);
-                                   return new HeartbeatResponse();
-                               }, async r =>
-                               {
-                                   await Task.Delay(responseTimeout);
-                                   return new RequestVoteResponse()
-                                   {
-                                       VoteGranted = false,
-                                       CurrentTerm = r.CandidateTerm
-                                   };
-                               }))
-                              .ToArray()
+            PeerGroup = new(Enumerable.Range(2, 2)
+                                      .Select(i => (IPeer)new LambdaPeer(i, async _ =>
+                                       {
+                                           await Task.Delay(responseTimeout);
+                                           return new HeartbeatResponse();
+                                       }, async r =>
+                                       {
+                                           await Task.Delay(responseTimeout);
+                                           return new RequestVoteResponse()
+                                           {
+                                               VoteGranted = false,
+                                               CurrentTerm = r.CandidateTerm.Increment()
+                                           };
+                                       }))
+                                      .ToArray())
         };
         
         using var stateMachine = new RaftStateMachine(node, _logger.ForContext<RaftStateMachine>(), electionTimer, heartbeatTimer);

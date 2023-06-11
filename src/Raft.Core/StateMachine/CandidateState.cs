@@ -9,7 +9,6 @@ public class CandidateState: INodeState
     private readonly RaftStateMachine _stateMachine;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;
-    private IPeer[] Peers => Node.Peers;
     private Node Node => _stateMachine.Node;
 
     private CandidateState(RaftStateMachine stateMachine, ILogger logger)
@@ -18,7 +17,6 @@ public class CandidateState: INodeState
         _logger = logger;
         _cts = new();
         _stateMachine.ElectionTimer.Timeout += OnElectionTimerTimeout;
-        _ = RunQuorum(_cts.Token);
     }
 
     private async Task<RequestVoteResponse?[]> RunQuorumRound(List<IPeer> peers, CancellationToken token)
@@ -41,22 +39,23 @@ public class CandidateState: INodeState
     }
 
     /// <summary>
-    /// Запустить раунды кворума и попытаться получить большинство голосов
+    /// Запустить раунды кворума и попытаться получить большинство голосов.
+    /// Выполняется в фоновом потоке
     /// </summary>
-    /// <param name="token">Токен отмены</param>
-    public async Task RunQuorum(CancellationToken token)
+    private async Task RunQuorum()
     {
         _logger.Debug("Запускаю кворум для получения большинства голосов");
-        var peers = new List<IPeer>(Peers.Length);
+        var peers = new List<IPeer>(Node.Peers.Count);
         var term = Node.CurrentTerm;
         peers.AddRange(Node.Peers);
         // Держим в уме узлы, которые не ответили взаимностью
         var swap = new List<IPeer>();
         var votes = 0;
         
+        var token = _cts.Token;
+        _logger.Debug("Начинаю раунд кворума для терма {Term}. Отправляю запросы на узлы: {Peers}", term, peers.Select(x => x.Id));
         while (!QuorumReached())
         {
-            _logger.Debug("Начинаю раунд кворума для терма {Term}. Отправляю запросы на {Count} узлов: {Peers}", term, peers.Count, peers.Select(x => x.Id));
             var responses = await RunQuorumRound(peers, token);
             _logger.Debug("От узлов вернулись ответы");
             if (token.IsCancellationRequested)
@@ -79,6 +78,19 @@ public class CandidateState: INodeState
                     votes++;
                     _logger.Verbose("Узел {NodeId} отдал голос за", peers[i].Id);
                 }
+                // Узел имеет более высокий Term
+                else if (Node.CurrentTerm < response.CurrentTerm)
+                {
+                    swap.Add(peers[i]);
+                    _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", peers[i].Id);
+                    _cts.Cancel();
+                    
+                    Node.CurrentTerm = response.CurrentTerm;
+                    var state = FollowerState.Start(_stateMachine);
+                    _stateMachine.CurrentState = state;
+                    return;
+                }
+                // Узел отказался по другой причине. Возможно он кандидат
                 else
                 {
                     swap.Add(peers[i]);
@@ -96,7 +108,7 @@ public class CandidateState: INodeState
                     break;
                 }
 
-                _logger.Debug("Кворум не достигнут и нет узлов, которым можно послать запросы");
+                _logger.Debug("Кворум не достигнут и нет узлов, которым можно послать запросы. ");
                 break;
             }
         }
@@ -107,14 +119,46 @@ public class CandidateState: INodeState
 
         bool QuorumReached()
         {
-            return Node.Peers.Length / 2 <= votes;
+            return Node.PeerGroup.IsQuorumReached(votes);
         }
     }
 
 
     public async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token)
     {
-        throw new NotImplementedException();
+        // Мы в более актуальном Term'е
+        if (request.CandidateTerm < Node.CurrentTerm)
+        {
+            return new RequestVoteResponse()
+            {
+                CurrentTerm = Node.CurrentTerm,
+                VoteGranted = false
+            };
+        }
+
+        var canVote =
+            Node.VotedFor is null || 
+            Node.VotedFor == request.CandidateId;
+        
+        if (canVote && Node.LastLogEntry.IsUpToDateWith(request.LastLog))
+        {
+            Node.CurrentTerm = request.CandidateTerm;
+            Node.VotedFor = request.CandidateId;
+            
+            return new RequestVoteResponse()
+            {
+                CurrentTerm = Node.CurrentTerm,
+                VoteGranted = true,
+            };
+        }
+        
+        // Кандидат только что проснулся и не знает о текущем состоянии дел. 
+        // Обновим его
+        return new RequestVoteResponse()
+        {
+            CurrentTerm = Node.CurrentTerm, 
+            VoteGranted = false
+        };
     }
 
     public Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token)
@@ -126,6 +170,7 @@ public class CandidateState: INodeState
     {
         _cts.Cancel();
         _stateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
+        _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
         _stateMachine.CurrentState = Start(_stateMachine);
     }
 
@@ -143,6 +188,7 @@ public class CandidateState: INodeState
         node.VotedFor = node.Id;
 
         var state = new CandidateState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Candidate"));
+        _ = state.RunQuorum(); 
         stateMachine.ElectionTimer.Start();
         return state;
     }

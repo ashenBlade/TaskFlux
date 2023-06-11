@@ -27,6 +27,7 @@ public class RaftStateMachine: IDisposable
         Logger = logger;
         ElectionTimer = electionTimer;
         HeartbeatTimer = heartbeatTimer;
+        logger.Debug("Перехожу в состояние Follower");
         _currentState = FollowerState.Start(this);
     }
     

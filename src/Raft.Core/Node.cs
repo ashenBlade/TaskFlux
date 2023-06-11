@@ -20,12 +20,7 @@ public class Node
     /// Номер текущего терма
     /// </summary>
     public Term CurrentTerm { get; set; }
-    
-    /// <summary>
-    /// Текущее состояние реплики
-    /// </summary>
-    public NodeRole CurrentRole { get; private set; } = NodeRole.Follower;
-    
+
     /// <summary>
     /// Id кандидата, за которого проголосовала текущая нода
     /// </summary>
@@ -50,11 +45,13 @@ public class Node
     public LogEntryInfo LastLogEntry { get; set; }
 
     #endregion
-    
+
 
     /// <summary>
     /// Другие узлы кластера.
     /// Текущий узел не включается
     /// </summary>
-    public IPeer[] Peers { get; set; } = Array.Empty<IPeer>();
+    public IReadOnlyList<IPeer> Peers => PeerGroup.Peers; 
+    
+    public PeerGroup PeerGroup { get; set; }
 }

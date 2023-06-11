@@ -19,7 +19,7 @@ public interface IPeer
     /// </summary>
     /// <param name="request">Данные для запроса</param>
     /// <param name="token">Токен отмены</param>
-    /// <returns>Ответ сервера, или <c>null</c> если ответа нет</returns>
+    /// <returns>Ответ сервера, или <c>null</c> если ответа нет (например, таймаут из-за проблем сети)</returns>
     public Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token);
     public Task SendAppendEntries(CancellationToken token);
 }

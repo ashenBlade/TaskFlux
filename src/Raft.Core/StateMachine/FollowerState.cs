@@ -5,13 +5,12 @@ namespace Raft.Core.StateMachine;
 
 public class FollowerState: INodeState
 {
-    private readonly Node _node;
+    private Node Node => _stateMachine.Node;
     private readonly RaftStateMachine _stateMachine;
     private readonly ILogger _logger;
 
     private FollowerState(RaftStateMachine stateMachine, ILogger logger)
     {
-        _node = stateMachine.Node;
         _stateMachine = stateMachine;
         _logger = logger;
         _stateMachine.ElectionTimer.Timeout += OnElectionTimerTimeout;
@@ -20,32 +19,32 @@ public class FollowerState: INodeState
     public async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token)
     {
         // Мы в более актуальном Term'е
-        if (request.CandidateTerm < _node.CurrentTerm)
+        if (request.CandidateTerm < Node.CurrentTerm)
         {
             return new RequestVoteResponse()
             {
-                CurrentTerm = _node.CurrentTerm,
+                CurrentTerm = Node.CurrentTerm,
                 VoteGranted = false
             };
         }
 
         var canVote = 
             // Ранее не голосовали
-            _node.VotedFor is null || 
+            Node.VotedFor is null || 
             // Текущий лидер посылает этот запрос (почему бы не согласиться)
-            _node.VotedFor == request.CandidateId;
+            Node.VotedFor == request.CandidateId;
         
         // Отдать свободный голос можем только за кандидата с более актуальным логом
-        if (canVote && _node.LastLogEntry.IsUpToDateWith(request.LastLog))
+        if (canVote && Node.LastLogEntry.IsUpToDateWith(request.LastLog))
         {
             // Проголосуем за кандидата - обновим состояние узла
-            _node.CurrentTerm = request.CandidateTerm;
-            _node.VotedFor = request.CandidateId;
+            Node.CurrentTerm = request.CandidateTerm;
+            Node.VotedFor = request.CandidateId;
             
             // И подтвердим свой 
             return new RequestVoteResponse()
             {
-                CurrentTerm = _node.CurrentTerm,
+                CurrentTerm = Node.CurrentTerm,
                 VoteGranted = true,
             };
         }
@@ -54,7 +53,7 @@ public class FollowerState: INodeState
         // Обновим его
         return new RequestVoteResponse()
         {
-            CurrentTerm = _node.CurrentTerm, 
+            CurrentTerm = Node.CurrentTerm, 
             VoteGranted = false
         };
     }
@@ -68,8 +67,10 @@ public class FollowerState: INodeState
 
     public static FollowerState Start(RaftStateMachine stateMachine)
     {
-        var state = new FollowerState(stateMachine, Log.ForContext("SourceContext", "Follower"));
+        var logger = stateMachine.Logger.ForContext("SourceContext", "Follower");
+        var state = new FollowerState(stateMachine, logger);
         stateMachine.ElectionTimer.Start();
+        stateMachine.Node.VotedFor = null;
         return state;
     }
 
@@ -77,6 +78,7 @@ public class FollowerState: INodeState
     {
         _stateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
         _stateMachine.ElectionTimer.Stop();
+        _logger.Debug("Сработал Election Timeout. Перехожу в состояние Candidate");
         _stateMachine.CurrentState = CandidateState.Start(_stateMachine); 
     }
     
