@@ -1,4 +1,5 @@
 using Raft.Core.Commands;
+using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Peer;
 using Serilog;
 
@@ -28,7 +29,7 @@ public class CandidateState: INodeState
         {
             CandidateId = _stateMachine.Node.Id,
             CandidateTerm = _stateMachine.Node.CurrentTerm,
-            LastLog = _stateMachine.Node.LastLogEntry
+            LastLog = _stateMachine.Log.LastLogEntry
         };
 
         var requests = new Task<RequestVoteResponse?>[peers.Count];
@@ -142,7 +143,7 @@ public class CandidateState: INodeState
             Node.VotedFor is null || 
             Node.VotedFor == request.CandidateId;
         
-        if (canVote && Node.LastLogEntry.IsUpToDateWith(request.LastLog))
+        if (canVote && _stateMachine.Log.LastLogEntry.IsUpToDateWith(request.LastLog))
         {
             Node.CurrentTerm = request.CandidateTerm;
             Node.VotedFor = request.CandidateId;

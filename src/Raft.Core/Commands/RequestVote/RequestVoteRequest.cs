@@ -14,5 +14,5 @@ public class RequestVoteRequest
     /// <summary>
     /// Информация о последнем логе друго узла
     /// </summary>
-    public LogEntryInfo LastLog { get; set; }
+    public LogEntry LastLog { get; set; }
 }

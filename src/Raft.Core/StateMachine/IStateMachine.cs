@@ -1,3 +1,4 @@
+using Raft.Core.Log;
 using Serilog;
 
 namespace Raft.Core.StateMachine;
@@ -11,4 +12,5 @@ internal interface IStateMachine
     ITimer ElectionTimer { get; }
     ITimer HeartbeatTimer { get; }
     IJobQueue JobQueue { get; }
+    ILog Log { get; }
 }

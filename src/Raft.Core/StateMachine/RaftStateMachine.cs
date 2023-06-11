@@ -1,4 +1,6 @@
 using Raft.Core.Commands;
+using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Log;
 using Serilog;
 
 namespace Raft.Core.StateMachine;
@@ -9,7 +11,6 @@ public class RaftStateMachine: IDisposable, IStateMachine
     public ILogger Logger { get; }
     public INode Node { get; }
     
-    // Инициализируется позже, в момент вызова Start
     private INodeState _currentState;
     public INodeState CurrentState
     {
@@ -24,26 +25,28 @@ public class RaftStateMachine: IDisposable, IStateMachine
     public ITimer ElectionTimer { get; }
     public ITimer HeartbeatTimer { get; }
     public IJobQueue JobQueue { get; }
-   
-    
+    public ILog Log { get; }
+
+
     // Для тестов
-    internal RaftStateMachine(INode node, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue)
+    internal RaftStateMachine(INode node, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log)
     {
         Node = node;
         Logger = logger;
         ElectionTimer = electionTimer;
         HeartbeatTimer = heartbeatTimer;
         JobQueue = jobQueue;
+        Log = log;
         _currentState = FollowerState.Start(this);
     }
     
 
-    public Task<RequestVoteResponse> Handle(RequestVoteRequest request, CancellationToken token)
+    public Task<RequestVoteResponse> Handle(RequestVoteRequest request, CancellationToken token = default)
     {
         return CurrentState.Apply(request, token);
     }
 
-    public Task<HeartbeatResponse> Handle(HeartbeatRequest request, CancellationToken token)
+    public Task<HeartbeatResponse> Handle(HeartbeatRequest request, CancellationToken token = default)
     {
         return CurrentState.Apply(request, token);
     }
@@ -56,9 +59,10 @@ public class RaftStateMachine: IDisposable, IStateMachine
                                          ILogger logger,
                                          ITimer electionTimer,
                                          ITimer heartbeatTimer,
-                                         IJobQueue jobQueue)
+                                         IJobQueue jobQueue,
+                                         ILog log)
     {
-        var raft = new RaftStateMachine(node, logger, electionTimer, heartbeatTimer, jobQueue);
+        var raft = new RaftStateMachine(node, logger, electionTimer, heartbeatTimer, jobQueue, log);
         return raft;
     }
 }

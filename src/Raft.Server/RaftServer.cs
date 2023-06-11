@@ -1,8 +1,10 @@
 using Raft.Core;
 using Raft.Core.Commands;
+using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Peer;
 using Raft.Core.StateMachine;
 using Raft.JobQueue;
+using Raft.Log;
 using Raft.Peer;
 using Raft.Timers;
 using Serilog;
@@ -32,10 +34,10 @@ public class RaftServer
         var responseTimeout = TimeSpan.FromSeconds(1);
         var peerGroup = new PeerGroup(
             Enumerable.Range(2, 2)
-                      .Select(i => (IPeer)new LambdaPeer(i, async _ =>
+                      .Select(i => (IPeer) new LambdaPeer(i, async r =>
                        {
                            await Task.Delay(responseTimeout);
-                           return new HeartbeatResponse();
+                           return HeartbeatResponse.Ok(r.Term);
                        }, async r =>
                        {
                            await Task.Delay(responseTimeout);
@@ -48,7 +50,10 @@ public class RaftServer
                       .ToArray());
         var node = new Node(new PeerId(1), peerGroup);
         
-        using var stateMachine = RaftStateMachine.Start(node, _logger.ForContext<RaftStateMachine>(), electionTimer, heartbeatTimer, new TaskJobQueue());
+        var log = new InMemoryLog();
+        var logger = _logger.ForContext<RaftStateMachine>();
+        var jobQueue = new TaskJobQueue();
+        using var stateMachine = RaftStateMachine.Start(node, logger, electionTimer, heartbeatTimer, jobQueue, log);
         
         try
         {

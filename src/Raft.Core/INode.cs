@@ -34,10 +34,6 @@ public interface INode
     /// </summary>
     public int LastApplied { get; set; }
     
-    /// <summary>
-    /// Последний закомиченный лог
-    /// </summary>
-    public LogEntryInfo LastLogEntry { get; set; }
 
     #endregion
     

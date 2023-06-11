@@ -1,4 +1,7 @@
+using System.ComponentModel;
 using Raft.Core.Commands;
+using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Log;
 using Serilog;
 
 namespace Raft.Core.StateMachine;
@@ -42,7 +45,7 @@ public class FollowerState: INodeState
             // С термом больше нашего (иначе, на текущем терме уже есть лидер)
             Node.CurrentTerm < request.CandidateTerm && 
             // У которого лог не "младше" нашего
-            Node.LastLogEntry.IsUpToDateWith(request.LastLog))
+            _stateMachine.Log.LastLogEntry.IsUpToDateWith(request.LastLog))
         {
             // Проголосуем за кандидата - обновим состояние узла
             Node.CurrentTerm = request.CandidateTerm;
@@ -69,7 +72,36 @@ public class FollowerState: INodeState
     {
         _stateMachine.ElectionTimer.Reset();
         _logger.Verbose("Получен Heartbeat");
-        return new HeartbeatResponse();
+        if (request.Term < Node.CurrentTerm)
+        {
+            return HeartbeatResponse.Fail(Node.CurrentTerm);
+        }
+
+        LogEntryCheckResult checkResult;
+        switch (checkResult = _stateMachine.Log.Check(request.PrevLogEntry))
+        {
+            case LogEntryCheckResult.Conflict:
+                return HeartbeatResponse.Fail(Node.CurrentTerm);
+            case LogEntryCheckResult.Contains:
+            case LogEntryCheckResult.NotFound:
+                // TODO: отправить индекс последней закомиченной записи
+                break;
+            default:
+                throw new InvalidEnumArgumentException(nameof(LogEntryCheckResult), (int)checkResult, typeof(LogEntryCheckResult));
+        }
+
+        
+        if (Node.CommitIndex < request.LeaderCommit)
+        {
+            Node.CommitIndex = Math.Min(request.LeaderCommit, _stateMachine.Log.LastLogEntry.Index);
+        }
+
+        if (Node.CurrentTerm < request.Term)
+        {
+            Node.CurrentTerm = request.Term;
+        }
+
+        return HeartbeatResponse.Ok(Node.CurrentTerm);
     }
 
     internal static FollowerState Start(IStateMachine stateMachine)

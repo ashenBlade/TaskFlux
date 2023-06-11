@@ -1,4 +1,5 @@
 using Raft.Core.Commands;
+using Raft.Core.Commands.Heartbeat;
 
 namespace Raft.Core.StateMachine;
 

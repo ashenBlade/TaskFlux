@@ -43,7 +43,7 @@ public class Node: INode
     /// <summary>
     /// Последний закомиченный лог
     /// </summary>
-    public LogEntryInfo LastLogEntry { get; set; }
+    public LogEntry LastLogEntry { get; set; }
 
     #endregion
 

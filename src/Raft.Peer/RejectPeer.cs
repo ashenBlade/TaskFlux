@@ -1,5 +1,6 @@
 ﻿using Raft.Core;
 using Raft.Core.Commands;
+using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Peer;
 
 namespace Raft.Peer;
@@ -19,7 +20,7 @@ public class RejectPeer: IPeer
     public async Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token)
     {
         await Task.Delay(_responseTimeout, token);
-        return new HeartbeatResponse() { };
+        return HeartbeatResponse.Fail(request.Term);
     }
 
     public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)

@@ -1,4 +1,5 @@
 using Raft.Core.Commands;
+using Raft.Core.Commands.Heartbeat;
 using Serilog;
 
 namespace Raft.Core.StateMachine;
