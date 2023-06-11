@@ -6,17 +6,19 @@ namespace Raft.Core.StateMachine;
 
 public class CandidateState: INodeState
 {
-    private readonly RaftStateMachine _stateMachine;
+    public NodeRole Role => NodeRole.Candidate;
+    private readonly IStateMachine _stateMachine;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;
-    private Node Node => _stateMachine.Node;
+    private INode Node => _stateMachine.Node;
 
-    private CandidateState(RaftStateMachine stateMachine, ILogger logger)
+    private CandidateState(IStateMachine stateMachine, ILogger logger)
     {
         _stateMachine = stateMachine;
         _logger = logger;
         _cts = new();
         _stateMachine.ElectionTimer.Timeout += OnElectionTimerTimeout;
+        _stateMachine.JobQueue.EnqueueInfinite(RunQuorum, _cts.Token);
     }
 
     private async Task<RequestVoteResponse?[]> RunQuorumRound(List<IPeer> peers, CancellationToken token)
@@ -42,12 +44,12 @@ public class CandidateState: INodeState
     /// Запустить раунды кворума и попытаться получить большинство голосов.
     /// Выполняется в фоновом потоке
     /// </summary>
-    private async Task RunQuorum()
+    internal async Task RunQuorum()
     {
         _logger.Debug("Запускаю кворум для получения большинства голосов");
-        var peers = new List<IPeer>(Node.Peers.Count);
+        var peers = new List<IPeer>(Node.PeerGroup.Peers.Count);
         var term = Node.CurrentTerm;
-        peers.AddRange(Node.Peers);
+        peers.AddRange(Node.PeerGroup.Peers);
         // Держим в уме узлы, которые не ответили взаимностью
         var swap = new List<IPeer>();
         var votes = 0;
@@ -113,7 +115,7 @@ public class CandidateState: INodeState
             }
         }
         
-        _logger.Debug("Кворум собран. Получено {VotesCount} голосов. Перехожду в состояние Leader", votes);
+        _logger.Debug("Кворум собран. Получено {VotesCount} голосов. Перехожу в состояние Leader", votes);
         
         _stateMachine.CurrentState = LeaderState.Start(_stateMachine);
 
@@ -180,7 +182,7 @@ public class CandidateState: INodeState
         _stateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
     }
 
-    internal static CandidateState Start(RaftStateMachine stateMachine)
+    internal static CandidateState Start(IStateMachine stateMachine)
     {
         // При входе в кандидата, номер терма увеличивается
         var node = stateMachine.Node;
@@ -188,7 +190,6 @@ public class CandidateState: INodeState
         node.VotedFor = node.Id;
 
         var state = new CandidateState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Candidate"));
-        _ = state.RunQuorum(); 
         stateMachine.ElectionTimer.Start();
         return state;
     }

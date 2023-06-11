@@ -2,6 +2,7 @@ using Raft.Core;
 using Raft.Core.Commands;
 using Raft.Core.Peer;
 using Raft.Core.StateMachine;
+using Raft.JobQueue;
 using Raft.Peer;
 using Raft.Timers;
 using Serilog;
@@ -29,26 +30,25 @@ public class RaftServer
 
         _logger.Information("Запускаю сервер Raft");
         var responseTimeout = TimeSpan.FromSeconds(1);
-        var node = new Node(new PeerId(1))
-        {
-            PeerGroup = new(Enumerable.Range(2, 2)
-                                      .Select(i => (IPeer)new LambdaPeer(i, async _ =>
-                                       {
-                                           await Task.Delay(responseTimeout);
-                                           return new HeartbeatResponse();
-                                       }, async r =>
-                                       {
-                                           await Task.Delay(responseTimeout);
-                                           return new RequestVoteResponse()
-                                           {
-                                               VoteGranted = false,
-                                               CurrentTerm = r.CandidateTerm.Increment()
-                                           };
-                                       }))
-                                      .ToArray())
-        };
+        var peerGroup = new PeerGroup(
+            Enumerable.Range(2, 2)
+                      .Select(i => (IPeer)new LambdaPeer(i, async _ =>
+                       {
+                           await Task.Delay(responseTimeout);
+                           return new HeartbeatResponse();
+                       }, async r =>
+                       {
+                           await Task.Delay(responseTimeout);
+                           return new RequestVoteResponse()
+                           {
+                               VoteGranted = true,
+                               CurrentTerm = new Term(1)
+                           };
+                       }))
+                      .ToArray());
+        var node = new Node(new PeerId(1), peerGroup);
         
-        using var stateMachine = new RaftStateMachine(node, _logger.ForContext<RaftStateMachine>(), electionTimer, heartbeatTimer);
+        using var stateMachine = RaftStateMachine.Start(node, _logger.ForContext<RaftStateMachine>(), electionTimer, heartbeatTimer, new TaskJobQueue());
         
         try
         {

@@ -17,4 +17,9 @@ public readonly record struct Term(int Value = Term.StartTerm)
     }
 
     public Term Increment() => new(Value + 1);
+
+    public override string ToString()
+    {
+        return $"Term({Value})";
+    }
 }

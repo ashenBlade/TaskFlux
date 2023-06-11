@@ -10,6 +10,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\Raft.Core\Raft.Core.csproj" />
+      <ProjectReference Include="..\Raft.JobQueue\Raft.JobQueue.csproj" />
       <ProjectReference Include="..\Raft.Peer\Raft.Peer.csproj" />
       <ProjectReference Include="..\Raft.Timers\Raft.Timers.csproj" />
     </ItemGroup>

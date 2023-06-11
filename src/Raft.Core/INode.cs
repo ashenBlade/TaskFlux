@@ -2,14 +2,8 @@ using Raft.Core.Peer;
 
 namespace Raft.Core;
 
-public class Node: INode
+public interface INode
 {
-    public Node(PeerId id, PeerGroup peerGroup)
-    {
-        Id = id;
-        PeerGroup = peerGroup;
-    }
-
     /// <summary>
     /// ID текущего узла
     /// </summary>
@@ -46,13 +40,7 @@ public class Node: INode
     public LogEntryInfo LastLogEntry { get; set; }
 
     #endregion
-
-
-    /// <summary>
-    /// Другие узлы кластера.
-    /// Текущий узел не включается
-    /// </summary>
-    public IReadOnlyList<IPeer> Peers => PeerGroup.Peers; 
+    
     
     public PeerGroup PeerGroup { get; set; }
 }

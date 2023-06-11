@@ -5,19 +5,22 @@ namespace Raft.Core.StateMachine;
 
 public class FollowerState: INodeState
 {
-    private Node Node => _stateMachine.Node;
-    private readonly RaftStateMachine _stateMachine;
+    public NodeRole Role => NodeRole.Follower;
+    private INode Node => _stateMachine.Node;
+    private readonly IStateMachine _stateMachine;
     private readonly ILogger _logger;
 
-    private FollowerState(RaftStateMachine stateMachine, ILogger logger)
+    internal FollowerState(IStateMachine stateMachine, ILogger logger)
     {
         _stateMachine = stateMachine;
         _logger = logger;
         _stateMachine.ElectionTimer.Timeout += OnElectionTimerTimeout;
     }
     
-    public async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token)
+    public async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token = default)
     {
+        _stateMachine.ElectionTimer.Reset();
+        
         // Мы в более актуальном Term'е
         if (request.CandidateTerm < Node.CurrentTerm)
         {
@@ -31,11 +34,15 @@ public class FollowerState: INodeState
         var canVote = 
             // Ранее не голосовали
             Node.VotedFor is null || 
-            // Текущий лидер посылает этот запрос (почему бы не согласиться)
+            // Текущий лидер/кандидат посылает этот запрос (почему бы не согласиться)
             Node.VotedFor == request.CandidateId;
         
-        // Отдать свободный голос можем только за кандидата с более актуальным логом
-        if (canVote && Node.LastLogEntry.IsUpToDateWith(request.LastLog))
+        // Отдать свободный голос можем только за кандидата 
+        if (canVote && 
+            // С термом больше нашего (иначе, на текущем терме уже есть лидер)
+            Node.CurrentTerm < request.CandidateTerm && 
+            // У которого лог не "младше" нашего
+            Node.LastLogEntry.IsUpToDateWith(request.LastLog))
         {
             // Проголосуем за кандидата - обновим состояние узла
             Node.CurrentTerm = request.CandidateTerm;
@@ -58,14 +65,14 @@ public class FollowerState: INodeState
         };
     }
 
-    public async Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token)
+    public async Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token = default)
     {
         _stateMachine.ElectionTimer.Reset();
         _logger.Verbose("Получен Heartbeat");
         return new HeartbeatResponse();
     }
 
-    public static FollowerState Start(RaftStateMachine stateMachine)
+    internal static FollowerState Start(IStateMachine stateMachine)
     {
         var logger = stateMachine.Logger.ForContext("SourceContext", "Follower");
         var state = new FollowerState(stateMachine, logger);

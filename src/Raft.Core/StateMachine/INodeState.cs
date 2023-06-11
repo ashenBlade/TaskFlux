@@ -8,8 +8,9 @@ namespace Raft.Core.StateMachine;
 /// <remarks>
 /// IDisposable нужно вызывать для сброса таймеров и очистки ресурсов предыдущего состояния
 /// </remarks>
-internal interface INodeState: IDisposable
+public interface INodeState: IDisposable
 {
-    public Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token);
-    public Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token);
+    public NodeRole Role { get; }
+    public Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token = default);
+    public Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token = default);
 }

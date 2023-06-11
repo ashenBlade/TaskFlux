@@ -5,10 +5,11 @@ namespace Raft.Core.StateMachine;
 
 internal class LeaderState: INodeState
 {
-    private readonly RaftStateMachine _stateMachine;
+    public NodeRole Role => NodeRole.Leader;
+    private readonly IStateMachine _stateMachine;
     private readonly ILogger _logger;
-
-    private LeaderState(RaftStateMachine stateMachine, ILogger logger)
+    
+    private LeaderState(IStateMachine stateMachine, ILogger logger)
     {
         _stateMachine = stateMachine;
         _logger = logger;
@@ -20,7 +21,7 @@ internal class LeaderState: INodeState
     {
         _logger.Verbose("Отправляю Heartbeat");
         var request = new HeartbeatRequest();
-        Task.WaitAll(_stateMachine.Node.Peers.Select(x => x.SendHeartbeat(request, CancellationToken.None)).ToArray());
+        Task.WaitAll(_stateMachine.Node.PeerGroup.Peers.Select(x => x.SendHeartbeat(request, CancellationToken.None)).ToArray());
         _stateMachine.HeartbeatTimer.Start();
     }
     
@@ -39,7 +40,7 @@ internal class LeaderState: INodeState
         _stateMachine.HeartbeatTimer.Timeout -= SendHeartbeat;
     }
 
-    public static LeaderState Start(RaftStateMachine stateMachine)
+    public static LeaderState Start(IStateMachine stateMachine)
     {
         var state = new LeaderState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Leader"));
         stateMachine.HeartbeatTimer.Start();

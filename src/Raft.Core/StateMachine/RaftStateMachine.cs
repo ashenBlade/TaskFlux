@@ -3,12 +3,15 @@ using Serilog;
 
 namespace Raft.Core.StateMachine;
 
-public class RaftStateMachine: IDisposable
+public class RaftStateMachine: IDisposable, IStateMachine
 {
-    internal readonly ILogger Logger;
-    internal Node Node { get; }
+    public NodeRole CurrentRole => _currentState.Role;
+    public ILogger Logger { get; }
+    public INode Node { get; }
+    
+    // Инициализируется позже, в момент вызова Start
     private INodeState _currentState;
-    internal INodeState CurrentState
+    public INodeState CurrentState
     {
         get => _currentState;
         set
@@ -18,16 +21,19 @@ public class RaftStateMachine: IDisposable
         }
     }
 
-    internal ITimer ElectionTimer { get; }
-    internal ITimer HeartbeatTimer { get; }
-
-    public RaftStateMachine(Node node, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer)
+    public ITimer ElectionTimer { get; }
+    public ITimer HeartbeatTimer { get; }
+    public IJobQueue JobQueue { get; }
+   
+    
+    // Для тестов
+    internal RaftStateMachine(INode node, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue)
     {
         Node = node;
         Logger = logger;
         ElectionTimer = electionTimer;
         HeartbeatTimer = heartbeatTimer;
-        logger.Debug("Перехожу в состояние Follower");
+        JobQueue = jobQueue;
         _currentState = FollowerState.Start(this);
     }
     
@@ -44,5 +50,15 @@ public class RaftStateMachine: IDisposable
     public void Dispose()
     {
         _currentState.Dispose();
+    }
+
+    public static RaftStateMachine Start(INode node,
+                                         ILogger logger,
+                                         ITimer electionTimer,
+                                         ITimer heartbeatTimer,
+                                         IJobQueue jobQueue)
+    {
+        var raft = new RaftStateMachine(node, logger, electionTimer, heartbeatTimer, jobQueue);
+        return raft;
     }
 }
