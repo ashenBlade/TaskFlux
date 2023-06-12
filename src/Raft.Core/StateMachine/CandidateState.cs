@@ -5,37 +5,34 @@ using Serilog;
 
 namespace Raft.Core.StateMachine;
 
-public class CandidateState: INodeState
+internal class CandidateState: BaseState
 {
-    public NodeRole Role => NodeRole.Candidate;
-    private readonly IStateMachine _stateMachine;
+    public override NodeRole Role => NodeRole.Candidate;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;
-    private INode Node => _stateMachine.Node;
-
-    private CandidateState(IStateMachine stateMachine, ILogger logger)
+    internal CandidateState(IStateMachine stateMachine, ILogger logger)
+        :base(stateMachine)
     {
-        _stateMachine = stateMachine;
         _logger = logger;
         _cts = new();
-        _stateMachine.ElectionTimer.Timeout += OnElectionTimerTimeout;
-        _stateMachine.JobQueue.EnqueueInfinite(RunQuorum, _cts.Token);
+        StateMachine.ElectionTimer.Timeout += OnElectionTimerTimeout;
+        StateMachine.JobQueue.EnqueueInfinite(RunQuorum, _cts.Token);
     }
 
-    private async Task<RequestVoteResponse?[]> RunQuorumRound(List<IPeer> peers, CancellationToken token)
+    private async Task<RequestVoteResponse?[]> SendRequestVotes(List<IPeer> peers)
     {
         // Отправляем запрос всем пирам
         var request = new RequestVoteRequest()
         {
-            CandidateId = _stateMachine.Node.Id,
-            CandidateTerm = _stateMachine.Node.CurrentTerm,
-            LastLog = _stateMachine.Log.LastLogEntry
+            CandidateId = StateMachine.Node.Id,
+            CandidateTerm = StateMachine.Node.CurrentTerm,
+            LastLog = StateMachine.Log.LastLogEntry
         };
 
         var requests = new Task<RequestVoteResponse?>[peers.Count];
         for (var i = 0; i < peers.Count; i++)
         {
-            requests[i] = peers[i].SendRequestVote(request, token);
+            requests[i] = peers[i].SendRequestVote(request, _cts.Token);
         }
 
         return await Task.WhenAll( requests );
@@ -45,25 +42,44 @@ public class CandidateState: INodeState
     /// Запустить раунды кворума и попытаться получить большинство голосов.
     /// Выполняется в фоновом потоке
     /// </summary>
+    /// <remarks>
+    /// Дополнительные раунды нужны, когда какой-то узел не отдал свой голос.
+    /// Всем отправившим ответ узлам (отдавшим голос или нет) запросы больше не посылаем.
+    /// Грубо говоря, этот метод работает пока все узлы не ответят
+    /// </remarks>
     internal async Task RunQuorum()
+    {
+        try
+        {
+            await RunQuorumInner();
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.Debug("Сбор кворума прерван - задача отменена");
+        }
+        catch (ObjectDisposedException)
+        {
+            _logger.Verbose("Источник токенов удален во время отправки запросов");
+        }
+    }
+
+    internal async Task RunQuorumInner()
     {
         _logger.Debug("Запускаю кворум для получения большинства голосов");
         var peers = new List<IPeer>(Node.PeerGroup.Peers.Count);
         var term = Node.CurrentTerm;
         peers.AddRange(Node.PeerGroup.Peers);
-        // Держим в уме узлы, которые не ответили взаимностью
+        // Держим в уме узлы, которые не ответили (вообще не ответили)
         var swap = new List<IPeer>();
         var votes = 0;
-        
-        var token = _cts.Token;
         _logger.Debug("Начинаю раунд кворума для терма {Term}. Отправляю запросы на узлы: {Peers}", term, peers.Select(x => x.Id));
         while (!QuorumReached())
         {
-            var responses = await RunQuorumRound(peers, token);
+            var responses = await SendRequestVotes(peers);
             _logger.Debug("От узлов вернулись ответы");
-            if (token.IsCancellationRequested)
+            if (_cts.Token.IsCancellationRequested)
             {
-                _logger.Debug("Токен был отменен. Завершаю кворум");
+                _logger.Debug("Операция была отменена. Завершаю кворум");
                 return;
             }
             for (var i = 0; i < responses.Length; i++)
@@ -75,7 +91,7 @@ public class CandidateState: INodeState
                     swap.Add(peers[i]);
                     _logger.Verbose("Узел {NodeId} не вернул ответ", peers[i].Id);
                 }
-                // Узел согласился
+                // Узел отдал голос
                 else if (response.VoteGranted)
                 {
                     votes++;
@@ -84,19 +100,17 @@ public class CandidateState: INodeState
                 // Узел имеет более высокий Term
                 else if (Node.CurrentTerm < response.CurrentTerm)
                 {
-                    swap.Add(peers[i]);
                     _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", peers[i].Id);
                     _cts.Cancel();
                     
                     Node.CurrentTerm = response.CurrentTerm;
-                    var state = FollowerState.Start(_stateMachine);
-                    _stateMachine.CurrentState = state;
+                    StateMachine.CurrentState = FollowerState.Start(StateMachine);
                     return;
                 }
-                // Узел отказался по другой причине. Возможно он кандидат
+                // Узел отказался по другой причине.
+                // Возможно он другой кандидат
                 else
                 {
-                    swap.Add(peers[i]);
                     _logger.Verbose("Узел {NodeId} не отдал голос за", peers[i].Id);
                 }
             }
@@ -104,6 +118,7 @@ public class CandidateState: INodeState
             ( peers, swap ) = ( swap, peers );
             swap.Clear();
             
+            // Больше не кому слать
             if (peers.Count == 0)
             {
                 if (QuorumReached())
@@ -111,15 +126,17 @@ public class CandidateState: INodeState
                     break;
                 }
 
-                _logger.Debug("Кворум не достигнут и нет узлов, которым можно послать запросы. ");
-                break;
+                _logger.Debug("Кворум не достигнут и нет узлов, которым можно послать запросы. Дожидаюсь завершения Election Timeout");
+                return;
             }
         }
         
         _logger.Debug("Кворум собран. Получено {VotesCount} голосов. Перехожу в состояние Leader", votes);
         
-        _stateMachine.CurrentState = LeaderState.Start(_stateMachine);
-
+        _cts.Token.ThrowIfCancellationRequested();
+        StateMachine.CurrentState = LeaderState.Start(StateMachine);
+        StateMachine.ElectionTimer.Stop();
+        
         bool QuorumReached()
         {
             return Node.PeerGroup.IsQuorumReached(votes);
@@ -127,8 +144,9 @@ public class CandidateState: INodeState
     }
 
 
-    public async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token)
+    public override async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token)
     {
+        return await base.Apply(request, token);
         // Мы в более актуальном Term'е
         if (request.CandidateTerm < Node.CurrentTerm)
         {
@@ -143,7 +161,7 @@ public class CandidateState: INodeState
             Node.VotedFor is null || 
             Node.VotedFor == request.CandidateId;
         
-        if (canVote && _stateMachine.Log.LastLogEntry.IsUpToDateWith(request.LastLog))
+        if (canVote && StateMachine.Log.LastLogEntry.IsUpToDateWith(request.LastLog))
         {
             Node.CurrentTerm = request.CandidateTerm;
             Node.VotedFor = request.CandidateId;
@@ -164,23 +182,24 @@ public class CandidateState: INodeState
         };
     }
 
-    public Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token)
+    public override async Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token)
     {
-        throw new NotImplementedException();
+        return await base.Apply(request, token);
     }
 
     private void OnElectionTimerTimeout()
     {
         _cts.Cancel();
-        _stateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
+        StateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
         _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
-        _stateMachine.CurrentState = Start(_stateMachine);
+        StateMachine.CurrentState = Start(StateMachine);
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         _cts?.Dispose();
-        _stateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
+        StateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
+        base.Dispose();
     }
 
     internal static CandidateState Start(IStateMachine stateMachine)

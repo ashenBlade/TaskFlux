@@ -8,41 +8,28 @@ namespace Raft.Core.Tests;
 
 public class FollowerStateTests
 {
-    private static FollowerState CreateState(IStateMachine stateMachine) => new(stateMachine, Infrastructure.NullLogger);
+    private static FollowerState CreateState(IStateMachine stateMachine) => new(stateMachine, Helpers.NullLogger);
     private static readonly PeerId NodeId = new(1);
     private static readonly LogEntry LastLogEntry = new(new Term(1), 0);
 
-    private static ILog CreateLog(LogEntry? logEntryInfo = null, LogEntryCheckResult result = LogEntryCheckResult.Contains)
+    private static ILog CreateLog(LogEntry? logEntryInfo = null, LogEntryCheckResult result = LogEntryCheckResult.Contains, int commitIndex = 0, int lastApplied = 0)
     {
-        var entry = logEntryInfo ?? LastLogEntry;
-        return Mock.Of<ILog>(x => x.LastLogEntry == entry && 
-                                  x.Check(It.IsAny<LogEntry>()) == result);
+        return Helpers.CreateLog(logEntryInfo, result, commitIndex, lastApplied);
     }
     private static INode CreateNode(Term currentTerm, PeerId? votedFor)
     {
-        var nodeMock = new Mock<INode>(MockBehavior.Strict);
-        nodeMock.SetupGet(x => x.Id).Returns(NodeId);
-        nodeMock.SetupProperty(x => x.CurrentTerm, currentTerm);
-        nodeMock.SetupProperty(x => x.VotedFor, votedFor);
-        nodeMock.SetupProperty(x => x.CommitIndex, 0);
-        nodeMock.SetupProperty(x => x.LastApplied, 0);
-        return nodeMock.Object;
+        return Helpers.CreateNode(currentTerm, votedFor);
     }
 
     private static RaftStateMachine CreateStateMachine(INode node, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
-        return RaftStateMachine.Start(node, 
-            Infrastructure.NullLogger, 
-            electionTimer ?? Mock.Of<ITimer>(),
-            Mock.Of<ITimer>(), 
-            jobQueue ?? Infrastructure.NullJobQueue,
-            log ?? CreateLog());
+        return Helpers.CreateStateMachine(node, electionTimer, jobQueue, log);
     }
 
     [Fact]
     public void ПриСоздании__ПервоеСостояниеДолжноБыть__Follower()
     {
-        var machine = RaftStateMachine.Start(CreateNode(new(1), null), Infrastructure.NullLogger, Infrastructure.NullTimer, Infrastructure.NullTimer, Infrastructure.NullJobQueue, Mock.Of<ILog>(x => x.LastLogEntry == LastLogEntry));
+        var machine = RaftStateMachine.Start(CreateNode(new(1), null), Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullJobQueue, Mock.Of<ILog>(x => x.LastLogEntry == LastLogEntry && x.CommitIndex == 0 && x.LastApplied == 0));
         Assert.Equal(NodeRole.Follower, machine.CurrentRole);
     }
     

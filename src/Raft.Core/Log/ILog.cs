@@ -13,4 +13,14 @@ public interface ILog
     /// Последняя запись в логе
     /// </summary>
     public LogEntry LastLogEntry { get; }
+    
+    /// <summary>
+    /// Индекс последней закомиченной записи
+    /// </summary>
+    public int CommitIndex { get; set; }
+    
+    /// <summary>
+    /// Индекс последней применной записи журнала 
+    /// </summary>
+    public int LastApplied { get; }
 }

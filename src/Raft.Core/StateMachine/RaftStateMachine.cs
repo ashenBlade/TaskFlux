@@ -11,7 +11,8 @@ public class RaftStateMachine: IDisposable, IStateMachine
     public ILogger Logger { get; }
     public INode Node { get; }
     
-    private INodeState _currentState;
+    // Выставляем вручную 
+    private INodeState _currentState = null!;
     public INodeState CurrentState
     {
         get => _currentState;
@@ -28,7 +29,6 @@ public class RaftStateMachine: IDisposable, IStateMachine
     public ILog Log { get; }
 
 
-    // Для тестов
     internal RaftStateMachine(INode node, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log)
     {
         Node = node;
@@ -37,9 +37,7 @@ public class RaftStateMachine: IDisposable, IStateMachine
         HeartbeatTimer = heartbeatTimer;
         JobQueue = jobQueue;
         Log = log;
-        _currentState = FollowerState.Start(this);
     }
-    
 
     public Task<RequestVoteResponse> Handle(RequestVoteRequest request, CancellationToken token = default)
     {
@@ -63,6 +61,8 @@ public class RaftStateMachine: IDisposable, IStateMachine
                                          ILog log)
     {
         var raft = new RaftStateMachine(node, logger, electionTimer, heartbeatTimer, jobQueue, log);
+        var state = FollowerState.Start(raft);
+        raft._currentState = state;
         return raft;
     }
 }

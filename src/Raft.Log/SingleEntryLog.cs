@@ -33,4 +33,6 @@ public class SingleEntryLog: ILog
     }
 
     public LogEntry LastLogEntry => _entry;
+    public int CommitIndex { get; set; } = 0;
+    public int LastApplied { get; } = 0;
 }
