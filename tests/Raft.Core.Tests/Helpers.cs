@@ -45,12 +45,12 @@ public class Helpers
         return nodeMock.Object;
     }
 
-    public static RaftStateMachine CreateStateMachine(INode node, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
+    public static RaftStateMachine CreateStateMachine(INode node, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
         return RaftStateMachine.Start(node, 
             NullLogger, 
             electionTimer ?? Mock.Of<ITimer>(),
-            Mock.Of<ITimer>(), 
+            heartbeatTimer ?? Mock.Of<ITimer>(), 
             jobQueue ?? NullJobQueue,
             log ?? CreateLog());
     }

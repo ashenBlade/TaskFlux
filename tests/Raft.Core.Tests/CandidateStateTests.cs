@@ -1,6 +1,3 @@
-using System.IO.Pipes;
-using System.Runtime.InteropServices;
-using System.Runtime.Serialization;
 using Moq;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
@@ -31,14 +28,7 @@ public class CandidateStateTests
             await job();
         }
     }
-    
-    private static readonly PeerId NodeId = new(1);
-    private static readonly LogEntry LastLogEntry = new(new Term(1), 0);
 
-    private static ILog CreateLog(LogEntry? logEntryInfo = null, LogEntryCheckResult result = LogEntryCheckResult.Contains, int commitIndex = 0, int lastApplied = 0)
-    {
-        return Helpers.CreateLog(logEntryInfo, result, commitIndex, lastApplied);
-    }
     private static INode CreateNode(Term currentTerm, PeerId? votedFor, IEnumerable<IPeer>? peers = null)
     {
         return Helpers.CreateNode(currentTerm, votedFor, peers);
@@ -46,7 +36,7 @@ public class CandidateStateTests
 
     private static RaftStateMachine CreateCandidateStateMachine(INode node, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
-        var raftStateMachine = Helpers.CreateStateMachine(node, electionTimer, jobQueue, log);
+        var raftStateMachine = Helpers.CreateStateMachine(node, electionTimer, heartbeatTimer: null, jobQueue, log);
         raftStateMachine.CurrentState = new CandidateState(raftStateMachine, Helpers.NullLogger);
         return raftStateMachine;
     }
@@ -168,7 +158,7 @@ public class CandidateStateTests
     [InlineData(2, 2)]
     [InlineData(3, 2)]
     [InlineData(3, 3)]
-    public async Task ПриЗапускеКворума__СНесколькимиУзлами__ДолженСтатьЛидеромКогдаСобралКворум(int grantedVotesCount, int nonGrangedVotesCount)
+    public async Task ПриЗапускеКворума__СНесколькимиУзлами__ДолженСтатьЛидеромКогдаСобралКворум(int grantedVotesCount, int nonGrantedVotesCount)
     {
         var oldTerm = new Term(1);
         var jobQueue = new SingleRunJobQueue();
@@ -177,7 +167,7 @@ public class CandidateStateTests
 
 
         var peers = Random.Shared.Shuffle(
-            Enumerable.Range(0, grantedVotesCount + nonGrangedVotesCount)
+            Enumerable.Range(0, grantedVotesCount + nonGrantedVotesCount)
                       .Select(i =>
                        {
                            var mock = new Mock<IPeer>();
@@ -243,35 +233,6 @@ public class CandidateStateTests
         Assert.Equal(NodeRole.Candidate, raft.CurrentRole);
     }
 
-    private class DynamicRequestVotePeer : IPeer
-    {
-        private readonly List<RequestVoteResponse?> _responses;
-        private int _current = 0;
-        
-        public DynamicRequestVotePeer(IEnumerable<RequestVoteResponse?> responses)
-        {
-            _responses = responses.ToList();
-        }
-        
-        public PeerId Id => new PeerId(2);
-        public Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token)
-        {
-            throw new NotImplementedException();
-        }
-
-        public Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
-        {
-            var response = _responses[_current];
-            _current++;
-            return Task.FromResult(response);
-        }
-
-        public Task SendAppendEntries(CancellationToken token)
-        {
-            throw new NotImplementedException();
-        }
-    }
-    
     [Fact]
     public async Task ПриЗапускеКворума__СЕдинственнымУзломКоторыйНеОтветил__ДолженСделатьПовторнуюПопытку()
     {
@@ -494,5 +455,43 @@ public class CandidateStateTests
         await jobQueue.Run();
 
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);
+    }
+    
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(5)]
+    public async Task ПослеПереходаВLeader__КогдаКворумСобран__ДолженОстановитьElectionТаймер(int votes)
+    {
+        var oldTerm = new Term(1);
+        var jobQueue = new SingleRunJobQueue();
+        
+        var peer = new Mock<IPeer>();
+        peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RequestVoteResponse() {CurrentTerm = oldTerm, VoteGranted = true});
+
+        var electionTimer = new Mock<ITimer>().Apply(t =>
+        {
+            t.Setup(x => x.Stop()).Verifiable();
+        });
+        
+        
+        var peers = Enumerable.Range(0, votes)
+                              .Select(_ => new Mock<IPeer>()
+                                          .Apply(t => t.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(),
+                                                            It.IsAny<CancellationToken>()))
+                                                       .ReturnsAsync(new RequestVoteResponse()
+                                                        {
+                                                            CurrentTerm = oldTerm, VoteGranted = true
+                                                        }))
+                                          .Object)
+                              .ToArray();
+        var node = CreateNode(oldTerm, null, peers);
+        using var raft = CreateCandidateStateMachine(node, electionTimer: electionTimer.Object, jobQueue: jobQueue);
+
+        await jobQueue.Run();
+        
+        electionTimer.Verify(x => x.Stop(), Times.Once());
     }
 }

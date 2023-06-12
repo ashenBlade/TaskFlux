@@ -27,9 +27,8 @@ public class RaftStateMachine: IDisposable, IStateMachine
     public ITimer HeartbeatTimer { get; }
     public IJobQueue JobQueue { get; }
     public ILog Log { get; }
-
-
-    internal RaftStateMachine(INode node, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log)
+    
+    private RaftStateMachine(INode node, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log)
     {
         Node = node;
         Logger = logger;

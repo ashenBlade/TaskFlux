@@ -147,39 +147,6 @@ internal class CandidateState: BaseState
     public override async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token)
     {
         return await base.Apply(request, token);
-        // Мы в более актуальном Term'е
-        if (request.CandidateTerm < Node.CurrentTerm)
-        {
-            return new RequestVoteResponse()
-            {
-                CurrentTerm = Node.CurrentTerm,
-                VoteGranted = false
-            };
-        }
-
-        var canVote =
-            Node.VotedFor is null || 
-            Node.VotedFor == request.CandidateId;
-        
-        if (canVote && StateMachine.Log.LastLogEntry.IsUpToDateWith(request.LastLog))
-        {
-            Node.CurrentTerm = request.CandidateTerm;
-            Node.VotedFor = request.CandidateId;
-            
-            return new RequestVoteResponse()
-            {
-                CurrentTerm = Node.CurrentTerm,
-                VoteGranted = true,
-            };
-        }
-        
-        // Кандидат только что проснулся и не знает о текущем состоянии дел. 
-        // Обновим его
-        return new RequestVoteResponse()
-        {
-            CurrentTerm = Node.CurrentTerm, 
-            VoteGranted = false
-        };
     }
 
     public override async Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token)

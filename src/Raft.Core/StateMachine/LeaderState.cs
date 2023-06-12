@@ -4,17 +4,16 @@ using Serilog;
 
 namespace Raft.Core.StateMachine;
 
-internal class LeaderState: INodeState
+internal class LeaderState: BaseState
 {
-    public NodeRole Role => NodeRole.Leader;
-    private readonly IStateMachine _stateMachine;
+    public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
-    
-    private LeaderState(IStateMachine stateMachine, ILogger logger)
+
+    internal LeaderState(IStateMachine stateMachine, ILogger logger)
+        : base(stateMachine)
     {
-        _stateMachine = stateMachine;
         _logger = logger;
-        _stateMachine.HeartbeatTimer.Timeout += SendHeartbeat;
+        StateMachine.HeartbeatTimer.Timeout += SendHeartbeat;
     }
 
     // ReSharper disable once CoVariantArrayConversion
@@ -22,23 +21,26 @@ internal class LeaderState: INodeState
     {
         _logger.Verbose("Отправляю Heartbeat");
         var request = new HeartbeatRequest();
-        Task.WaitAll(_stateMachine.Node.PeerGroup.Peers.Select(x => x.SendHeartbeat(request, CancellationToken.None)).ToArray());
-        _stateMachine.HeartbeatTimer.Start();
+        Task.WaitAll(StateMachine.Node.PeerGroup.Peers.Select(x => x.SendHeartbeat(request, CancellationToken.None)).ToArray());
+        StateMachine.HeartbeatTimer.Start();
     }
     
-    public Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token)
+    public override async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token = default)
     {
-        throw new NotImplementedException();
+        return await base.Apply(request, token);
     }
 
-    public Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token)
+    public override async Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token = default)
     {
-        throw new NotImplementedException();
+        var response = await base.Apply(request, token);
+        return response;
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
-        _stateMachine.HeartbeatTimer.Timeout -= SendHeartbeat;
+        StateMachine.HeartbeatTimer.Stop();
+        StateMachine.HeartbeatTimer.Timeout -= SendHeartbeat;
+        base.Dispose();
     }
 
     public static LeaderState Start(IStateMachine stateMachine)

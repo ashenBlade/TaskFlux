@@ -23,7 +23,7 @@ public class FollowerStateTests
 
     private static RaftStateMachine CreateStateMachine(INode node, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
-        return Helpers.CreateStateMachine(node, electionTimer, jobQueue, log);
+        return Helpers.CreateStateMachine(node, electionTimer, jobQueue: jobQueue, log: log);
     }
 
     [Fact]
