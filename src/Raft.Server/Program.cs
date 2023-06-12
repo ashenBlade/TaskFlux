@@ -7,6 +7,7 @@ using Raft.Core.Peer;
 using Raft.JobQueue;
 using Raft.Log;
 using Raft.Peer;
+using Raft.Peer.InMemory;
 using Raft.Server;
 using Raft.Timers;
 using Serilog;
