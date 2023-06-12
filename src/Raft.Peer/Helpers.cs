@@ -22,6 +22,29 @@ public static class Helpers
         return stream.ToArray();
     }
 
+    public static RequestVoteRequest DeserializeRequestVoteRequest(byte[] buffer)
+    {
+        var stream = new MemoryStream(buffer);
+        using var reader = new BinaryReader(stream);
+        var marker = reader.ReadByte();
+        if (marker is not (byte)RequestType.RequestVote)
+        {
+            throw new ArgumentException($"Первый байт должен быть равен {(byte)RequestType.RequestVote}: передано {marker}");
+        }
+
+        var candidateId = reader.ReadInt32();
+        var candidateTerm = reader.ReadInt32();
+        var lastLogIndex = reader.ReadInt32();
+        var lastLogTerm = reader.ReadInt32();
+        
+        return new RequestVoteRequest()
+        {
+            CandidateId = new(candidateId),
+            CandidateTerm = new(candidateTerm),
+            LastLog = new LogEntry(new(lastLogTerm), lastLogIndex)
+        };
+    }
+    
     public static RequestVoteResponse DeserializeRequestVoteResponse(byte[] buffer)
     {
         var stream = new MemoryStream(buffer);
@@ -41,6 +64,19 @@ public static class Helpers
             VoteGranted = voteGranted
         };
     }
+    
+    public static byte[] Serialize(RequestVoteResponse response)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+
+        writer.Write((byte)RequestType.RequestVote);
+        writer.Write(response.VoteGranted);
+        writer.Write(response.CurrentTerm.Value);
+        
+        return stream.ToArray();
+    }
+
 
     public static byte[] Serialize(HeartbeatRequest request)
     {
@@ -59,6 +95,41 @@ public static class Helpers
         return stream.ToArray();
         
     }
+    
+    public static HeartbeatRequest DeserializeHeartbeatRequest(byte[] buffer)
+    {
+        if (buffer[0] is not (byte)RequestType.AppendEntries)
+        {
+            throw new ArgumentException();
+        }
+        var stream = new MemoryStream(buffer);
+        var reader = new BinaryReader(stream);
+
+        var leaderId = reader.ReadInt32();
+        var term = reader.ReadInt32();
+        var commit = reader.ReadInt32();
+        var prevLogEntryTerm = reader.ReadInt32();
+        var prevLogEntryIndex = reader.ReadInt32();
+
+        return new HeartbeatRequest()
+        {
+            LeaderId = new(leaderId),
+            Term = new(term),
+            LeaderCommit = commit,
+            PrevLogEntry = new LogEntry(new(prevLogEntryTerm), prevLogEntryIndex)
+        };
+    }
+
+    public static byte[] Serialize(HeartbeatResponse response)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+
+        writer.Write((byte)RequestType.AppendEntries);
+        writer.Write(response.Success);
+        writer.Write(response.Term.Value);
+        return stream.ToArray();
+    }
 
     public static HeartbeatResponse DeserializeHeartbeatResponse(byte[] buffer)
     {
@@ -68,9 +139,9 @@ public static class Helpers
         {
             throw new ArgumentException($"Первый байт не AppendEntries. Получено: {marker}");
         }
-
-        var term = reader.ReadInt32();
         var success = reader.ReadBoolean();
+        var term = reader.ReadInt32();
         return new HeartbeatResponse(new Term(term), success);
     }
+
 }

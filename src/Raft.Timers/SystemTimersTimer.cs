@@ -5,16 +5,18 @@ namespace Raft.Timers;
 
 public class SystemTimersTimer: ITimer, IDisposable
 {
-    private readonly System.Timers.Timer _timer; 
+    protected readonly System.Timers.Timer Timer;
+    protected readonly TimeSpan Interval;
     public SystemTimersTimer(TimeSpan timeout)
     {
-        _timer = new System.Timers.Timer()
+        Timer = new System.Timers.Timer()
         {
             AutoReset = false, 
             Enabled = false,
             Interval = timeout.TotalMilliseconds,
         };
-        _timer.Elapsed += TimerOnElapsed;
+        Interval = timeout;
+        Timer.Elapsed += TimerOnElapsed;
     }
 
     public event Action? Timeout;
@@ -29,25 +31,25 @@ public class SystemTimersTimer: ITimer, IDisposable
     }
 
 
-    public void Start()
+    public virtual void Start()
     {
-        _timer.Start();
+        Timer.Start();
     }
 
     public void Reset()
     {
-        _timer.Stop();
-        _timer.Start();
+        Timer.Stop();
+        Timer.Start();
     }
 
     public void Stop()
     {
-        _timer.Stop();
+        Timer.Stop();
     }
 
     public void Dispose()
     {
-        _timer.Elapsed -= TimerOnElapsed;
-        _timer.Dispose();
+        Timer.Elapsed -= TimerOnElapsed;
+        Timer.Dispose();
     }
 }

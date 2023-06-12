@@ -1,5 +1,3 @@
-using System.Net.Sockets;
-using System.Text.Json;
 using Raft.Core;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
@@ -10,16 +8,14 @@ namespace Raft.Peer;
 
 public class TcpPeer: IPeer, IDisposable
 {
-    
-    private readonly TcpClient _writer;
+    private readonly ISocket _client;
     private readonly string _host;
     private readonly int _port;
-    private readonly object _communicationLock = new();
-    private readonly ILogger _logger; 
+    private readonly ILogger _logger;
     
-    internal TcpPeer(PeerId id, TcpClient writer, string host, int port)
+    internal TcpPeer(PeerId id, ISocket client, string host, int port)
     {
-        _writer = writer;
+        _client = client;
         _host = host;
         _port = port;
         Id = id;
@@ -31,23 +27,26 @@ public class TcpPeer: IPeer, IDisposable
     public async Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token)
     {
         var data = Helpers.Serialize(request);
-        var stream = _writer.GetStream();
         try
         {
             _logger.Verbose("Делаю запрос Heartbeat на узел {PeerId}", Id);
-            await stream.WriteAsync(data, token);
+            await _client.SendAsync(data, token);
             
             int read;
-            var memoryStream = new MemoryStream();
-            var responseBuffer = new byte[1024];
+            var memory = new MemoryStream();
+            var responseBuffer = new byte[128];
             _logger.Verbose("Запрос отослан. Начинаю принимать ответ от узла {PeerId}", Id);
-            do
+            while ((read = await _client.ReadAsync(responseBuffer, token)) > 0)
             {
-                read = await stream.ReadAsync(responseBuffer, token);
-                memoryStream.Write(responseBuffer, 0, read);
-            } while (read > 0);
+                memory.Write(responseBuffer, 0, read);
+                if (read < responseBuffer.Length)
+                {
+                    break;
+                }
+            }
+            
             _logger.Verbose("Ответ от узла {PeerId} получен. Десериализую", Id);
-            return Helpers.DeserializeHeartbeatResponse(memoryStream.ToArray());
+            return Helpers.DeserializeHeartbeatResponse(memory.ToArray());
         }
         catch (IOException io)
         {
@@ -59,21 +58,24 @@ public class TcpPeer: IPeer, IDisposable
     public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
     {
         var data = Helpers.Serialize(request);
-        var stream = _writer.GetStream();
         try
         {
-            _logger.Verbose("Делаю запрос Heartbeat на узел {PeerId}", Id);
-            await stream.WriteAsync(data, token);
+            _logger.Verbose("Делаю запрос RequestVote на узел {PeerId}", Id);
+            await _client.SendAsync(data, token);
             
             int read;
             var memoryStream = new MemoryStream();
-            var responseBuffer = new byte[1024];
+            var responseBuffer = new byte[128];
             _logger.Verbose("Запрос отослан. Начинаю принимать ответ от узла {PeerId}", Id);
-            do
+            while ((read = await _client.ReadAsync(responseBuffer, token)) > 0)
             {
-                read = await stream.ReadAsync(responseBuffer, token);
                 memoryStream.Write(responseBuffer, 0, read);
-            } while (read > 0);
+                if (read < responseBuffer.Length)
+                {
+                    break;
+                }
+            }
+            
             _logger.Verbose("Ответ от узла {PeerId} получен. Десериализую", Id);
             try
             {
@@ -91,13 +93,13 @@ public class TcpPeer: IPeer, IDisposable
             return null;
         }
     }
-
+    
     public Task SendAppendEntries(CancellationToken token)
     {
         throw new NotImplementedException();
     }
 
-    public static async Task<TcpPeer> ConnectAsync(PeerId id, string host, int port)
+    public static TcpPeer Create(PeerId id, PeerId currentNodeId, string host, int port)
     {
         ArgumentNullException.ThrowIfNull(host);
         if (port < 0)
@@ -105,15 +107,13 @@ public class TcpPeer: IPeer, IDisposable
             throw new ArgumentOutOfRangeException(nameof(port), port, "Порт не может быть отрицательным");
         }
 
-        var client = new TcpClient(host, port);
-
-        await client.ConnectAsync(host, port);
-
-        return new TcpPeer(id, client, host, port);
+        var socket = new RaftTcpSocket(host, port, currentNodeId, Log.ForContext<RaftTcpSocket>());
+        var peer = new TcpPeer(id, socket, host, port);
+        return peer;
     }
 
     public void Dispose()
     {
-        _writer.Dispose();
+        _client.Dispose();
     }
 }
