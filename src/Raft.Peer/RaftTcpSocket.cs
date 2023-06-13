@@ -81,14 +81,14 @@ public class RaftTcpSocket: ISocket
             await Task.Run(() =>
             {
                 var result = _socket.BeginConnect(_host, _port, null, null);
-                var success = result.AsyncWaitHandle.WaitOne(_requestTimeout, true);
+                var  success = result.AsyncWaitHandle.WaitOne(_requestTimeout, true);
                 if (success)
                 {
                     _socket.EndConnect(result);
                 }
                 else
                 {
-                    throw new NetworkException(new SocketException(( int ) 10060)); // Connection timed out
+                    throw new NetworkException(new SocketException(10060)); // Connection timed out
                 }
             }, cts.Token);
         }

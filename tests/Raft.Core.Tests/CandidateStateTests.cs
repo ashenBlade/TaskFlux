@@ -302,7 +302,7 @@ public class CandidateStateTests
     }
     
     [Fact]
-    public async Task ПриОбработкеRequestVote__СБолееВысокимТермом__ДолженСтатьFollower()
+    public void ПриОбработкеRequestVote__СБолееВысокимТермом__ДолженСтатьFollower()
     {
         var oldTerm = new Term(1);
         var node = CreateNode(oldTerm, null);
@@ -315,13 +315,13 @@ public class CandidateStateTests
             LastLog = raft.Log.LastLogEntry
         };
 
-        await raft.Handle(request);
+        raft.Handle(request);
 
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);
     }
 
     [Fact]
-    public async Task ПриОбработкеRequestVote__СБолееВысокимТермом__ДолженОбновитьСвойТерм()
+    public void ПриОбработкеRequestVote__СБолееВысокимТермом__ДолженОбновитьСвойТерм()
     {
         var oldTerm = new Term(1);
         var node = CreateNode(oldTerm, null);
@@ -335,13 +335,13 @@ public class CandidateStateTests
             LastLog = raft.Log.LastLogEntry
         };
 
-        await raft.Handle(request);
+        raft.Handle(request);
 
         Assert.Equal(requestTerm, raft.Node.CurrentTerm);
     }
     
     [Fact]
-    public async Task ПриОбработкеHeartbeat__СБолееВысокимТермом__ДолженПерейтиВFollower()
+    public void ПриОбработкеHeartbeat__СБолееВысокимТермом__ДолженПерейтиВFollower()
     {
         var oldTerm = new Term(1);
         var node = CreateNode(oldTerm, null);
@@ -355,13 +355,13 @@ public class CandidateStateTests
             PrevLogEntry = raft.Log.LastLogEntry
         };
 
-        await raft.Handle(request);
+        raft.Handle(request);
 
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);
     }
     
     [Fact]
-    public async Task ПриОбработкеHeartbeat__СБолееВысокимТермом__ДолженОбновитьСвойТерм()
+    public void ПриОбработкеHeartbeat__СБолееВысокимТермом__ДолженОбновитьСвойТерм()
     {
         var oldTerm = new Term(1);
         var node = CreateNode(oldTerm, null);
@@ -376,7 +376,7 @@ public class CandidateStateTests
             PrevLogEntry = raft.Log.LastLogEntry
         };
 
-        await raft.Handle(request);
+        raft.Handle(request);
 
         Assert.Equal(leaderTerm, node.CurrentTerm);
     }
@@ -401,7 +401,7 @@ public class CandidateStateTests
             PrevLogEntry = raft.Log.LastLogEntry
         };
 
-        await raft.Handle(request);
+        raft.Handle(request);
         await jobQueue.Run();
 
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);
@@ -425,7 +425,7 @@ public class CandidateStateTests
             LastLog = raft.Log.LastLogEntry
         };
 
-        await raft.Handle(request);
+        raft.Handle(request);
         await jobQueue.Run();
 
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);
@@ -451,7 +451,7 @@ public class CandidateStateTests
             LastLog = raft.Log.LastLogEntry
         };
 
-        await raft.Handle(request);
+        raft.Handle(request);
         await jobQueue.Run();
 
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);

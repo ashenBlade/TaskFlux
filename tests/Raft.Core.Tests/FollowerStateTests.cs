@@ -34,7 +34,7 @@ public class FollowerStateTests
     }
     
     [Fact]
-    public async Task ПриЗапросеRequestVoteСБолееВысокимТермом__КогдаПреждеНеГолосовал__ДолженВыставитьСвойТермВБолееВысокий()
+    public void ПриЗапросеRequestVoteСБолееВысокимТермом__КогдаПреждеНеГолосовал__ДолженВыставитьСвойТермВБолееВысокий()
     {
         var oldTerm = new Term(1);
         var node = CreateNode(oldTerm, null);
@@ -49,13 +49,13 @@ public class FollowerStateTests
             LastLog = new LogEntry(oldTerm, 0)
         };
 
-        await state.Apply(request);
+        state.Apply(request);
         
         Assert.Equal(expectedTerm, node.CurrentTerm);
     }
     
     [Fact]
-    public async Task ПриЗапросеRequestVote__СБолееВысокимТермом__ДолженОтветитьПоложительно()
+    public void ПриЗапросеRequestVote__СБолееВысокимТермом__ДолженОтветитьПоложительно()
     {
         var oldTerm = new Term(1);
         var node = CreateNode(oldTerm, null);
@@ -71,7 +71,7 @@ public class FollowerStateTests
             LastLog = new LogEntry(oldTerm, 0)
         };
 
-        var response = await state.Apply(request);
+        var response = state.Apply(request);
         
         Assert.True(response.VoteGranted);
     }
@@ -83,7 +83,7 @@ public class FollowerStateTests
     [InlineData(3, 2)]
     [InlineData(3, 1)]
     [InlineData(3, 3)]
-    public async Task ПриЗапросеRequestVote__СТермомНеБольшеСвоего__ДолженОтветитьОтрицательно(int myTerm, int otherTerm)
+    public void ПриЗапросеRequestVote__СТермомНеБольшеСвоего__ДолженОтветитьОтрицательно(int myTerm, int otherTerm)
     {
         var oldTerm = new Term(myTerm);
         
@@ -99,13 +99,13 @@ public class FollowerStateTests
             LastLog = new LogEntry(oldTerm, 0)
         };
 
-        var response = await state.Apply(request);
+        var response = state.Apply(request);
         
         Assert.False(response.VoteGranted);
     }
     
     [Fact]
-    public async Task ПриЗапросеRequestVote__ДолженПерезапуститьElectionTimeout()
+    public void ПриЗапросеRequestVote__ДолженПерезапуститьElectionTimeout()
     {
         var node = CreateNode(new Term(1), null);
         var timer = new Mock<ITimer>();
@@ -114,7 +114,7 @@ public class FollowerStateTests
         var stateMachine = CreateStateMachine(node, electionTimer: timer.Object);
         var state = CreateState(stateMachine);
 
-        await state.Apply(new RequestVoteRequest()
+        state.Apply(new RequestVoteRequest()
         {
             CandidateId = new PeerId(2), 
             CandidateTerm = new Term(1),
@@ -170,7 +170,7 @@ public class FollowerStateTests
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(4)]
-    public async Task ПриЗапросеHeartbeat__ДолженСбрасыватьElectionTimeout(int term)
+    public void ПриЗапросеHeartbeat__ДолженСбрасыватьElectionTimeout(int term)
     {
         var oldTerm = new Term(1);
         var node = CreateNode(oldTerm, null);
@@ -186,7 +186,7 @@ public class FollowerStateTests
             PrevLogEntry = new LogEntry(new Term(term), 0) 
         };
 
-        await stateMachine.Handle(request);
+        stateMachine.Handle(request);
 
         var exception = Record.Exception(() => timer.Verify(x => x.Reset(), Times.Once()));
         Assert.Null(exception);
@@ -196,7 +196,7 @@ public class FollowerStateTests
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(5)]
-    public async Task ПриЗапросеHeartbeat__СБольшимТермомИВалиднымЖурналом__ДолженОбновитьСвойТерм(int term)
+    public void ПриЗапросеHeartbeat__СБольшимТермомИВалиднымЖурналом__ДолженОбновитьСвойТерм(int term)
     {
         var oldTerm = new Term(1);
         var node = CreateNode(oldTerm, null);
@@ -213,7 +213,7 @@ public class FollowerStateTests
             PrevLogEntry = new LogEntry(new Term(term), 0) 
         };
 
-        await raft.Handle(request);
+        raft.Handle(request);
         
         Assert.Equal(leaderTerm, node.CurrentTerm);
     }

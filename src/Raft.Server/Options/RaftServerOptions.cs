@@ -23,4 +23,7 @@ public class RaftServerOptions
 
     [ConfigurationKeyName("RECEIVE_BUFFER_SIZE")]
     public int ReceiveBufferSize { get; set; } = 128;
+
+    [ConfigurationKeyName("ELECTION_TIMEOUT")]
+    public TimeSpan ElectionTimeout { get; set; } = TimeSpan.FromSeconds(5);
 }

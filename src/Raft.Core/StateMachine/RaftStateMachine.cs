@@ -12,8 +12,8 @@ public class RaftStateMachine: IDisposable, IStateMachine
     public INode Node { get; }
     
     // Выставляем вручную 
-    private INodeState _currentState = null!;
-    public INodeState CurrentState
+    private NodeState _currentState = null!;
+    public NodeState CurrentState
     {
         get => _currentState;
         set
@@ -38,14 +38,24 @@ public class RaftStateMachine: IDisposable, IStateMachine
         Log = log;
     }
 
-    public Task<RequestVoteResponse> Handle(RequestVoteRequest request, CancellationToken token = default)
+    public RequestVoteResponse Handle(RequestVoteRequest request, CancellationToken token = default)
     {
         return CurrentState.Apply(request, token);
     }
 
-    public Task<HeartbeatResponse> Handle(HeartbeatRequest request, CancellationToken token = default)
+    public HeartbeatResponse Handle(HeartbeatRequest request, CancellationToken token = default)
     {
-        return CurrentState.Apply(request, token);
+        while (true)
+        {
+            try
+            {
+                return CurrentState.Apply(request, token);
+            }
+            catch (InvalidOperationException invalidOperation)
+            {
+                Logger.Warning(invalidOperation, "Во время применения операции состояние машины изменилось. Делаю повторную попытку");
+            }
+        }
     }
     public void Dispose()
     {
@@ -60,7 +70,11 @@ public class RaftStateMachine: IDisposable, IStateMachine
                                          ILog log)
     {
         var raft = new RaftStateMachine(node, logger, electionTimer, heartbeatTimer, jobQueue, log);
-        var state = FollowerState.Start(raft);
+        var state = FollowerState.Create(raft);
+        
+        raft.ElectionTimer.Start();
+        raft.Node.VotedFor = null;
+        
         raft._currentState = state;
         return raft;
     }

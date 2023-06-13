@@ -12,9 +12,86 @@ namespace Raft.Server;
 
 public class RaftServer
 {
-    private record ClientProcess(PeerId Id, TcpClient Client): IDisposable
+    private record ClientProcess(PeerId Id, TcpClient Client, RaftStateMachine StateMachine, Dictionary<PeerId, ClientProcess> Clients, ILogger Logger): IDisposable
     {
-        public CancellationTokenSource CancellationTokenSource { get; } = new();
+        public CancellationTokenSource CancellationTokenSource { get; init; }
+
+        public async Task ProcessClientBackground()
+        {
+            var token = CancellationTokenSource.Token;
+            var (id, client, stateMachine, _, logger) = this;
+            var network = client.GetStream();
+            using var memory = new MemoryStream();
+            var buffer = new byte[2048];
+            logger.Debug("Начинаю обрабатывать запросы клиента {Id} по адресу {@Address}", id, client.Client.RemoteEndPoint);
+            while (token.IsCancellationRequested is false)
+            {
+                try
+                {
+                    int read;
+                    while ((read = await network.ReadAsync(buffer, token)) > 0)
+                    {
+                        memory.Write(buffer, 0, read);
+                        if (read < buffer.Length)
+                        {
+                            break;
+                        }
+                    }
+
+                    logger.Debug("От клиента получен запрос. Начинаю обработку");
+                    var data = memory.ToArray();
+
+                    if (data.Length == 0)
+                    {
+                        logger.Debug("Клиент {Id} закрыл соединение", id);
+                        Clients.Remove(id);
+                        CancellationTokenSource.Cancel();
+                        return;
+                    }
+                        
+                    var marker = data[0];
+                    byte[]? responseBuffer = null;
+                    switch (marker)
+                    {
+                        case (byte)RequestType.RequestVote:
+                            logger.Debug("Получен RequestVote. Десериализую");
+                            var requestVoteRequest = Helpers.DeserializeRequestVoteRequest(data);
+                            logger.Debug("RequestVote десериализован. Отправляю команду машине");
+                            var requestVoteResponse = stateMachine.Handle(requestVoteRequest, token);
+                            logger.Debug("Команда обработана. Сериализую");
+                            responseBuffer = Helpers.Serialize(requestVoteResponse);
+                            break;
+                        case (byte)RequestType.AppendEntries:
+                            logger.Debug("Получен AppendEntries. Десериализую в Heartbeat");
+                            var heartbeatRequest = Helpers.DeserializeHeartbeatRequest(buffer);
+                            logger.Debug("Heartbeat десериализован. Отправляю команду машине");
+                            var heartbeatResponse = stateMachine.Handle(heartbeatRequest, token);
+                            logger.Debug("Команда обработана. Сериализую");
+                            responseBuffer = Helpers.Serialize(heartbeatResponse);
+                            break;
+                    }
+                    
+                    memory.Position = 0;
+                    memory.SetLength(0);
+
+                    if (responseBuffer is null)
+                    {
+                        logger.Error("Не удалось сериализовать ответ. Закрываю соединение с {@Address}", client.Client.RemoteEndPoint);
+                        client.Close();
+                        continue;
+                    }
+                    
+                    logger.Debug("Отправляю ответ клиенту");
+                    await network.WriteAsync(responseBuffer, token);
+                    logger.Debug("Ответ отправлен");
+                }
+                catch (Exception exception)
+                {
+                    logger.Error(exception, "Поймано необработанное исключение при работе с узлом {PeerId}", id);
+                    Clients.Remove(id);
+                }
+            }
+        }
 
         public void Dispose()
         {
@@ -77,7 +154,16 @@ public class RaftServer
             _jobQueue,
             _log);
 
-        _connectionsManager.PeerConnected += ListenerOnPeerConnected; 
+        _connectionsManager.PeerConnected += ListenerOnPeerConnected;
+        _ = Task.Run(async () =>
+        {
+            while (!_stopped)
+            {
+                _logger.Information("Текущее состояние: {State}, Терм {Term}", stateMachine.CurrentRole, stateMachine.Node.CurrentTerm);
+                await Task.Delay(TimeSpan.FromSeconds(5), cts.Token);
+            }
+        }, cts.Token);
+        
         try
         {
             await Task.WhenAll(tcs.Task, _connectionsManager.RunAsync(cts.Token));
@@ -102,95 +188,14 @@ public class RaftServer
                 oldClientProcess.Dispose();
             }
             
-            var clientProcess = new ClientProcess(e.Id, e.Client);
+            var clientProcess = new ClientProcess(e.Id, e.Client, stateMachine, _peersDictionary, _logger.ForContext("SourceContext", $"Обработчик Клиента {e.Id.Value}"))
+            {
+                CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cts.Token)
+            };
             
             _peersDictionary[e.Id] = clientProcess;
-            
-            _ = ProcessClientForever(clientProcess);
-            
-            // ReSharper disable once AccessToDisposedClosure
-            async Task ProcessClientForever(ClientProcess record)
-            {
-                if (_stopped)
-                {
-                    return;
-                }
-                var (id, client) = record;
-                var logger = _logger.ForContext("SourceContext", $"ОбработчикКлиента{id.Value}");
-                var network = client.GetStream();
-                using var memory = new MemoryStream();
-                var buffer = new byte[2048];
-                var cancellationToken = record.CancellationTokenSource.Token;
-                logger.Debug("Начинаю обрабатывать запросы клиента {Id} по адресу {@Address}", id, client.Client.RemoteEndPoint);
-                try
-                {
-                    while (!_stopped)
-                    {
-                        int read;
-                        // do
-                        // {
-                        //     read = await network.ReadAsync(buffer, cancellationToken);
-                        //     logger.Debug("Прочитал порцию говна размером {Size}", read);
-                        //     memory.Write(buffer, 0, read);
-                        // } while (read > 0);
 
-                        while ((read = await network.ReadAsync(buffer, cancellationToken)) > 0)
-                        {
-                            memory.Write(buffer, 0, read);
-                            if (read < buffer.Length)
-                            {
-                                break;
-                            }
-                        }
-
-                        logger.Debug("От клиента получен запрос. Начинаю обработку");
-                        var data = memory.ToArray();
-
-                        var marker = data[0];
-                        byte[]? responseBuffer = null;
-                        switch (marker)
-                        {
-                            case (byte)RequestType.RequestVote:
-                                logger.Debug("Получен RequestVote. Десериализую");
-                                var requestVoteRequest = Helpers.DeserializeRequestVoteRequest(data);
-                                logger.Debug("RequestVote десериализован. Отправляю команду машине");
-                                var requestVoteResponse = await stateMachine.Handle(requestVoteRequest, cancellationToken);
-                                logger.Debug("Команда обработана. Сериализую");
-                                responseBuffer = Helpers.Serialize(requestVoteResponse);
-                                break;
-                            case (byte)RequestType.AppendEntries:
-                                logger.Debug("Получен AppendEntries. Десериализую в Heartbeat");
-                                var heartbeatRequest = Helpers.DeserializeHeartbeatRequest(buffer);
-                                logger.Debug("Heartbeat десериализован. Отправляю команду машине");
-                                var heartbeatResponse = await stateMachine.Handle(heartbeatRequest, cancellationToken);
-                                logger.Debug("Команда обработана. Сериализую");
-                                responseBuffer = Helpers.Serialize(heartbeatResponse);
-                                break;
-                        }
-                    
-                        memory.Position = 0;
-                        memory.SetLength(0);
-
-                        if (responseBuffer is null)
-                        {
-                            logger.Error("Не удалось сериализовать ответ. Закрываю соединение с {@Address}", client.Client.RemoteEndPoint);
-                            client.Close();
-                            continue;
-                        }
-                    
-                        logger.Debug("Отправляю ответ клиенту");
-                        await network.WriteAsync(responseBuffer, cancellationToken);
-                        logger.Debug("Ответ отправлен");
-                    }
-                }
-                catch (Exception exception)
-                {
-                    logger.Error(exception, "Поймано необработанное исключение при работе с узлом {PeerId}", id);
-                    _peersDictionary.Remove(id);
-                }
-            }
+            _ = clientProcess.ProcessClientBackground();
         }
-
     }
-
 }

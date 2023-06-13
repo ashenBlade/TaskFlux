@@ -38,9 +38,9 @@ public class TcpPeer: IPeer, IDisposable
             _logger.Verbose("Ответ от узла {PeerId} получен. Десериализую", Id);
             return Helpers.DeserializeHeartbeatResponse(memory.ToArray());
         }
-        catch (NetworkException network)
+        catch (NetworkException)
         {
-            _logger.Debug(network, "Ошибка сети во время отправки Heartbeat");
+            _logger.Debug("Ошибка сети во время отправки Heartbeat");
             return null;
         }
     }
@@ -60,9 +60,9 @@ public class TcpPeer: IPeer, IDisposable
 
             response = memoryStream.ToArray();
         }
-        catch (NetworkException networkException)
+        catch (NetworkException)
         {
-            _logger.Debug(networkException, "Во время отправки данных по сокету произошла ошибка сети");
+            // _logger.Debug(networkException, "Во время отправки данных по сокету произошла ошибка сети");
             return null;
         }
         catch (SocketException socket)

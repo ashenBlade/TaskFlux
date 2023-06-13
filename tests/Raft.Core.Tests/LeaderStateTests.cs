@@ -83,7 +83,7 @@ public class LeaderStateTests
     }
 
     [Fact]
-    public async Task ПриОбрабаткеЗапросаRequestVote__СБолееВысокимТермом__ДолженПерейтиВFollower()
+    public void ПриОбрабаткеЗапросаRequestVote__СБолееВысокимТермом__ДолженПерейтиВFollower()
     {
         var term = new Term(1);
 
@@ -97,13 +97,13 @@ public class LeaderStateTests
             LastLog = raft.Log.LastLogEntry
         };
 
-        await raft.Handle(request);
+        raft.Handle(request);
         
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);
     }
     
     [Fact]
-    public async Task ПриОбрабаткеЗапросаRequestVote__СБолееВысокимТермом__ПослеПереходаВFollowerДолженСброситьHeartbeatТаймер()
+    public void ПриОбрабаткеЗапросаRequestVote__СБолееВысокимТермом__ПослеПереходаВFollowerДолженСброситьHeartbeatТаймер()
     {
         var term = new Term(1);
         var heartbeatTimer = new Mock<ITimer>().Apply(t =>
@@ -122,13 +122,66 @@ public class LeaderStateTests
             LastLog = raft.Log.LastLogEntry
         };
 
-        await raft.Handle(request);
+        raft.Handle(request);
         
         heartbeatTimer.Verify(x => x.Stop(), Times.Once());
     }
     
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 1)]
+    [InlineData(5, 1)]
+    [InlineData(5, 3)]
+    [InlineData(5, 4)]
+    [InlineData(5, 5)]
+    public void ПриОбрабаткеЗапросаRequestVote__СТермомНеБольшеСвоего__ДолженОтветитьОтрицательно(int myTerm, int otherTerm)
+    {
+        var term = new Term(myTerm);
+
+        var node = CreateNode(term, null);
+        using var raft = CreateCandidateStateMachine(node);
+
+        var request = new RequestVoteRequest()
+        {
+            CandidateId = node.Id + 1, 
+            CandidateTerm = new(otherTerm),
+            LastLog = raft.Log.LastLogEntry
+        };
+
+        var response = raft.Handle(request);
+        
+        Assert.False(response.VoteGranted);
+    }
+    
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 1)]
+    [InlineData(5, 1)]
+    [InlineData(5, 3)]
+    [InlineData(5, 4)]
+    [InlineData(5, 5)]
+    public void ПриОбрабаткеЗапросаHeartbeat__СТермомНеБольшеСвоего__ДолженОтветитьОтрицательно(int myTerm, int otherTerm)
+    {
+        var term = new Term(myTerm);
+
+        var node = CreateNode(term, null);
+        using var raft = CreateCandidateStateMachine(node);
+
+        var request = new HeartbeatRequest()
+        {
+            LeaderId = node.Id + 1,
+            Term = new(otherTerm),
+            LeaderCommit = raft.Log.CommitIndex,
+            PrevLogEntry = raft.Log.LastLogEntry
+        };
+
+        var response = raft.Handle(request);
+        
+        Assert.False(response.Success);
+    }
+
     [Fact]
-    public async Task ПриОбрабаткеЗапросаHeartbeat__СБолееВысокимТермом__ПослеПереходаВFollowerДолженСброситьHeartbeatТаймер()
+    public void ПриОбрабаткеЗапросаHeartbeat__СБолееВысокимТермом__ПослеПереходаВFollowerДолженСброситьHeartbeatТаймер()
     {
         var term = new Term(1);
         var heartbeatTimer = new Mock<ITimer>().Apply(t =>
@@ -148,7 +201,7 @@ public class LeaderStateTests
             LeaderCommit = raft.Log.CommitIndex,
         };
 
-        await raft.Handle(request);
+        raft.Handle(request);
         
         heartbeatTimer.Verify(x => x.Stop(), Times.Once());
     }

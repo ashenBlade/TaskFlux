@@ -1,10 +1,9 @@
-using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Serilog;
 
 namespace Raft.Core.StateMachine;
 
-internal class LeaderState: BaseState
+internal class LeaderState: NodeState
 {
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
@@ -20,33 +19,30 @@ internal class LeaderState: BaseState
     private void SendHeartbeat()
     {
         _logger.Verbose("Отправляю Heartbeat");
-        var request = new HeartbeatRequest();
-        Task.WaitAll(StateMachine.Node.PeerGroup.Peers.Select(x => x.SendHeartbeat(request, CancellationToken.None)).ToArray());
+        var request = new HeartbeatRequest()
+        {
+            Term = Node.CurrentTerm,
+            LeaderCommit = Log.CommitIndex,
+            LeaderId = Node.Id,
+            PrevLogEntry = Log.LastLogEntry
+        };
+        Task.WaitAll(Node.PeerGroup.Peers.Select(x => x.SendHeartbeat(request, CancellationToken.None)).ToArray());
+        _logger.Verbose("Heartbeat отправлены. Перезапускаю таймер");
         StateMachine.HeartbeatTimer.Start();
-    }
-    
-    public override async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token = default)
-    {
-        return await base.Apply(request, token);
-    }
-
-    public override async Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token = default)
-    {
-        var response = await base.Apply(request, token);
-        return response;
     }
 
     public override void Dispose()
     {
-        StateMachine.HeartbeatTimer.Stop();
-        StateMachine.HeartbeatTimer.Timeout -= SendHeartbeat;
+        lock (UpdateLocker)
+        {
+            StateMachine.HeartbeatTimer.Stop();
+            StateMachine.HeartbeatTimer.Timeout -= SendHeartbeat;
+        }
         base.Dispose();
     }
 
-    public static LeaderState Start(IStateMachine stateMachine)
+    public static LeaderState Create(IStateMachine stateMachine)
     {
-        var state = new LeaderState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Leader"));
-        stateMachine.HeartbeatTimer.Start();
-        return state;
+        return new LeaderState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Leader"));
     }
 }

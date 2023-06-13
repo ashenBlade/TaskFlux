@@ -12,6 +12,6 @@ namespace Raft.Core.StateMachine;
 public interface INodeState: IDisposable
 {
     public NodeRole Role { get; }
-    public Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token = default);
-    public Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token = default);
+    public RequestVoteResponse Apply(RequestVoteRequest request, CancellationToken token = default);
+    public HeartbeatResponse Apply(HeartbeatRequest request, CancellationToken token = default);
 }

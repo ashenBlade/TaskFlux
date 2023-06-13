@@ -1,11 +1,10 @@
 using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Peer;
 using Serilog;
 
 namespace Raft.Core.StateMachine;
 
-internal class CandidateState: BaseState
+internal class CandidateState: NodeState
 {
     public override NodeRole Role => NodeRole.Candidate;
     private readonly ILogger _logger;
@@ -102,9 +101,20 @@ internal class CandidateState: BaseState
                 {
                     _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", peers[i].Id);
                     _cts.Cancel();
-                    
-                    Node.CurrentTerm = response.CurrentTerm;
-                    StateMachine.CurrentState = FollowerState.Start(StateMachine);
+
+                    lock (UpdateLocker)
+                    {
+                        if (StateMachine.CurrentState != this)
+                        {
+                            _logger.Debug("Найден узел с более высоким термом, но после получения блокировки состояние уже было изменено");
+                            return;
+                        }
+                        
+                        Node.CurrentTerm = response.CurrentTerm;
+                        StateMachine.CurrentState = FollowerState.Create(StateMachine);
+                        StateMachine.ElectionTimer.Start();
+                        StateMachine.Node.VotedFor = null;
+                    }
                     return;
                 }
                 // Узел отказался по другой причине.
@@ -134,8 +144,17 @@ internal class CandidateState: BaseState
         _logger.Debug("Кворум собран. Получено {VotesCount} голосов. Перехожу в состояние Leader", votes);
         
         _cts.Token.ThrowIfCancellationRequested();
-        StateMachine.CurrentState = LeaderState.Start(StateMachine);
-        StateMachine.ElectionTimer.Stop();
+        lock (UpdateLocker)
+        {
+            if (StateMachine.CurrentState != this)
+            {
+                _logger.Debug("Перейти в Leader не получилось - после получения блокировки состояние уже изменилось");
+                return;
+            }
+            StateMachine.CurrentState = LeaderState.Create(StateMachine);
+            StateMachine.HeartbeatTimer.Start();
+            StateMachine.ElectionTimer.Stop();
+        }
         
         bool QuorumReached()
         {
@@ -143,23 +162,24 @@ internal class CandidateState: BaseState
         }
     }
 
-
-    public override async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token)
-    {
-        return await base.Apply(request, token);
-    }
-
-    public override async Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token)
-    {
-        return await base.Apply(request, token);
-    }
-
+    // ReSharper disable once ArrangeStaticMemberQualifier
     private void OnElectionTimerTimeout()
     {
-        _cts.Cancel();
+        // ReSharper disable once InconsistentlySynchronizedField
         StateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
-        _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
-        StateMachine.CurrentState = Start(StateMachine);
+        lock (UpdateLocker)
+        {
+            if (StateMachine.CurrentState != this)
+            {
+                return;
+            }
+            
+            _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
+            var node = Node;
+            node.CurrentTerm = node.CurrentTerm.Increment();
+            node.VotedFor = node.Id;
+            StateMachine.CurrentState = CandidateState.Create(StateMachine);
+        }
     }
 
     public override void Dispose()
@@ -169,15 +189,8 @@ internal class CandidateState: BaseState
         base.Dispose();
     }
 
-    internal static CandidateState Start(IStateMachine stateMachine)
+    internal static CandidateState Create(IStateMachine stateMachine)
     {
-        // При входе в кандидата, номер терма увеличивается
-        var node = stateMachine.Node;
-        node.CurrentTerm = node.CurrentTerm.Increment();
-        node.VotedFor = node.Id;
-
-        var state = new CandidateState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Candidate"));
-        stateMachine.ElectionTimer.Start();
-        return state;
+        return new CandidateState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Candidate"));
     }
 }
