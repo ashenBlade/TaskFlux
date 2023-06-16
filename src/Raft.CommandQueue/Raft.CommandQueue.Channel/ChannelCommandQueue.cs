@@ -65,7 +65,9 @@ public class ChannelCommandQueue: ICommandQueue, IDisposable
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
-        { }
+        {
+        }
+        _channel.Writer.Complete();
     }
 
     public virtual void Dispose()
