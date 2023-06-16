@@ -7,7 +7,7 @@ public class HeartbeatCommand: Command<HeartbeatResponse>
     private readonly HeartbeatRequest _request;
 
     public HeartbeatCommand(HeartbeatRequest request, IStateMachine stateMachine)
-        :base(stateMachine)
+        : base(stateMachine)
     {
         _request = request;
     }

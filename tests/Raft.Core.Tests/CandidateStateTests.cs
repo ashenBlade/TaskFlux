@@ -448,4 +448,42 @@ public class CandidateStateTests
         
         electionTimer.Verify(x => x.Stop(), Times.Once());
     }
+
+    [Theory]
+    [InlineData(2, 1)]
+    [InlineData(1, 1)]
+    [InlineData(3, 1)]
+    [InlineData(3, 2)]
+    [InlineData(4, 2)]
+    [InlineData(5, 1)]
+    [InlineData(5, 2)]
+    [InlineData(5, 3)]
+    [InlineData(5, 4)]
+    public async Task ПослеОтправкиЗапросов__КворумДостигнутНоНекоторыеУзлыНеОтветили__ДолженПерейтиВСостояниеLeader(int successResponses, int notResponded)
+    {
+        var oldTerm = new Term(1);
+        var jobQueue = new SingleRunJobQueue();
+        var timer = new Mock<ITimer>();
+        timer.Setup(x => x.Stop()).Verifiable();
+
+        var peers = Random.Shared.Shuffle(
+            Enumerable.Range(0, successResponses + notResponded)
+                      .Select(i =>
+                       {
+                           var mock = new Mock<IPeer>();
+                           mock.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+                               .ReturnsAsync(i < successResponses 
+                                                 ? new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true)
+                                                 : null);
+                           return mock.Object;
+                       })
+                      .ToArray() );
+        
+        var node = CreateNode(oldTerm, null, peers: peers);
+        using var raft = CreateCandidateStateMachine(node, jobQueue: jobQueue, electionTimer: timer.Object);
+        
+        await jobQueue.Run();
+        
+        Assert.Equal(NodeRole.Leader, raft.CurrentRole);
+    }
 }

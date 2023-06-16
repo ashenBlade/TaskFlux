@@ -47,6 +47,7 @@ public class RaftStateMachine: IDisposable, IStateMachine
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {
         return CurrentState.Apply(request);
+        // return CommandQueue.Enqueue(new RequestVoteCommand(request, this));
     }
 
     public HeartbeatResponse Handle(HeartbeatRequest request)
@@ -60,16 +61,15 @@ public class RaftStateMachine: IDisposable, IStateMachine
     }
 
     public static RaftStateMachine Create(INode node,
-                                         ILogger logger,
-                                         ITimer electionTimer,
-                                         ITimer heartbeatTimer,
-                                         IJobQueue jobQueue,
-                                         ILog log,
-                                         ICommandQueue commandQueue)
+                                          ILogger logger,
+                                          ITimer electionTimer,
+                                          ITimer heartbeatTimer,
+                                          IJobQueue jobQueue,
+                                          ILog log,
+                                          ICommandQueue commandQueue)
     {
         var raft = new RaftStateMachine(node, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
-        var state = FollowerState.Create(raft);
-        raft._currentState = state;
+        raft._currentState = FollowerState.Create(raft);
         return raft;
     }
 }

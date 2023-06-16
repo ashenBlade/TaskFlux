@@ -1,5 +1,6 @@
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Peer;
 using Serilog;
 
 namespace Raft.Core.StateMachine;
@@ -20,24 +21,56 @@ internal class LeaderState: NodeState
     private void SendHeartbeat()
     {
         _logger.Verbose("Отправляю Heartbeat");
-        var request = new HeartbeatRequest(Term: Node.CurrentTerm, LeaderCommit: Log.CommitIndex, LeaderId: Node.Id,
+        var request = new HeartbeatRequest(
+            Term: Node.CurrentTerm, 
+            LeaderCommit: Log.CommitIndex,
+            LeaderId: Node.Id,
             PrevLogEntry: Log.LastLogEntry);
-        Task.WaitAll(Node.PeerGroup.Peers.Select(async peer =>
+        
+        var tasks = Node.PeerGroup.Peers.Select<IPeer, Task<Term?>>(async peer =>
         {
             var response = await peer.SendHeartbeat(request, CancellationToken.None);
             if (response is null or {Success: true})
             {
-                return;
+                return null;
             }
 
-            if (response.Term < Node.CurrentTerm)
+            if (Node.CurrentTerm < response.Term)
             {
-                StateMachine.CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.Term, null, this,
-                    StateMachine));
+                return response.Term;
             }
-        }).ToArray());
-        _logger.Verbose("Heartbeat отправлены. Посылаю команду на перезапуск таймера");
-        StateMachine.CommandQueue.Enqueue(new StartHeartbeatTimerCommand(this, StateMachine));
+
+            return null;
+        }).ToArray();
+        Task.WaitAll(tasks);
+        
+        Term? maxTerm = null;
+        
+        foreach (var task in tasks)
+        {
+            if (task is {IsCompletedSuccessfully: true, Result: {} term})
+            {
+                if (maxTerm is null)
+                {
+                    maxTerm = term;
+                }
+                else if (maxTerm.Value < term)
+                {
+                    maxTerm = term;
+                }
+            }
+        }
+
+        if (maxTerm is {} max && Node.CurrentTerm < max)
+        {
+            _logger.Debug("Какой-то узел ответил большим термом - {Term}. Перехожу в Follower", max);
+            StateMachine.CommandQueue.Enqueue(new MoveToFollowerStateCommand(max, null, this, StateMachine));
+        }
+        else
+        {
+            _logger.Verbose("Heartbeat отправлены. Посылаю команду на перезапуск таймера");
+            StateMachine.CommandQueue.Enqueue(new StartHeartbeatTimerCommand(this, StateMachine));
+        }
     }
 
     public override void Dispose()

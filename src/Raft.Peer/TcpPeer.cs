@@ -27,6 +27,7 @@ public class TcpPeer: IPeer, IDisposable
     
     public async Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token)
     {
+        byte[] response;
         var data = Serializers.HeartbeatRequest.Serialize(request);
         try
         {
@@ -37,18 +38,31 @@ public class TcpPeer: IPeer, IDisposable
             _logger.Verbose("Запрос отослан. Начинаю принимать ответ от узла {PeerId}", Id);
             await _client.ReadAsync(memory, token);
 
-            _logger.Verbose("Ответ от узла {PeerId} получен. Десериализую", Id);
-            return Serializers.HeartbeatResponse.Deserialize(memory.ToArray());
+            response = memory.ToArray();
         }
         catch (NetworkException)
         {
             _logger.Debug("Ошибка сети во время отправки Heartbeat");
             return null;
         }
+        catch (SocketException socket)
+        {
+            _logger.Warning(socket, "Неизвестная ошибка сокета во время отправки данных к серерву");
+            return null;
+        }
+        
+        if (response.Length == 0)
+        {
+            _logger.Verbose("Узел {Id} вернул пустой ответ. Соединение было разорвано", Id);
+            return null;
+        }
+        _logger.Verbose("Ответ от узла {PeerId} получен. Десериализую", Id);
+        return Serializers.HeartbeatResponse.Deserialize(response);
     }
 
     public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
     {
+        ArgumentNullException.ThrowIfNull(request);
         byte[] response;
         var data = Serializers.RequestVoteRequest.Serialize(request);
         try
@@ -61,6 +75,8 @@ public class TcpPeer: IPeer, IDisposable
             await _client.ReadAsync(memoryStream, token);
 
             response = memoryStream.ToArray();
+            
+            // Соединение разорвано
         }
         catch (NetworkException)
         {
@@ -73,6 +89,11 @@ public class TcpPeer: IPeer, IDisposable
             return null;
         }
         
+        if (response.Length == 0)
+        {
+            _logger.Verbose("Узел {Id} вернул пустой ответ. Соединение было разорвано", Id);
+            return null;
+        }
         _logger.Verbose("Ответ от узла {PeerId} получен. Десериализую", Id);
         return Serializers.RequestVoteResponse.Deserialize(response);
     }

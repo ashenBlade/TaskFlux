@@ -25,7 +25,7 @@ internal abstract class NodeState: INodeState
         {
             throw new InvalidOperationException("Невозможно применить команду - состояние уже изменилось");
         }
-        
+
         // Мы в более актуальном Term'е
         if (request.CandidateTerm < Node.CurrentTerm)
         {
@@ -64,7 +64,7 @@ internal abstract class NodeState: INodeState
             throw new InvalidOperationException("Невозможно применить команду - состояние уже изменилось");
         }
         
-        if (request.Term <= Node.CurrentTerm)
+        if (request.Term < Node.CurrentTerm)
         {
             return HeartbeatResponse.Fail(Node.CurrentTerm);
         }

@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Configuration;
 using Raft.CommandQueue;
 using Raft.Core;
+using Raft.Core.Peer;
 using Raft.Core.StateMachine;
 using Raft.JobQueue;
 using Raft.Peer;
@@ -33,18 +34,20 @@ var nodeId = new PeerId(options.NodeId);
 var requestTimeout = TimeSpan.FromSeconds(0.5);
 
 var peers = options.Peers
-                   .Select(peer =>
+                   .Select(peerInfo =>
                     {
-                        var peerId = new PeerId(peer.Id);
-                        var tcpSocket = new RaftTcpSocket(peer.Host, peer.Port, nodeId, requestTimeout, options.ReceiveBufferSize, Log.ForContext("SourceContext", $"RaftTcpSocket-{peerId.Value}"));
+                        var peerId = new PeerId(peerInfo.Id);
+                        var tcpSocket = new RaftTcpSocket(peerInfo.Host, peerInfo.Port, nodeId, requestTimeout, options.ReceiveBufferSize, Log.ForContext("SourceContext", $"RaftTcpSocket-{peerId.Value}"));
                         var socket = new SingleAccessSocketDecorator(new NetworkExceptionWrapperDecorator(tcpSocket));
-                        return new TcpPeer(peerId, socket, Log.ForContext("SourceContext", $"TcpPeer-{peerId.Value}"));
+                        IPeer peer = new TcpPeer(peerId, socket, Log.ForContext("SourceContext", $"TcpPeer-{peerId.Value}"));
+                        peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
+                        return peer;
                     })
                    .ToArray();
 
 Log.Logger.Information("Узлы кластера: {Peers}", options.Peers);
 
-using var electionTimer = new RandomizedSystemTimersTimer(TimeSpan.FromSeconds(-1), TimeSpan.FromSeconds(1), options.ElectionTimeout );
+using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5));
 using var heartbeatTimer = new SystemTimersTimer( TimeSpan.FromSeconds(1) );
 
 var log = new StubLog();

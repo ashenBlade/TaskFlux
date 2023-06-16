@@ -143,13 +143,16 @@ public class LeaderStateTests
     }
     
     [Theory]
-    [InlineData(1, 1)]
     [InlineData(2, 1)]
     [InlineData(5, 1)]
     [InlineData(5, 3)]
     [InlineData(5, 4)]
-    [InlineData(5, 5)]
-    public void ПриОбрабаткеЗапросаHeartbeat__СТермомНеБольшеСвоего__ДолженОтветитьОтрицательно(int myTerm, int otherTerm)
+    [InlineData(3, 1)]
+    [InlineData(3, 2)]
+    [InlineData(100, 2)]
+    [InlineData(100, 99)]
+    [InlineData(1001, 1000)]
+    public void ПриОбрабаткеЗапросаHeartbeat__СТермомМеньшеСвоего__ДолженОтветитьОтрицательно(int myTerm, int otherTerm)
     {
         var term = new Term(myTerm);
 
@@ -183,5 +186,60 @@ public class LeaderStateTests
         raft.Handle(request);
         
         heartbeatTimer.Verify(x => x.Stop(), Times.Once());
+    }
+
+    [Fact]
+    public async Task ПриОтправкеHeartbeat__КогдаУзелОтветилОтрицательноИЕгоТермБольше__ДолженПерейтиВFollower()
+    {
+        var term = new Term(1);
+        var heartbeatTimer = new Mock<ITimer>().Apply(t =>
+        {
+            t.Setup(x => x.Stop()).Verifiable();
+            t.Setup(x => x.Start());
+        });
+        var peerTerm = term.Increment();
+        var peer = new Mock<IPeer>()
+           .Apply(p => p.Setup(x => x.SendHeartbeat(It.IsAny<HeartbeatRequest>(),
+                             It.IsAny<CancellationToken>()))
+                        .ReturnsAsync(new HeartbeatResponse(peerTerm, false))
+                        .Verifiable());
+        
+        var node = CreateNode(term, null, new[] {peer.Object});
+        using var stateMachine = CreateCandidateStateMachine(node, heartbeatTimer: heartbeatTimer.Object);
+        
+        heartbeatTimer.Raise(x => x.Timeout += null);
+
+        Assert.Equal(NodeRole.Follower, stateMachine.CurrentRole);
+    }
+
+    [Theory]
+    [InlineData(2, 3, 4, 5)]
+    [InlineData(5, 4, 3, 2)]
+    [InlineData(2, 4343, 23, 23)]
+    public async Task
+        ПриОтправкеHeartbeat__КогдаНесколькоУзловОтветилоОтрицательноСНесколькимиРазнымиТермамиБольшеМоего__ДолженПерейтиВНаибольшийИзВернувшихсяТермов(params int[] terms)
+    {
+        var term = new Term(1);
+        var heartbeatTimer = new Mock<ITimer>().Apply(t =>
+        {
+            t.Setup(x => x.Stop()).Verifiable();
+            t.Setup(x => x.Start());
+        });
+        var peers = terms.Select(t =>
+                          {
+                              var peer = new Mock<IPeer>();
+                              peer.Setup(p => p.SendHeartbeat(It.IsAny<HeartbeatRequest>(),
+                                       It.IsAny<CancellationToken>()))
+                                  .ReturnsAsync(new HeartbeatResponse(new Term(t), false));
+                              return peer.Object;
+                          })
+                         .ToArray();
+        var maxTerm = new Term(terms.Max());
+        var node = CreateNode(term, null, peers);
+        using var stateMachine = CreateCandidateStateMachine(node, heartbeatTimer: heartbeatTimer.Object);
+        
+        heartbeatTimer.Raise(x => x.Timeout += null);
+
+        Assert.Equal(maxTerm, stateMachine.Node.CurrentTerm);
     }
 }

@@ -47,24 +47,27 @@ public record NodeConnectionProcessor(PeerId Id, TcpClient Client, RaftStateMach
                 }
                         
                 var marker = data[0];
-                logger.Verbose("Получены байты: {Response}", data);
                 byte[]? responseBuffer = null;
                 switch (marker)
                 {
                     case (byte) RequestType.RequestVote:
                         logger.Debug("Получен RequestVote. Десериализую");
                         var requestVoteRequest = Serializers.RequestVoteRequest.Deserialize(data);
+                        logger.Verbose("RequestVoteRequest: {Request}", requestVoteRequest);
                         logger.Debug("RequestVote десериализован. Отправляю команду машине");
                         var requestVoteResponse = stateMachine.Handle(requestVoteRequest);
-                        logger.Debug("Команда обработана. Сериализую");
+                        logger.Debug("Команда обработана. Сериализую ответ");
+                        logger.Verbose("RequestVoteResponse: {Response}", requestVoteResponse);
                         responseBuffer = Serializers.RequestVoteResponse.Serialize(requestVoteResponse);
                         break;
                     case (byte) RequestType.AppendEntries:
                         logger.Debug("Получен AppendEntries. Десериализую в Heartbeat");
                         var heartbeatRequest = Serializers.HeartbeatRequest.Deserialize(buffer);
+                        logger.Verbose("HeartbeatRequest: {Request}", heartbeatRequest);
                         logger.Debug("Heartbeat десериализован. Отправляю команду машине");
                         var heartbeatResponse = stateMachine.Handle(heartbeatRequest);
-                        logger.Debug("Команда обработана. Сериализую");
+                        logger.Debug("Команда обработана. Сериализую ответ");
+                        logger.Verbose("HeartbeatResponse: {Response}", heartbeatResponse);
                         responseBuffer = Serializers.HeartbeatResponse.Serialize(heartbeatResponse);
                         break;
                 }

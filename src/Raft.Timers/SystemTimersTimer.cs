@@ -36,7 +36,7 @@ public class SystemTimersTimer: ITimer, IDisposable
         Timer.Start();
     }
 
-    public void Reset()
+    public virtual void Reset()
     {
         Timer.Stop();
         Timer.Start();

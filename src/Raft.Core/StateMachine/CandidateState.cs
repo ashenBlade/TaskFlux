@@ -19,7 +19,7 @@ internal class CandidateState: NodeState
         StateMachine.JobQueue.EnqueueInfinite(RunQuorum, _cts.Token);
     }
 
-    private async Task<RequestVoteResponse?[]> SendRequestVotes(List<IPeer> peers)
+    private async Task<RequestVoteResponse?[]> SendRequestVotes(List<IPeer> peers, CancellationToken token)
     {
         // Отправляем запрос всем пирам
         var request = new RequestVoteRequest(CandidateId: StateMachine.Node.Id,
@@ -28,7 +28,7 @@ internal class CandidateState: NodeState
         var requests = new Task<RequestVoteResponse?>[peers.Count];
         for (var i = 0; i < peers.Count; i++)
         {
-            requests[i] = peers[i].SendRequestVote(request, _cts.Token);
+            requests[i] = peers[i].SendRequestVote(request, token);
         }
 
         return await Task.WhenAll( requests );
@@ -47,7 +47,7 @@ internal class CandidateState: NodeState
     {
         try
         {
-            await RunQuorumInner();
+            await RunQuorumInner(_cts.Token);
         }
         catch (TaskCanceledException)
         {
@@ -59,91 +59,68 @@ internal class CandidateState: NodeState
         }
     }
 
-    internal async Task RunQuorumInner()
+    internal async Task RunQuorumInner(CancellationToken token)
     {
         _logger.Debug("Запускаю кворум для получения большинства голосов");
-        var peers = new List<IPeer>(Node.PeerGroup.Peers.Count);
+        var leftPeers = new List<IPeer>(Node.PeerGroup.Peers.Count);
         var term = Node.CurrentTerm;
-        peers.AddRange(Node.PeerGroup.Peers);
-        // Держим в уме узлы, которые не ответили (вообще не ответили)
-        var swap = new List<IPeer>();
+        leftPeers.AddRange(Node.PeerGroup.Peers);
+        
+        var notResponded = new List<IPeer>();
         var votes = 0;
-        _logger.Debug("Начинаю раунд кворума для терма {Term}. Отправляю запросы на узлы: {Peers}", term, peers.Select(x => x.Id));
+        _logger.Debug("Начинаю раунд кворума для терма {Term}. Отправляю запросы на узлы: {Peers}", term, leftPeers.Select(x => x.Id));
         while (!QuorumReached())
         {
-            var responses = await SendRequestVotes(peers);
-            _logger.Debug("От узлов вернулись ответы");
-            if (_cts.Token.IsCancellationRequested)
+            var responses = await SendRequestVotes(leftPeers, token);
+            if (token.IsCancellationRequested)
             {
-                _logger.Debug("Операция была отменена. Завершаю кворум");
+                _logger.Debug("Операция была отменена во время отправки запросов. Завершаю кворум");
                 return;
             }
             for (var i = 0; i < responses.Length; i++)
             {
                 var response = responses[i];
-                // Узел не ответил
                 if (response is null)
                 {
-                    swap.Add(peers[i]);
-                    _logger.Verbose("Узел {NodeId} не вернул ответ", peers[i].Id);
+                    notResponded.Add(leftPeers[i]);
+                    _logger.Verbose("Узел {NodeId} не вернул ответ", leftPeers[i].Id);
                 }
-                // Узел отдал голос
                 else if (response.VoteGranted)
                 {
                     votes++;
-                    _logger.Verbose("Узел {NodeId} отдал голос за", peers[i].Id);
+                    _logger.Verbose("Узел {NodeId} отдал голос за", leftPeers[i].Id);
                 }
-                // Узел имеет более высокий Term
                 else if (Node.CurrentTerm < response.CurrentTerm)
                 {
-                    _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", peers[i].Id);
+                    _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", leftPeers[i].Id);
                     _cts.Cancel();
 
-                    if (StateMachine.CurrentState != this)
-                    {
-                        _logger.Debug("Найден узел с более высоким термом, но после получения блокировки состояние уже было изменено");
-                        return;
-                    }
-                        
                     StateMachine.CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.CurrentTerm, null, this, StateMachine));
                     return;
                 }
-                // Узел отказался по другой причине.
-                // Возможно он другой кандидат
                 else
                 {
-                    _logger.Verbose("Узел {NodeId} не отдал голос за", peers[i].Id);
+                    _logger.Verbose("Узел {NodeId} не отдал голос за", leftPeers[i].Id);
                 }
             }
             
-            ( peers, swap ) = ( swap, peers );
-            swap.Clear();
+            ( leftPeers, notResponded ) = ( notResponded, leftPeers );
+            notResponded.Clear();
             
-            // Больше не кому слать
-            if (peers.Count == 0)
+            if (leftPeers.Count == 0 && !QuorumReached())
             {
-                if (QuorumReached())
-                {
-                    break;
-                }
-
                 _logger.Debug("Кворум не достигнут и нет узлов, которым можно послать запросы. Дожидаюсь завершения Election Timeout");
                 return;
             }
         }
         
-        _logger.Debug("Кворум собран. Получено {VotesCount} голосов. Перехожу в состояние Leader", votes);
-        
-        _cts.Token.ThrowIfCancellationRequested();
-        if (StateMachine.CurrentState != this)
+        _logger.Debug("Кворум собран. Получено {VotesCount} голосов. Посылаю команду перехода в состояние Leader", votes);
+
+        if (token.IsCancellationRequested)
         {
-            _logger.Debug("Перейти в Leader не получилось - после получения блокировки состояние уже изменилось");
+            _logger.Debug("Токен был отменен. Команду перехода в Leader не посылаю");
             return;
         }
-        
-        // StateMachine.CurrentState = LeaderState.Create(StateMachine);
-        // StateMachine.HeartbeatTimer.Start();
-        // StateMachine.ElectionTimer.Stop();
 
         StateMachine.CommandQueue.Enqueue(new MoveToLeaderStateCommand(this, StateMachine));
         
@@ -158,17 +135,19 @@ internal class CandidateState: NodeState
         StateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
 
         _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
-        var node = Node;
-        node.CurrentTerm = node.CurrentTerm.Increment();
-        node.VotedFor = node.Id;
-        
-        // ReSharper disable once ArrangeStaticMemberQualifier
-        StateMachine.CurrentState = CandidateState.Create(StateMachine);
+
+        StateMachine.CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, StateMachine));
     }
 
     public override void Dispose()
     {
-        _cts?.Dispose();
+        try
+        {
+            _cts.Cancel();
+            _cts?.Dispose();
+        }
+        catch (ObjectDisposedException)
+        { }
         StateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
         base.Dispose();
     }
