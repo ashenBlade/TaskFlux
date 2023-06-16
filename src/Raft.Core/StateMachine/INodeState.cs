@@ -1,5 +1,6 @@
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.RequestVote;
 
 namespace Raft.Core.StateMachine;
 
@@ -12,6 +13,6 @@ namespace Raft.Core.StateMachine;
 public interface INodeState: IDisposable
 {
     public NodeRole Role { get; }
-    public Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token = default);
-    public Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token = default);
+    public RequestVoteResponse Apply(RequestVoteRequest request);
+    public HeartbeatResponse Apply(HeartbeatRequest request);
 }

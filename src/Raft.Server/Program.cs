@@ -1,56 +1,65 @@
-﻿// See https://aka.ms/new-console-template for more information
-
-using System.Text;
+﻿using System.ComponentModel.DataAnnotations;
+using Microsoft.Extensions.Configuration;
+using Raft.CommandQueue;
 using Raft.Core;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Peer;
+using Raft.Core.StateMachine;
 using Raft.JobQueue;
-using Raft.Log;
 using Raft.Peer;
-using Raft.Peer.InMemory;
+using Raft.Peer.Decorators;
 using Raft.Server;
+using Raft.Server.Infrastructure;
+using Raft.Server.Options;
 using Raft.Timers;
 using Serilog;
-// var responseDelay = TimeSpan.FromSeconds(1);
-// var peers = Enumerable.Range(2, 2)
-//                       .Select(i => ( IPeer ) new LambdaPeer(i, async r =>
-//                        {
-//                            await Task.Delay(responseDelay);
-//                            return HeartbeatResponse.Ok(r.Term);
-//                        }, async r =>
-//                        {
-//                            await Task.Delay(responseDelay);
-//                            return new RequestVoteResponse() {VoteGranted = true, CurrentTerm = new Term(1)};
-//                        }))
-//                       .ToArray();
-
+// ReSharper disable CoVariantArrayConversion
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()
-            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:dd.ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
+            .Enrich.FromLogContext()
+            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss.ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
             .CreateLogger();
 
-var peerPort = GetEnvInt("PEER_PORT");
-var peerHost = GetEnv("PEER_HOST");
-var peerId = new PeerId(GetEnvInt("PEER_ID"));
-var listenPort = GetEnvInt("LISTEN_PORT");
-var listenHost = GetEnv("LISTEN_HOST");
-var nodeId = new PeerId(GetEnvInt("NODE_ID"));
+var configuration = new ConfigurationBuilder()
+                   .AddEnvironmentVariables()
+                   .Build();
 
-var peers = new IPeer[]
-{
-    TcpPeer.Create(peerId, nodeId, peerHost, peerPort),
-};
+var options = configuration.Get<RaftServerOptions>() 
+           ?? throw new Exception("Не найдено настроек");
 
-using var electionTimer = new RandomizedSystemTimersTimer(TimeSpan.FromSeconds(-1), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5) );
+ValidateOptions(options);
+
+var nodeId = new PeerId(options.NodeId);
+
+var requestTimeout = TimeSpan.FromSeconds(0.5);
+
+var peers = options.Peers
+                   .Select(peerInfo =>
+                    {
+                        var peerId = new PeerId(peerInfo.Id);
+                        var tcpSocket = new RaftTcpSocket(peerInfo.Host, peerInfo.Port, nodeId, requestTimeout, options.ReceiveBufferSize, Log.ForContext("SourceContext", $"RaftTcpSocket-{peerId.Value}"));
+                        var socket = new SingleAccessSocketDecorator(new NetworkExceptionWrapperDecorator(tcpSocket));
+                        IPeer peer = new TcpPeer(peerId, socket, Log.ForContext("SourceContext", $"TcpPeer-{peerId.Value}"));
+                        peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
+                        return peer;
+                    })
+                   .ToArray();
+
+Log.Logger.Information("Узлы кластера: {Peers}", options.Peers);
+
+using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5));
 using var heartbeatTimer = new SystemTimersTimer( TimeSpan.FromSeconds(1) );
 
-var log = new InMemoryLog();
+var log = new StubLog();
 var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
-var connectionManager = new ExternalConnectionsManager(listenHost, listenPort, Log.Logger.ForContext<ExternalConnectionsManager>());
 
-var server = new RaftServer(nodeId, Log.Logger.ForContext<RaftServer>(), connectionManager, peers, log, jobQueue, electionTimer, heartbeatTimer);
+var node = new Node(nodeId, new PeerGroup(peers));
+
+using var commandQueue = new ChannelCommandQueue();
+using var raft = RaftStateMachine.Create(node, Log.ForContext<RaftStateMachine>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
+var connectionManager = new ExternalConnectionManager(options.Host, options.Port, raft, Log.Logger.ForContext<ExternalConnectionManager>());
+var server = new RaftStateObserver(raft, Log.Logger.ForContext<RaftStateObserver>());
+
 using var cts = new CancellationTokenSource();
 
 // ReSharper disable once AccessToDisposedClosure
@@ -62,14 +71,24 @@ Console.CancelKeyPress += (_, args) =>
 
 try
 {
-    await server.RunAsync(cts.Token);
+    Log.Logger.Information("Запускаю Election Timer");
+    raft.ElectionTimer.Start();
+    Log.Logger.Information("Запукаю фоновые задачи");
+    await Task.WhenAll(
+        server.RunAsync(cts.Token), 
+        connectionManager.RunAsync(cts.Token), 
+        commandQueue.RunAsync(cts.Token));
 }
 catch (Exception e)
 {
     Log.Fatal(e, "Ошибка во время работы сервера");
 }
 
-string GetEnv(string name) => Environment.GetEnvironmentVariable(name) 
-                           ?? throw new ArgumentException($"{name} не указан");
-
-int GetEnvInt(string name) => int.Parse(GetEnv(name));
+void ValidateOptions(RaftServerOptions peersOptions)
+{
+    var errors = new List<ValidationResult>();
+    if (!Validator.TryValidateObject(peersOptions, new ValidationContext(peersOptions), errors, true))
+    {
+        throw new Exception($"Найдены ошибки при валидации конфигурации: {string.Join(',', errors.Select(x => x.ErrorMessage))}");
+    }
+}

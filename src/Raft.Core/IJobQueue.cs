@@ -1,3 +1,5 @@
+using Raft.Core.Commands;
+
 namespace Raft.Core;
 
 public interface IJobQueue

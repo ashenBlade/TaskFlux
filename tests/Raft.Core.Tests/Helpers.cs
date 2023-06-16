@@ -1,4 +1,5 @@
 using Moq;
+using Raft.CommandQueue;
 using Raft.Core.Log;
 using Raft.Core.Peer;
 using Raft.Core.StateMachine;
@@ -14,6 +15,7 @@ public class Helpers
     public static readonly IJobQueue NullJobQueue = CreateNullJobQueue();
     public static readonly ITimer NullTimer = CreateNullTimer();
 
+    public static readonly ICommandQueue DefaultCommandQueue = new SimpleCommandQueue();
     private static ITimer CreateNullTimer()
     {
         var mock = new Mock<ITimer>(MockBehavior.Loose);
@@ -45,13 +47,14 @@ public class Helpers
         return nodeMock.Object;
     }
 
-    public static RaftStateMachine CreateStateMachine(INode node, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
+    public static RaftStateMachine CreateStateMachine(INode node, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
     {
-        return RaftStateMachine.Start(node, 
+        return RaftStateMachine.Create(node, 
             NullLogger, 
             electionTimer ?? Mock.Of<ITimer>(),
             heartbeatTimer ?? Mock.Of<ITimer>(), 
             jobQueue ?? NullJobQueue,
-            log ?? CreateLog());
+            log ?? CreateLog(),
+            commandQueue ?? DefaultCommandQueue);
     }
 }

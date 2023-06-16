@@ -1,26 +1,30 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using Raft.Core;
+using Raft.Core.StateMachine;
+using Raft.Network;
 using Raft.Peer;
 using Serilog;
 
 namespace Raft.Server;
 
-public class ExternalConnectionsManager
+public class ExternalConnectionManager
 {
     private readonly string _host;
     private readonly int _port;
+    private readonly RaftStateMachine _raft;
     private readonly ILogger _logger;
-    
-    public ExternalConnectionsManager(string host, int port, ILogger logger)
+    private readonly ConcurrentDictionary<PeerId, NodeConnectionProcessor> _nodes = new();
+
+    public ExternalConnectionManager(string host, int port, RaftStateMachine raft, ILogger logger)
     {
         _host = host;
         _port = port;
+        _raft = raft;
         _logger = logger;
     }
-
-    public event EventHandler<(PeerId Id, TcpClient Client)>? PeerConnected;
 
     private async ValueTask<IPAddress> GetListenAddress()
     {
@@ -39,24 +43,26 @@ public class ExternalConnectionsManager
         _logger.Debug("Разрешаю имя хоста для прослушивания");
         var address = await GetListenAddress();
         var listener = new TcpListener(address, _port);
-        _logger.Debug("Запускаю прослушивателя");
+        _logger.Debug("Начинаю прослушивать адрес {Address}:{Port}", _host, _port);
         listener.Start();
         try
         {
             while (token.IsCancellationRequested is false)
             {
                 var client = await listener.AcceptTcpClientAsync(token);
-                _logger.Debug("Клиент {Address} подключился. Начинаю обработку его запроса", ( ( IPEndPoint ) client.Client.RemoteEndPoint! ).Address.ToString());
+                _logger.Debug("Клиент {Address} подключился. Начинаю обработку его запроса",
+                    ( ( IPEndPoint ) client.Client.RemoteEndPoint! ).Address.ToString());
                 try
                 {
                     if (TryGetPeerId(client, out var peerId))
                     {
                         await ResponseOk(client, token);
-                        OnPeerConnected((peerId, client));
+                        BeginNewClientSession(peerId, client, token);
                     }
                     else
                     {
-                        _logger.Debug("Клиент с адресом {@Address} не смог подключиться. Не удалось получить Id хоста", client.Client.RemoteEndPoint);
+                        _logger.Debug("Клиент с адресом {@Address} не смог подключиться. Не удалось получить Id хоста",
+                            client.Client.RemoteEndPoint);
                     }
                 }
                 catch (Exception e)
@@ -66,10 +72,39 @@ public class ExternalConnectionsManager
                 }
             }
         }
+        catch (OperationCanceledException canceledException)
+        {
+            _logger.Information("Запрошено завершение работы. Закрываю все соединения");    
+        }
         finally
         {
             listener.Stop();
         }
+        
+        foreach (var node in _nodes)
+        {
+            node.Value.Dispose();
+        }
+    }
+
+    private void BeginNewClientSession(PeerId id, TcpClient client, CancellationToken token)
+    {
+        var processor = new NodeConnectionProcessor(id, client, _raft,
+            _logger.ForContext("SourceContext", $"ОбработчикКлиента{id.Value}"))
+            {
+                CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(token)
+            };
+        _logger.Debug("Добавляю ноду в список обрабатываемых");
+        _nodes.AddOrUpdate(id,
+            _ => processor,
+            (_, old) =>
+            {
+                _logger.Verbose("В списке соединений уже было соединение с для текущего Id. Закрываю старое соединение");
+                old.Dispose();
+                return processor;
+            });
+        _logger.Debug("Начинаю обработку клиента");
+        _ = processor.ProcessClientBackground();
     }
 
     private async Task ResponseOk(TcpClient client, CancellationToken token)
@@ -97,10 +132,5 @@ public class ExternalConnectionsManager
         id = new( reader.ReadInt32() );
         _logger.Verbose("Подключенный клиент передал Id {Id}", id.Value);
         return true;
-    }
-
-    private void OnPeerConnected((PeerId Id, TcpClient Client) e)
-    {
-        PeerConnected?.Invoke(this, e);
     }
 }

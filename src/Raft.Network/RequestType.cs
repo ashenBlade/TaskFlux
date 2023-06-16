@@ -1,4 +1,4 @@
-namespace Raft.Peer;
+namespace Raft.Network;
 
 public enum RequestType: byte
 {

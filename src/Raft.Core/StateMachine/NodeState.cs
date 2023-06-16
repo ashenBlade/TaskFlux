@@ -1,32 +1,35 @@
 using System.ComponentModel;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 
 namespace Raft.Core.StateMachine;
 
-internal abstract class BaseState: INodeState
+internal abstract class NodeState: INodeState
 {
-    protected readonly IStateMachine StateMachine;
+    internal readonly IStateMachine StateMachine;
     protected INode Node => StateMachine.Node;
     protected ILog Log => StateMachine.Log;
+    private volatile bool _stopped = false;
 
-    protected BaseState(IStateMachine stateMachine)
+    internal NodeState(IStateMachine stateMachine)
     {
         StateMachine = stateMachine;
     }
 
     public abstract NodeRole Role { get; }
-    public virtual async Task<RequestVoteResponse> Apply(RequestVoteRequest request, CancellationToken token = default)
+    public virtual RequestVoteResponse Apply(RequestVoteRequest request)
     {
+        if (_stopped)
+        {
+            throw new InvalidOperationException("Невозможно применить команду - состояние уже изменилось");
+        }
+
         // Мы в более актуальном Term'е
         if (request.CandidateTerm < Node.CurrentTerm)
         {
-            return new RequestVoteResponse()
-            {
-                CurrentTerm = Node.CurrentTerm,
-                VoteGranted = false
-            };
+            return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: false);
         }
 
         var canVote = 
@@ -42,31 +45,25 @@ internal abstract class BaseState: INodeState
             // У которого лог не "младше" нашего
             StateMachine.Log.LastLogEntry.IsUpToDateWith(request.LastLog))
         {
-            // Проголосуем за кандидата - обновим состояние узла
-            Node.CurrentTerm = request.CandidateTerm;
-            Node.VotedFor = request.CandidateId;
-
-            StateMachine.CurrentState = FollowerState.Start(StateMachine);
+            var command = new MoveToFollowerStateCommand(request.CandidateTerm, request.CandidateId, this, StateMachine);
+            StateMachine.CommandQueue.Enqueue(command);
             
             // И подтвердим свой 
-            return new RequestVoteResponse()
-            {
-                CurrentTerm = Node.CurrentTerm,
-                VoteGranted = true,
-            };
+            return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: true);
         }
         
         // Кандидат только что проснулся и не знает о текущем состоянии дел. 
         // Обновим его
-        return new RequestVoteResponse()
-        {
-            CurrentTerm = Node.CurrentTerm, 
-            VoteGranted = false
-        };
+        return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: false);
     }
 
-    public virtual async Task<HeartbeatResponse> Apply(HeartbeatRequest request, CancellationToken token = default)
+    public virtual HeartbeatResponse Apply(HeartbeatRequest request)
     {
+        if (_stopped)
+        {
+            throw new InvalidOperationException("Невозможно применить команду - состояние уже изменилось");
+        }
+        
         if (request.Term < Node.CurrentTerm)
         {
             return HeartbeatResponse.Fail(Node.CurrentTerm);
@@ -79,7 +76,6 @@ internal abstract class BaseState: INodeState
                 return HeartbeatResponse.Fail(Node.CurrentTerm);
             case LogEntryCheckResult.Contains:
             case LogEntryCheckResult.NotFound:
-                // TODO: отправить индекс последней закомиченной записи
                 break;
             default:
                 throw new InvalidEnumArgumentException(nameof(LogEntryCheckResult), (int)checkResult, typeof(LogEntryCheckResult));
@@ -93,13 +89,14 @@ internal abstract class BaseState: INodeState
 
         if (Node.CurrentTerm < request.Term)
         {
-            Node.CurrentTerm = request.Term;
-            StateMachine.CurrentState = FollowerState.Start(StateMachine);
+            StateMachine.CommandQueue.Enqueue(new MoveToFollowerStateCommand(request.Term, null, this, StateMachine));
         }
 
         return HeartbeatResponse.Ok(Node.CurrentTerm);
     }
-    
+
     public virtual void Dispose()
-    { }
+    {
+        _stopped = true;
+    }
 }

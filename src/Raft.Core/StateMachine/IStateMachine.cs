@@ -1,9 +1,11 @@
+using Raft.CommandQueue;
+using Raft.Core.Commands;
 using Raft.Core.Log;
 using Serilog;
 
 namespace Raft.Core.StateMachine;
 
-internal interface IStateMachine
+public interface IStateMachine
 {
     NodeRole CurrentRole { get; }
     INodeState CurrentState { get; set; }
@@ -12,5 +14,6 @@ internal interface IStateMachine
     ITimer ElectionTimer { get; }
     ITimer HeartbeatTimer { get; }
     IJobQueue JobQueue { get; }
+    ICommandQueue CommandQueue { get; }
     ILog Log { get; }
 }

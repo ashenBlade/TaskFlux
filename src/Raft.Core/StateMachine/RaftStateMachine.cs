@@ -1,21 +1,25 @@
+using System.Diagnostics;
+using Raft.CommandQueue;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 using Serilog;
 
 namespace Raft.Core.StateMachine;
 
+[DebuggerDisplay("Role: {CurrentState.Role}; Term: {Node.CurrentTerm}")]
 public class RaftStateMachine: IDisposable, IStateMachine
 {
-    public NodeRole CurrentRole => _currentState.Role;
+    public NodeRole CurrentRole => CurrentState.Role;
     public ILogger Logger { get; }
     public INode Node { get; }
-    
+
     // Выставляем вручную 
-    private INodeState _currentState = null!;
+    private INodeState? _currentState;
     public INodeState CurrentState
     {
-        get => _currentState;
+        get => _currentState ?? throw new ArgumentNullException(nameof(_currentState), "Текущее состояние еще не проставлено");
         set
         {
             _currentState?.Dispose();
@@ -26,9 +30,10 @@ public class RaftStateMachine: IDisposable, IStateMachine
     public ITimer ElectionTimer { get; }
     public ITimer HeartbeatTimer { get; }
     public IJobQueue JobQueue { get; }
+    public ICommandQueue CommandQueue { get; } 
     public ILog Log { get; }
-    
-    private RaftStateMachine(INode node, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log)
+
+    private RaftStateMachine(INode node, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log, ICommandQueue commandQueue)
     {
         Node = node;
         Logger = logger;
@@ -36,32 +41,35 @@ public class RaftStateMachine: IDisposable, IStateMachine
         HeartbeatTimer = heartbeatTimer;
         JobQueue = jobQueue;
         Log = log;
+        CommandQueue = commandQueue;
     }
 
-    public Task<RequestVoteResponse> Handle(RequestVoteRequest request, CancellationToken token = default)
+    public RequestVoteResponse Handle(RequestVoteRequest request)
     {
-        return CurrentState.Apply(request, token);
+        return CurrentState.Apply(request);
+        // return CommandQueue.Enqueue(new RequestVoteCommand(request, this));
     }
 
-    public Task<HeartbeatResponse> Handle(HeartbeatRequest request, CancellationToken token = default)
+    public HeartbeatResponse Handle(HeartbeatRequest request)
     {
-        return CurrentState.Apply(request, token);
+        return CurrentState.Apply(request);
     }
+    
     public void Dispose()
     {
-        _currentState.Dispose();
+        _currentState?.Dispose();
     }
 
-    public static RaftStateMachine Start(INode node,
-                                         ILogger logger,
-                                         ITimer electionTimer,
-                                         ITimer heartbeatTimer,
-                                         IJobQueue jobQueue,
-                                         ILog log)
+    public static RaftStateMachine Create(INode node,
+                                          ILogger logger,
+                                          ITimer electionTimer,
+                                          ITimer heartbeatTimer,
+                                          IJobQueue jobQueue,
+                                          ILog log,
+                                          ICommandQueue commandQueue)
     {
-        var raft = new RaftStateMachine(node, logger, electionTimer, heartbeatTimer, jobQueue, log);
-        var state = FollowerState.Start(raft);
-        raft._currentState = state;
+        var raft = new RaftStateMachine(node, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
+        raft._currentState = FollowerState.Create(raft);
         return raft;
     }
 }
