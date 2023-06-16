@@ -6,7 +6,7 @@ using Serilog;
 
 namespace Raft.Core.StateMachine;
 
-internal class FollowerState: NodeState
+internal class  FollowerState: NodeState
 {
     public override NodeRole Role => NodeRole.Follower;
     private readonly ILogger _logger;
@@ -18,17 +18,17 @@ internal class FollowerState: NodeState
         StateMachine.ElectionTimer.Timeout += OnElectionTimerTimeout;
     }
 
-    public override RequestVoteResponse Apply(RequestVoteRequest request, CancellationToken token = default)
+    public override RequestVoteResponse Apply(RequestVoteRequest request)
     {
-        StateMachine.ElectionTimer.Reset();
-        return base.Apply(request, token);
+        StateMachine.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, StateMachine));
+        return base.Apply(request);
     }
 
-    public override HeartbeatResponse Apply(HeartbeatRequest request, CancellationToken token = default)
+    public override HeartbeatResponse Apply(HeartbeatRequest request)
     {
-        StateMachine.ElectionTimer.Reset();
+        StateMachine.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, StateMachine));
         _logger.Verbose("Получен Heartbeat");
-        return base.Apply(request, token);
+        return base.Apply(request);
     }
 
     internal static FollowerState Create(IStateMachine stateMachine)
@@ -38,21 +38,8 @@ internal class FollowerState: NodeState
 
     private void OnElectionTimerTimeout()
     {
-        lock (UpdateLocker)
-        {
-            if (StateMachine.CurrentState != this)
-            {
-                _logger.Verbose("Election timeout сработал, но после получения блокировки состояние было обновлено");
-                return;
-            }
-            
-            StateMachine.ElectionTimer.Stop();
-            _logger.Debug("Сработал Election Timeout. Перехожу в состояние Candidate");
-            StateMachine.CurrentState = CandidateState.Create(StateMachine);
-            Node.CurrentTerm = Node.CurrentTerm.Increment();
-            Node.VotedFor = Node.Id;
-            StateMachine.ElectionTimer.Start();
-        }
+        _logger.Debug("Сработал Election Timeout. Перехожу в состояние Candidate");
+        StateMachine.CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, StateMachine));
     }
     
     public override void Dispose()

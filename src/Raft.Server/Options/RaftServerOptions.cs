@@ -5,9 +5,8 @@ namespace Raft.Server.Options;
 
 public class RaftServerOptions
 {
-    [Required]
     [ConfigurationKeyName("PEERS")]
-    public PeerInfo[] Peers { get; set; } 
+    public PeerInfo[] Peers { get; set; } = Array.Empty<PeerInfo>(); 
     
     [Required]
     [ConfigurationKeyName("NODE_ID")]

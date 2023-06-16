@@ -1,8 +1,9 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Configuration;
+using Raft.CommandQueue;
 using Raft.Core;
+using Raft.Core.StateMachine;
 using Raft.JobQueue;
-using Raft.Log;
 using Raft.Peer;
 using Raft.Peer.Decorators;
 using Raft.Server;
@@ -48,9 +49,14 @@ using var heartbeatTimer = new SystemTimersTimer( TimeSpan.FromSeconds(1) );
 
 var log = new StubLog();
 var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
-var connectionManager = new ExternalConnectionsManager(options.Host, options.Port, Log.Logger.ForContext<ExternalConnectionsManager>());
 
-var server = new RaftServer(nodeId, Log.Logger.ForContext<RaftServer>(), connectionManager, peers, log, jobQueue, electionTimer, heartbeatTimer);
+var node = new Node(nodeId, new PeerGroup(peers));
+
+using var commandQueue = new ChannelCommandQueue();
+using var raft = RaftStateMachine.Create(node, Log.ForContext<RaftStateMachine>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
+var connectionManager = new ExternalConnectionManager(options.Host, options.Port, raft, Log.Logger.ForContext<ExternalConnectionManager>());
+var server = new RaftStateObserver(raft, Log.Logger.ForContext<RaftStateObserver>());
+
 using var cts = new CancellationTokenSource();
 
 // ReSharper disable once AccessToDisposedClosure
@@ -62,7 +68,13 @@ Console.CancelKeyPress += (_, args) =>
 
 try
 {
-    await server.RunAsync(cts.Token);
+    Log.Logger.Information("Запускаю Election Timer");
+    raft.ElectionTimer.Start();
+    Log.Logger.Information("Запукаю фоновые задачи");
+    await Task.WhenAll(
+        server.RunAsync(cts.Token), 
+        connectionManager.RunAsync(cts.Token), 
+        commandQueue.RunAsync(cts.Token));
 }
 catch (Exception e)
 {
@@ -74,6 +86,6 @@ void ValidateOptions(RaftServerOptions peersOptions)
     var errors = new List<ValidationResult>();
     if (!Validator.TryValidateObject(peersOptions, new ValidationContext(peersOptions), errors, true))
     {
-        throw new Exception($"Найдены ошибки при валидации конфигурации: {errors.Select(x => x.ErrorMessage)}");
+        throw new Exception($"Найдены ошибки при валидации конфигурации: {string.Join(',', errors.Select(x => x.ErrorMessage))}");
     }
 }

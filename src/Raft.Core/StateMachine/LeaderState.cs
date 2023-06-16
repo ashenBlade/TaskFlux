@@ -1,3 +1,4 @@
+using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Serilog;
 
@@ -26,18 +27,28 @@ internal class LeaderState: NodeState
             LeaderId = Node.Id,
             PrevLogEntry = Log.LastLogEntry
         };
-        Task.WaitAll(Node.PeerGroup.Peers.Select(x => x.SendHeartbeat(request, CancellationToken.None)).ToArray());
-        _logger.Verbose("Heartbeat отправлены. Перезапускаю таймер");
-        StateMachine.HeartbeatTimer.Start();
+        Task.WaitAll(Node.PeerGroup.Peers.Select(async peer =>
+        {
+            var response = await peer.SendHeartbeat(request, CancellationToken.None);
+            if (response is null or {Success: true})
+            {
+                return;
+            }
+
+            if (response.Term < Node.CurrentTerm)
+            {
+                StateMachine.CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.Term, null, this,
+                    StateMachine));
+            }
+        }).ToArray());
+        _logger.Verbose("Heartbeat отправлены. Посылаю команду на перезапуск таймера");
+        StateMachine.CommandQueue.Enqueue(new StartHeartbeatTimerCommand(this, StateMachine));
     }
 
     public override void Dispose()
     {
-        lock (UpdateLocker)
-        {
-            StateMachine.HeartbeatTimer.Stop();
-            StateMachine.HeartbeatTimer.Timeout -= SendHeartbeat;
-        }
+        StateMachine.CommandQueue.Enqueue(new StopHeartbeatTimerCommand(this, StateMachine));
+        StateMachine.HeartbeatTimer.Timeout -= SendHeartbeat;
         base.Dispose();
     }
 

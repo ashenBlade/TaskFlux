@@ -102,19 +102,13 @@ internal class CandidateState: NodeState
                     _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", peers[i].Id);
                     _cts.Cancel();
 
-                    lock (UpdateLocker)
+                    if (StateMachine.CurrentState != this)
                     {
-                        if (StateMachine.CurrentState != this)
-                        {
-                            _logger.Debug("Найден узел с более высоким термом, но после получения блокировки состояние уже было изменено");
-                            return;
-                        }
-                        
-                        Node.CurrentTerm = response.CurrentTerm;
-                        StateMachine.CurrentState = FollowerState.Create(StateMachine);
-                        StateMachine.ElectionTimer.Start();
-                        StateMachine.Node.VotedFor = null;
+                        _logger.Debug("Найден узел с более высоким термом, но после получения блокировки состояние уже было изменено");
+                        return;
                     }
+                        
+                    StateMachine.CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.CurrentTerm, null, this, StateMachine));
                     return;
                 }
                 // Узел отказался по другой причине.
@@ -144,17 +138,17 @@ internal class CandidateState: NodeState
         _logger.Debug("Кворум собран. Получено {VotesCount} голосов. Перехожу в состояние Leader", votes);
         
         _cts.Token.ThrowIfCancellationRequested();
-        lock (UpdateLocker)
+        if (StateMachine.CurrentState != this)
         {
-            if (StateMachine.CurrentState != this)
-            {
-                _logger.Debug("Перейти в Leader не получилось - после получения блокировки состояние уже изменилось");
-                return;
-            }
-            StateMachine.CurrentState = LeaderState.Create(StateMachine);
-            StateMachine.HeartbeatTimer.Start();
-            StateMachine.ElectionTimer.Stop();
+            _logger.Debug("Перейти в Leader не получилось - после получения блокировки состояние уже изменилось");
+            return;
         }
+        
+        // StateMachine.CurrentState = LeaderState.Create(StateMachine);
+        // StateMachine.HeartbeatTimer.Start();
+        // StateMachine.ElectionTimer.Stop();
+
+        StateMachine.CommandQueue.Enqueue(new MoveToLeaderStateCommand(this, StateMachine));
         
         bool QuorumReached()
         {
@@ -162,24 +156,17 @@ internal class CandidateState: NodeState
         }
     }
 
-    // ReSharper disable once ArrangeStaticMemberQualifier
     private void OnElectionTimerTimeout()
     {
-        // ReSharper disable once InconsistentlySynchronizedField
         StateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
-        lock (UpdateLocker)
-        {
-            if (StateMachine.CurrentState != this)
-            {
-                return;
-            }
-            
-            _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
-            var node = Node;
-            node.CurrentTerm = node.CurrentTerm.Increment();
-            node.VotedFor = node.Id;
-            StateMachine.CurrentState = CandidateState.Create(StateMachine);
-        }
+
+        _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
+        var node = Node;
+        node.CurrentTerm = node.CurrentTerm.Increment();
+        node.VotedFor = node.Id;
+        
+        // ReSharper disable once ArrangeStaticMemberQualifier
+        StateMachine.CurrentState = CandidateState.Create(StateMachine);
     }
 
     public override void Dispose()

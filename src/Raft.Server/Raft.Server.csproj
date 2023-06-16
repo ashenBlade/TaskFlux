@@ -9,6 +9,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\Raft.CommandQueue\Raft.CommandQueue.Channel\Raft.CommandQueue.Channel.csproj" />
       <ProjectReference Include="..\Raft.Core\Raft.Core.csproj" />
       <ProjectReference Include="..\Raft.JobQueue\Raft.JobQueue.csproj" />
       <ProjectReference Include="..\Raft.Log\Raft.Log.csproj" />
