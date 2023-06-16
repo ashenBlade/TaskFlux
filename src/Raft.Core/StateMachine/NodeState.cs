@@ -9,7 +9,6 @@ namespace Raft.Core.StateMachine;
 internal abstract class NodeState: INodeState
 {
     internal readonly IStateMachine StateMachine;
-    protected INode Node => StateMachine.Node;
     protected ILog Log => StateMachine.Log;
     private volatile bool _stopped = false;
 
@@ -27,21 +26,21 @@ internal abstract class NodeState: INodeState
         }
 
         // Мы в более актуальном Term'е
-        if (request.CandidateTerm < Node.CurrentTerm)
+        if (request.CandidateTerm < StateMachine.CurrentTerm)
         {
-            return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: false);
+            return new RequestVoteResponse(CurrentTerm: StateMachine.CurrentTerm, VoteGranted: false);
         }
 
         var canVote = 
             // Ранее не голосовали
-            Node.VotedFor is null || 
+            StateMachine.VotedFor is null || 
             // Текущий лидер/кандидат посылает этот запрос (почему бы не согласиться)
-            Node.VotedFor == request.CandidateId;
+            StateMachine.VotedFor == request.CandidateId;
         
         // Отдать свободный голос можем только за кандидата 
         if (canVote && 
             // С термом больше нашего (иначе, на текущем терме уже есть лидер)
-            Node.CurrentTerm < request.CandidateTerm && 
+            StateMachine.CurrentTerm < request.CandidateTerm && 
             // У которого лог не "младше" нашего
             StateMachine.Log.LastLogEntry.IsUpToDateWith(request.LastLog))
         {
@@ -49,12 +48,12 @@ internal abstract class NodeState: INodeState
             StateMachine.CommandQueue.Enqueue(command);
             
             // И подтвердим свой 
-            return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: true);
+            return new RequestVoteResponse(CurrentTerm: StateMachine.CurrentTerm, VoteGranted: true);
         }
         
         // Кандидат только что проснулся и не знает о текущем состоянии дел. 
         // Обновим его
-        return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: false);
+        return new RequestVoteResponse(CurrentTerm: StateMachine.CurrentTerm, VoteGranted: false);
     }
 
     public virtual HeartbeatResponse Apply(HeartbeatRequest request)
@@ -64,16 +63,16 @@ internal abstract class NodeState: INodeState
             throw new InvalidOperationException("Невозможно применить команду - состояние уже изменилось");
         }
         
-        if (request.Term < Node.CurrentTerm)
+        if (request.Term < StateMachine.CurrentTerm)
         {
-            return HeartbeatResponse.Fail(Node.CurrentTerm);
+            return HeartbeatResponse.Fail(StateMachine.CurrentTerm);
         }
 
         LogEntryCheckResult checkResult;
         switch (checkResult = Log.Check(request.PrevLogEntry))
         {
             case LogEntryCheckResult.Conflict:
-                return HeartbeatResponse.Fail(Node.CurrentTerm);
+                return HeartbeatResponse.Fail(StateMachine.CurrentTerm);
             case LogEntryCheckResult.Contains:
             case LogEntryCheckResult.NotFound:
                 break;
@@ -87,12 +86,12 @@ internal abstract class NodeState: INodeState
             Log.CommitIndex = Math.Min(request.LeaderCommit, Log.LastLogEntry.Index);
         }
 
-        if (Node.CurrentTerm < request.Term)
+        if (StateMachine.CurrentTerm < request.Term)
         {
             StateMachine.CommandQueue.Enqueue(new MoveToFollowerStateCommand(request.Term, null, this, StateMachine));
         }
 
-        return HeartbeatResponse.Ok(Node.CurrentTerm);
+        return HeartbeatResponse.Ok(StateMachine.CurrentTerm);
     }
 
     public virtual void Dispose()

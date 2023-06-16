@@ -8,12 +8,15 @@ using Serilog;
 
 namespace Raft.Core.StateMachine;
 
-[DebuggerDisplay("Role: {CurrentState.Role}; Term: {Node.CurrentTerm}")]
+[DebuggerDisplay("Role: {CurrentState.Role}; Term: {CurrentTerm}")]
 public class RaftStateMachine: IDisposable, IStateMachine
 {
     public NodeRole CurrentRole => CurrentState.Role;
     public ILogger Logger { get; }
-    public INode Node { get; }
+    public PeerId Id { get; }
+    public Term CurrentTerm { get; set; }
+    public PeerId? VotedFor { get; set; }
+    public PeerGroup PeerGroup { get; set; }
 
     // Выставляем вручную 
     private INodeState? _currentState;
@@ -33,21 +36,23 @@ public class RaftStateMachine: IDisposable, IStateMachine
     public ICommandQueue CommandQueue { get; } 
     public ILog Log { get; }
 
-    private RaftStateMachine(INode node, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log, ICommandQueue commandQueue)
+    private RaftStateMachine(PeerId id, PeerGroup peerGroup, PeerId? votedFor, Term currentTerm, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log, ICommandQueue commandQueue)
     {
-        Node = node;
+        Id = id;
         Logger = logger;
         ElectionTimer = electionTimer;
         HeartbeatTimer = heartbeatTimer;
         JobQueue = jobQueue;
         Log = log;
         CommandQueue = commandQueue;
+        PeerGroup = peerGroup;
+        VotedFor = votedFor;
+        CurrentTerm = currentTerm;
     }
 
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {
         return CurrentState.Apply(request);
-        // return CommandQueue.Enqueue(new RequestVoteCommand(request, this));
     }
 
     public HeartbeatResponse Handle(HeartbeatRequest request)
@@ -60,7 +65,7 @@ public class RaftStateMachine: IDisposable, IStateMachine
         _currentState?.Dispose();
     }
 
-    public static RaftStateMachine Create(INode node,
+    public static RaftStateMachine Create(PeerId id, PeerGroup peerGroup, PeerId? votedFor, Term currentTerm,
                                           ILogger logger,
                                           ITimer electionTimer,
                                           ITimer heartbeatTimer,
@@ -68,7 +73,7 @@ public class RaftStateMachine: IDisposable, IStateMachine
                                           ILog log,
                                           ICommandQueue commandQueue)
     {
-        var raft = new RaftStateMachine(node, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
+        var raft = new RaftStateMachine(id, peerGroup, votedFor, currentTerm, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
         raft._currentState = FollowerState.Create(raft);
         return raft;
     }

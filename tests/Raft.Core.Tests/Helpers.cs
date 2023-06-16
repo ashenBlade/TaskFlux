@@ -37,19 +37,13 @@ public class Helpers
                                   x.CommitIndex == commitIndex &&
                                   x.LastApplied == lastApplied);
     }
-    public static INode CreateNode(Term currentTerm, PeerId? votedFor, IEnumerable<IPeer>? peers = null)
-    {
-        var nodeMock = new Mock<INode>(MockBehavior.Strict);
-        nodeMock.SetupGet(x => x.Id).Returns(NodeId);
-        nodeMock.SetupProperty(x => x.CurrentTerm, currentTerm);
-        nodeMock.SetupProperty(x => x.VotedFor, votedFor);
-        nodeMock.SetupProperty(x => x.PeerGroup, new PeerGroup(peers?.ToArray() ?? Array.Empty<IPeer>()));
-        return nodeMock.Object;
-    }
 
-    public static RaftStateMachine CreateStateMachine(INode node, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
+    public static RaftStateMachine CreateStateMachine(Term currentTerm, PeerId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
     {
-        return RaftStateMachine.Create(node, 
+        return RaftStateMachine.Create(NodeId, 
+            new PeerGroup(peers?.ToArray() ?? Array.Empty<IPeer>()),
+            votedFor,
+            currentTerm,
             NullLogger, 
             electionTimer ?? Mock.Of<ITimer>(),
             heartbeatTimer ?? Mock.Of<ITimer>(), 

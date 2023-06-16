@@ -22,12 +22,12 @@ internal class LeaderState: NodeState
     {
         _logger.Verbose("Отправляю Heartbeat");
         var request = new HeartbeatRequest(
-            Term: Node.CurrentTerm, 
+            Term: StateMachine.CurrentTerm, 
             LeaderCommit: Log.CommitIndex,
-            LeaderId: Node.Id,
+            LeaderId: StateMachine.Id,
             PrevLogEntry: Log.LastLogEntry);
         
-        var tasks = Node.PeerGroup.Peers.Select<IPeer, Task<Term?>>(async peer =>
+        var tasks = StateMachine.PeerGroup.Peers.Select<IPeer, Task<Term?>>(async peer =>
         {
             var response = await peer.SendHeartbeat(request, CancellationToken.None);
             if (response is null or {Success: true})
@@ -35,7 +35,7 @@ internal class LeaderState: NodeState
                 return null;
             }
 
-            if (Node.CurrentTerm < response.Term)
+            if (StateMachine.CurrentTerm < response.Term)
             {
                 return response.Term;
             }
@@ -61,7 +61,7 @@ internal class LeaderState: NodeState
             }
         }
 
-        if (maxTerm is {} max && Node.CurrentTerm < max)
+        if (maxTerm is {} max && StateMachine.CurrentTerm < max)
         {
             _logger.Debug("Какой-то узел ответил большим термом - {Term}. Перехожу в Follower", max);
             StateMachine.CommandQueue.Enqueue(new MoveToFollowerStateCommand(max, null, this, StateMachine));

@@ -23,7 +23,7 @@ public partial class RaftStateObserver
         {
             while (token.IsCancellationRequested is false)
             {
-                _logger.Information("Состояние: {State}; Терм {Term}", _raft.CurrentRole, _raft.Node.CurrentTerm);
+                _logger.Information("Состояние: {State}; Терм {Term}", _raft.CurrentRole, _raft.CurrentTerm);
                 await Task.Delay(TimeSpan.FromSeconds(5), token);
             }
         }

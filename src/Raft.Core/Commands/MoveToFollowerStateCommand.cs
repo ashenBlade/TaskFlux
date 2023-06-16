@@ -19,7 +19,7 @@ public class MoveToFollowerStateCommand: UpdateCommand
     {
         StateMachine.CurrentState = FollowerState.Create(StateMachine);
         StateMachine.ElectionTimer.Start();
-        StateMachine.Node.CurrentTerm = _term;
-        StateMachine.Node.VotedFor = _votedFor;
+        StateMachine.CurrentTerm = _term;
+        StateMachine.VotedFor = _votedFor;
     }
 }

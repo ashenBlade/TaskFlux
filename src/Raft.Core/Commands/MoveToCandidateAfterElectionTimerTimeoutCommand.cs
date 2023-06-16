@@ -13,8 +13,8 @@ public class MoveToCandidateAfterElectionTimerTimeoutCommand: UpdateCommand
     {
         StateMachine.ElectionTimer.Stop();
         StateMachine.CurrentState = CandidateState.Create(StateMachine);
-        StateMachine.Node.CurrentTerm = StateMachine.Node.CurrentTerm.Increment();
-        StateMachine.Node.VotedFor = StateMachine.Node.Id;
+        StateMachine.CurrentTerm = StateMachine.CurrentTerm.Increment();
+        StateMachine.VotedFor = StateMachine.Id;
         StateMachine.ElectionTimer.Start();
     }
 }

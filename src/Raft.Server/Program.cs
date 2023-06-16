@@ -53,10 +53,8 @@ using var heartbeatTimer = new SystemTimersTimer( TimeSpan.FromSeconds(1) );
 var log = new StubLog();
 var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
 
-var node = new Node(nodeId, new PeerGroup(peers));
-
 using var commandQueue = new ChannelCommandQueue();
-using var raft = RaftStateMachine.Create(node, Log.ForContext<RaftStateMachine>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
+using var raft = RaftStateMachine.Create(nodeId, new PeerGroup(peers), null, new Term(1), Log.ForContext<RaftStateMachine>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
 var connectionManager = new ExternalConnectionManager(options.Host, options.Port, raft, Log.Logger.ForContext<ExternalConnectionManager>());
 var server = new RaftStateObserver(raft, Log.Logger.ForContext<RaftStateObserver>());
 

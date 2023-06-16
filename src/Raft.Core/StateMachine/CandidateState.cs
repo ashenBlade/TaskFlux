@@ -22,8 +22,8 @@ internal class CandidateState: NodeState
     private async Task<RequestVoteResponse?[]> SendRequestVotes(List<IPeer> peers, CancellationToken token)
     {
         // Отправляем запрос всем пирам
-        var request = new RequestVoteRequest(CandidateId: StateMachine.Node.Id,
-            CandidateTerm: StateMachine.Node.CurrentTerm, LastLog: StateMachine.Log.LastLogEntry);
+        var request = new RequestVoteRequest(CandidateId: StateMachine.Id,
+            CandidateTerm: StateMachine.CurrentTerm, LastLog: StateMachine.Log.LastLogEntry);
 
         var requests = new Task<RequestVoteResponse?>[peers.Count];
         for (var i = 0; i < peers.Count; i++)
@@ -62,9 +62,9 @@ internal class CandidateState: NodeState
     internal async Task RunQuorumInner(CancellationToken token)
     {
         _logger.Debug("Запускаю кворум для получения большинства голосов");
-        var leftPeers = new List<IPeer>(Node.PeerGroup.Peers.Count);
-        var term = Node.CurrentTerm;
-        leftPeers.AddRange(Node.PeerGroup.Peers);
+        var leftPeers = new List<IPeer>(StateMachine.PeerGroup.Peers.Count);
+        var term = StateMachine.CurrentTerm;
+        leftPeers.AddRange(StateMachine.PeerGroup.Peers);
         
         var notResponded = new List<IPeer>();
         var votes = 0;
@@ -90,7 +90,7 @@ internal class CandidateState: NodeState
                     votes++;
                     _logger.Verbose("Узел {NodeId} отдал голос за", leftPeers[i].Id);
                 }
-                else if (Node.CurrentTerm < response.CurrentTerm)
+                else if (StateMachine.CurrentTerm < response.CurrentTerm)
                 {
                     _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", leftPeers[i].Id);
                     _cts.Cancel();
@@ -126,7 +126,7 @@ internal class CandidateState: NodeState
         
         bool QuorumReached()
         {
-            return Node.PeerGroup.IsQuorumReached(votes);
+            return StateMachine.PeerGroup.IsQuorumReached(votes);
         }
     }
 
