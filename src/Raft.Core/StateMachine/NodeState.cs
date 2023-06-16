@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 
 namespace Raft.Core.StateMachine;
@@ -28,11 +29,7 @@ internal abstract class NodeState: INodeState
         // Мы в более актуальном Term'е
         if (request.CandidateTerm < Node.CurrentTerm)
         {
-            return new RequestVoteResponse()
-            {
-                CurrentTerm = Node.CurrentTerm,
-                VoteGranted = false
-            };
+            return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: false);
         }
 
         var canVote = 
@@ -52,20 +49,12 @@ internal abstract class NodeState: INodeState
             StateMachine.CommandQueue.Enqueue(command);
             
             // И подтвердим свой 
-            return new RequestVoteResponse()
-            {
-                CurrentTerm = Node.CurrentTerm,
-                VoteGranted = true,
-            };
+            return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: true);
         }
         
         // Кандидат только что проснулся и не знает о текущем состоянии дел. 
         // Обновим его
-        return new RequestVoteResponse()
-        {
-            CurrentTerm = Node.CurrentTerm, 
-            VoteGranted = false
-        };
+        return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: false);
     }
 
     public virtual HeartbeatResponse Apply(HeartbeatRequest request)

@@ -2,6 +2,7 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Text;
 using Raft.Core;
+using Raft.Network;
 using Raft.Peer.Exceptions;
 using Serilog;
 

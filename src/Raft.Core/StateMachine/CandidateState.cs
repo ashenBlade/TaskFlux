@@ -1,4 +1,5 @@
 using Raft.Core.Commands;
+using Raft.Core.Commands.RequestVote;
 using Raft.Core.Peer;
 using Serilog;
 
@@ -21,12 +22,8 @@ internal class CandidateState: NodeState
     private async Task<RequestVoteResponse?[]> SendRequestVotes(List<IPeer> peers)
     {
         // Отправляем запрос всем пирам
-        var request = new RequestVoteRequest()
-        {
-            CandidateId = StateMachine.Node.Id,
-            CandidateTerm = StateMachine.Node.CurrentTerm,
-            LastLog = StateMachine.Log.LastLogEntry
-        };
+        var request = new RequestVoteRequest(CandidateId: StateMachine.Node.Id,
+            CandidateTerm: StateMachine.Node.CurrentTerm, LastLog: StateMachine.Log.LastLogEntry);
 
         var requests = new Task<RequestVoteResponse?>[peers.Count];
         for (var i = 0; i < peers.Count; i++)

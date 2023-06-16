@@ -1,5 +1,6 @@
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.RequestVote;
 
 namespace Raft.Core.StateMachine;
 

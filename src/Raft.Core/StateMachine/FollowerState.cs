@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 using Serilog;
 

@@ -1,7 +1,10 @@
 using System.Net.Sockets;
 using Raft.Core;
+using Raft.Core.Commands;
+using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.RequestVote;
 using Raft.Core.StateMachine;
-using Raft.Peer;
+using Raft.Network;
 using Serilog;
 
 namespace Raft.Server;
@@ -44,24 +47,25 @@ public record NodeConnectionProcessor(PeerId Id, TcpClient Client, RaftStateMach
                 }
                         
                 var marker = data[0];
+                logger.Verbose("Получены байты: {Response}", data);
                 byte[]? responseBuffer = null;
                 switch (marker)
                 {
-                    case (byte)RequestType.RequestVote:
+                    case (byte) RequestType.RequestVote:
                         logger.Debug("Получен RequestVote. Десериализую");
-                        var requestVoteRequest = Helpers.DeserializeRequestVoteRequest(data);
+                        var requestVoteRequest = Serializers.RequestVoteRequest.Deserialize(data);
                         logger.Debug("RequestVote десериализован. Отправляю команду машине");
                         var requestVoteResponse = stateMachine.Handle(requestVoteRequest);
                         logger.Debug("Команда обработана. Сериализую");
-                        responseBuffer = Helpers.Serialize(requestVoteResponse);
+                        responseBuffer = Serializers.RequestVoteResponse.Serialize(requestVoteResponse);
                         break;
-                    case (byte)RequestType.AppendEntries:
+                    case (byte) RequestType.AppendEntries:
                         logger.Debug("Получен AppendEntries. Десериализую в Heartbeat");
-                        var heartbeatRequest = Helpers.DeserializeHeartbeatRequest(buffer);
+                        var heartbeatRequest = Serializers.HeartbeatRequest.Deserialize(buffer);
                         logger.Debug("Heartbeat десериализован. Отправляю команду машине");
                         var heartbeatResponse = stateMachine.Handle(heartbeatRequest);
                         logger.Debug("Команда обработана. Сериализую");
-                        responseBuffer = Helpers.Serialize(heartbeatResponse);
+                        responseBuffer = Serializers.HeartbeatResponse.Serialize(heartbeatResponse);
                         break;
                 }
                     

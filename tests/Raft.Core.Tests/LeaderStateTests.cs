@@ -2,6 +2,7 @@ using System.Net.Sockets;
 using Moq;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 using Raft.Core.Peer;
 using Raft.Core.StateMachine;
@@ -90,12 +91,8 @@ public class LeaderStateTests
         var node = CreateNode(term, null);
         using var raft = CreateCandidateStateMachine(node);
 
-        var request = new RequestVoteRequest()
-        {
-            CandidateId = node.Id + 1, 
-            CandidateTerm = term.Increment(),
-            LastLog = raft.Log.LastLogEntry
-        };
+        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: term.Increment(),
+            LastLog: raft.Log.LastLogEntry);
 
         raft.Handle(request);
         
@@ -115,12 +112,8 @@ public class LeaderStateTests
         var node = CreateNode(term, null);
         using var raft = CreateCandidateStateMachine(node, heartbeatTimer: heartbeatTimer.Object);
 
-        var request = new RequestVoteRequest()
-        {
-            CandidateId = node.Id + 1, 
-            CandidateTerm = term.Increment(),
-            LastLog = raft.Log.LastLogEntry
-        };
+        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: term.Increment(),
+            LastLog: raft.Log.LastLogEntry);
 
         raft.Handle(request);
         
@@ -141,12 +134,8 @@ public class LeaderStateTests
         var node = CreateNode(term, null);
         using var raft = CreateCandidateStateMachine(node);
 
-        var request = new RequestVoteRequest()
-        {
-            CandidateId = node.Id + 1, 
-            CandidateTerm = new(otherTerm),
-            LastLog = raft.Log.LastLogEntry
-        };
+        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: new(otherTerm),
+            LastLog: raft.Log.LastLogEntry);
 
         var response = raft.Handle(request);
         
@@ -167,13 +156,8 @@ public class LeaderStateTests
         var node = CreateNode(term, null);
         using var raft = CreateCandidateStateMachine(node);
 
-        var request = new HeartbeatRequest()
-        {
-            LeaderId = node.Id + 1,
-            Term = new(otherTerm),
-            LeaderCommit = raft.Log.CommitIndex,
-            PrevLogEntry = raft.Log.LastLogEntry
-        };
+        var request = new HeartbeatRequest(LeaderId: node.Id + 1, Term: new(otherTerm),
+            LeaderCommit: raft.Log.CommitIndex, PrevLogEntry: raft.Log.LastLogEntry);
 
         var response = raft.Handle(request);
         
@@ -193,13 +177,8 @@ public class LeaderStateTests
         var node = CreateNode(term, null);
         using var raft = CreateCandidateStateMachine(node, heartbeatTimer: heartbeatTimer.Object);
 
-        var request = new HeartbeatRequest()
-        {
-            LeaderId = new PeerId(2),
-            Term = term.Increment(),
-            PrevLogEntry = raft.Log.LastLogEntry,
-            LeaderCommit = raft.Log.CommitIndex,
-        };
+        var request = new HeartbeatRequest(LeaderId: new PeerId(2), Term: term.Increment(),
+            PrevLogEntry: raft.Log.LastLogEntry, LeaderCommit: raft.Log.CommitIndex);
 
         raft.Handle(request);
         

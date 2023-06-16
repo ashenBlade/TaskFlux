@@ -20,13 +20,8 @@ internal class LeaderState: NodeState
     private void SendHeartbeat()
     {
         _logger.Verbose("Отправляю Heartbeat");
-        var request = new HeartbeatRequest()
-        {
-            Term = Node.CurrentTerm,
-            LeaderCommit = Log.CommitIndex,
-            LeaderId = Node.Id,
-            PrevLogEntry = Log.LastLogEntry
-        };
+        var request = new HeartbeatRequest(Term: Node.CurrentTerm, LeaderCommit: Log.CommitIndex, LeaderId: Node.Id,
+            PrevLogEntry: Log.LastLogEntry);
         Task.WaitAll(Node.PeerGroup.Peers.Select(async peer =>
         {
             var response = await peer.SendHeartbeat(request, CancellationToken.None);

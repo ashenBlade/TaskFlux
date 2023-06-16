@@ -1,14 +1,15 @@
 namespace Raft.Core.Commands;
 
-public class RequestVoteResponse
+public record RequestVoteResponse(Term CurrentTerm, bool VoteGranted)
 {
     /// <summary>
     /// Term для обновления кандидата
     /// </summary>
-    public Term CurrentTerm { get; set; }
+    public Term CurrentTerm { get; set; } = CurrentTerm;
+
     /// <summary>
     /// true - узел принял запрос
     /// false - отверг 
     /// </summary>
-    public bool VoteGranted { get; set; }
+    public bool VoteGranted { get; set; } = VoteGranted;
 }

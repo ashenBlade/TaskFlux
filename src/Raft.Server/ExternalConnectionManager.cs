@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using Raft.Core;
 using Raft.Core.StateMachine;
+using Raft.Network;
 using Raft.Peer;
 using Serilog;
 

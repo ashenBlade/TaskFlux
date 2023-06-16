@@ -1,6 +1,7 @@
 ﻿using Raft.Core;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.RequestVote;
 using Raft.Core.Peer;
 
 namespace Raft.Peer.InMemory;
@@ -26,11 +27,7 @@ public class RejectPeer: IPeer
     public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
     {
         await Task.Delay(_responseTimeout, token);
-        return new RequestVoteResponse()
-        {
-            CurrentTerm = request.CandidateTerm, 
-            VoteGranted = false
-        };
+        return new RequestVoteResponse(CurrentTerm: request.CandidateTerm, VoteGranted: false);
     }
 
     public Task SendAppendEntries(CancellationToken token)
