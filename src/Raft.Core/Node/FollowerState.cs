@@ -1,52 +1,50 @@
-using System.ComponentModel;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Commands.RequestVote;
-using Raft.Core.Log;
 using Serilog;
 
-namespace Raft.Core.StateMachine;
+namespace Raft.Core.Node;
 
-internal class  FollowerState: NodeState
+internal class  FollowerState: BaseNodeState
 {
     public override NodeRole Role => NodeRole.Follower;
     private readonly ILogger _logger;
 
-    internal FollowerState(IStateMachine stateMachine, ILogger logger)
-        : base(stateMachine)
+    internal FollowerState(INode node, ILogger logger)
+        : base(node)
     {
         _logger = logger;
-        StateMachine.ElectionTimer.Timeout += OnElectionTimerTimeout;
+        Node.ElectionTimer.Timeout += OnElectionTimerTimeout;
     }
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)
     {
         _logger.Verbose("Получен RequestVote");
-        StateMachine.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, StateMachine));
+        Node.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, Node));
         return base.Apply(request);
     }
 
     public override HeartbeatResponse Apply(HeartbeatRequest request)
     {
         _logger.Verbose("Получен Heartbeat");
-        StateMachine.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, StateMachine));
+        Node.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, Node));
         return base.Apply(request);
     }
 
-    internal static FollowerState Create(IStateMachine stateMachine)
+    internal static FollowerState Create(INode node)
     {
-        return new FollowerState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Follower"));
+        return new FollowerState(node, node.Logger.ForContext("SourceContext", "Follower"));
     }
 
     private void OnElectionTimerTimeout()
     {
         _logger.Debug("Сработал Election Timeout. Перехожу в состояние Candidate");
-        StateMachine.CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, StateMachine));
+        Node.CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, Node));
     }
     
     public override void Dispose()
     {
-        StateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
+        Node.ElectionTimer.Timeout -= OnElectionTimerTimeout;
         base.Dispose();
     }
 }

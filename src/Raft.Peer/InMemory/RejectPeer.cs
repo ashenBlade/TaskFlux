@@ -2,7 +2,6 @@
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Commands.RequestVote;
-using Raft.Core.Peer;
 
 namespace Raft.Peer.InMemory;
 
@@ -13,10 +12,10 @@ public class RejectPeer: IPeer
     public RejectPeer(int id, TimeSpan responseTimeout)
     {
         _responseTimeout = responseTimeout;
-        Id = new PeerId(id);
+        Id = new NodeId(id);
     }
 
-    public PeerId Id { get; }
+    public NodeId Id { get; }
     
     public async Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token)
     {

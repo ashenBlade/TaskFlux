@@ -4,14 +4,13 @@ using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
-using Raft.Core.Peer;
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 
 namespace Raft.Core.Tests;
 
 public class LeaderStateTests
 {
-    private static RaftStateMachine CreateCandidateStateMachine(Term currentTerm, PeerId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
+    private static RaftNode CreateCandidateStateMachine(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
         var raftStateMachine = Helpers.CreateStateMachine(currentTerm, votedFor, peers: peers, electionTimer: electionTimer, heartbeatTimer: heartbeatTimer, jobQueue: jobQueue, log: log);
         raftStateMachine.CurrentState = new LeaderState(raftStateMachine, Helpers.NullLogger);
@@ -168,7 +167,7 @@ public class LeaderStateTests
 
         using var raft = CreateCandidateStateMachine(term, null, heartbeatTimer: heartbeatTimer.Object);
 
-        var request = new HeartbeatRequest(LeaderId: new PeerId(2), Term: term.Increment(),
+        var request = new HeartbeatRequest(LeaderId: new NodeId(2), Term: term.Increment(),
             PrevLogEntry: raft.Log.LastLogEntry, LeaderCommit: raft.Log.CommitIndex);
 
         raft.Handle(request);

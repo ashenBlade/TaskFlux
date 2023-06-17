@@ -3,13 +3,13 @@ using Raft.Core;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Commands.RequestVote;
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 using Raft.Network;
 using Serilog;
 
 namespace Raft.Server;
 
-public record NodeConnectionProcessor(PeerId Id, TcpClient Client, RaftStateMachine StateMachine, ILogger Logger): IDisposable
+public record NodeConnectionProcessor(NodeId Id, TcpClient Client, RaftNode Node, ILogger Logger): IDisposable
 {
     public CancellationTokenSource CancellationTokenSource { get; init; }
     public bool Stopped { get; private set; } = false;

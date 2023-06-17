@@ -1,8 +1,7 @@
-using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Commands.RequestVote;
 
-namespace Raft.Core.Peer;
+namespace Raft.Core;
 
 /// <summary>
 /// Интерфейс, представляющий другой узел 
@@ -12,7 +11,7 @@ public interface IPeer
     /// <summary>
     /// Идентификатор узла
     /// </summary>
-    public PeerId Id { get; }
+    public NodeId Id { get; }
 
     public Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token);
     

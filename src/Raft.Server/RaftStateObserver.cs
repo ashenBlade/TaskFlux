@@ -1,4 +1,4 @@
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 using Serilog;
 
 // ReSharper disable ContextualLoggerProblem
@@ -7,11 +7,11 @@ namespace Raft.Server;
 
 public partial class RaftStateObserver
 {
-    private readonly RaftStateMachine _raft;
+    private readonly RaftNode _raft;
     private readonly ILogger _logger;
 
 
-    public RaftStateObserver(RaftStateMachine raft, ILogger logger)
+    public RaftStateObserver(RaftNode raft, ILogger logger)
     {
         _raft = raft;
         _logger = logger;

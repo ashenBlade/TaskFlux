@@ -1,4 +1,4 @@
-namespace Raft.Core;
+namespace Raft.Core.Log;
 
 public readonly record struct LogEntry(Term Term, int Index)
 {

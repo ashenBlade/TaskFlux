@@ -1,15 +1,14 @@
 using Moq;
 using Raft.CommandQueue;
 using Raft.Core.Log;
-using Raft.Core.Peer;
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 using Serilog;
 
 namespace Raft.Core.Tests;
 
 public class Helpers
 {
-    public static readonly PeerId NodeId = new(1);
+    public static readonly NodeId NodeId = new(1);
     public static readonly LogEntry LastLogEntry = new(new Term(1), 0);
     public static readonly ILogger NullLogger = new LoggerConfiguration().CreateLogger();
     public static readonly IJobQueue NullJobQueue = CreateNullJobQueue();
@@ -38,9 +37,9 @@ public class Helpers
                                   x.LastApplied == lastApplied);
     }
 
-    public static RaftStateMachine CreateStateMachine(Term currentTerm, PeerId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
+    public static RaftNode CreateStateMachine(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
     {
-        return RaftStateMachine.Create(NodeId, 
+        return RaftNode.Create(NodeId, 
             new PeerGroup(peers?.ToArray() ?? Array.Empty<IPeer>()),
             votedFor,
             currentTerm,

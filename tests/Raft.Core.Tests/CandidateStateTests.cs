@@ -3,8 +3,7 @@ using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
-using Raft.Core.Peer;
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 
 namespace Raft.Core.Tests;
 
@@ -30,7 +29,7 @@ public class CandidateStateTests
         }
     }
 
-    private static RaftStateMachine CreateCandidateStateMachine(Term term, PeerId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
+    private static RaftNode CreateCandidateStateMachine(Term term, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
         var raftStateMachine = Helpers.CreateStateMachine(term, votedFor, peers: peers, electionTimer: electionTimer, heartbeatTimer: null, jobQueue: jobQueue, log: log);
         raftStateMachine.CurrentState = new CandidateState(raftStateMachine, Helpers.NullLogger);
@@ -279,7 +278,7 @@ public class CandidateStateTests
         var oldTerm = new Term(1);
         using var raft = CreateCandidateStateMachine(oldTerm, null);
 
-        var request = new RequestVoteRequest(CandidateId: new PeerId(2), CandidateTerm: oldTerm.Increment(),
+        var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: oldTerm.Increment(),
             LastLog: raft.Log.LastLogEntry);
 
         raft.Handle(request);
@@ -294,7 +293,7 @@ public class CandidateStateTests
         using var raft = CreateCandidateStateMachine(oldTerm, null);
 
         var requestTerm = oldTerm.Increment();
-        var request = new RequestVoteRequest(CandidateId: new PeerId(2), CandidateTerm: requestTerm,
+        var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: requestTerm,
             LastLog: raft.Log.LastLogEntry);
 
         raft.Handle(request);
@@ -309,7 +308,7 @@ public class CandidateStateTests
         using var raft = CreateCandidateStateMachine(oldTerm, null);
 
         var request = new HeartbeatRequest(Term: oldTerm.Increment(), LeaderCommit: raft.Log.CommitIndex,
-            LeaderId: new PeerId(2), PrevLogEntry: raft.Log.LastLogEntry);
+            LeaderId: new NodeId(2), PrevLogEntry: raft.Log.LastLogEntry);
 
         raft.Handle(request);
 
@@ -324,7 +323,7 @@ public class CandidateStateTests
 
         var leaderTerm = oldTerm.Increment();
         var request = new HeartbeatRequest(Term: leaderTerm, LeaderCommit: raft.Log.CommitIndex,
-            LeaderId: new PeerId(2), PrevLogEntry: raft.Log.LastLogEntry);
+            LeaderId: new NodeId(2), PrevLogEntry: raft.Log.LastLogEntry);
 
         raft.Handle(request);
 
@@ -343,7 +342,7 @@ public class CandidateStateTests
 
         var leaderTerm = oldTerm.Increment();
         var request = new HeartbeatRequest(Term: leaderTerm, LeaderCommit: raft.Log.CommitIndex,
-            LeaderId: new PeerId(2), PrevLogEntry: raft.Log.LastLogEntry);
+            LeaderId: new NodeId(2), PrevLogEntry: raft.Log.LastLogEntry);
 
         raft.Handle(request);
         await jobQueue.Run();
@@ -361,7 +360,7 @@ public class CandidateStateTests
             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true));
         using var raft = CreateCandidateStateMachine(oldTerm, null, jobQueue: jobQueue);
 
-        var request = new RequestVoteRequest(CandidateId: new PeerId(2), CandidateTerm: oldTerm.Increment(),
+        var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: oldTerm.Increment(),
             LastLog: raft.Log.LastLogEntry);
 
         raft.Handle(request);
@@ -382,7 +381,7 @@ public class CandidateStateTests
             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true));
         using var raft = CreateCandidateStateMachine(oldTerm, null, jobQueue: jobQueue);
 
-        var request = new RequestVoteRequest(CandidateId: new PeerId(2), CandidateTerm: leaderTerm,
+        var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: leaderTerm,
             LastLog: raft.Log.LastLogEntry);
 
         raft.Handle(request);

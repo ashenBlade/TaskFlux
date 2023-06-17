@@ -1,6 +1,7 @@
 ﻿using Raft.Core;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Log;
 
 namespace Raft.Network;
 
@@ -46,7 +47,7 @@ public static class Serializers
 
     public static class RequestVoteResponse
     {
-        public static byte[] Serialize(Core.Commands.RequestVoteResponse response)
+        public static byte[] Serialize(Core.Commands.RequestVote.RequestVoteResponse response)
         {
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
@@ -58,7 +59,7 @@ public static class Serializers
             return stream.ToArray();
         }
 
-        public static Core.Commands.RequestVoteResponse Deserialize(byte[] buffer)
+        public static Core.Commands.RequestVote.RequestVoteResponse Deserialize(byte[] buffer)
         {
             var stream = new MemoryStream(buffer);
             using var reader = new BinaryReader(stream);
@@ -71,7 +72,7 @@ public static class Serializers
             var voteGranted = reader.ReadBoolean();
             var currentTerm = reader.ReadInt32();
         
-            return new Core.Commands.RequestVoteResponse(CurrentTerm: new Term(currentTerm), VoteGranted: voteGranted);
+            return new Core.Commands.RequestVote.RequestVoteResponse(CurrentTerm: new Term(currentTerm), VoteGranted: voteGranted);
         }
     }
 

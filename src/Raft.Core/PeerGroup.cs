@@ -1,5 +1,3 @@
-using Raft.Core.Peer;
-
 namespace Raft.Core;
 
 public class PeerGroup

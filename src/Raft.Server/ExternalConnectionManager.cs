@@ -3,7 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using Raft.Core;
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 using Raft.Network;
 using Raft.Peer;
 using Serilog;
@@ -14,11 +14,11 @@ public class ExternalConnectionManager
 {
     private readonly string _host;
     private readonly int _port;
-    private readonly RaftStateMachine _raft;
+    private readonly RaftNode _raft;
     private readonly ILogger _logger;
-    private readonly ConcurrentDictionary<PeerId, NodeConnectionProcessor> _nodes = new();
+    private readonly ConcurrentDictionary<NodeId, NodeConnectionProcessor> _nodes = new();
 
-    public ExternalConnectionManager(string host, int port, RaftStateMachine raft, ILogger logger)
+    public ExternalConnectionManager(string host, int port, RaftNode raft, ILogger logger)
     {
         _host = host;
         _port = port;
@@ -87,7 +87,7 @@ public class ExternalConnectionManager
         }
     }
 
-    private void BeginNewClientSession(PeerId id, TcpClient client, CancellationToken token)
+    private void BeginNewClientSession(NodeId id, TcpClient client, CancellationToken token)
     {
         var processor = new NodeConnectionProcessor(id, client, _raft,
             _logger.ForContext("SourceContext", $"ОбработчикКлиента{id.Value}"))
@@ -118,7 +118,7 @@ public class ExternalConnectionManager
         await stream.WriteAsync(memory.ToArray(), token);
     }
 
-    private bool TryGetPeerId(TcpClient client, out PeerId id)
+    private bool TryGetPeerId(TcpClient client, out NodeId id)
     {
         var stream = client.GetStream();
         var reader = new BinaryReader(stream, Encoding.UTF8, true);
@@ -126,7 +126,7 @@ public class ExternalConnectionManager
         if (marker is not (byte)RequestType.Connect)
         {
             _logger.Warning("От клиента {@Address} поступил запрос на присодинение, но первый пакет не был пакетом соединения", client.Client.RemoteEndPoint);
-            id = PeerId.None;
+            id = NodeId.None;
             return false;
         }
         id = new( reader.ReadInt32() );

@@ -1,15 +1,15 @@
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 
 namespace Raft.Core.Commands;
 
 public class StopHeartbeatTimerCommand: UpdateCommand
 {
-    public StopHeartbeatTimerCommand(INodeState previousState, IStateMachine stateMachine) : base(previousState, stateMachine)
+    public StopHeartbeatTimerCommand(INodeState previousState, INode node) : base(previousState, node)
     {
     }
 
     protected override void ExecuteUpdate()
     {
-        StateMachine.HeartbeatTimer.Stop();
+        Node.HeartbeatTimer.Stop();
     }
 }

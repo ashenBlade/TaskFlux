@@ -1,24 +1,12 @@
+using Raft.Core.Log;
+
 namespace Raft.Core.Commands.Heartbeat;
 
-public record HeartbeatRequest(Term Term, int LeaderCommit, PeerId LeaderId, LogEntry PrevLogEntry)
-{
-    /// <summary>
-    /// Терм лидера
-    /// </summary>
-    public Term Term { get; set; } = Term;
-
-    /// <summary>
-    /// ID лидера
-    /// </summary>
-    public PeerId LeaderId { get; set; } = LeaderId;
-
-    /// <summary>
-    /// Информация о последней записе в логе лидера
-    /// </summary>
-    public LogEntry PrevLogEntry { get; set; } = PrevLogEntry;
-
-    /// <summary>
-    /// Индекс последнего закомиченной записи в логе лидера
-    /// </summary>
-    public int LeaderCommit { get; set; } = LeaderCommit;
-}
+/// <summary>
+/// Запрос Heartbeat
+/// </summary>
+/// <param name="Term">Терм узла, пославшего Heartbeat</param>
+/// <param name="LeaderCommit">Индекс последнего закомиченной записи в логе лидера</param>
+/// <param name="LeaderId">ID узла, пославшего Heartbeat</param>
+/// <param name="PrevLogEntry">Информация о последней записе в логе лидера</param>
+public record HeartbeatRequest(Term Term, int LeaderCommit, NodeId LeaderId, LogEntry PrevLogEntry);

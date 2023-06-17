@@ -3,7 +3,6 @@ using Raft.Core;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Commands.RequestVote;
-using Raft.Core.Peer;
 using Raft.Network;
 using Raft.Peer.Exceptions;
 using Serilog;
@@ -16,14 +15,14 @@ public class TcpPeer: IPeer, IDisposable
     private readonly ISocket _client;
     private readonly ILogger _logger;
     
-    public TcpPeer(PeerId id, ISocket client, ILogger logger)
+    public TcpPeer(NodeId id, ISocket client, ILogger logger)
     {
         _client = client;
         Id = id;
         _logger = logger;
     }
 
-    public PeerId Id { get; }
+    public NodeId Id { get; }
     
     public async Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token)
     {

@@ -1,15 +1,15 @@
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 
 namespace Raft.Core.Commands;
 
 public class ResetElectionTimerCommand: UpdateCommand
 {
-    public ResetElectionTimerCommand(INodeState previousState, IStateMachine stateMachine) : base(previousState, stateMachine)
+    public ResetElectionTimerCommand(INodeState previousState, INode node) : base(previousState, node)
     {
     }
 
     protected override void ExecuteUpdate()
     {
-        StateMachine.ElectionTimer.Reset();
+        Node.ElectionTimer.Reset();
     }
 }
