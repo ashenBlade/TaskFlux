@@ -3,7 +3,7 @@ using Raft.Core.Node;
 
 namespace Raft.Core.Commands;
 
-public class MoveToFollowerStateCommand: UpdateCommand
+internal class MoveToFollowerStateCommand: UpdateCommand
 {
     private readonly Term _term;
     private readonly NodeId? _votedFor;

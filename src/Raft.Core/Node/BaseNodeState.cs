@@ -10,7 +10,6 @@ internal abstract class BaseNodeState: INodeState
 {
     internal readonly INode Node;
     protected ILog Log => Node.Log;
-    private volatile bool _stopped = false;
 
     internal BaseNodeState(INode node)
     {
@@ -20,11 +19,6 @@ internal abstract class BaseNodeState: INodeState
     public abstract NodeRole Role { get; }
     public virtual RequestVoteResponse Apply(RequestVoteRequest request)
     {
-        if (_stopped)
-        {
-            throw new InvalidOperationException("Невозможно применить команду - состояние уже изменилось");
-        }
-
         // Мы в более актуальном Term'е
         if (request.CandidateTerm < Node.CurrentTerm)
         {
@@ -44,8 +38,10 @@ internal abstract class BaseNodeState: INodeState
             // У которого лог не "младше" нашего
             Node.Log.LastLogEntry.IsUpToDateWith(request.LastLog))
         {
-            var command = new MoveToFollowerStateCommand(request.CandidateTerm, request.CandidateId, this, Node);
-            Node.CommandQueue.Enqueue(command);
+            Node.CurrentState = FollowerState.Create(Node);
+            Node.ElectionTimer.Start();
+            Node.CurrentTerm = request.CandidateTerm;
+            Node.VotedFor = request.CandidateId;
             
             // И подтвердим свой 
             return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: true);
@@ -58,11 +54,6 @@ internal abstract class BaseNodeState: INodeState
 
     public virtual HeartbeatResponse Apply(HeartbeatRequest request)
     {
-        if (_stopped)
-        {
-            throw new InvalidOperationException("Невозможно применить команду - состояние уже изменилось");
-        }
-        
         if (request.Term < Node.CurrentTerm)
         {
             return HeartbeatResponse.Fail(Node.CurrentTerm);
@@ -88,14 +79,15 @@ internal abstract class BaseNodeState: INodeState
 
         if (Node.CurrentTerm < request.Term)
         {
-            Node.CommandQueue.Enqueue(new MoveToFollowerStateCommand(request.Term, null, this, Node));
+            Node.CurrentState = FollowerState.Create(Node);
+            Node.ElectionTimer.Start();
+            Node.CurrentTerm = request.Term;
+            Node.VotedFor = null;
         }
 
         return HeartbeatResponse.Ok(Node.CurrentTerm);
     }
 
     public virtual void Dispose()
-    {
-        _stopped = true;
-    }
+    { }
 }

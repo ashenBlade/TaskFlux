@@ -2,7 +2,7 @@ using Raft.Core.Node;
 
 namespace Raft.Core.Commands;
 
-public class MoveToLeaderStateCommand: UpdateCommand
+internal class MoveToLeaderStateCommand: UpdateCommand
 {
     public MoveToLeaderStateCommand(INodeState previousState, INode node)
         : base(previousState, node)

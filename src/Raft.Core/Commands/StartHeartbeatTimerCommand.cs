@@ -2,11 +2,11 @@ using Raft.Core.Node;
 
 namespace Raft.Core.Commands;
 
-public class StartHeartbeatTimerCommand: UpdateCommand
+internal class StartHeartbeatTimerCommand: UpdateCommand
 {
-    public StartHeartbeatTimerCommand(INodeState previousState, INode node) : base(previousState, node)
-    {
-    }
+    public StartHeartbeatTimerCommand(INodeState previousState, INode node) 
+        : base(previousState, node)
+    { }
 
     protected override void ExecuteUpdate()
     {

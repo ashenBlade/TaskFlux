@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Raft.CommandQueue;
+using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
@@ -10,7 +11,8 @@ namespace Raft.Core.Node;
 [DebuggerDisplay("Роль: {CurrentState.Role}; Терм: {CurrentTerm}; Id: {Id}")]
 public class RaftNode: IDisposable, INode
 {
-    public NodeRole CurrentRole => CurrentState.Role;
+    public NodeRole CurrentRole =>
+        ( ( INode ) this ).CurrentState.Role;
     public ILogger Logger { get; }
     public NodeId Id { get; }
     public Term CurrentTerm { get; set; }
@@ -19,7 +21,8 @@ public class RaftNode: IDisposable, INode
 
     // Выставляем вручную в .Create
     private INodeState? _currentState;
-    public INodeState CurrentState
+
+   INodeState INode.CurrentState
     {
         get => _currentState ?? throw new ArgumentNullException(nameof(_currentState), "Текущее состояние еще не проставлено");
         set
@@ -51,12 +54,14 @@ public class RaftNode: IDisposable, INode
 
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {
-        return CurrentState.Apply(request);
+        return CommandQueue.Enqueue(new RequestVoteCommand(request, this));
+        return ( ( INode ) this ).CurrentState.Apply(request);
     }
 
     public HeartbeatResponse Handle(HeartbeatRequest request)
     {
-        return CurrentState.Apply(request);
+        return CommandQueue.Enqueue(new HeartbeatCommand(request, this));
+        return ( ( INode ) this ).CurrentState.Apply(request);
     }
     
     public static RaftNode Create(NodeId id,

@@ -20,14 +20,16 @@ internal class  FollowerState: BaseNodeState
     public override RequestVoteResponse Apply(RequestVoteRequest request)
     {
         _logger.Verbose("Получен RequestVote");
-        Node.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, Node));
+        Node.ElectionTimer.Reset();
+        // Node.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, Node));
         return base.Apply(request);
     }
 
     public override HeartbeatResponse Apply(HeartbeatRequest request)
     {
         _logger.Verbose("Получен Heartbeat");
-        Node.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, Node));
+        // Node.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, Node));
+        Node.ElectionTimer.Reset();
         return base.Apply(request);
     }
 

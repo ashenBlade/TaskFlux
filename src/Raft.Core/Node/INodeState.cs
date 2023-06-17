@@ -9,7 +9,7 @@ namespace Raft.Core.Node;
 /// <remarks>
 /// IDisposable нужно вызывать для сброса таймеров и очистки ресурсов предыдущего состояния (отписка от таймеров и т.д.)
 /// </remarks>
-public interface INodeState: IDisposable
+internal interface INodeState: IDisposable
 {
     /// <summary>
     /// Текущая роль этого состояния

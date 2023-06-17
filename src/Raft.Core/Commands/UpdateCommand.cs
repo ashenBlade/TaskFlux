@@ -3,7 +3,7 @@ using Serilog;
 
 namespace Raft.Core.Commands;
 
-public abstract class UpdateCommand : Command
+internal abstract class UpdateCommand : Command
 {
     private readonly INodeState _previousState;
 
@@ -18,10 +18,6 @@ public abstract class UpdateCommand : Command
         if (Node.CurrentState == _previousState)
         {
             ExecuteUpdate();
-        }
-        else
-        {
-            Serilog.Log.Debug("Состояние уже было обновлено");
         }
     }
 

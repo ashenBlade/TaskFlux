@@ -3,7 +3,7 @@ using Raft.Core.Node;
 
 namespace Raft.Core.Commands;
 
-public class MoveToCandidateAfterElectionTimerTimeoutCommand: UpdateCommand
+internal class MoveToCandidateAfterElectionTimerTimeoutCommand: UpdateCommand
 {
     public MoveToCandidateAfterElectionTimerTimeoutCommand(INodeState previousState, INode node) 
         : base(previousState, node)

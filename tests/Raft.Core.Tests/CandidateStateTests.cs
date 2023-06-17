@@ -32,7 +32,7 @@ public class CandidateStateTests
     private static RaftNode CreateCandidateStateMachine(Term term, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
         var raftStateMachine = Helpers.CreateStateMachine(term, votedFor, peers: peers, electionTimer: electionTimer, heartbeatTimer: null, jobQueue: jobQueue, log: log);
-        raftStateMachine.CurrentState = new CandidateState(raftStateMachine, Helpers.NullLogger);
+        ( ( INode ) raftStateMachine ).CurrentState = new CandidateState(raftStateMachine, Helpers.NullLogger);
         return raftStateMachine;
     }
 

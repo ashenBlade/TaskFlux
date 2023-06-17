@@ -1,4 +1,6 @@
 using Raft.CommandQueue;
+using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 using Serilog;
 
@@ -14,18 +16,18 @@ public interface INode
     /// <summary>
     /// Номер текущего терма
     /// </summary>
-    public Term CurrentTerm { get; set; }
+    public Term CurrentTerm { get; internal set; }
     
     /// <summary>
     /// Id кандидата, за которого проголосовала текущая нода
     /// </summary>
-    public NodeId? VotedFor { get; set; }
+    public NodeId? VotedFor { get; internal set; }
     
     /// <summary>
     /// Текущее состояние узла в зависимости от роли: Follower, Candidate, Leader
     /// </summary>
-    INodeState CurrentState { get; set; }
-    
+    internal INodeState CurrentState { get; set; }
+
     /// <summary>
     /// Логгер для убобства
     /// </summary>
@@ -61,5 +63,8 @@ public interface INode
     /// <summary>
     /// Группа других узлов кластера
     /// </summary>
-    public PeerGroup PeerGroup { get;  }
+    public PeerGroup PeerGroup { get; }
+
+    public HeartbeatResponse Handle(HeartbeatRequest request);
+    public RequestVoteResponse Handle(RequestVoteRequest request);
 }

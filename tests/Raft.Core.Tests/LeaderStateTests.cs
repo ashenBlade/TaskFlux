@@ -13,7 +13,7 @@ public class LeaderStateTests
     private static RaftNode CreateCandidateStateMachine(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
         var raftStateMachine = Helpers.CreateStateMachine(currentTerm, votedFor, peers: peers, electionTimer: electionTimer, heartbeatTimer: heartbeatTimer, jobQueue: jobQueue, log: log);
-        raftStateMachine.CurrentState = new LeaderState(raftStateMachine, Helpers.NullLogger);
+        ( ( INode ) raftStateMachine ).CurrentState = new LeaderState(raftStateMachine, Helpers.NullLogger);
         return raftStateMachine;
     }
 
