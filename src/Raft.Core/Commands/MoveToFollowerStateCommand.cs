@@ -1,15 +1,15 @@
 using System.Collections.Concurrent;
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 
 namespace Raft.Core.Commands;
 
-public class MoveToFollowerStateCommand: UpdateCommand
+internal class MoveToFollowerStateCommand: UpdateCommand
 {
     private readonly Term _term;
-    private readonly PeerId? _votedFor;
+    private readonly NodeId? _votedFor;
 
-    public MoveToFollowerStateCommand(Term term, PeerId? votedFor, INodeState previousState, IStateMachine stateMachine) 
-        : base(previousState, stateMachine)
+    public MoveToFollowerStateCommand(Term term, NodeId? votedFor, INodeState previousState, INode node) 
+        : base(previousState, node)
     {
         _term = term;
         _votedFor = votedFor;
@@ -17,9 +17,9 @@ public class MoveToFollowerStateCommand: UpdateCommand
 
     protected override void ExecuteUpdate()
     {
-        StateMachine.CurrentState = FollowerState.Create(StateMachine);
-        StateMachine.ElectionTimer.Start();
-        StateMachine.Node.CurrentTerm = _term;
-        StateMachine.Node.VotedFor = _votedFor;
+        Node.CurrentState = FollowerState.Create(Node);
+        Node.ElectionTimer.Start();
+        Node.CurrentTerm = _term;
+        Node.VotedFor = _votedFor;
     }
 }

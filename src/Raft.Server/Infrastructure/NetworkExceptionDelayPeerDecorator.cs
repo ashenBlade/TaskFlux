@@ -2,7 +2,6 @@ using Raft.Core;
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Commands.RequestVote;
-using Raft.Core.Peer;
 
 namespace Raft.Server.Infrastructure;
 
@@ -17,7 +16,7 @@ public class NetworkExceptionDelayPeerDecorator: IPeer
         _delay = delay;
     }
 
-    public PeerId Id =>
+    public NodeId Id =>
         _peer.Id;
 
     public async Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token)

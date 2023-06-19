@@ -4,28 +4,21 @@ using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 
-namespace Raft.Core.StateMachine;
+namespace Raft.Core.Node;
 
-internal abstract class NodeState: INodeState
+internal abstract class BaseNodeState: INodeState
 {
-    internal readonly IStateMachine StateMachine;
-    protected INode Node => StateMachine.Node;
-    protected ILog Log => StateMachine.Log;
-    private volatile bool _stopped = false;
+    internal readonly INode Node;
+    protected ILog Log => Node.Log;
 
-    internal NodeState(IStateMachine stateMachine)
+    internal BaseNodeState(INode node)
     {
-        StateMachine = stateMachine;
+        Node = node;
     }
 
     public abstract NodeRole Role { get; }
     public virtual RequestVoteResponse Apply(RequestVoteRequest request)
     {
-        if (_stopped)
-        {
-            throw new InvalidOperationException("Невозможно применить команду - состояние уже изменилось");
-        }
-
         // Мы в более актуальном Term'е
         if (request.CandidateTerm < Node.CurrentTerm)
         {
@@ -43,10 +36,12 @@ internal abstract class NodeState: INodeState
             // С термом больше нашего (иначе, на текущем терме уже есть лидер)
             Node.CurrentTerm < request.CandidateTerm && 
             // У которого лог не "младше" нашего
-            StateMachine.Log.LastLogEntry.IsUpToDateWith(request.LastLog))
+            Node.Log.LastLogEntry.IsUpToDateWith(request.LastLog))
         {
-            var command = new MoveToFollowerStateCommand(request.CandidateTerm, request.CandidateId, this, StateMachine);
-            StateMachine.CommandQueue.Enqueue(command);
+            Node.CurrentState = FollowerState.Create(Node);
+            Node.ElectionTimer.Start();
+            Node.CurrentTerm = request.CandidateTerm;
+            Node.VotedFor = request.CandidateId;
             
             // И подтвердим свой 
             return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: true);
@@ -59,11 +54,6 @@ internal abstract class NodeState: INodeState
 
     public virtual HeartbeatResponse Apply(HeartbeatRequest request)
     {
-        if (_stopped)
-        {
-            throw new InvalidOperationException("Невозможно применить команду - состояние уже изменилось");
-        }
-        
         if (request.Term < Node.CurrentTerm)
         {
             return HeartbeatResponse.Fail(Node.CurrentTerm);
@@ -89,14 +79,15 @@ internal abstract class NodeState: INodeState
 
         if (Node.CurrentTerm < request.Term)
         {
-            StateMachine.CommandQueue.Enqueue(new MoveToFollowerStateCommand(request.Term, null, this, StateMachine));
+            Node.CurrentState = FollowerState.Create(Node);
+            Node.ElectionTimer.Start();
+            Node.CurrentTerm = request.Term;
+            Node.VotedFor = null;
         }
 
         return HeartbeatResponse.Ok(Node.CurrentTerm);
     }
 
     public virtual void Dispose()
-    {
-        _stopped = true;
-    }
+    { }
 }

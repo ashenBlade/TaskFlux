@@ -1,24 +1,24 @@
 using System.Windows.Input;
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 
 namespace Raft.Core.Commands;
 
 public abstract class Command<T>: ICommand<T>
 {
-    protected IStateMachine StateMachine { get; }
-    protected Command(IStateMachine stateMachine)
+    protected INode Node { get; }
+    protected Command(INode node)
     {
-        StateMachine = stateMachine;
+        Node = node;
     }
     public abstract T Execute();
 }
 
 public abstract class Command : ICommand
 {
-    protected IStateMachine StateMachine { get; }
-    protected Command(IStateMachine stateMachine)
+    protected INode Node { get; }
+    protected Command(INode node)
     {
-        StateMachine = stateMachine;
+        Node = node;
     }
     public abstract void Execute();
 }

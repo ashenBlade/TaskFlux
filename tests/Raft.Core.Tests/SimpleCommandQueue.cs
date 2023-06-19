@@ -2,7 +2,6 @@ using System.Threading.Channels;
 using System.Windows.Input;
 using Raft.CommandQueue;
 using Raft.Core.Commands;
-using Raft.Core.StateMachine;
 using ICommand = Raft.Core.Commands.ICommand;
 
 namespace Raft.Core.Tests;

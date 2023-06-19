@@ -4,22 +4,16 @@ using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
-using Raft.Core.Peer;
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 
 namespace Raft.Core.Tests;
 
 public class LeaderStateTests
 {
-    private static INode CreateNode(Term currentTerm, PeerId? votedFor, IEnumerable<IPeer>? peers = null)
+    private static RaftNode CreateCandidateStateMachine(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
-        return Helpers.CreateNode(currentTerm, votedFor, peers);
-    }
-
-    private static RaftStateMachine CreateCandidateStateMachine(INode node, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
-    {
-        var raftStateMachine = Helpers.CreateStateMachine(node, electionTimer, heartbeatTimer: heartbeatTimer, jobQueue: jobQueue, log: log);
-        raftStateMachine.CurrentState = new LeaderState(raftStateMachine, Helpers.NullLogger);
+        var raftStateMachine = Helpers.CreateStateMachine(currentTerm, votedFor, peers: peers, electionTimer: electionTimer, heartbeatTimer: heartbeatTimer, jobQueue: jobQueue, log: log);
+        ( ( INode ) raftStateMachine ).CurrentState = new LeaderState(raftStateMachine, Helpers.NullLogger);
         return raftStateMachine;
     }
 
@@ -45,8 +39,7 @@ public class LeaderStateTests
                                                .ReturnsAsync(new HeartbeatResponse(term, true))
                                                .Verifiable()))
                               .ToList();
-        var node = CreateNode(term, null, peers.Select(x => x.Object));
-        using var stateMachine = CreateCandidateStateMachine(node, heartbeatTimer: heartbeatTimer.Object);
+        using var stateMachine = CreateCandidateStateMachine(term, null, peers.Select(x => x.Object), heartbeatTimer: heartbeatTimer.Object);
         
         heartbeatTimer.Raise(x => x.Timeout += null);
 
@@ -75,8 +68,7 @@ public class LeaderStateTests
                                                .ReturnsAsync(new HeartbeatResponse(term, true))
                                                .Verifiable()))
                               .ToList();
-        var node = CreateNode(term, null, peers.Select(x => x.Object));
-        using var stateMachine = CreateCandidateStateMachine(node, heartbeatTimer: heartbeatTimer.Object);
+        using var stateMachine = CreateCandidateStateMachine(term, null, peers.Select(x => x.Object), heartbeatTimer: heartbeatTimer.Object);
         
         heartbeatTimer.Raise(x => x.Timeout += null);
 
@@ -88,10 +80,9 @@ public class LeaderStateTests
     {
         var term = new Term(1);
 
-        var node = CreateNode(term, null);
-        using var raft = CreateCandidateStateMachine(node);
+        using var raft = CreateCandidateStateMachine(term, null);
 
-        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: term.Increment(),
+        var request = new RequestVoteRequest(CandidateId: raft.Id + 1, CandidateTerm: term.Increment(),
             LastLog: raft.Log.LastLogEntry);
 
         raft.Handle(request);
@@ -109,10 +100,9 @@ public class LeaderStateTests
             t.Setup(x => x.Stop()).Verifiable();
         });
 
-        var node = CreateNode(term, null);
-        using var raft = CreateCandidateStateMachine(node, heartbeatTimer: heartbeatTimer.Object);
+        using var raft = CreateCandidateStateMachine(term, null, heartbeatTimer: heartbeatTimer.Object);
 
-        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: term.Increment(),
+        var request = new RequestVoteRequest(CandidateId: raft.Id + 1, CandidateTerm: term.Increment(),
             LastLog: raft.Log.LastLogEntry);
 
         raft.Handle(request);
@@ -131,10 +121,9 @@ public class LeaderStateTests
     {
         var term = new Term(myTerm);
 
-        var node = CreateNode(term, null);
-        using var raft = CreateCandidateStateMachine(node);
+        using var raft = CreateCandidateStateMachine(term, null);
 
-        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: new(otherTerm),
+        var request = new RequestVoteRequest(CandidateId: raft.Id + 1, CandidateTerm: new(otherTerm),
             LastLog: raft.Log.LastLogEntry);
 
         var response = raft.Handle(request);
@@ -156,10 +145,9 @@ public class LeaderStateTests
     {
         var term = new Term(myTerm);
 
-        var node = CreateNode(term, null);
-        using var raft = CreateCandidateStateMachine(node);
+        using var raft = CreateCandidateStateMachine(term, null);
 
-        var request = new HeartbeatRequest(LeaderId: node.Id + 1, Term: new(otherTerm),
+        var request = new HeartbeatRequest(LeaderId: raft.Id + 1, Term: new(otherTerm),
             LeaderCommit: raft.Log.CommitIndex, PrevLogEntry: raft.Log.LastLogEntry);
 
         var response = raft.Handle(request);
@@ -177,10 +165,9 @@ public class LeaderStateTests
             t.Setup(x => x.Stop()).Verifiable();
         });
 
-        var node = CreateNode(term, null);
-        using var raft = CreateCandidateStateMachine(node, heartbeatTimer: heartbeatTimer.Object);
+        using var raft = CreateCandidateStateMachine(term, null, heartbeatTimer: heartbeatTimer.Object);
 
-        var request = new HeartbeatRequest(LeaderId: new PeerId(2), Term: term.Increment(),
+        var request = new HeartbeatRequest(LeaderId: new NodeId(2), Term: term.Increment(),
             PrevLogEntry: raft.Log.LastLogEntry, LeaderCommit: raft.Log.CommitIndex);
 
         raft.Handle(request);
@@ -204,8 +191,7 @@ public class LeaderStateTests
                         .ReturnsAsync(new HeartbeatResponse(peerTerm, false))
                         .Verifiable());
         
-        var node = CreateNode(term, null, new[] {peer.Object});
-        using var stateMachine = CreateCandidateStateMachine(node, heartbeatTimer: heartbeatTimer.Object);
+        using var stateMachine = CreateCandidateStateMachine(term, null, new[] {peer.Object}, heartbeatTimer: heartbeatTimer.Object);
         
         heartbeatTimer.Raise(x => x.Timeout += null);
 
@@ -235,11 +221,10 @@ public class LeaderStateTests
                           })
                          .ToArray();
         var maxTerm = new Term(terms.Max());
-        var node = CreateNode(term, null, peers);
-        using var stateMachine = CreateCandidateStateMachine(node, heartbeatTimer: heartbeatTimer.Object);
+        using var stateMachine = CreateCandidateStateMachine(term, null, peers, heartbeatTimer: heartbeatTimer.Object);
         
         heartbeatTimer.Raise(x => x.Timeout += null);
 
-        Assert.Equal(maxTerm, stateMachine.Node.CurrentTerm);
+        Assert.Equal(maxTerm, stateMachine.CurrentTerm);
     }
 }

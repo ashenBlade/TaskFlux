@@ -1,16 +1,17 @@
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 
 namespace Raft.Core.Commands;
 
-public class MoveToLeaderStateCommand: UpdateCommand
+internal class MoveToLeaderStateCommand: UpdateCommand
 {
-    public MoveToLeaderStateCommand(INodeState previousState, IStateMachine stateMachine) : base(previousState, stateMachine)
+    public MoveToLeaderStateCommand(INodeState previousState, INode node)
+        : base(previousState, node)
     { }
 
     protected override void ExecuteUpdate()
     {
-        StateMachine.CurrentState = LeaderState.Create(StateMachine);
-        StateMachine.HeartbeatTimer.Start();
-        StateMachine.ElectionTimer.Stop();
+        Node.CurrentState = LeaderState.Create(Node);
+        Node.HeartbeatTimer.Start();
+        Node.ElectionTimer.Stop();
     }
 }

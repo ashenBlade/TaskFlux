@@ -1,20 +1,19 @@
 using Raft.Core.Commands;
 using Raft.Core.Commands.Heartbeat;
-using Raft.Core.Peer;
 using Serilog;
 
-namespace Raft.Core.StateMachine;
+namespace Raft.Core.Node;
 
-internal class LeaderState: NodeState
+internal class LeaderState: BaseNodeState
 {
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
 
-    internal LeaderState(IStateMachine stateMachine, ILogger logger)
-        : base(stateMachine)
+    internal LeaderState(INode node, ILogger logger)
+        : base(node)
     {
         _logger = logger;
-        StateMachine.HeartbeatTimer.Timeout += SendHeartbeat;
+        Node.HeartbeatTimer.Timeout += SendHeartbeat;
     }
 
     // ReSharper disable once CoVariantArrayConversion
@@ -64,24 +63,24 @@ internal class LeaderState: NodeState
         if (maxTerm is {} max && Node.CurrentTerm < max)
         {
             _logger.Debug("Какой-то узел ответил большим термом - {Term}. Перехожу в Follower", max);
-            StateMachine.CommandQueue.Enqueue(new MoveToFollowerStateCommand(max, null, this, StateMachine));
+            Node.CommandQueue.Enqueue(new MoveToFollowerStateCommand(max, null, this, Node));
         }
         else
         {
             _logger.Verbose("Heartbeat отправлены. Посылаю команду на перезапуск таймера");
-            StateMachine.CommandQueue.Enqueue(new StartHeartbeatTimerCommand(this, StateMachine));
+            Node.CommandQueue.Enqueue(new StartHeartbeatTimerCommand(this, Node));
         }
     }
 
     public override void Dispose()
     {
-        StateMachine.CommandQueue.Enqueue(new StopHeartbeatTimerCommand(this, StateMachine));
-        StateMachine.HeartbeatTimer.Timeout -= SendHeartbeat;
+        Node.CommandQueue.Enqueue(new StopHeartbeatTimerCommand(this, Node));
+        Node.HeartbeatTimer.Timeout -= SendHeartbeat;
         base.Dispose();
     }
 
-    public static LeaderState Create(IStateMachine stateMachine)
+    public static LeaderState Create(INode node)
     {
-        return new LeaderState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Leader"));
+        return new LeaderState(node, node.Logger.ForContext("SourceContext", "Leader"));
     }
 }

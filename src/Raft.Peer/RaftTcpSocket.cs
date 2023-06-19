@@ -12,13 +12,13 @@ public class RaftTcpSocket: ISocket
 {
     private readonly string _host;
     private readonly int _port;
-    private readonly PeerId _nodeId;
+    private readonly NodeId _nodeId;
     private readonly TimeSpan _requestTimeout;
     private readonly int _receiveBufferSize;
     private readonly ILogger _logger;
     private readonly Socket _socket;
 
-    public RaftTcpSocket(string host, int port, PeerId nodeId, TimeSpan requestTimeout, int receiveBufferSize, ILogger logger)
+    public RaftTcpSocket(string host, int port, NodeId nodeId, TimeSpan requestTimeout, int receiveBufferSize, ILogger logger)
     {
         _host = host;
         _port = port;

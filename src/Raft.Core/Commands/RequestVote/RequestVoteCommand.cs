@@ -1,18 +1,18 @@
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 
 namespace Raft.Core.Commands.RequestVote;
 
-public class RequestVoteCommand: Command<RequestVoteResponse>
+internal class RequestVoteCommand: Command<RequestVoteResponse>
 {
     private readonly RequestVoteRequest _request;
 
-    public RequestVoteCommand(RequestVoteRequest request, IStateMachine stateMachine): base(stateMachine)
+    public RequestVoteCommand(RequestVoteRequest request, INode node) : base(node)
     {
         _request = request;
     }
-    
+
     public override RequestVoteResponse Execute()
     {
-        return StateMachine.CurrentState.Apply(_request);
+        return Node.CurrentState.Apply(_request);
     }
 }

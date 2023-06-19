@@ -2,8 +2,7 @@
 using Microsoft.Extensions.Configuration;
 using Raft.CommandQueue;
 using Raft.Core;
-using Raft.Core.Peer;
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 using Raft.JobQueue;
 using Raft.Peer;
 using Raft.Peer.Decorators;
@@ -29,14 +28,14 @@ var options = configuration.Get<RaftServerOptions>()
 
 ValidateOptions(options);
 
-var nodeId = new PeerId(options.NodeId);
+var nodeId = new NodeId(options.NodeId);
 
 var requestTimeout = TimeSpan.FromSeconds(0.5);
 
 var peers = options.Peers
                    .Select(peerInfo =>
                     {
-                        var peerId = new PeerId(peerInfo.Id);
+                        var peerId = new NodeId(peerInfo.Id);
                         var tcpSocket = new RaftTcpSocket(peerInfo.Host, peerInfo.Port, nodeId, requestTimeout, options.ReceiveBufferSize, Log.ForContext("SourceContext", $"RaftTcpSocket-{peerId.Value}"));
                         var socket = new SingleAccessSocketDecorator(new NetworkExceptionWrapperDecorator(tcpSocket));
                         IPeer peer = new TcpPeer(peerId, socket, Log.ForContext("SourceContext", $"TcpPeer-{peerId.Value}"));
@@ -53,10 +52,8 @@ using var heartbeatTimer = new SystemTimersTimer( TimeSpan.FromSeconds(1) );
 var log = new StubLog();
 var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
 
-var node = new Node(nodeId, new PeerGroup(peers));
-
 using var commandQueue = new ChannelCommandQueue();
-using var raft = RaftStateMachine.Create(node, Log.ForContext<RaftStateMachine>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
+using var raft = RaftNode.Create(nodeId, new PeerGroup(peers), null, new Term(1), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
 var connectionManager = new ExternalConnectionManager(options.Host, options.Port, raft, Log.Logger.ForContext<ExternalConnectionManager>());
 var server = new RaftStateObserver(raft, Log.Logger.ForContext<RaftStateObserver>());
 

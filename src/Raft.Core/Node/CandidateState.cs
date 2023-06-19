@@ -1,29 +1,28 @@
 using Raft.Core.Commands;
 using Raft.Core.Commands.RequestVote;
-using Raft.Core.Peer;
 using Serilog;
 
-namespace Raft.Core.StateMachine;
+namespace Raft.Core.Node;
 
-internal class CandidateState: NodeState
+internal class CandidateState: BaseNodeState
 {
     public override NodeRole Role => NodeRole.Candidate;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;
-    internal CandidateState(IStateMachine stateMachine, ILogger logger)
-        :base(stateMachine)
+    internal CandidateState(INode node, ILogger logger)
+        :base(node)
     {
         _logger = logger;
         _cts = new();
-        StateMachine.ElectionTimer.Timeout += OnElectionTimerTimeout;
-        StateMachine.JobQueue.EnqueueInfinite(RunQuorum, _cts.Token);
+        Node.ElectionTimer.Timeout += OnElectionTimerTimeout;
+        Node.JobQueue.EnqueueInfinite(RunQuorum, _cts.Token);
     }
 
     private async Task<RequestVoteResponse?[]> SendRequestVotes(List<IPeer> peers, CancellationToken token)
     {
         // Отправляем запрос всем пирам
-        var request = new RequestVoteRequest(CandidateId: StateMachine.Node.Id,
-            CandidateTerm: StateMachine.Node.CurrentTerm, LastLog: StateMachine.Log.LastLogEntry);
+        var request = new RequestVoteRequest(CandidateId: Node.Id,
+            CandidateTerm: Node.CurrentTerm, LastLog: Node.Log.LastLogEntry);
 
         var requests = new Task<RequestVoteResponse?>[peers.Count];
         for (var i = 0; i < peers.Count; i++)
@@ -95,7 +94,7 @@ internal class CandidateState: NodeState
                     _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", leftPeers[i].Id);
                     _cts.Cancel();
 
-                    StateMachine.CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.CurrentTerm, null, this, StateMachine));
+                    Node.CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.CurrentTerm, null, this, Node));
                     return;
                 }
                 else
@@ -122,7 +121,7 @@ internal class CandidateState: NodeState
             return;
         }
 
-        StateMachine.CommandQueue.Enqueue(new MoveToLeaderStateCommand(this, StateMachine));
+        Node.CommandQueue.Enqueue(new MoveToLeaderStateCommand(this, Node));
         
         bool QuorumReached()
         {
@@ -132,11 +131,11 @@ internal class CandidateState: NodeState
 
     private void OnElectionTimerTimeout()
     {
-        StateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
+        Node.ElectionTimer.Timeout -= OnElectionTimerTimeout;
 
         _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
 
-        StateMachine.CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, StateMachine));
+        Node.CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, Node));
     }
 
     public override void Dispose()
@@ -148,12 +147,12 @@ internal class CandidateState: NodeState
         }
         catch (ObjectDisposedException)
         { }
-        StateMachine.ElectionTimer.Timeout -= OnElectionTimerTimeout;
+        Node.ElectionTimer.Timeout -= OnElectionTimerTimeout;
         base.Dispose();
     }
 
-    internal static CandidateState Create(IStateMachine stateMachine)
+    internal static CandidateState Create(INode node)
     {
-        return new CandidateState(stateMachine, stateMachine.Logger.ForContext("SourceContext", "Candidate"));
+        return new CandidateState(node, node.Logger.ForContext("SourceContext", "Candidate"));
     }
 }

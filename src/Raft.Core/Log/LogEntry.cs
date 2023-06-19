@@ -1,4 +1,4 @@
-namespace Raft.Core;
+namespace Raft.Core.Log;
 
 public readonly record struct LogEntry(Term Term, int Index)
 {
@@ -6,7 +6,7 @@ public readonly record struct LogEntry(Term Term, int Index)
     /// Пустая запись.
     /// Используется когда в логе нет записей, чтобы не вводить <c>null</c>
     /// </summary>
-    public static readonly LogEntry Empty = new(new Term(0), 0);
+    public static readonly LogEntry Empty = new(Term.Start, 0);
     
     /// <summary>
     /// Может ли текущий лог быть актуализирован другим (содержится ли в другом логе)

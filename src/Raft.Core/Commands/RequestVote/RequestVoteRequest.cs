@@ -1,19 +1,11 @@
+using Raft.Core.Log;
+
 namespace Raft.Core.Commands.RequestVote;
 
-public record RequestVoteRequest(PeerId CandidateId, Term CandidateTerm, LogEntry LastLog)
-{
-    /// <summary>
-    /// Term кандидата, который послал запрос
-    /// </summary>
-    public Term CandidateTerm { get; set; } = CandidateTerm;
-
-    /// <summary>
-    /// ID кандидата, который послал запрос
-    /// </summary>
-    public PeerId CandidateId { get; set; } = CandidateId;
-
-    /// <summary>
-    /// Информация о последнем логе друго узла
-    /// </summary>
-    public LogEntry LastLog { get; set; } = LastLog;
-}
+/// <summary>
+/// Запрос RequestVote
+/// </summary>
+/// <param name="CandidateId">ID кандидата, который послал запрос</param>
+/// <param name="CandidateTerm">Терм кандидата, который послал запрос</param>
+/// <param name="LastLog">Информация о последнем логе друго узла</param>
+public record RequestVoteRequest(NodeId CandidateId, Term CandidateTerm, LogEntry LastLog);

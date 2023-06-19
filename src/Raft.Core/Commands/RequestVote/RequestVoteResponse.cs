@@ -1,15 +1,11 @@
-namespace Raft.Core.Commands;
+namespace Raft.Core.Commands.RequestVote;
 
-public record RequestVoteResponse(Term CurrentTerm, bool VoteGranted)
-{
-    /// <summary>
-    /// Term для обновления кандидата
-    /// </summary>
-    public Term CurrentTerm { get; set; } = CurrentTerm;
-
-    /// <summary>
-    /// true - узел принял запрос
-    /// false - отверг 
-    /// </summary>
-    public bool VoteGranted { get; set; } = VoteGranted;
-}
+/// <summary>
+/// Ответ на команду <see cref="RequestVoteRequest"/>
+/// </summary>
+/// <param name="CurrentTerm">Term для обновления кандидата</param>
+/// <param name="VoteGranted">
+/// true - узел принял запрос
+/// false - отверг
+/// </param>
+public record RequestVoteResponse(Term CurrentTerm, bool VoteGranted);

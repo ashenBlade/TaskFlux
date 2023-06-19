@@ -1,19 +1,19 @@
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 
 namespace Raft.Core.Commands.Heartbeat;
 
-public class HeartbeatCommand: Command<HeartbeatResponse>
+internal class HeartbeatCommand: Command<HeartbeatResponse>
 {
     private readonly HeartbeatRequest _request;
 
-    public HeartbeatCommand(HeartbeatRequest request, IStateMachine stateMachine)
-        : base(stateMachine)
+    public HeartbeatCommand(HeartbeatRequest request, INode node)
+        : base(node)
     {
         _request = request;
     }
-    
+
     public override HeartbeatResponse Execute()
     {
-        return StateMachine.CurrentState.Apply(_request);
+        return Node.CurrentState.Apply(_request);
     }
 }

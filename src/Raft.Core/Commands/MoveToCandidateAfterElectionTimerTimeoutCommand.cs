@@ -1,20 +1,20 @@
 using System.Windows.Input;
-using Raft.Core.StateMachine;
+using Raft.Core.Node;
 
 namespace Raft.Core.Commands;
 
-public class MoveToCandidateAfterElectionTimerTimeoutCommand: UpdateCommand
+internal class MoveToCandidateAfterElectionTimerTimeoutCommand: UpdateCommand
 {
-    public MoveToCandidateAfterElectionTimerTimeoutCommand(INodeState previousState, IStateMachine stateMachine) 
-        : base(previousState, stateMachine)
+    public MoveToCandidateAfterElectionTimerTimeoutCommand(INodeState previousState, INode node) 
+        : base(previousState, node)
     { }
 
     protected override void ExecuteUpdate()
     {
-        StateMachine.ElectionTimer.Stop();
-        StateMachine.CurrentState = CandidateState.Create(StateMachine);
-        StateMachine.Node.CurrentTerm = StateMachine.Node.CurrentTerm.Increment();
-        StateMachine.Node.VotedFor = StateMachine.Node.Id;
-        StateMachine.ElectionTimer.Start();
+        Node.ElectionTimer.Stop();
+        Node.CurrentState = CandidateState.Create(Node);
+        Node.CurrentTerm = Node.CurrentTerm.Increment();
+        Node.VotedFor = Node.Id;
+        Node.ElectionTimer.Start();
     }
 }
