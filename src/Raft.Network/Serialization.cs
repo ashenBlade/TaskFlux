@@ -1,6 +1,4 @@
 ﻿using Raft.Core;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
 using Raft.Core.Log;
 
 namespace Raft.Network;
@@ -76,9 +74,9 @@ public static class Serializers
         }
     }
 
-    public static class HeartbeatRequest
+    public static class AppendEntriesRequest
     {
-        public static byte[] Serialize(Core.Commands.Heartbeat.HeartbeatRequest request)
+        public static byte[] Serialize(Core.Commands.AppendEntries.AppendEntriesRequest request)
         {
             // Маркерный байт + 4 значения по 4 байта
             const int initialBufferSize = 1 + 4 * 5;
@@ -95,7 +93,7 @@ public static class Serializers
             return stream.ToArray();
         }
         
-        public static Core.Commands.Heartbeat.HeartbeatRequest Deserialize(byte[] buffer)
+        public static Core.Commands.AppendEntries.AppendEntriesRequest Deserialize(byte[] buffer)
         {
             using var reader = new BinaryReader(new MemoryStream(buffer));
             var marker = reader.ReadByte();
@@ -110,14 +108,14 @@ public static class Serializers
             var prevLogEntryTerm = reader.ReadInt32();
             var prevLogEntryIndex = reader.ReadInt32();
 
-            return new Core.Commands.Heartbeat.HeartbeatRequest(LeaderId: new(leaderId), Term: new(term), LeaderCommit: commit,
-                PrevLogEntry: new LogEntry(new(prevLogEntryTerm), prevLogEntryIndex));
+            return new Core.Commands.AppendEntries.AppendEntriesRequest(LeaderId: new(leaderId), Term: new(term), LeaderCommit: commit,
+                PrevLogEntry: new LogEntry(new(prevLogEntryTerm), prevLogEntryIndex), Entries: Array.Empty<string>());
         }
     }
 
-    public static class HeartbeatResponse
+    public static class AppendEntriesResponse
     {
-        public static byte[] Serialize(Core.Commands.Heartbeat.HeartbeatResponse response)
+        public static byte[] Serialize(Core.Commands.AppendEntries.AppendEntriesResponse response)
         {
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
@@ -128,7 +126,7 @@ public static class Serializers
             return stream.ToArray();
         }
         
-        public static Core.Commands.Heartbeat.HeartbeatResponse Deserialize(byte[] buffer)
+        public static Core.Commands.AppendEntries.AppendEntriesResponse Deserialize(byte[] buffer)
         {
             using var reader = new BinaryReader(new MemoryStream(buffer));
             var marker = reader.ReadByte();
@@ -138,7 +136,8 @@ public static class Serializers
             }
             var success = reader.ReadBoolean();
             var term = reader.ReadInt32();
-            return new Core.Commands.Heartbeat.HeartbeatResponse(new Term(term), success);
+            
+            return new Core.Commands.AppendEntries.AppendEntriesResponse(new Term(term), success);
         }
     }
 }

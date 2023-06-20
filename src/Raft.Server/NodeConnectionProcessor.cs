@@ -1,8 +1,5 @@
 using System.Net.Sockets;
 using Raft.Core;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
-using Raft.Core.Commands.RequestVote;
 using Raft.Core.Node;
 using Raft.Network;
 using Serilog;
@@ -11,8 +8,7 @@ namespace Raft.Server;
 
 public record NodeConnectionProcessor(NodeId Id, TcpClient Client, RaftNode Node, ILogger Logger): IDisposable
 {
-    public CancellationTokenSource CancellationTokenSource { get; init; }
-    public bool Stopped { get; private set; } = false;
+    public CancellationTokenSource CancellationTokenSource { get; init; } = null!;
 
     public async Task ProcessClientBackground()
     {
@@ -62,13 +58,13 @@ public record NodeConnectionProcessor(NodeId Id, TcpClient Client, RaftNode Node
                         break;
                     case (byte) RequestType.AppendEntries:
                         logger.Debug("Получен AppendEntries. Десериализую в Heartbeat");
-                        var heartbeatRequest = Serializers.HeartbeatRequest.Deserialize(buffer);
+                        var heartbeatRequest = Serializers.AppendEntriesRequest.Deserialize(buffer);
                         logger.Verbose("HeartbeatRequest: {Request}", heartbeatRequest);
                         logger.Debug("Heartbeat десериализован. Отправляю команду машине");
                         var heartbeatResponse = stateMachine.Handle(heartbeatRequest);
                         logger.Debug("Команда обработана. Сериализую ответ");
                         logger.Verbose("HeartbeatResponse: {Response}", heartbeatResponse);
-                        responseBuffer = Serializers.HeartbeatResponse.Serialize(heartbeatResponse);
+                        responseBuffer = Serializers.AppendEntriesResponse.Serialize(heartbeatResponse);
                         break;
                 }
                     
@@ -79,7 +75,6 @@ public record NodeConnectionProcessor(NodeId Id, TcpClient Client, RaftNode Node
                 {
                     logger.Error("Не удалось сериализовать ответ. Закрываю соединение с {@Address}", client.Client.RemoteEndPoint);
                     client.Close();
-                    Stopped = true;
                     continue;
                 }
                     
@@ -90,7 +85,6 @@ public record NodeConnectionProcessor(NodeId Id, TcpClient Client, RaftNode Node
             catch (Exception exception)
             {
                 logger.Error(exception, "Поймано необработанное исключение при работе с узлом {PeerId}", id);
-                Stopped = true;
             }
         }
     }

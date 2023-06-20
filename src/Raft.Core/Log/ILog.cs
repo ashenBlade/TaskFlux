@@ -2,6 +2,7 @@ namespace Raft.Core.Log;
 
 public interface ILog
 {
+    public LogEntry Append(Term term);
     /// <summary>
     /// Проверить запись лога на вхождение в существующий лог
     /// </summary>

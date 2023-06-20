@@ -1,4 +1,4 @@
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 
 namespace Raft.Core;
@@ -13,7 +13,7 @@ public interface IPeer
     /// </summary>
     public NodeId Id { get; }
 
-    public Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token);
+    public Task<AppendEntriesResponse?> SendAppendEntries(AppendEntriesRequest request, CancellationToken token);
     
     /// <summary>
     /// Отправить запрос RequestVote указанному узлу
@@ -22,5 +22,4 @@ public interface IPeer
     /// <param name="token">Токен отмены</param>
     /// <returns>Ответ сервера, или <c>null</c> если ответа нет (например, таймаут из-за проблем сети)</returns>
     public Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token);
-    public Task SendAppendEntries(CancellationToken token);
 }

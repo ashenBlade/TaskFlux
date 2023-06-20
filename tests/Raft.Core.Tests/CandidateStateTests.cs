@@ -1,6 +1,5 @@
 using Moq;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 using Raft.Core.Node;
@@ -9,26 +8,6 @@ namespace Raft.Core.Tests;
 
 public class CandidateStateTests
 {
-    private class SingleRunJobQueue : IJobQueue
-    {
-        public (Func<Task> Job, CancellationToken Token)? Job { get; set; }
-        public void EnqueueInfinite(Func<Task> job, CancellationToken token)
-        {
-            Job = (job, token);
-        }
-
-        public async Task Run()
-        {
-            if (Job is not {Job: {} job})
-            {
-                throw new ArgumentNullException(nameof(Job), "Задача не была зарегистрирована");
-            }
-            
-
-            await job();
-        }
-    }
-
     private static RaftNode CreateCandidateStateMachine(Term term, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
         var raftStateMachine = Helpers.CreateStateMachine(term, votedFor, peers: peers, electionTimer: electionTimer, heartbeatTimer: null, jobQueue: jobQueue, log: log);
@@ -307,8 +286,8 @@ public class CandidateStateTests
         var oldTerm = new Term(1);
         using var raft = CreateCandidateStateMachine(oldTerm, null);
 
-        var request = new HeartbeatRequest(Term: oldTerm.Increment(), LeaderCommit: raft.Log.CommitIndex,
-            LeaderId: new NodeId(2), PrevLogEntry: raft.Log.LastLogEntry);
+        var request = AppendEntriesRequest.Heartbeat(oldTerm.Increment(), raft.Log.CommitIndex,
+            new NodeId(2), raft.Log.LastLogEntry);
 
         raft.Handle(request);
 
@@ -322,8 +301,7 @@ public class CandidateStateTests
         using var raft = CreateCandidateStateMachine(oldTerm, null);
 
         var leaderTerm = oldTerm.Increment();
-        var request = new HeartbeatRequest(Term: leaderTerm, LeaderCommit: raft.Log.CommitIndex,
-            LeaderId: new NodeId(2), PrevLogEntry: raft.Log.LastLogEntry);
+        var request = AppendEntriesRequest.Heartbeat(leaderTerm, raft.Log.CommitIndex, new NodeId(2), raft.Log.LastLogEntry);
 
         raft.Handle(request);
 
@@ -341,8 +319,7 @@ public class CandidateStateTests
         using var raft = CreateCandidateStateMachine(oldTerm, null, jobQueue: jobQueue);
 
         var leaderTerm = oldTerm.Increment();
-        var request = new HeartbeatRequest(Term: leaderTerm, LeaderCommit: raft.Log.CommitIndex,
-            LeaderId: new NodeId(2), PrevLogEntry: raft.Log.LastLogEntry);
+        var request = AppendEntriesRequest.Heartbeat(leaderTerm, raft.Log.CommitIndex, new NodeId(2), raft.Log.LastLogEntry);
 
         raft.Handle(request);
         await jobQueue.Run();

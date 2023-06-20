@@ -17,7 +17,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Raft.Core.Tests", "tests\Ra
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Raft.JobQueue", "src\Raft.JobQueue\Raft.JobQueue.csproj", "{36D35B57-0F96-4169-B01C-B1D7A200A7A2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Raft.Log", "src\Raft.Log\Raft.Log.csproj", "{D0205007-8A47-4A5C-BA9B-C1DC3F15B2B8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Raft.Log.InMemory", "src\Raft.Log.InMemory\Raft.Log.InMemory.csproj", "{D0205007-8A47-4A5C-BA9B-C1DC3F15B2B8}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{085D4247-AF0E-498F-97C7-410383D6FFD8}"
 	ProjectSection(SolutionItems) = preProject

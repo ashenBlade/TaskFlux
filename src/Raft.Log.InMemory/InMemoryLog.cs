@@ -1,7 +1,7 @@
 using Raft.Core;
 using Raft.Core.Log;
 
-namespace Raft.Log;
+namespace Raft.Log.InMemory;
 
 public class InMemoryLog: ILog
 {
@@ -10,6 +10,11 @@ public class InMemoryLog: ILog
     public InMemoryLog()
     { }
 
+    public LogEntry Append(Term term)
+    {
+        return LogEntry.Empty;
+    }
+    
     public InMemoryLog(IEnumerable<LogEntry> entries)
     {
         

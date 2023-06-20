@@ -1,6 +1,6 @@
 namespace Raft.Core;
 
-public class PeerGroup
+public class PeerGroup: IQuorumChecker
 {
     private readonly IPeer[] _peers;
     public IReadOnlyList<IPeer> Peers => _peers;

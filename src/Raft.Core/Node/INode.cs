@@ -1,5 +1,5 @@
 using Raft.CommandQueue;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 using Serilog;
@@ -65,6 +65,6 @@ public interface INode
     /// </summary>
     public PeerGroup PeerGroup { get; }
 
-    public HeartbeatResponse Handle(HeartbeatRequest request);
     public RequestVoteResponse Handle(RequestVoteRequest request);
+    public AppendEntriesResponse Handle(AppendEntriesRequest request);
 }

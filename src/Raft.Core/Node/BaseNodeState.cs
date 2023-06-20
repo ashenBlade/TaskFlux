@@ -1,6 +1,5 @@
 using System.ComponentModel;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 
@@ -52,18 +51,19 @@ internal abstract class BaseNodeState: INodeState
         return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: false);
     }
 
-    public virtual HeartbeatResponse Apply(HeartbeatRequest request)
+
+    public virtual AppendEntriesResponse Apply(AppendEntriesRequest request)
     {
         if (request.Term < Node.CurrentTerm)
         {
-            return HeartbeatResponse.Fail(Node.CurrentTerm);
+            return AppendEntriesResponse.Fail(Node.CurrentTerm);
         }
 
         LogEntryCheckResult checkResult;
         switch (checkResult = Log.Check(request.PrevLogEntry))
         {
             case LogEntryCheckResult.Conflict:
-                return HeartbeatResponse.Fail(Node.CurrentTerm);
+                return AppendEntriesResponse.Fail(Node.CurrentTerm);
             case LogEntryCheckResult.Contains:
             case LogEntryCheckResult.NotFound:
                 break;
@@ -85,7 +85,7 @@ internal abstract class BaseNodeState: INodeState
             Node.VotedFor = null;
         }
 
-        return HeartbeatResponse.Ok(Node.CurrentTerm);
+        return AppendEntriesResponse.Ok(Node.CurrentTerm);
     }
 
     public virtual void Dispose()

@@ -1,12 +1,10 @@
 using System.Net.Sockets;
 using Raft.Core;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Network;
 using Raft.Peer.Exceptions;
 using Serilog;
-using Serilog.Context;
 
 namespace Raft.Peer;
 
@@ -24,10 +22,10 @@ public class TcpPeer: IPeer, IDisposable
 
     public NodeId Id { get; }
     
-    public async Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token)
+    public async Task<AppendEntriesResponse?> SendAppendEntries(AppendEntriesRequest request, CancellationToken token)
     {
         byte[] response;
-        var data = Serializers.HeartbeatRequest.Serialize(request);
+        var data = Serializers.AppendEntriesRequest.Serialize(request);
         try
         {
             _logger.Verbose("Делаю запрос Heartbeat на узел {PeerId}", Id);
@@ -55,8 +53,9 @@ public class TcpPeer: IPeer, IDisposable
             _logger.Verbose("Узел {Id} вернул пустой ответ. Соединение было разорвано", Id);
             return null;
         }
+        
         _logger.Verbose("Ответ от узла {PeerId} получен. Десериализую", Id);
-        return Serializers.HeartbeatResponse.Deserialize(response);
+        return Serializers.AppendEntriesResponse.Deserialize(response);
     }
 
     public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
@@ -95,11 +94,6 @@ public class TcpPeer: IPeer, IDisposable
         }
         _logger.Verbose("Ответ от узла {PeerId} получен. Десериализую", Id);
         return Serializers.RequestVoteResponse.Deserialize(response);
-    }
-    
-    public Task SendAppendEntries(CancellationToken token)
-    {
-        throw new NotImplementedException();
     }
 
     public void Dispose()

@@ -1,6 +1,5 @@
 using Moq;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 using Raft.Core.Node;
@@ -145,8 +144,8 @@ public class FollowerStateTests
         timer.Setup(x => x.Reset()).Verifiable();
         using var stateMachine = CreateNode(oldTerm, null, electionTimer: timer.Object, log: CreateLog());
 
-        var request = new HeartbeatRequest(Term: new Term(term), LeaderCommit: 0,
-            LeaderId: new NodeId(Value: NodeId.Value + 1), PrevLogEntry: new LogEntry(new Term(term), 0));
+        var request = AppendEntriesRequest.Heartbeat(new Term(term), 0,
+            new NodeId(Value: NodeId.Value + 1), new LogEntry(new Term(term), 0));
 
         stateMachine.Handle(request);
 
@@ -166,8 +165,8 @@ public class FollowerStateTests
         using var raft = CreateNode(oldTerm, null, electionTimer: timer.Object);
 
         var leaderTerm = new Term(term);
-        var request = new HeartbeatRequest(Term: leaderTerm, LeaderCommit: 0,
-            LeaderId: new NodeId(Value: NodeId.Value + 1), PrevLogEntry: new LogEntry(new Term(term), 0));
+        var request = AppendEntriesRequest.Heartbeat(leaderTerm, 0,
+            new NodeId(Value: NodeId.Value + 1), new LogEntry(new Term(term), 0));
 
         raft.Handle(request);
         
@@ -202,8 +201,7 @@ public class FollowerStateTests
                                  : new NodeId(oldVotedFor.Value);
         using var raft = CreateNode(oldTerm, votedForId);
 
-        var request = new HeartbeatRequest(Term: raft.CurrentTerm.Increment(), LeaderCommit: raft.Log.CommitIndex,
-            LeaderId: new NodeId(2), PrevLogEntry: raft.Log.LastLogEntry);
+        var request = AppendEntriesRequest.Heartbeat(raft.CurrentTerm.Increment(), raft.Log.CommitIndex, new NodeId(2), raft.Log.LastLogEntry);
         raft.Handle(request);
         
         Assert.False(raft.VotedFor.HasValue);

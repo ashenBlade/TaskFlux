@@ -1,14 +1,13 @@
 using System.Diagnostics;
 using Raft.CommandQueue;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 using Serilog;
 
 namespace Raft.Core.Node;
 
-[DebuggerDisplay("Роль: {CurrentState.Role}; Терм: {CurrentTerm}; Id: {Id}")]
+[DebuggerDisplay("Роль: {CurrentRole}; Терм: {CurrentTerm}; Id: {Id}")]
 public class RaftNode: IDisposable, INode
 {
     public NodeRole CurrentRole =>
@@ -55,13 +54,11 @@ public class RaftNode: IDisposable, INode
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {
         return CommandQueue.Enqueue(new RequestVoteCommand(request, this));
-        return ( ( INode ) this ).CurrentState.Apply(request);
     }
-
-    public HeartbeatResponse Handle(HeartbeatRequest request)
+    
+    public AppendEntriesResponse Handle(AppendEntriesRequest request)
     {
-        return CommandQueue.Enqueue(new HeartbeatCommand(request, this));
-        return ( ( INode ) this ).CurrentState.Apply(request);
+        return CommandQueue.Enqueue(new AppendEntriesCommand(request, this));
     }
     
     public static RaftNode Create(NodeId id,

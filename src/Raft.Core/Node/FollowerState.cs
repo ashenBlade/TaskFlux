@@ -1,5 +1,5 @@
 using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Serilog;
 
@@ -10,7 +10,7 @@ internal class  FollowerState: BaseNodeState
     public override NodeRole Role => NodeRole.Follower;
     private readonly ILogger _logger;
 
-    internal FollowerState(INode node, ILogger logger)
+    private FollowerState(INode node, ILogger logger)
         : base(node)
     {
         _logger = logger;
@@ -25,7 +25,7 @@ internal class  FollowerState: BaseNodeState
         return base.Apply(request);
     }
 
-    public override HeartbeatResponse Apply(HeartbeatRequest request)
+    public override AppendEntriesResponse Apply(AppendEntriesRequest request)
     {
         _logger.Verbose("Получен Heartbeat");
         // Node.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, Node));

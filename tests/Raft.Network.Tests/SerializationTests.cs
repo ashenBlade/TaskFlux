@@ -1,6 +1,5 @@
 using Raft.Core;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 
@@ -17,7 +16,7 @@ public class SerializationTests
     [InlineData(0, 3523, 222, 0)]
     [InlineData(1, 23, 20, 0)]
     [InlineData(1, 1234, 45, 90)]
-    public void ПриСериализацииRequestVote__ДолженДесериализоватьИдентичныйОбъект(int peerId, int term, int logTerm, int index)
+    public void ПриСериализацииRequestVoteRequest__ДолженДесериализоватьИдентичныйОбъект(int peerId, int term, int logTerm, int index)
     {
         var requestVote = new RequestVoteRequest(CandidateId: new NodeId(peerId), CandidateTerm: new Term(term),
             LastLog: new LogEntry(new Term(logTerm), index));
@@ -34,10 +33,10 @@ public class SerializationTests
     [InlineData(76, 0, 1, 333, 35624)]
     [InlineData(134, 0, 1, 3, 1)]
     [InlineData(98765, 1234, 45, 90, 124)]
-    public void ПриСериализацииHeartbeat__ДолженДесериализоватьИдентичныйОбъект(int term, int leaderId, int leaderCommit, int logTerm, int logIndex)
+    public void ПриСериализацииAppendEntriesRequest__СПустымМассивомКоманд__ДолженДесериализоватьИдентичныйОбъект(int term, int leaderId, int leaderCommit, int logTerm, int logIndex)
     {
-        var heartbeat = new HeartbeatRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntry(new Term(logTerm), logIndex));
-        var actual = Serializers.HeartbeatRequest.Deserialize(Serializers.HeartbeatRequest.Serialize(heartbeat));
+        var heartbeat = AppendEntriesRequest.Heartbeat(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntry(new Term(logTerm), logIndex));
+        var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(heartbeat));
         Assert.Equal(heartbeat, actual);
     }
 
@@ -58,10 +57,10 @@ public class SerializationTests
 
     [Theory]
     [MemberData(nameof(IntWithBoolPairwise))]
-    public void ПриСериализацииHeartbeatResponse__ДолженДесериализоватьИдентичныйОбъект(int term, bool success)
+    public void ПриСериализацииAppendEntriesResponse__ДолженДесериализоватьИдентичныйОбъект(int term, bool success)
     {
-        var response = new HeartbeatResponse(new Term(term), success);
-        var actual = Serializers.HeartbeatResponse.Deserialize(Serializers.HeartbeatResponse.Serialize(response));
+        var response = new AppendEntriesResponse(new Term(term), success);
+        var actual = Serializers.AppendEntriesResponse.Deserialize(Serializers.AppendEntriesResponse.Serialize(response));
         Assert.Equal(response, actual);
     }
 }

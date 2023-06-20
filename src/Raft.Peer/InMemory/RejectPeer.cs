@@ -1,6 +1,5 @@
 ﻿using Raft.Core;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 
 namespace Raft.Peer.InMemory;
@@ -17,20 +16,15 @@ public class RejectPeer: IPeer
 
     public NodeId Id { get; }
     
-    public async Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token)
+    public async Task<AppendEntriesResponse?> SendAppendEntries(AppendEntriesRequest request, CancellationToken token)
     {
         await Task.Delay(_responseTimeout, token);
-        return HeartbeatResponse.Fail(request.Term);
+        return AppendEntriesResponse.Fail(request.Term);
     }
 
     public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
     {
         await Task.Delay(_responseTimeout, token);
         return new RequestVoteResponse(CurrentTerm: request.CandidateTerm, VoteGranted: false);
-    }
-
-    public Task SendAppendEntries(CancellationToken token)
-    {
-        return Task.CompletedTask;
     }
 }

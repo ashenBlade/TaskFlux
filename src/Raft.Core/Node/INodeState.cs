@@ -1,4 +1,4 @@
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 
 namespace Raft.Core.Node;
@@ -21,10 +21,11 @@ internal interface INodeState: IDisposable
     /// <param name="request">Объект запроса</param>
     /// <returns>Ответ узла</returns>
     public RequestVoteResponse Apply(RequestVoteRequest request);
+
     /// <summary>
-    /// Применить команду Heartbeat
+    /// Применить команду AppendEntries
     /// </summary>
     /// <param name="request">Объект запроса</param>
     /// <returns>Ответ узла</returns>
-    public HeartbeatResponse Apply(HeartbeatRequest request);
+    public AppendEntriesResponse Apply(AppendEntriesRequest request);
 }
