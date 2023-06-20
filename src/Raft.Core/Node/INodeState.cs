@@ -1,5 +1,6 @@
 using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
+using Raft.Core.Commands.Submit;
 
 namespace Raft.Core.Node;
 
@@ -28,4 +29,11 @@ internal interface INodeState: IDisposable
     /// <param name="request">Объект запроса</param>
     /// <returns>Ответ узла</returns>
     public AppendEntriesResponse Apply(AppendEntriesRequest request);
+
+    /// <summary>
+    /// Применить команду к машине состояний
+    /// </summary>
+    /// <param name="request">Объект запроса</param>
+    /// <returns>Результат операции</returns>
+    public SubmitResponse Apply(SubmitRequest request);
 }

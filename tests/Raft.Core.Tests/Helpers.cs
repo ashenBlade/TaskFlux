@@ -13,6 +13,15 @@ public class Helpers
     public static readonly ILogger NullLogger = new LoggerConfiguration().CreateLogger();
     public static readonly IJobQueue NullJobQueue = CreateNullJobQueue();
     public static readonly ITimer NullTimer = CreateNullTimer();
+    public static readonly IStateMachine NullStateMachine = CreateNullStateMachine();
+
+    private static IStateMachine CreateNullStateMachine()
+    {
+        return new Mock<IStateMachine>().Apply(m =>
+        {
+            m.Setup(x => x.Apply(It.IsAny<string>()));
+        }).Object;
+    }
 
     public static readonly ICommandQueue DefaultCommandQueue = new SimpleCommandQueue();
     private static ITimer CreateNullTimer()
@@ -48,6 +57,7 @@ public class Helpers
             heartbeatTimer ?? Mock.Of<ITimer>(), 
             jobQueue ?? NullJobQueue,
             log ?? CreateLog(),
-            commandQueue ?? DefaultCommandQueue);
+            commandQueue ?? DefaultCommandQueue,
+            NullStateMachine);
     }
 }

@@ -212,6 +212,9 @@ public class LeaderStateTests
         {
             _tcs.SetResult();
         }
+
+        public void AddAppendEntries(AppendEntriesRequestSynchronizer synchronizer)
+        { }
     }
     
     private class SingleHeartbeatRequestQueueFactory: IRequestQueueFactory

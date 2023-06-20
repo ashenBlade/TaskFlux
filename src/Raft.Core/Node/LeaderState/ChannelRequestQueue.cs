@@ -18,4 +18,9 @@ internal record ChannelRequestQueue(ILog Log): IRequestQueue
         _channel.Writer.TryWrite(
             new AppendEntriesRequestSynchronizer(AlwaysTrueQuorumChecker.Instance, Log.LastLogEntryInfo.Index));
     }
+
+    public void AddAppendEntries(AppendEntriesRequestSynchronizer synchronizer)
+    {
+        _channel.Writer.TryWrite(synchronizer);
+    }
 }

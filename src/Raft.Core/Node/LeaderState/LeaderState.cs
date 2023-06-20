@@ -1,5 +1,7 @@
 using System.Runtime.CompilerServices;
 using Raft.Core.Commands;
+using Raft.Core.Commands.Submit;
+using Raft.Core.Log;
 using Serilog;
 
 namespace Raft.Core.Node.LeaderState;
@@ -20,6 +22,7 @@ internal class LeaderState: BaseNodeState
                           .Peers
                           .Select(x => new PeerProcessor(this, x, queueFactory.CreateQueue()))
                           .ToArray();
+        
         Node.HeartbeatTimer.Timeout += OnHeartbeatTimer;
     }
     
@@ -53,5 +56,27 @@ internal class LeaderState: BaseNodeState
     public static LeaderState Create(INode node)
     {
         return new LeaderState(node, node.Logger.ForContext("SourceContext", "Leader"), new ChannelRequestQueueFactory(node.Log));
+    }
+
+    public override SubmitResponse Apply(SubmitRequest request)
+    {
+        // Добавляем команду в лог
+        var appended = Log.Append(Node.CurrentTerm, request.Command);
+        
+        // Сигнализируем узлам, чтобы принялись за работу
+        var synchronizer = new AppendEntriesRequestSynchronizer(Node.PeerGroup, appended.Index);
+        Array.ForEach(_processors, p => p.NotifyAppendEntries(synchronizer));
+        
+        // Ждем достижения кворума
+        synchronizer.LogReplicated.Wait(_cts.Token);
+        
+        // Пытаемся применить команду к машине состояний
+        Node.StateMachine.Apply(request.Command);
+        
+        // Обновляем индекс последней закоммиченной записи
+        Log.CommitIndex = appended.Index;
+        
+        // Возвращаем результат
+        return new SubmitResponse(new LogEntry(appended.Term, request.Command));
     }
 }

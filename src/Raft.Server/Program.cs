@@ -53,7 +53,7 @@ var log = new StubLog();
 var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
 
 using var commandQueue = new ChannelCommandQueue();
-using var raft = RaftNode.Create(nodeId, new PeerGroup(peers), null, new Term(1), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
+using var raft = RaftNode.Create(nodeId, new PeerGroup(peers), null, new Term(1), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, new NullStateMachine());
 var connectionManager = new ExternalConnectionManager(options.Host, options.Port, raft, Log.Logger.ForContext<ExternalConnectionManager>());
 var server = new RaftStateObserver(raft, Log.Logger.ForContext<RaftStateObserver>());
 

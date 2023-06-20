@@ -18,4 +18,10 @@ internal interface IRequestQueue
     /// </summary>
     /// <remarks>Вызывается при срабатывании Heartbeat Timeout</remarks>
     public void AddHeartbeat();
+    
+    /// <summary>
+    /// Добавить в очередь <paramref name="synchronizer"/>
+    /// </summary>
+    /// <param name="synchronizer"><see cref="AppendEntriesRequestSynchronizer"/></param>
+    public void AddAppendEntries(AppendEntriesRequestSynchronizer synchronizer);
 }

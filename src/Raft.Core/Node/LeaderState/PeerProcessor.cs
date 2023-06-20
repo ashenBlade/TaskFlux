@@ -121,4 +121,9 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
             Queue.AddHeartbeat();
         }
     }
+
+    public void NotifyAppendEntries(AppendEntriesRequestSynchronizer synchronizer)
+    {
+        Queue.AddHeartbeat();
+    }
 }

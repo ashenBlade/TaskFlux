@@ -25,7 +25,7 @@ public class FollowerStateTests
     [Fact]
     public void ПриСоздании__ПервоеСостояниеДолжноБыть__Follower()
     {
-        var machine = RaftNode.Create(new(1), new PeerGroup(Array.Empty<IPeer>()), null, new(1), Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullJobQueue, Mock.Of<ILog>(x => x.LastLogEntryInfo == LastLogEntryInfo && x.CommitIndex == 0 && x.LastApplied == 0), Helpers.DefaultCommandQueue);
+        var machine = RaftNode.Create(new(1), new PeerGroup(Array.Empty<IPeer>()), null, new(1), Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullJobQueue, Mock.Of<ILog>(x => x.LastLogEntryInfo == LastLogEntryInfo && x.CommitIndex == 0 && x.LastApplied == 0), Helpers.DefaultCommandQueue, Helpers.NullStateMachine);
         Assert.Equal(NodeRole.Follower, machine.CurrentRole);
     }
     

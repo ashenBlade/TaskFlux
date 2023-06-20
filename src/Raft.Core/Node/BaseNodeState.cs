@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
+using Raft.Core.Commands.Submit;
 using Raft.Core.Log;
 
 namespace Raft.Core.Node;
@@ -86,6 +87,11 @@ internal abstract class BaseNodeState: INodeState
         }
 
         return AppendEntriesResponse.Ok(Node.CurrentTerm);
+    }
+
+    public virtual SubmitResponse Apply(SubmitRequest request)
+    {
+        throw new InvalidOperationException("Пошел нахуй");
     }
 
     public virtual void Dispose()

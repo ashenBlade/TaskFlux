@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Raft.CommandQueue;
 using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
+using Raft.Core.Commands.Submit;
 using Raft.Core.Log;
 using Serilog;
 
@@ -17,6 +18,7 @@ public class RaftNode: IDisposable, INode
     public Term CurrentTerm { get; set; }
     public NodeId? VotedFor { get; set; }
     public PeerGroup PeerGroup { get; }
+    public IStateMachine StateMachine { get; }
 
     // Выставляем вручную в .Create
     private INodeState? _currentState;
@@ -37,7 +39,7 @@ public class RaftNode: IDisposable, INode
     public ICommandQueue CommandQueue { get; } 
     public ILog Log { get; }
 
-    private RaftNode(NodeId id, PeerGroup peerGroup, NodeId? votedFor, Term currentTerm, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log, ICommandQueue commandQueue)
+    private RaftNode(NodeId id, PeerGroup peerGroup, NodeId? votedFor, Term currentTerm, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log, ICommandQueue commandQueue, IStateMachine stateMachine)
     {
         Id = id;
         Logger = logger;
@@ -47,6 +49,7 @@ public class RaftNode: IDisposable, INode
         JobQueue = jobQueue;
         Log = log;
         CommandQueue = commandQueue;
+        StateMachine = stateMachine;
         VotedFor = votedFor;
         CurrentTerm = currentTerm;
     }
@@ -60,6 +63,11 @@ public class RaftNode: IDisposable, INode
     {
         return CommandQueue.Enqueue(new AppendEntriesCommand(request, this));
     }
+
+    public SubmitResponse Handle(SubmitRequest request)
+    {
+        return CommandQueue.Enqueue(new SubmitCommand(request, this));
+    }
     
     public static RaftNode Create(NodeId id,
                                   PeerGroup peerGroup,
@@ -70,9 +78,10 @@ public class RaftNode: IDisposable, INode
                                   ITimer heartbeatTimer,
                                   IJobQueue jobQueue,
                                   ILog log,
-                                  ICommandQueue commandQueue)
+                                  ICommandQueue commandQueue,
+                                  IStateMachine stateMachine)
     {
-        var raft = new RaftNode(id, peerGroup, votedFor, currentTerm, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue);
+        var raft = new RaftNode(id, peerGroup, votedFor, currentTerm, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine);
         raft._currentState = FollowerState.Create(raft);
         return raft;
     }
