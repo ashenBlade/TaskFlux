@@ -62,6 +62,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
                     State.Node.Id,
                     State.Node.Log.LastLogEntry);
                 var response = await Peer.SendAppendEntries(request, token);
+                newEntries.NotifyComplete();
                 if (response is null or {Success: true})
                 {
                     continue;

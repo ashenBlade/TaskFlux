@@ -13,6 +13,6 @@ public class AppendEntriesCommand : Command<AppendEntriesResponse>
 
     public override AppendEntriesResponse Execute()
     {
-        return Node.Handle(_request);
+        return Node.CurrentState.Apply(_request);
     }
 }

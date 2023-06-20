@@ -142,15 +142,14 @@ public class FollowerStateTests
         var oldTerm = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
         timer.Setup(x => x.Reset()).Verifiable();
-        using var stateMachine = CreateNode(oldTerm, null, electionTimer: timer.Object, log: CreateLog());
+        using var node = CreateNode(oldTerm, null, electionTimer: timer.Object, log: CreateLog());
 
         var request = AppendEntriesRequest.Heartbeat(new Term(term), 0,
             new NodeId(Value: NodeId.Value + 1), new LogEntry(new Term(term), 0));
 
-        stateMachine.Handle(request);
+        node.Handle(request);
 
-        var exception = Record.Exception(() => timer.Verify(x => x.Reset(), Times.Once()));
-        Assert.Null(exception);
+        timer.Verify(x => x.Reset(), Times.Once());
     }
 
     [Theory]
