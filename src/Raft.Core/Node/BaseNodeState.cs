@@ -35,7 +35,7 @@ internal abstract class BaseNodeState: INodeState
             // С термом больше нашего (иначе, на текущем терме уже есть лидер)
             Node.CurrentTerm < request.CandidateTerm && 
             // У которого лог не "младше" нашего
-            Node.Log.LastLogEntry.IsUpToDateWith(request.LastLog))
+            Node.Log.LastLogEntryInfo.IsUpToDateWith(request.LastLog))
         {
             Node.CurrentState = FollowerState.Create(Node);
             Node.ElectionTimer.Start();
@@ -60,7 +60,7 @@ internal abstract class BaseNodeState: INodeState
         }
 
         LogEntryCheckResult checkResult;
-        switch (checkResult = Log.Check(request.PrevLogEntry))
+        switch (checkResult = Log.Check(request.PrevLogEntryInfo))
         {
             case LogEntryCheckResult.Conflict:
                 return AppendEntriesResponse.Fail(Node.CurrentTerm);
@@ -74,7 +74,7 @@ internal abstract class BaseNodeState: INodeState
         
         if (Log.CommitIndex < request.LeaderCommit)
         {
-            Log.CommitIndex = Math.Min(request.LeaderCommit, Log.LastLogEntry.Index);
+            Log.CommitIndex = Math.Min(request.LeaderCommit, Log.LastLogEntryInfo.Index);
         }
 
         if (Node.CurrentTerm < request.Term)

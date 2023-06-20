@@ -8,4 +8,4 @@ namespace Raft.Core.Commands.RequestVote;
 /// <param name="CandidateId">ID кандидата, который послал запрос</param>
 /// <param name="CandidateTerm">Терм кандидата, который послал запрос</param>
 /// <param name="LastLog">Информация о последнем логе друго узла</param>
-public record RequestVoteRequest(NodeId CandidateId, Term CandidateTerm, LogEntry LastLog);
+public record RequestVoteRequest(NodeId CandidateId, Term CandidateTerm, LogEntryInfo LastLog);

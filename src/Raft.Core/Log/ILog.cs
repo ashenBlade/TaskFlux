@@ -2,18 +2,18 @@ namespace Raft.Core.Log;
 
 public interface ILog
 {
-    public LogEntry Append(Term term);
+    public LogEntryInfo Append(Term term, string command);
     /// <summary>
     /// Проверить запись лога на вхождение в существующий лог
     /// </summary>
-    /// <param name="entry">Информация о записи в логе</param>
+    /// <param name="entryInfo">Информация о записи в логе</param>
     /// <returns>Результат проверки</returns>
-    public LogEntryCheckResult Check(LogEntry entry);
+    public LogEntryCheckResult Check(LogEntryInfo entryInfo);
 
     /// <summary>
     /// Последняя запись в логе
     /// </summary>
-    public LogEntry LastLogEntry { get; }
+    public LogEntryInfo LastLogEntryInfo { get; }
     
     /// <summary>
     /// Индекс последней закомиченной записи
@@ -24,4 +24,7 @@ public interface ILog
     /// Индекс последней применной записи журнала 
     /// </summary>
     public int LastApplied { get; }
+
+    public Memory<LogEntry> this[Range range] { get; }
+    public Memory<LogEntry> this[int index] { get; }
 }

@@ -19,7 +19,7 @@ public class SerializationTests
     public void ПриСериализацииRequestVoteRequest__ДолженДесериализоватьИдентичныйОбъект(int peerId, int term, int logTerm, int index)
     {
         var requestVote = new RequestVoteRequest(CandidateId: new NodeId(peerId), CandidateTerm: new Term(term),
-            LastLog: new LogEntry(new Term(logTerm), index));
+            LastLog: new LogEntryInfo(new Term(logTerm), index));
         var actual = Serializers.RequestVoteRequest.Deserialize(Serializers.RequestVoteRequest.Serialize(requestVote));
         Assert.Equal(requestVote, actual);
     }
@@ -35,7 +35,7 @@ public class SerializationTests
     [InlineData(98765, 1234, 45, 90, 124)]
     public void ПриСериализацииAppendEntriesRequest__СПустымМассивомКоманд__ДолженДесериализоватьИдентичныйОбъект(int term, int leaderId, int leaderCommit, int logTerm, int logIndex)
     {
-        var heartbeat = AppendEntriesRequest.Heartbeat(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntry(new Term(logTerm), logIndex));
+        var heartbeat = AppendEntriesRequest.Heartbeat(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex));
         var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(heartbeat));
         Assert.Equal(heartbeat, actual);
     }

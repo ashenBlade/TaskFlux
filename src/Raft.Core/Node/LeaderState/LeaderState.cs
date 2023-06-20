@@ -1,7 +1,8 @@
+using System.Runtime.CompilerServices;
 using Raft.Core.Commands;
 using Serilog;
 
-namespace Raft.Core.Node;
+namespace Raft.Core.Node.LeaderState;
 
 internal class LeaderState: BaseNodeState
 {
@@ -51,6 +52,6 @@ internal class LeaderState: BaseNodeState
 
     public static LeaderState Create(INode node)
     {
-        return new LeaderState(node, node.Logger.ForContext("SourceContext", "Leader"), ChannelRequestQueueFactory.Instance);
+        return new LeaderState(node, node.Logger.ForContext("SourceContext", "Leader"), new ChannelRequestQueueFactory(node.Log));
     }
 }

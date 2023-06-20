@@ -10,9 +10,9 @@ public class FollowerStateTests
 {
     // private static FollowerState CreateState(INode node) => new(node, Helpers.NullLogger);
     private static readonly NodeId NodeId = new(1);
-    private static readonly LogEntry LastLogEntry = new(new Term(1), 0);
+    private static readonly LogEntryInfo LastLogEntryInfo = new(new Term(1), 0);
 
-    private static ILog CreateLog(LogEntry? logEntryInfo = null, LogEntryCheckResult result = LogEntryCheckResult.Contains, int commitIndex = 0, int lastApplied = 0)
+    private static ILog CreateLog(LogEntryInfo? logEntryInfo = null, LogEntryCheckResult result = LogEntryCheckResult.Contains, int commitIndex = 0, int lastApplied = 0)
     {
         return Helpers.CreateLog(logEntryInfo, result, commitIndex, lastApplied);
     }
@@ -25,7 +25,7 @@ public class FollowerStateTests
     [Fact]
     public void ПриСоздании__ПервоеСостояниеДолжноБыть__Follower()
     {
-        var machine = RaftNode.Create(new(1), new PeerGroup(Array.Empty<IPeer>()), null, new(1), Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullJobQueue, Mock.Of<ILog>(x => x.LastLogEntry == LastLogEntry && x.CommitIndex == 0 && x.LastApplied == 0), Helpers.DefaultCommandQueue);
+        var machine = RaftNode.Create(new(1), new PeerGroup(Array.Empty<IPeer>()), null, new(1), Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullJobQueue, Mock.Of<ILog>(x => x.LastLogEntryInfo == LastLogEntryInfo && x.CommitIndex == 0 && x.LastApplied == 0), Helpers.DefaultCommandQueue);
         Assert.Equal(NodeRole.Follower, machine.CurrentRole);
     }
     
@@ -37,7 +37,7 @@ public class FollowerStateTests
         
         var expectedTerm = oldTerm.Increment();
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: expectedTerm,
-            LastLog: new LogEntry(oldTerm, 0));
+            LastLog: new LogEntryInfo(oldTerm, 0));
 
         raft.Handle(request);
         
@@ -53,7 +53,7 @@ public class FollowerStateTests
         var expectedTerm = oldTerm.Increment();
         
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: expectedTerm,
-            LastLog: new LogEntry(oldTerm, 0));
+            LastLog: new LogEntryInfo(oldTerm, 0));
 
         var response = stateMachine.Handle(request);
         
@@ -75,7 +75,7 @@ public class FollowerStateTests
         
         var expectedTerm = new Term(otherTerm);
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: expectedTerm,
-            LastLog: new LogEntry(oldTerm, 0));
+            LastLog: new LogEntryInfo(oldTerm, 0));
 
         var response = stateMachine.Handle(request);
         
@@ -91,7 +91,7 @@ public class FollowerStateTests
         var stateMachine = CreateNode(new Term(1), null, electionTimer: timer.Object);
 
         stateMachine.Handle(new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: new Term(1),
-            LastLog: new LogEntry(new(1), 0)));
+            LastLog: new LogEntryInfo(new(1), 0)));
         
         timer.Verify(x => x.Reset(), Times.Once());
     }
@@ -145,7 +145,7 @@ public class FollowerStateTests
         using var node = CreateNode(oldTerm, null, electionTimer: timer.Object, log: CreateLog());
 
         var request = AppendEntriesRequest.Heartbeat(new Term(term), 0,
-            new NodeId(Value: NodeId.Value + 1), new LogEntry(new Term(term), 0));
+            new NodeId(Value: NodeId.Value + 1), new LogEntryInfo(new Term(term), 0));
 
         node.Handle(request);
 
@@ -165,7 +165,7 @@ public class FollowerStateTests
 
         var leaderTerm = new Term(term);
         var request = AppendEntriesRequest.Heartbeat(leaderTerm, 0,
-            new NodeId(Value: NodeId.Value + 1), new LogEntry(new Term(term), 0));
+            new NodeId(Value: NodeId.Value + 1), new LogEntryInfo(new Term(term), 0));
 
         raft.Handle(request);
         
@@ -182,7 +182,7 @@ public class FollowerStateTests
 
         var candidateId = new NodeId(2);
         var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: oldTerm.Increment(),
-            LastLog: raft.Log.LastLogEntry);
+            LastLog: raft.Log.LastLogEntryInfo);
         raft.Handle(request);
         Assert.Equal(candidateId, raft.VotedFor);
     }
@@ -200,7 +200,7 @@ public class FollowerStateTests
                                  : new NodeId(oldVotedFor.Value);
         using var raft = CreateNode(oldTerm, votedForId);
 
-        var request = AppendEntriesRequest.Heartbeat(raft.CurrentTerm.Increment(), raft.Log.CommitIndex, new NodeId(2), raft.Log.LastLogEntry);
+        var request = AppendEntriesRequest.Heartbeat(raft.CurrentTerm.Increment(), raft.Log.CommitIndex, new NodeId(2), raft.Log.LastLogEntryInfo);
         raft.Handle(request);
         
         Assert.False(raft.VotedFor.HasValue);

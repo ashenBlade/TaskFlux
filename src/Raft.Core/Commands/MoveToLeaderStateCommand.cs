@@ -1,4 +1,5 @@
 using Raft.Core.Node;
+using Raft.Core.Node.LeaderState;
 
 namespace Raft.Core.Commands;
 

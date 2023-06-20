@@ -9,7 +9,7 @@ namespace Raft.Core.Tests;
 public class Helpers
 {
     public static readonly NodeId NodeId = new(1);
-    public static readonly LogEntry LastLogEntry = new(new Term(1), 0);
+    public static readonly LogEntryInfo LastLogEntryInfo = new(new Term(1), 0);
     public static readonly ILogger NullLogger = new LoggerConfiguration().CreateLogger();
     public static readonly IJobQueue NullJobQueue = CreateNullJobQueue();
     public static readonly ITimer NullTimer = CreateNullTimer();
@@ -28,11 +28,11 @@ public class Helpers
         return mock.Object;
     }
     
-    public static ILog CreateLog(LogEntry? logEntryInfo = null, LogEntryCheckResult result = LogEntryCheckResult.Contains, int commitIndex = 0, int lastApplied = 0)
+    public static ILog CreateLog(LogEntryInfo? logEntryInfo = null, LogEntryCheckResult result = LogEntryCheckResult.Contains, int commitIndex = 0, int lastApplied = 0)
     {
-        var entry = logEntryInfo ?? LastLogEntry;
-        return Mock.Of<ILog>(x => x.LastLogEntry == entry && 
-                                  x.Check(It.IsAny<LogEntry>()) == result && 
+        var entry = logEntryInfo ?? LastLogEntryInfo;
+        return Mock.Of<ILog>(x => x.LastLogEntryInfo == entry && 
+                                  x.Check(It.IsAny<LogEntryInfo>()) == result && 
                                   x.CommitIndex == commitIndex &&
                                   x.LastApplied == lastApplied);
     }

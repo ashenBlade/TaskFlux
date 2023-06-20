@@ -5,17 +5,17 @@ namespace Raft.Server.Infrastructure;
 
 public class StubLog: ILog
 {
-    public LogEntry Append(Term term)
+    public LogEntryInfo Append(Term term, string command)
     {
-        return LogEntry.Empty;
+        return LogEntryInfo.Empty;
     }
 
-    public LogEntryCheckResult Check(LogEntry entry)
+    public LogEntryCheckResult Check(LogEntryInfo entryInfo)
     {
         return LogEntryCheckResult.Contains;
     }
 
-    public LogEntry LastLogEntry => LogEntry.Empty;
+    public LogEntryInfo LastLogEntryInfo => LogEntryInfo.Empty;
     public int CommitIndex
     {
         get => 0;
@@ -23,4 +23,10 @@ public class StubLog: ILog
     }
 
     public int LastApplied => 0;
+
+    public Memory<LogEntry> this[Range range] =>
+        Memory<LogEntry>.Empty;
+
+    public Memory<LogEntry> this[int index] =>
+        Memory<LogEntry>.Empty;
 }

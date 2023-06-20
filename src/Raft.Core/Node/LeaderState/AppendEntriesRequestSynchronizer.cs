@@ -1,29 +1,39 @@
-using Raft.Core.Log;
-
-namespace Raft.Core.Node;
+namespace Raft.Core.Node.LeaderState;
 
 /// <summary>
-/// Эта поебота будет содержать логику по репликации хуйни всякой
-/// Типа когда начинается репликация лога другие получают инстанс этой поеботы,
-/// отправляют запросы.
-/// Когда успешно отправили все, то каждый ставит флаг, о том что готово
-/// и AppendEntriesCommand  должна получить результат как-то через нее.
-/// Че там как дальше - не ебу 
+/// Запрос на синхронизацию логов и отправку узлам AppendEntries.
+/// Когда узел его получает он должен найти новые записи в логе для текущего узла
+/// (информация о последних обработанных записях хранится в <see cref="PeerInfo"/>)
+/// и отправить запрос AppendEntries на узел.
+/// Когда команда (с этим логом) отправлена на узел, то вызывается <see cref="NotifyComplete"/>,
+/// которая инкрементирует счетчик успешных репликаций.
+/// Как только кворум собран (высчитывается в <see cref="_quorumChecker"/>) то <see cref="_tcs"/> завершается,
+/// а вызывающая сторона сигнализируется о завершении обработки (таска завершена) 
 /// </summary>
 internal class AppendEntriesRequestSynchronizer
 {
-    public IReadOnlyList<LogEntry> Entries { get; }
+    /// <summary>
+    /// Индекс записи в логе, которая вызвала событие.
+    /// Когда запись под этим индексом успешно отправлена,
+    /// то работа закончена
+    /// </summary>
+    /// <remarks>
+    /// В процессе работы в лог могут добавиться несколько команд.
+    /// Чтобы точно знать какие команды необходимо посылать (когда остановиться),
+    /// используется этот индекс
+    /// </remarks>
+    public int LogEntryIndex { get; }
     
     private volatile int _votes = 0;
     private readonly IQuorumChecker _quorumChecker;
     private readonly TaskCompletionSource _tcs = new();
     
     public AppendEntriesRequestSynchronizer(
-        IQuorumChecker quorumChecker, 
-        IReadOnlyList<LogEntry> entries)
+        IQuorumChecker quorumChecker,
+        int logEntryIndex)
     {
         _quorumChecker = quorumChecker;
-        Entries = entries;
+        LogEntryIndex = logEntryIndex;
     }
 
     public Task LogReplicated => _tcs.Task;

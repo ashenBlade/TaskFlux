@@ -1,10 +1,18 @@
-namespace Raft.Core.Node;
+using Raft.Core.Log;
+
+namespace Raft.Core.Node.LeaderState;
 
 internal class ChannelRequestQueueFactory: IRequestQueueFactory
 {
-    public static readonly ChannelRequestQueueFactory Instance = new();
+    private readonly ILog _log;
+
+    public ChannelRequestQueueFactory(ILog log)
+    {
+        _log = log;
+    }    
+    
     public IRequestQueue CreateQueue()
     {
-        return new ChannelRequestQueue();
+        return new ChannelRequestQueue(_log);
     }
 }

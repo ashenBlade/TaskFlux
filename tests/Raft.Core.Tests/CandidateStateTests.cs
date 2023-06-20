@@ -258,7 +258,7 @@ public class CandidateStateTests
         using var raft = CreateCandidateStateMachine(oldTerm, null);
 
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: oldTerm.Increment(),
-            LastLog: raft.Log.LastLogEntry);
+            LastLog: raft.Log.LastLogEntryInfo);
 
         raft.Handle(request);
 
@@ -273,7 +273,7 @@ public class CandidateStateTests
 
         var requestTerm = oldTerm.Increment();
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: requestTerm,
-            LastLog: raft.Log.LastLogEntry);
+            LastLog: raft.Log.LastLogEntryInfo);
 
         raft.Handle(request);
 
@@ -287,7 +287,7 @@ public class CandidateStateTests
         using var raft = CreateCandidateStateMachine(oldTerm, null);
 
         var request = AppendEntriesRequest.Heartbeat(oldTerm.Increment(), raft.Log.CommitIndex,
-            new NodeId(2), raft.Log.LastLogEntry);
+            new NodeId(2), raft.Log.LastLogEntryInfo);
 
         raft.Handle(request);
 
@@ -301,7 +301,7 @@ public class CandidateStateTests
         using var raft = CreateCandidateStateMachine(oldTerm, null);
 
         var leaderTerm = oldTerm.Increment();
-        var request = AppendEntriesRequest.Heartbeat(leaderTerm, raft.Log.CommitIndex, new NodeId(2), raft.Log.LastLogEntry);
+        var request = AppendEntriesRequest.Heartbeat(leaderTerm, raft.Log.CommitIndex, new NodeId(2), raft.Log.LastLogEntryInfo);
 
         raft.Handle(request);
 
@@ -319,7 +319,7 @@ public class CandidateStateTests
         using var raft = CreateCandidateStateMachine(oldTerm, null, jobQueue: jobQueue);
 
         var leaderTerm = oldTerm.Increment();
-        var request = AppendEntriesRequest.Heartbeat(leaderTerm, raft.Log.CommitIndex, new NodeId(2), raft.Log.LastLogEntry);
+        var request = AppendEntriesRequest.Heartbeat(leaderTerm, raft.Log.CommitIndex, new NodeId(2), raft.Log.LastLogEntryInfo);
 
         raft.Handle(request);
         await jobQueue.Run();
@@ -338,7 +338,7 @@ public class CandidateStateTests
         using var raft = CreateCandidateStateMachine(oldTerm, null, jobQueue: jobQueue);
 
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: oldTerm.Increment(),
-            LastLog: raft.Log.LastLogEntry);
+            LastLog: raft.Log.LastLogEntryInfo);
 
         raft.Handle(request);
         await jobQueue.Run();
@@ -359,7 +359,7 @@ public class CandidateStateTests
         using var raft = CreateCandidateStateMachine(oldTerm, null, jobQueue: jobQueue);
 
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: leaderTerm,
-            LastLog: raft.Log.LastLogEntry);
+            LastLog: raft.Log.LastLogEntryInfo);
 
         raft.Handle(request);
         await jobQueue.Run();

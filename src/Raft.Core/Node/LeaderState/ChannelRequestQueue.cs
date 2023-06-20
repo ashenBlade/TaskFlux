@@ -1,13 +1,13 @@
 using System.Threading.Channels;
 using Raft.Core.Log;
 
-namespace Raft.Core.Node;
+namespace Raft.Core.Node.LeaderState;
 
-internal record ChannelRequestQueue: IRequestQueue
+internal record ChannelRequestQueue(ILog Log): IRequestQueue
 {
     private readonly Channel<AppendEntriesRequestSynchronizer> _channel =
         Channel.CreateUnbounded<AppendEntriesRequestSynchronizer>();
-    
+       
     public IAsyncEnumerable<AppendEntriesRequestSynchronizer> ReadAllRequestsAsync(CancellationToken token)
     {
         return _channel.Reader.ReadAllAsync(token);
@@ -16,7 +16,6 @@ internal record ChannelRequestQueue: IRequestQueue
     public void AddHeartbeat()
     {
         _channel.Writer.TryWrite(
-            new AppendEntriesRequestSynchronizer(AlwaysTrueQuorumChecker.Instance,
-            Array.Empty<LogEntry>()));
+            new AppendEntriesRequestSynchronizer(AlwaysTrueQuorumChecker.Instance, Log.LastLogEntryInfo.Index));
     }
 }

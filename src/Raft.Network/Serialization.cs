@@ -39,7 +39,7 @@ public static class Serializers
             var lastLogTerm = reader.ReadInt32();
         
             return new Core.Commands.RequestVote.RequestVoteRequest(CandidateId: new(candidateId), CandidateTerm: new(candidateTerm),
-                LastLog: new LogEntry(new(lastLogTerm), lastLogIndex));
+                LastLog: new LogEntryInfo(new(lastLogTerm), lastLogIndex));
         }
     }
 
@@ -87,8 +87,8 @@ public static class Serializers
             writer.Write(request.LeaderId.Value);
             writer.Write(request.Term.Value);
             writer.Write(request.LeaderCommit);
-            writer.Write(request.PrevLogEntry.Term.Value);
-            writer.Write(request.PrevLogEntry.Index);
+            writer.Write(request.PrevLogEntryInfo.Term.Value);
+            writer.Write(request.PrevLogEntryInfo.Index);
 
             return stream.ToArray();
         }
@@ -109,7 +109,7 @@ public static class Serializers
             var prevLogEntryIndex = reader.ReadInt32();
 
             return new Core.Commands.AppendEntries.AppendEntriesRequest(LeaderId: new(leaderId), Term: new(term), LeaderCommit: commit,
-                PrevLogEntry: new LogEntry(new(prevLogEntryTerm), prevLogEntryIndex), Entries: Array.Empty<string>());
+                PrevLogEntryInfo: new LogEntryInfo(new(prevLogEntryTerm), prevLogEntryIndex), Entries: Array.Empty<LogEntry>());
         }
     }
 
