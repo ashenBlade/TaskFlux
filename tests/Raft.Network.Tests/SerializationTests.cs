@@ -63,4 +63,77 @@ public class SerializationTests
         var actual = Serializers.AppendEntriesResponse.Deserialize(Serializers.AppendEntriesResponse.Serialize(response));
         Assert.Equal(response, actual);
     }
+    
+    [Theory]
+    [InlineData(1, 1, 1, 1, 1, 1, "hello")]
+    [InlineData(3, 2, 22, 3, 2, 2, "")]
+    [InlineData(3, 2, 22, 3, 2, 3, "                 ")]
+    [InlineData(50, 2, 30, 3, 30, 2, "\n\n")]
+    public void ПриСериализацииAppendEntriesRequest__СОднойКомандой__ДолженДесериализоватьОбъектСОднимLogEntry(
+        int term, int leaderId, int leaderCommit, int logTerm, int logIndex, int logEntryTerm, string command)
+    {
+        var heartbeat = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), new LogEntry[]
+        {
+            new(new Term(logEntryTerm), command)
+        });
+        var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(heartbeat));
+        Assert.Single(actual.Entries.ToArray());
+    }
+    
+    [Theory]
+    [InlineData(1, 1, 1, 1, 1, 1, "hello")]
+    [InlineData(3, 2, 22, 3, 2, 2, "")]
+    [InlineData(3, 2, 22, 3, 2, 3, "                 ")]
+    [InlineData(50, 2, 30, 3, 30, 2, "\n\n")]
+    [InlineData(50, 12, 40, 30, 30, 4, "вызвать компьютерного мастера")]
+    public void ПриСериализацииAppendEntriesRequest__СОднойКомандой__ДолженДесериализоватьLogEntryСТемиЖеДанными(
+        int term, int leaderId, int leaderCommit, int logTerm, int logIndex, int logEntryTerm, string command)
+    {
+        var logEntry = new LogEntry(new Term(logEntryTerm), command);
+        var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), new LogEntry[]
+        {
+            logEntry
+        });
+        var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(request)).Entries.Single();
+        Assert.Equal(logEntry, actual);
+    }
+
+    public static IEnumerable<object[]> СериализацияAppendEntriesСНесколькимиКомандами = new[]
+    {
+        new object[]
+        {
+            1, 1, 1, 1, 1, new LogEntry[]{new(new Term(1), "payload"), new(new Term(2), "hello"), new(new Term(3), "world")}
+        },
+        new object[]
+        {
+            2, 1, 1, 5, 2, new LogEntry[]{new(new Term(5), ""), new(new Term(3), "    ")}
+        },
+        new object[]
+        {
+            32, 31, 21, 11, 20, new LogEntry[]
+            {
+                new(new Term(1), "payload"), new(new Term(2), "hello"), new(new Term(3), "world"), new(new Term(4), "Привет мир")
+            }
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(СериализацияAppendEntriesСНесколькимиКомандами))]
+    public void ПриСериализацииAppendEntriesRequest__СНесколькимиКомандами__ДолженДесериализоватьТакоеЖеКоличествоКоманд(
+        int term, int leaderId, int leaderCommit, int logTerm, int logIndex, LogEntry[] entries)
+    {
+        var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), entries);
+        var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(request)).Entries;
+        Assert.Equal(entries.Length, actual.Count);
+    }
+    
+    [Theory]
+    [MemberData(nameof(СериализацияAppendEntriesСНесколькимиКомандами))]
+    public void ПриСериализацииAppendEntriesRequest__СНесколькимиКомандами__ДолженДесериализоватьКомандыСТемиЖеСамымиДанными(
+        int term, int leaderId, int leaderCommit, int logTerm, int logIndex, LogEntry[] entries)
+    {
+        var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), entries);
+        var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(request)).Entries;
+        Assert.Equal(entries, actual);
+    }
 }

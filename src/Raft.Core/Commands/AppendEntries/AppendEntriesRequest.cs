@@ -6,7 +6,7 @@ public record AppendEntriesRequest(Term Term,
                                    int LeaderCommit,
                                    NodeId LeaderId,
                                    LogEntryInfo PrevLogEntryInfo,
-                                   Memory<LogEntry> Entries)
+                                   IReadOnlyList<LogEntry> Entries)
 {
     public static AppendEntriesRequest Heartbeat(Term term,
                                                  int leaderCommit,

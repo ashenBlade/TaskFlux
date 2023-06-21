@@ -70,7 +70,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
         {
             // 1. Отправить запрос
             var request = new AppendEntriesRequest(Node.CurrentTerm, Node.Log.CommitIndex, Node.Id,
-                Node.Log.LastLogEntryInfo, Node.Log[Info.MatchIndex..synchronizer.LogEntryIndex]);
+                Node.Log.LastLogEntryInfo, Node.Log[0..0]);
 
             var response = await Peer.SendAppendEntries(request, token);
             
@@ -85,7 +85,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
             {
                 // 3.1. Обновить nextIndex = + кол-во Entries в запросе
                 // 3.2. Обновить matchIndex = новый nextIndex - 1
-                Info.Update(request.Entries.Length);
+                Info.Update(request.Entries.Count);
                 
                 synchronizer.NotifyComplete();
                 return true;

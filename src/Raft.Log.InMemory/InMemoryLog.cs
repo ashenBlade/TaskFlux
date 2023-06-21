@@ -54,9 +54,9 @@ public class InMemoryLog: ILog
     public int CommitIndex { get; set; } = 0;
     public int LastApplied { get; } = 0;
 
-    public Memory<LogEntry> this[Range range] =>
+    public IReadOnlyList<LogEntry> this[Range range] =>
         Array.Empty<LogEntry>();
 
-    public Memory<LogEntry> this[int index] =>
+    public IReadOnlyList<LogEntry> this[int index] =>
         Array.Empty<LogEntry>();
 }

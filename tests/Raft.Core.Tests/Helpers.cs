@@ -19,7 +19,7 @@ public class Helpers
     {
         return new Mock<IStateMachine>().Apply(m =>
         {
-            m.Setup(x => x.Apply(It.IsAny<string>()));
+            m.Setup(x => x.Submit(It.IsAny<string>()));
         }).Object;
     }
 

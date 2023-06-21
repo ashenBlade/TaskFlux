@@ -24,9 +24,9 @@ public class StubLog: ILog
 
     public int LastApplied => 0;
 
-    public Memory<LogEntry> this[Range range] =>
-        Memory<LogEntry>.Empty;
+    public IReadOnlyList<LogEntry> this[Range range] =>
+        Array.Empty<LogEntry>();
 
-    public Memory<LogEntry> this[int index] =>
-        Memory<LogEntry>.Empty;
+    public IReadOnlyList<LogEntry> this[int index] =>
+        Array.Empty<LogEntry>();
 }

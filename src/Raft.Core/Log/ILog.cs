@@ -25,6 +25,6 @@ public interface ILog
     /// </summary>
     public int LastApplied { get; }
 
-    public Memory<LogEntry> this[Range range] { get; }
-    public Memory<LogEntry> this[int index] { get; }
+    public IReadOnlyList<LogEntry> this[Range range] { get; }
+    public IReadOnlyList<LogEntry> this[int index] { get; }
 }

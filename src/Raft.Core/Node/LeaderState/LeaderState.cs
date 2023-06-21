@@ -17,18 +17,18 @@ internal class LeaderState: BaseNodeState
         : base(node)
     {
         _logger = logger;
-        Node.JobQueue.EnqueueInfinite(ProcessPeersAsync, _cts.Token);
         _processors = node.PeerGroup
                           .Peers
                           .Select(x => new PeerProcessor(this, x, queueFactory.CreateQueue()))
                           .ToArray();
         
+        Node.JobQueue.EnqueueInfinite(ProcessPeersAsync, _cts.Token);
         Node.HeartbeatTimer.Timeout += OnHeartbeatTimer;
     }
     
     private void OnHeartbeatTimer()
     {
-        _logger.Verbose("Получен Heartbeat. Отправляю команду всем обработчикам узлов");
+        _logger.Verbose("Сработал Heartbeat таймер. Отправляю команду всем обработчикам узлов");
         Array.ForEach(_processors, static p => p.NotifyHeartbeatTimeout());
         Node.CommandQueue.Enqueue(new StartHeartbeatTimerCommand(this, Node));
     }
@@ -71,7 +71,7 @@ internal class LeaderState: BaseNodeState
         synchronizer.LogReplicated.Wait(_cts.Token);
         
         // Пытаемся применить команду к машине состояний
-        Node.StateMachine.Apply(request.Command);
+        Node.StateMachine.Submit(request.Command);
         
         // Обновляем индекс последней закоммиченной записи
         Log.CommitIndex = appended.Index;
