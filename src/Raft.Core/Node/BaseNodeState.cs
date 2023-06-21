@@ -35,15 +35,14 @@ internal abstract class BaseNodeState: INodeState
         if (canVote && 
             // С термом больше нашего (иначе, на текущем терме уже есть лидер)
             Node.CurrentTerm < request.CandidateTerm && 
-            // У которого лог не "младше" нашего
-            Node.Log.LastLogEntryInfo.IsUpToDateWith(request.LastLog))
+            // У которого лог в консистентном с нашим состоянием
+            Node.Log.IsConsistentWith(request.LastLogEntryInfo))
         {
             Node.CurrentState = FollowerState.Create(Node);
             Node.ElectionTimer.Start();
             Node.CurrentTerm = request.CandidateTerm;
             Node.VotedFor = request.CandidateId;
             
-            // И подтвердим свой 
             return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: true);
         }
         
@@ -60,22 +59,44 @@ internal abstract class BaseNodeState: INodeState
             return AppendEntriesResponse.Fail(Node.CurrentTerm);
         }
 
-        LogEntryCheckResult checkResult;
-        switch (checkResult = Log.Check(request.PrevLogEntryInfo))
+        if (Log.IsConsistentWith(request.PrevLogEntryInfo) is false)
         {
-            case LogEntryCheckResult.Conflict:
-                return AppendEntriesResponse.Fail(Node.CurrentTerm);
-            case LogEntryCheckResult.Contains:
-            case LogEntryCheckResult.NotFound:
-                break;
-            default:
-                throw new InvalidEnumArgumentException(nameof(LogEntryCheckResult), (int)checkResult, typeof(LogEntryCheckResult));
+            return AppendEntriesResponse.Fail(Node.CurrentTerm);
+        }
+        
+        if (request.Entries.Count > 0)
+        {
+            // Записи могут перекрываться. (например, новый лидер затирает старые записи)
+            // Поэтому необходимо найти индекс,
+            // начиная с которого необходимо добавить в лог новые записи.
+
+            // Индекс расхождения в нашем логе
+            var logIndex = request.PrevLogEntryInfo.Index + 1;
+            
+            // Индекс в массиве вхождений. Добавлен для удобства
+            var newEntriesIndex = 0;
+        
+            for (; 
+                 logIndex < Log.Entries.Count && 
+                 newEntriesIndex < request.Entries.Count; 
+                 logIndex++, newEntriesIndex++)
+            {
+                if (Log.Entries[logIndex].Term != request.Entries[newEntriesIndex].Term)
+                {
+                    break;
+                }
+            }
+
+            // Может случиться так, что все присланные вхождения уже есть в нашем логе
+            if (newEntriesIndex < request.Entries.Count)
+            {
+                Log.AppendUpdateRange(request.Entries.Skip(newEntriesIndex), logIndex);
+            }
         }
 
-        
         if (Log.CommitIndex < request.LeaderCommit)
         {
-            Log.CommitIndex = Math.Min(request.LeaderCommit, Log.LastLogEntryInfo.Index);
+            Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
         }
 
         if (Node.CurrentTerm < request.Term)

@@ -19,13 +19,17 @@ public class FollowerStateTests
 
     private static RaftNode CreateNode(Term currentTerm, NodeId? votedFor, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
-        return Helpers.CreateStateMachine(currentTerm, votedFor, electionTimer: electionTimer, jobQueue: jobQueue, log: log);
+        return Helpers.CreateNode(currentTerm, 
+            votedFor,
+            electionTimer: electionTimer,
+            jobQueue: jobQueue,
+            log: log);
     }
 
     [Fact]
     public void ПриСоздании__ПервоеСостояниеДолжноБыть__Follower()
     {
-        var machine = RaftNode.Create(new(1), new PeerGroup(Array.Empty<IPeer>()), null, new(1), Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullJobQueue, Mock.Of<ILog>(x => x.LastLogEntryInfo == LastLogEntryInfo && x.CommitIndex == 0 && x.LastApplied == 0), Helpers.DefaultCommandQueue, Helpers.NullStateMachine);
+        var machine = RaftNode.Create(new(1), new PeerGroup(Array.Empty<IPeer>()), null, new(1), Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullJobQueue, Mock.Of<ILog>(x => x.LastEntry == LastLogEntryInfo && x.CommitIndex == 0 && x.LastApplied == 0), Helpers.DefaultCommandQueue, Helpers.NullStateMachine);
         Assert.Equal(NodeRole.Follower, machine.CurrentRole);
     }
     
@@ -37,7 +41,7 @@ public class FollowerStateTests
         
         var expectedTerm = oldTerm.Increment();
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: expectedTerm,
-            LastLog: new LogEntryInfo(oldTerm, 0));
+            LastLogEntryInfo: new LogEntryInfo(oldTerm, 0));
 
         raft.Handle(request);
         
@@ -53,7 +57,7 @@ public class FollowerStateTests
         var expectedTerm = oldTerm.Increment();
         
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: expectedTerm,
-            LastLog: new LogEntryInfo(oldTerm, 0));
+            LastLogEntryInfo: new LogEntryInfo(oldTerm, 0));
 
         var response = stateMachine.Handle(request);
         
@@ -75,7 +79,7 @@ public class FollowerStateTests
         
         var expectedTerm = new Term(otherTerm);
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: expectedTerm,
-            LastLog: new LogEntryInfo(oldTerm, 0));
+            LastLogEntryInfo: new LogEntryInfo(oldTerm, 0));
 
         var response = stateMachine.Handle(request);
         
@@ -91,7 +95,7 @@ public class FollowerStateTests
         var stateMachine = CreateNode(new Term(1), null, electionTimer: timer.Object);
 
         stateMachine.Handle(new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: new Term(1),
-            LastLog: new LogEntryInfo(new(1), 0)));
+            LastLogEntryInfo: new LogEntryInfo(new(1), 0)));
         
         timer.Verify(x => x.Reset(), Times.Once());
     }
@@ -142,7 +146,7 @@ public class FollowerStateTests
         var oldTerm = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
         timer.Setup(x => x.Reset()).Verifiable();
-        using var node = CreateNode(oldTerm, null, electionTimer: timer.Object, log: CreateLog());
+        using var node = CreateNode(oldTerm, null, electionTimer: timer.Object, log: CreateLog(logEntryInfo: null));
 
         var request = AppendEntriesRequest.Heartbeat(new Term(term), 0,
             new NodeId(Value: NodeId.Value + 1), new LogEntryInfo(new Term(term), 0));
@@ -161,8 +165,8 @@ public class FollowerStateTests
         var oldTerm = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
         timer.Setup(x => x.Reset()).Verifiable();
-        using var raft = CreateNode(oldTerm, null, electionTimer: timer.Object);
-
+        var log = new Mock<ILog>().Apply(l => l.Setup(x => x.IsConsistentWith(It.IsAny<LogEntryInfo>())).Returns(true));
+        using var raft = CreateNode(oldTerm, null, electionTimer: timer.Object, log: log.Object);
         var leaderTerm = new Term(term);
         var request = AppendEntriesRequest.Heartbeat(leaderTerm, 0,
             new NodeId(Value: NodeId.Value + 1), new LogEntryInfo(new Term(term), 0));
@@ -182,11 +186,20 @@ public class FollowerStateTests
 
         var candidateId = new NodeId(2);
         var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: oldTerm.Increment(),
-            LastLog: raft.Log.LastLogEntryInfo);
+            LastLogEntryInfo: raft.Log.LastEntry);
         raft.Handle(request);
         Assert.Equal(candidateId, raft.VotedFor);
     }
-    
+
+    private static ILog CreateLog(bool isConsistentWith = true) => 
+        new Mock<ILog>()
+           .Apply(l =>
+            {
+                l.Setup(x => x.IsConsistentWith(It.IsAny<LogEntryInfo>()))
+                 .Returns(isConsistentWith);
+            })
+           .Object;
+
     [Theory]
     [InlineData(null)]
     [InlineData(2)]
@@ -198,9 +211,10 @@ public class FollowerStateTests
         NodeId? votedForId = oldVotedFor is null
                                  ? null
                                  : new NodeId(oldVotedFor.Value);
-        using var raft = CreateNode(oldTerm, votedForId);
+        
+        using var raft = CreateNode(oldTerm, votedForId, log: CreateLog(true));
 
-        var request = AppendEntriesRequest.Heartbeat(raft.CurrentTerm.Increment(), raft.Log.CommitIndex, new NodeId(2), raft.Log.LastLogEntryInfo);
+        var request = AppendEntriesRequest.Heartbeat(raft.CurrentTerm.Increment(), raft.Log.CommitIndex, new NodeId(2), raft.Log.LastEntry);
         raft.Handle(request);
         
         Assert.False(raft.VotedFor.HasValue);

@@ -7,7 +7,7 @@ namespace Raft.Core.Node.LeaderState;
 
 internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue)
 {
-    private PeerInfo Info { get; } = new(State.Node.Log.LastLogEntryInfo.Index);
+    private PeerInfo Info { get; } = new(State.Node.Log.LastEntry.Index);
     private bool IsBusy { get; set; }
     
     private readonly record struct OperationScope(PeerProcessor? Processor): IDisposable
@@ -68,9 +68,11 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
     {
         while (token.IsCancellationRequested is false)
         {
+            var newEntries = Node.Log.GetFrom(Info.NextIndex);
+            
             // 1. Отправить запрос
             var request = new AppendEntriesRequest(Node.CurrentTerm, Node.Log.CommitIndex, Node.Id,
-                Node.Log.LastLogEntryInfo, Node.Log[0..0]);
+                Node.Log.LastEntry, newEntries);
 
             var response = await Peer.SendAppendEntries(request, token);
             
@@ -87,7 +89,16 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
                 // 3.2. Обновить matchIndex = новый nextIndex - 1
                 Info.Update(request.Entries.Count);
                 
+                // 3.3. Если лог не до конца был синхронизирован
+                if (Info.NextIndex < synchronizer.LogEntryIndex)
+                {
+                    // Заходим на новый круг и отправляем заново
+                    continue;
+                }
+                
+                // 3.4. Уведомляем об успешной отправке команды на узел
                 synchronizer.NotifyComplete();
+                
                 return true;
             }
             // Дальше узел отказался принимать наш запрос (Success = false)

@@ -61,7 +61,7 @@ internal class LeaderState: BaseNodeState
     public override SubmitResponse Apply(SubmitRequest request)
     {
         // Добавляем команду в лог
-        var appended = Log.Append(Node.CurrentTerm, request.Command);
+        var appended = Log.Append(new LogEntry( Node.CurrentTerm, request.Command ));
         
         // Сигнализируем узлам, чтобы принялись за работу
         var synchronizer = new AppendEntriesRequestSynchronizer(Node.PeerGroup, appended.Index);
@@ -74,7 +74,7 @@ internal class LeaderState: BaseNodeState
         Node.StateMachine.Submit(request.Command);
         
         // Обновляем индекс последней закоммиченной записи
-        Log.CommitIndex = appended.Index;
+        Log.Commit(appended.Index);
         
         // Возвращаем результат
         return new SubmitResponse(new LogEntry(appended.Term, request.Command));

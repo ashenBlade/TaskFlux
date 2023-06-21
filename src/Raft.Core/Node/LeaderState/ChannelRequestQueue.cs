@@ -16,7 +16,7 @@ internal record ChannelRequestQueue(ILog Log): IRequestQueue
     public void AddHeartbeat()
     {
         _channel.Writer.TryWrite(
-            new AppendEntriesRequestSynchronizer(AlwaysTrueQuorumChecker.Instance, Log.LastLogEntryInfo.Index));
+            new AppendEntriesRequestSynchronizer(AlwaysTrueQuorumChecker.Instance, Log.LastEntry.Index));
     }
 
     public void AddAppendEntries(AppendEntriesRequestSynchronizer synchronizer)

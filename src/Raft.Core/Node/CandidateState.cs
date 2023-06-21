@@ -22,7 +22,7 @@ internal class CandidateState: BaseNodeState
     {
         // Отправляем запрос всем пирам
         var request = new RequestVoteRequest(CandidateId: Node.Id,
-            CandidateTerm: Node.CurrentTerm, LastLog: Node.Log.LastLogEntryInfo);
+            CandidateTerm: Node.CurrentTerm, LastLogEntryInfo: Node.Log.LastEntry);
 
         var requests = new Task<RequestVoteResponse?>[peers.Count];
         for (var i = 0; i < peers.Count; i++)

@@ -18,8 +18,8 @@ public static class Serializers
             writer.Write((byte)RequestType.RequestVote);
             writer.Write(request.CandidateId.Value);
             writer.Write(request.CandidateTerm.Value);
-            writer.Write(request.LastLog.Index);
-            writer.Write(request.LastLog.Term.Value);
+            writer.Write(request.LastLogEntryInfo.Index);
+            writer.Write(request.LastLogEntryInfo.Term.Value);
         
             return stream.ToArray();
         }
@@ -40,7 +40,7 @@ public static class Serializers
             var lastLogTerm = reader.ReadInt32();
         
             return new Core.Commands.RequestVote.RequestVoteRequest(CandidateId: new(candidateId), CandidateTerm: new(candidateTerm),
-                LastLog: new LogEntryInfo(new(lastLogTerm), lastLogIndex));
+                LastLogEntryInfo: new LogEntryInfo(new(lastLogTerm), lastLogIndex));
         }
     }
 

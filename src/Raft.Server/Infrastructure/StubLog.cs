@@ -7,7 +7,24 @@ public class StubLog: ILog
 {
     public LogEntryInfo Append(Term term, string command)
     {
-        return LogEntryInfo.Empty;
+        return LogEntryInfo.Tomb;
+    }
+
+    public IReadOnlyList<LogEntry> Entries { get; }
+
+    public void AppendUpdateRange(IEnumerable<LogEntry> entries, int startIndex)
+    {
+        
+    }
+    
+    public bool IsConsistentWith(LogEntryInfo prefix)
+    {
+        return true;
+    }
+
+    public LogEntryInfo Append(LogEntry entry)
+    {
+        return LogEntryInfo.Tomb;
     }
 
     public LogEntryCheckResult Check(LogEntryInfo entryInfo)
@@ -15,18 +32,30 @@ public class StubLog: ILog
         return LogEntryCheckResult.Contains;
     }
 
-    public LogEntryInfo LastLogEntryInfo => LogEntryInfo.Empty;
+    public LogEntryInfo LastEntry => LogEntryInfo.Tomb;
     public int CommitIndex
     {
         get => 0;
         set { }
     }
 
-    public int LastApplied => 0;
+    public int LastApplied
+    {
+        get => 0;
+        set {}
+    }
 
     public IReadOnlyList<LogEntry> this[Range range] =>
         Array.Empty<LogEntry>();
 
     public IReadOnlyList<LogEntry> this[int index] =>
         Array.Empty<LogEntry>();
+
+    public IReadOnlyList<LogEntry> GetFrom(int index)
+    {
+        return Array.Empty<LogEntry>();
+    }
+
+    public void Commit(int index)
+    { }
 }

@@ -40,13 +40,13 @@ public class Helpers
     public static ILog CreateLog(LogEntryInfo? logEntryInfo = null, LogEntryCheckResult result = LogEntryCheckResult.Contains, int commitIndex = 0, int lastApplied = 0)
     {
         var entry = logEntryInfo ?? LastLogEntryInfo;
-        return Mock.Of<ILog>(x => x.LastLogEntryInfo == entry && 
-                                  x.Check(It.IsAny<LogEntryInfo>()) == result && 
+        return Mock.Of<ILog>(x => x.LastEntry == entry && 
                                   x.CommitIndex == commitIndex &&
-                                  x.LastApplied == lastApplied);
+                                  x.LastApplied == lastApplied &&
+                                  x.IsConsistentWith(It.IsAny<LogEntryInfo>()) == true);
     }
 
-    public static RaftNode CreateStateMachine(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
+    public static RaftNode CreateNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
     {
         return RaftNode.Create(NodeId, 
             new PeerGroup(peers?.ToArray() ?? Array.Empty<IPeer>()),

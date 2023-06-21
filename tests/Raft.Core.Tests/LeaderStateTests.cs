@@ -5,6 +5,7 @@ using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 using Raft.Core.Node;
 using Raft.Core.Node.LeaderState;
+using Range = Moq.Range;
 
 namespace Raft.Core.Tests;
 
@@ -12,7 +13,7 @@ public class LeaderStateTests
 {
     private static RaftNode CreateLeaderNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, IRequestQueueFactory? requestQueueFactory = null)
     {
-        var raftStateMachine = Helpers.CreateStateMachine(
+        var raftStateMachine = Helpers.CreateNode(
             currentTerm,
             votedFor,
             peers: peers,
@@ -51,11 +52,18 @@ public class LeaderStateTests
                                                .ReturnsAsync(new AppendEntriesResponse(term, true))
                                                .Verifiable()))
                               .ToList();
+        
+        var log = new Mock<ILog>().Apply(l =>
+        {
+            l.Setup(x => x.GetFrom(It.IsAny<int>())).Returns(Array.Empty<LogEntry>());
+        });
+        
         using var stateMachine = CreateLeaderNode(term, 
             null,
             peers.Select(x => x.Object),
             heartbeatTimer: heartbeatTimer.Object,
             jobQueue: jobQueue,
+            log: log.Object,
             requestQueueFactory: new SingleHeartbeatRequestQueueFactory(0));
         
         heartbeatTimer.Raise(x => x.Timeout += null);
@@ -102,7 +110,7 @@ public class LeaderStateTests
         using var raft = CreateLeaderNode(term, null);
 
         var request = new RequestVoteRequest(CandidateId: raft.Id + 1, CandidateTerm: term.Increment(),
-            LastLog: raft.Log.LastLogEntryInfo);
+            LastLogEntryInfo: raft.Log.LastEntry);
 
         raft.Handle(request);
         
@@ -122,7 +130,7 @@ public class LeaderStateTests
         using var raft = CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object);
 
         var request = new RequestVoteRequest(CandidateId: raft.Id + 1, CandidateTerm: term.Increment(),
-            LastLog: raft.Log.LastLogEntryInfo);
+            LastLogEntryInfo: raft.Log.LastEntry);
 
         raft.Handle(request);
         
@@ -143,7 +151,7 @@ public class LeaderStateTests
         using var raft = CreateLeaderNode(term, null);
 
         var request = new RequestVoteRequest(CandidateId: raft.Id + 1, CandidateTerm: new(otherTerm),
-            LastLog: raft.Log.LastLogEntryInfo);
+            LastLogEntryInfo: raft.Log.LastEntry);
 
         var response = raft.Handle(request);
         
@@ -166,7 +174,7 @@ public class LeaderStateTests
 
         using var raft = CreateLeaderNode(term, null);
 
-        var request = AppendEntriesRequest.Heartbeat( new(otherTerm), raft.Log.CommitIndex, raft.Id + 1, raft.Log.LastLogEntryInfo);
+        var request = AppendEntriesRequest.Heartbeat( new(otherTerm), raft.Log.CommitIndex, raft.Id + 1, raft.Log.LastEntry);
 
         var response = raft.Handle(request);
         
@@ -183,9 +191,15 @@ public class LeaderStateTests
             t.Setup(x => x.Stop()).Verifiable();
         });
 
-        using var raft = CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object);
+        var log = new Mock<ILog>().Apply(l =>
+        {
+            l.SetupGet(x => x.Entries).Returns(Array.Empty<LogEntry>());
+            l.Setup(x => x.IsConsistentWith(It.IsAny<LogEntryInfo>())).Returns(true);
+        });
 
-        var request = AppendEntriesRequest.Heartbeat(term.Increment(), raft.Log.CommitIndex, new NodeId(2), raft.Log.LastLogEntryInfo);
+        using var raft = CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object, log: log.Object);
+
+        var request = AppendEntriesRequest.Heartbeat(term.Increment(), raft.Log.CommitIndex, new NodeId(2), raft.Log.LastEntry);
 
         raft.Handle(request);
         

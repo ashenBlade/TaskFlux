@@ -19,7 +19,7 @@ public class SerializationTests
     public void ПриСериализацииRequestVoteRequest__ДолженДесериализоватьИдентичныйОбъект(int peerId, int term, int logTerm, int index)
     {
         var requestVote = new RequestVoteRequest(CandidateId: new NodeId(peerId), CandidateTerm: new Term(term),
-            LastLog: new LogEntryInfo(new Term(logTerm), index));
+            LastLogEntryInfo: new LogEntryInfo(new Term(logTerm), index));
         var actual = Serializers.RequestVoteRequest.Deserialize(Serializers.RequestVoteRequest.Serialize(requestVote));
         Assert.Equal(requestVote, actual);
     }
