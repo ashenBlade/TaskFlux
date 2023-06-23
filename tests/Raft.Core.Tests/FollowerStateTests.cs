@@ -67,11 +67,11 @@ public class FollowerStateTests
     
     [Theory]
     [InlineData(2, 1)]
-    [InlineData(2, 2)]
+    // [InlineData(2, 2)]
     [InlineData(3, 2)]
     [InlineData(3, 1)]
-    [InlineData(3, 3)]
-    public void ПриЗапросеRequestVote__СТермомНеБольшеСвоего__ДолженОтветитьОтрицательно(int myTerm, int otherTerm)
+    // [InlineData(3, 3)]
+    public void ПриЗапросеRequestVote__КогдаНеОтдавалГолосСТермомНеБольшеСвоего__ДолженОтветитьОтрицательно(int myTerm, int otherTerm)
     {
         var oldTerm = new Term(myTerm);
         

@@ -14,6 +14,7 @@ public interface ISocket: IDisposable
     /// <exception cref="NetworkException">Во время отправки произошла ошибка сети</exception>
     /// <exception cref="SocketException">Неизвестная ошибка произошла во время отправки</exception>
     public Task SendAsync(ReadOnlyMemory<byte> payload, CancellationToken token = default);
+    
     /// <summary>
     /// Получить передаваемый по сети пакет и записать полученные данные в переданный <paramref name="stream"/>
     /// </summary>

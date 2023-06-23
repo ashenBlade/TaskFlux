@@ -30,7 +30,8 @@ internal class LeaderState: BaseNodeState
     {
         _logger.Verbose("Сработал Heartbeat таймер. Отправляю команду всем обработчикам узлов");
         Array.ForEach(_processors, static p => p.NotifyHeartbeatTimeout());
-        Node.CommandQueue.Enqueue(new StartHeartbeatTimerCommand(this, Node));
+        Node.HeartbeatTimer.Start();
+        // Node.CommandQueue.Enqueue(new StartHeartbeatTimerCommand(this, Node));
     }
 
     private async Task ProcessPeersAsync()
@@ -50,7 +51,9 @@ internal class LeaderState: BaseNodeState
 
     public override void Dispose()
     {
-        Node.CommandQueue.Enqueue(new StopHeartbeatTimerCommand(this, Node));
+        // Node.CommandQueue.Enqueue(new StopHeartbeatTimerCommand(this, Node));
+        Node.HeartbeatTimer.Stop();
+        Node.HeartbeatTimer.Timeout -= OnHeartbeatTimer;
         base.Dispose();
     }
 

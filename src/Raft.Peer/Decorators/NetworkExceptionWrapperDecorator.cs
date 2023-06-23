@@ -5,25 +5,26 @@ namespace Raft.Peer.Decorators;
 
 public class NetworkExceptionWrapperDecorator: ISocket
 {
-    private readonly ISocket _socketImplementation;
+    private readonly ISocket _socket;
 
-    public NetworkExceptionWrapperDecorator(ISocket socketImplementation)
+    public NetworkExceptionWrapperDecorator(ISocket socket)
     {
-        _socketImplementation = socketImplementation;
+        _socket = socket;
     }
 
     public void Dispose()
     {
-        _socketImplementation.Dispose();
+        _socket.Dispose();
     }
 
     public async Task SendAsync(ReadOnlyMemory<byte> payload, CancellationToken token = default)
     {
         try
         {
-            await _socketImplementation.SendAsync(payload, token);
+            await _socket.SendAsync(payload, token);
         }
-        catch (SocketException socket) when (NetworkException.IsNetworkError(socket.SocketErrorCode))
+        catch (SocketException socket) 
+            // when (NetworkException.IsNetworkError(socket.SocketErrorCode))
         {
             throw new NetworkException(socket);
         }
@@ -33,9 +34,10 @@ public class NetworkExceptionWrapperDecorator: ISocket
     {
         try
         {
-            await _socketImplementation.ReadAsync(stream, token);
+            await _socket.ReadAsync(stream, token);
         }
-        catch (SocketException e) when (NetworkException.IsNetworkError(e.SocketErrorCode))
+        catch (SocketException e) 
+            // when (NetworkException.IsNetworkError(e.SocketErrorCode))
         {
             throw new NetworkException(e);
         }

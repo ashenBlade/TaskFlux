@@ -33,7 +33,7 @@ ValidateOptions(options);
 
 var nodeId = new NodeId(options.NodeId);
 
-var requestTimeout = TimeSpan.FromSeconds(0.5);
+var requestTimeout = TimeSpan.FromSeconds(1);
 
 var peers = options.Peers
                    .Select(peerInfo =>
@@ -49,7 +49,7 @@ var peers = options.Peers
 
 Log.Logger.Information("Узлы кластера: {Peers}", options.Peers);
 
-using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5));
+using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5));
 using var heartbeatTimer = new SystemTimersTimer( TimeSpan.FromSeconds(1) );
 
 var log = new InMemoryLog(Enumerable.Empty<LogEntry>());

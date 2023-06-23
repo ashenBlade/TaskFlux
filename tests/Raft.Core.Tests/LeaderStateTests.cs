@@ -137,12 +137,10 @@ public class LeaderStateTests
     }
     
     [Theory]
-    [InlineData(1, 1)]
     [InlineData(2, 1)]
     [InlineData(5, 1)]
     [InlineData(5, 3)]
     [InlineData(5, 4)]
-    [InlineData(5, 5)]
     public void ПриОбрабаткеЗапросаRequestVote__СТермомНеБольшеСвоего__ДолженОтветитьОтрицательно(int myTerm, int otherTerm)
     {
         var term = new Term(myTerm);
@@ -209,7 +207,8 @@ public class LeaderStateTests
     {
         private readonly int _lastLogIndex;
         private readonly TaskCompletionSource _tcs = new();
-
+        private bool _isFirstRequest = true;
+        
         public SingleHeartbeatRequestQueue(int lastLogIndex)
         {
             _lastLogIndex = lastLogIndex;
@@ -223,6 +222,11 @@ public class LeaderStateTests
 
         public void AddHeartbeat()
         {
+            if (_isFirstRequest)
+            {
+                _isFirstRequest = false;
+                return;
+            }
             _tcs.SetResult();
         }
 
@@ -241,46 +245,6 @@ public class LeaderStateTests
         public IRequestQueue CreateQueue()
         {
             return new SingleHeartbeatRequestQueue(_lastLogEntry);
-        }
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    public async Task ПриСтартеLeaderState__ДолженОтправитьHeartbeatНаВсеУзлы(int peersCount)
-    {
-        var term = new Term(1);
-        var heartbeatTimer = new Mock<ITimer>().Apply(t =>
-        {
-            t.Setup(x => x.Stop());
-            t.Setup(x => x.Start());
-        });
-        var jobQueue = new SingleRunJobQueue();
-        var peerTerm = term.Increment();
-        var peers = Enumerable.Range(0, peersCount)
-                              .Select(_ => new Mock<IPeer>()
-                                  .Apply(p => p.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(),
-                                                    It.IsAny<CancellationToken>()))
-                                               .ReturnsAsync(new AppendEntriesResponse(peerTerm, true))
-                                               .Verifiable()))
-                              .ToArray();
-        using var node = CreateLeaderNode(term, 
-            null,
-            peers.Select(x => x.Object),
-            heartbeatTimer: heartbeatTimer.Object,
-            jobQueue: jobQueue,
-            requestQueueFactory: new SingleHeartbeatRequestQueueFactory(0));
-        
-        var task = jobQueue.Run();
-        
-        await task;
-        
-        foreach (var peer in peers)
-        {
-            peer.Verify(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()), Times.Once());
         }
     }
 

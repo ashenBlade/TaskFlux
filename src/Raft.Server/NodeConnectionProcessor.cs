@@ -23,7 +23,7 @@ public record NodeConnectionProcessor(NodeId Id, TcpClient Client, RaftNode Node
             try
             {
                 int read;
-                while ((read = await network.ReadAsync(buffer, token)) > 0)
+                while (( read = await network.ReadAsync(buffer, token) ) > 0)
                 {
                     memory.Write(buffer, 0, read);
                     if (read < buffer.Length)
@@ -41,12 +41,12 @@ public record NodeConnectionProcessor(NodeId Id, TcpClient Client, RaftNode Node
                     CancellationTokenSource.Cancel();
                     return;
                 }
-                        
+
                 var marker = data[0];
                 byte[]? responseBuffer = null;
                 switch (marker)
                 {
-                    case (byte) RequestType.RequestVote:
+                    case ( byte ) RequestType.RequestVote:
                         logger.Debug("Получен RequestVote. Десериализую");
                         var requestVoteRequest = Serializers.RequestVoteRequest.Deserialize(data);
                         logger.Verbose("RequestVoteRequest: {Request}", requestVoteRequest);
@@ -56,7 +56,7 @@ public record NodeConnectionProcessor(NodeId Id, TcpClient Client, RaftNode Node
                         logger.Verbose("RequestVoteResponse: {Response}", requestVoteResponse);
                         responseBuffer = Serializers.RequestVoteResponse.Serialize(requestVoteResponse);
                         break;
-                    case (byte) RequestType.AppendEntries:
+                    case ( byte ) RequestType.AppendEntries:
                         logger.Debug("Получен AppendEntries. Десериализую в Heartbeat");
                         var heartbeatRequest = Serializers.AppendEntriesRequest.Deserialize(buffer);
                         logger.Verbose("HeartbeatRequest: {Request}", heartbeatRequest);
@@ -67,20 +67,25 @@ public record NodeConnectionProcessor(NodeId Id, TcpClient Client, RaftNode Node
                         responseBuffer = Serializers.AppendEntriesResponse.Serialize(heartbeatResponse);
                         break;
                 }
-                    
+
                 memory.Position = 0;
                 memory.SetLength(0);
 
                 if (responseBuffer is null)
                 {
-                    logger.Error("Не удалось сериализовать ответ. Закрываю соединение с {@Address}", client.Client.RemoteEndPoint);
+                    logger.Error("Не удалось сериализовать ответ. Закрываю соединение с {@Address}",
+                        client.Client.RemoteEndPoint);
                     client.Close();
                     continue;
                 }
-                    
+
                 logger.Debug("Отправляю ответ клиенту");
                 await network.WriteAsync(responseBuffer, token);
                 logger.Debug("Ответ отправлен");
+            }
+            catch (ObjectDisposedException)
+            {
+                break;
             }
             catch (Exception exception)
             {

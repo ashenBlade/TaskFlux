@@ -31,7 +31,7 @@ public class RaftTcpSocket: ISocket
 
     public async Task SendAsync(ReadOnlyMemory<byte> payload, CancellationToken token = default)
     {
-        await CheckConnectionAsync(token);
+        await CheckConnectionAsync();
 
         var left = payload.Length;
         try
@@ -60,38 +60,39 @@ public class RaftTcpSocket: ISocket
                 return cts;
             }
         }
-        catch (SocketException socket) when (IsNetworkError(socket.SocketErrorCode))
+        catch (SocketException socket)
         {
             throw new NetworkException(socket);
         }
     }
 
-    private async ValueTask CheckConnectionAsync(CancellationToken token)
+    private async ValueTask CheckConnectionAsync()
     {
         if (!_socket.Connected)
         {
-            await EstablishConnectionAsync(token);
+            await EstablishConnectionAsync();
         }
     }
 
-    private async Task EstablishConnectionAsync(CancellationToken token)
+    private async Task EstablishConnectionAsync()
     {
         _logger.Debug("Делаю запрос подключения на хост {Host} и порт {Port}", _host, _port);
         using (var cts = CreateTimeoutLinkedTokenSource())
         {
-            await Task.Run(() =>
-            {
-                var result = _socket.BeginConnect(_host, _port, null, null);
-                var  success = result.AsyncWaitHandle.WaitOne(_requestTimeout, true);
-                if (success)
-                {
-                    _socket.EndConnect(result);
-                }
-                else
-                {
-                    throw new NetworkException(new SocketException(10060)); // Connection timed out
-                }
-            }, cts.Token);
+            await _socket.ConnectAsync(_host, _port, cts.Token);
+            // await Task.Run(() =>
+            // {
+            //     var result = _socket.BeginConnect(_host, _port, null, null);
+            //     var  success = result.AsyncWaitHandle.WaitOne(_requestTimeout, true);
+            //     if (success)
+            //     {
+            //         _socket.EndConnect(result);
+            //     }
+            //     else
+            //     {
+            //         throw new NetworkException(new SocketException(10060)); // Connection timed out
+            //     }
+            // }, cts.Token);
         }
         
         try
@@ -125,7 +126,7 @@ public class RaftTcpSocket: ISocket
         }
         catch (SocketException)
         {
-            await _socket.DisconnectAsync(true, token);
+            await _socket.DisconnectAsync(true);
             throw;
         }
         
@@ -146,8 +147,7 @@ public class RaftTcpSocket: ISocket
 
         CancellationTokenSource CreateTimeoutLinkedTokenSource()
         {
-            var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
-            cts.CancelAfter(_requestTimeout);
+            var cts = new CancellationTokenSource(_requestTimeout);
             return cts;
         }
     }
@@ -161,7 +161,7 @@ public class RaftTcpSocket: ISocket
         }
         
        
-        await CheckConnectionAsync(token);
+        await CheckConnectionAsync();
         var buffer = new byte[_receiveBufferSize];
         while (token.IsCancellationRequested is false)
         {

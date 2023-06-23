@@ -55,7 +55,9 @@ public class TcpPeer: IPeer, IDisposable
         }
         
         _logger.Verbose("Ответ от узла {PeerId} получен. Десериализую", Id);
-        return Serializers.AppendEntriesResponse.Deserialize(response);
+        var appendEntriesResponse = Serializers.AppendEntriesResponse.Deserialize(response);
+        _logger.Verbose("Ответ десериализован {Response}", appendEntriesResponse);
+        return appendEntriesResponse;
     }
 
     public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)

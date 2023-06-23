@@ -28,6 +28,16 @@ internal abstract class BaseNodeState: INodeState
             return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: false);
         }
 
+        if (Node.CurrentTerm < request.CandidateTerm)
+        {
+            Node.CurrentTerm = request.CandidateTerm;
+            Node.VotedFor = request.CandidateId;
+            Node.CurrentState = FollowerState.Create(Node);
+            Node.ElectionTimer.Start();
+
+            return new RequestVoteResponse(CurrentTerm: Node.CurrentTerm, VoteGranted: true);
+        }
+        
         var canVote = 
             // Ранее не голосовали
             Node.VotedFor is null || 
@@ -36,8 +46,6 @@ internal abstract class BaseNodeState: INodeState
         
         // Отдать свободный голос можем только за кандидата 
         if (canVote && 
-            // С термом больше нашего (иначе, на текущем терме уже есть лидер)
-            Node.CurrentTerm < request.CandidateTerm && 
             // У которого лог в консистентном с нашим состоянием
             Node.Log.IsConsistentWith(request.LastLogEntryInfo))
         {
