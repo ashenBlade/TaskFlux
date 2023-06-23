@@ -12,9 +12,9 @@ public class FollowerStateTests
     private static readonly NodeId NodeId = new(1);
     private static readonly LogEntryInfo LastLogEntryInfo = new(new Term(1), 0);
 
-    private static ILog CreateLog(LogEntryInfo? logEntryInfo = null, LogEntryCheckResult result = LogEntryCheckResult.Contains, int commitIndex = 0, int lastApplied = 0)
+    private static ILog CreateLog(LogEntryInfo? logEntryInfo = null, int commitIndex = 0, int lastApplied = 0)
     {
-        return Helpers.CreateLog(logEntryInfo, result, commitIndex, lastApplied);
+        return Helpers.CreateLog(logEntryInfo, commitIndex, lastApplied);
     }
 
     private static RaftNode CreateNode(Term currentTerm, NodeId? votedFor, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)

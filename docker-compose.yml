@@ -3,6 +3,8 @@
     build:
       context: src
       dockerfile: Raft.Server/Dockerfile
+    ports:
+      - '9000:9000'
     environment:
       PEERS__0__HOST: raft.server.2
       PEERS__0__PORT: 5000
@@ -18,6 +20,8 @@
     build:
       context: src
       dockerfile: Raft.Server/Dockerfile
+    ports:
+      - '9001:9000'
     environment:
       PEERS__0__HOST: raft.server.1
       PEERS__0__PORT: 5000
@@ -33,6 +37,8 @@
     build:
       context: src
       dockerfile: Raft.Server/Dockerfile
+    ports:
+      - '9002:9000'
     environment:
       PEERS__0__HOST: raft.server.1
       PEERS__0__PORT: 5000

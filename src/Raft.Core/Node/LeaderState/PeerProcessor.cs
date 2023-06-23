@@ -1,13 +1,13 @@
-using System.Threading.Channels;
 using Raft.Core.Commands;
 using Raft.Core.Commands.AppendEntries;
+using Raft.Core.Log;
 
 namespace Raft.Core.Node.LeaderState;
 
 
 internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue)
 {
-    private PeerInfo Info { get; } = new(State.Node.Log.LastEntry.Index);
+    private PeerInfo Info { get; } = new(State.Node.Log.LastEntry.Index + 1);
     private bool IsBusy { get; set; }
     
     private readonly record struct OperationScope(PeerProcessor? Processor): IDisposable
@@ -26,14 +26,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
             }
         }
     }
-    
-    private readonly Channel<AppendEntriesRequestSynchronizer> _channel =
-        Channel.CreateUnbounded<AppendEntriesRequestSynchronizer>(new UnboundedChannelOptions()
-        {
-            SingleReader = true,
-            SingleWriter = false
-        });
-    
+
     /// <summary>
     /// Метод для обработки узла
     /// </summary>
@@ -68,11 +61,13 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
     {
         while (token.IsCancellationRequested is false)
         {
-            var newEntries = Node.Log.GetFrom(Info.NextIndex);
-            
             // 1. Отправить запрос
-            var request = new AppendEntriesRequest(Node.CurrentTerm, Node.Log.CommitIndex, Node.Id,
-                Node.Log.LastEntry, newEntries);
+            var request = new AppendEntriesRequest(
+                Term: Node.CurrentTerm,
+                LeaderCommit: Node.Log.CommitIndex,
+                LeaderId: Node.Id,
+                PrevLogEntryInfo: Node.Log.GetPrecedingEntryInfo(Info.NextIndex), 
+                Entries: Node.Log.GetFrom(Info.NextIndex));
 
             var response = await Peer.SendAppendEntries(request, token);
             
@@ -101,6 +96,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
                 
                 return true;
             }
+            
             // Дальше узел отказался принимать наш запрос (Success = false)
             // 4. Если вернувшийся терм больше нашего
             if (Node.CurrentTerm < response.Term)
@@ -115,6 +111,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
                 
             // 5.1. Декрементируем последние записи лога
             Info.Decrement();
+            
             // 5.2. Идем на следующий круг
         }
 
@@ -122,8 +119,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
         return false;
     }
 
-    private INode Node =>
-        State.Node;
+    private INode Node => State.Node;
 
     public void NotifyHeartbeatTimeout()
     {
@@ -135,6 +131,6 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
 
     public void NotifyAppendEntries(AppendEntriesRequestSynchronizer synchronizer)
     {
-        Queue.AddHeartbeat();
+        Queue.AddAppendEntries(synchronizer);
     }
 }

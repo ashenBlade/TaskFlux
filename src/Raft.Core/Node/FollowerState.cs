@@ -11,7 +11,7 @@ internal class  FollowerState: BaseNodeState
     private readonly ILogger _logger;
 
     private FollowerState(INode node, ILogger logger)
-        : base(node)
+        : base(node, logger)
     {
         _logger = logger;
         Node.ElectionTimer.Timeout += OnElectionTimerTimeout;
@@ -21,14 +21,12 @@ internal class  FollowerState: BaseNodeState
     {
         _logger.Verbose("Получен RequestVote");
         Node.ElectionTimer.Reset();
-        // Node.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, Node));
         return base.Apply(request);
     }
 
     public override AppendEntriesResponse Apply(AppendEntriesRequest request)
     {
         _logger.Verbose("Получен Heartbeat");
-        // Node.CommandQueue.Enqueue(new ResetElectionTimerCommand(this, Node));
         Node.ElectionTimer.Reset();
         return base.Apply(request);
     }

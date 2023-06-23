@@ -27,12 +27,9 @@ public class StubLog: ILog
         return LogEntryInfo.Tomb;
     }
 
-    public LogEntryCheckResult Check(LogEntryInfo entryInfo)
-    {
-        return LogEntryCheckResult.Contains;
-    }
-
     public LogEntryInfo LastEntry => LogEntryInfo.Tomb;
+    public LogEntryInfo PrevLogEntry => LogEntryInfo.Tomb;
+
     public int CommitIndex
     {
         get => 0;
@@ -58,4 +55,9 @@ public class StubLog: ILog
 
     public void Commit(int index)
     { }
+
+    public LogEntryInfo GetPrecedingEntryInfo(int nextIndex)
+    {
+        throw new NotImplementedException();
+    }
 }

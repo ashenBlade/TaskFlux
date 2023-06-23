@@ -5,7 +5,7 @@ using Serilog;
 
 namespace Raft.Server;
 
-public partial class RaftStateObserver
+public class RaftStateObserver
 {
     private readonly RaftNode _raft;
     private readonly ILogger _logger;
@@ -23,7 +23,7 @@ public partial class RaftStateObserver
         {
             while (token.IsCancellationRequested is false)
             {
-                _logger.Information("Состояние: {State}; Терм {Term}", _raft.CurrentRole, _raft.CurrentTerm);
+                _logger.Information("Состояние: {State}; Терм {Term}; Лог: {@Entries}", _raft.CurrentRole, _raft.CurrentTerm, _raft.Log);
                 await Task.Delay(TimeSpan.FromSeconds(5), token);
             }
         }

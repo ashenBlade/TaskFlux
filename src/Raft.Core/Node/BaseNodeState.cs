@@ -3,17 +3,20 @@ using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Commands.Submit;
 using Raft.Core.Log;
+using Serilog;
 
 namespace Raft.Core.Node;
 
 internal abstract class BaseNodeState: INodeState
 {
     internal readonly INode Node;
+    private readonly ILogger _logger;
     protected ILog Log => Node.Log;
 
-    internal BaseNodeState(INode node)
+    internal BaseNodeState(INode node, ILogger logger)
     {
         Node = node;
+        _logger = logger;
     }
 
     public abstract NodeRole Role { get; }
@@ -73,7 +76,7 @@ internal abstract class BaseNodeState: INodeState
             // Индекс расхождения в нашем логе
             var logIndex = request.PrevLogEntryInfo.Index + 1;
             
-            // Индекс в массиве вхождений. Добавлен для удобства
+            // Индекс в массиве вхождений
             var newEntriesIndex = 0;
         
             for (; 

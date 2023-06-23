@@ -28,7 +28,7 @@ public class TcpPeer: IPeer, IDisposable
         var data = Serializers.AppendEntriesRequest.Serialize(request);
         try
         {
-            _logger.Verbose("Делаю запрос Heartbeat на узел {PeerId}", Id);
+            _logger.Verbose("Делаю запрос AppendEntries {@Request} на узел {PeerId}", request, Id);
             await _client.SendAsync(data, token);
 
             var memory = new MemoryStream();

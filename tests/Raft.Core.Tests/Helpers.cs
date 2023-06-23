@@ -37,7 +37,7 @@ public class Helpers
         return mock.Object;
     }
     
-    public static ILog CreateLog(LogEntryInfo? logEntryInfo = null, LogEntryCheckResult result = LogEntryCheckResult.Contains, int commitIndex = 0, int lastApplied = 0)
+    public static ILog CreateLog(LogEntryInfo? logEntryInfo = null, int commitIndex = 0, int lastApplied = 0)
     {
         var entry = logEntryInfo ?? LastLogEntryInfo;
         return Mock.Of<ILog>(x => x.LastEntry == entry && 

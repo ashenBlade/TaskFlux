@@ -14,7 +14,7 @@ internal class LeaderState: BaseNodeState
     private readonly PeerProcessor[] _processors;
 
     internal LeaderState(INode node, ILogger logger, IRequestQueueFactory queueFactory)
-        : base(node)
+        : base(node, logger)
     {
         _logger = logger;
         _processors = node.PeerGroup
@@ -61,8 +61,8 @@ internal class LeaderState: BaseNodeState
     public override SubmitResponse Apply(SubmitRequest request)
     {
         // Добавляем команду в лог
+
         var appended = Log.Append(new LogEntry( Node.CurrentTerm, request.Command ));
-        
         // Сигнализируем узлам, чтобы принялись за работу
         var synchronizer = new AppendEntriesRequestSynchronizer(Node.PeerGroup, appended.Index);
         Array.ForEach(_processors, p => p.NotifyAppendEntries(synchronizer));

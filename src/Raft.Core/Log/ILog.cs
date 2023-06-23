@@ -30,7 +30,7 @@ public interface ILog
     /// Последняя запись в логе
     /// </summary>
     public LogEntryInfo LastEntry { get; }
-    
+
     /// <summary>
     /// Индекс последней закомиченной записи
     /// </summary>
@@ -48,6 +48,7 @@ public interface ILog
     /// <param name="index">Индекс, начиная с которого нужно вернуть записи</param>
     /// <returns>Список записей из лога</returns>
     /// <remarks>При выходе за границы, может вернуть пустой массив</remarks>
+    /// <remarks>Используется 0-based индекс, а в оригинальном RAFT - 1-based</remarks>
     public IReadOnlyList<LogEntry> GetFrom(int index);
 
     /// <summary>
@@ -55,4 +56,7 @@ public interface ILog
     /// </summary>
     /// <param name="index">Индекс новой закомиченной записи</param>
     public void Commit(int index);
+
+    
+    public LogEntryInfo GetPrecedingEntryInfo(int nextIndex);
 }

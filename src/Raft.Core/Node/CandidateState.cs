@@ -10,7 +10,7 @@ internal class CandidateState: BaseNodeState
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;
     internal CandidateState(INode node, ILogger logger)
-        :base(node)
+        :base(node, logger)
     {
         _logger = logger;
         _cts = new();

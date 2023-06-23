@@ -6,7 +6,7 @@ namespace Raft.Core;
 public readonly record struct Term
 {
     public const int StartTerm = 1;
-    public static Term Start => new Term(StartTerm);
+    public static Term Start => new(StartTerm);
     public int Value { get; } = StartTerm;
     public Term(int term)
     {

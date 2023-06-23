@@ -11,7 +11,7 @@ public class InMemoryLog: ILog
     {
         if (_log.Count < startIndex)
         {
-            throw new ArgumentOutOfRangeException(nameof(startIndex),
+            throw new ArgumentOutOfRangeException(nameof(startIndex), startIndex,
                 "Размер лога меньше начального индекса добавления новых записей");
         }
 
@@ -27,78 +27,98 @@ public class InMemoryLog: ILog
 
             // Новый записи полностью входят в старые записи
             // TODO: оптимизировать
-            var previous = _log.GetRange(0, startIndex);
-            previous.AddRange(entries.ToArray());
-            _log = previous;
+            // var previous = _log.GetRange(0, startIndex);
+            // _log.Take(startIndex).Concat(entries).ToList()
+            // previous.AddRange(entries.ToArray());
+            _log = _log.Take(startIndex - 1)
+                       .Concat(entries)
+                       .ToList();
         }
     }
 
     public LogEntryInfo Append(LogEntry entry)
     {
         _log.Add(entry);
-        return new LogEntryInfo(entry.Term, _log.Count);
+        return new LogEntryInfo(entry.Term, _log.Count - 1);
     }
     
     public InMemoryLog(IEnumerable<LogEntry> entries)
     {
-        _log = new List<LogEntry>(entries);
+        _log = new(entries);
+    }
+
+    public InMemoryLog()
+    {
+        _log = new();
     }
     
     public bool IsConsistentWith(LogEntryInfo prefix)
     {
-        var logConsistent = prefix.Index == -1 || // Лог отправителя был изначально пуст 
-                            ( prefix.Index < Entries.Count // Наш лог не меньше (используется PrevLogEntry, поэтому нет +1)
-                           && prefix.Term == Entries[prefix.Index].Term ); // Термы записей одинковые
-
-        return logConsistent;
-    }
-
-    public LogEntryCheckResult Check(LogEntryInfo entryInfo)
-    {
-        // Если записей в логе нет
-        if (_log.Count < entryInfo.Index)
+        if (prefix.IsTomb)
         {
-            return LogEntryCheckResult.NotFound;
+            // Лог отправителя был изначально пуст
+            return true;
         }
 
-        var index = entryInfo.Index - 1;
-        var existing = _log[index];
+        if (prefix.Index < Entries.Count && // Наш лог не меньше (используется PrevLogEntry, поэтому нет +1)
+            prefix.Term == Entries[prefix.Index].Term) // Термы записей одинковые
+        {
+            return true;
+        }
         
-        // Если по одному и тому же индексу лежат данные с одним и тем же термом - 
-        // данные, хранящиеся в записях, - одинаковые
-        return existing.Term != entryInfo.Term
-                   ? LogEntryCheckResult.Conflict
-                   : LogEntryCheckResult.Contains;
+        return false;
     }
 
-    private LogEntryInfo GetLogEntryInfoAtIndex(Index index)
-    {
-        return new LogEntryInfo(_log[index].Term, index.GetOffset(0));
-    }
-    
     public LogEntryInfo LastEntry => _log.Count > 0
-                                         ? GetLogEntryInfoAtIndex(^1)
+                                         ? new LogEntryInfo(_log[^1].Term, _log.Count - 1)
                                          : LogEntryInfo.Tomb;
     public int CommitIndex { get; set; }
-    public int LastApplied { get; set; } = 0;
-
-  
-
-    public IReadOnlyList<LogEntry> this[int index] =>
-        Array.Empty<LogEntry>();
+    public int LastApplied { get; set; }
+    
+    public LogEntry this[int index] => _log[index];
 
     public IReadOnlyList<LogEntry> GetFrom(int index)
     {
-        if (_log.Count <= index)
+        if (_log.Count < index)
         {
             return Array.Empty<LogEntry>();
         }
 
+        if (index == LogEntryInfo.Tomb.Index)
+        {
+            return _log;
+        }
+        
         return _log.GetRange(index, _log.Count - index);
     }
 
     public void Commit(int index)
     {
         CommitIndex = index;
+    }
+
+    public LogEntryInfo GetPrecedingEntryInfo(int nextIndex)
+    {
+        if (nextIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex, "Следующий индекс для отправки должен быть только положительными");
+        }
+
+        if (nextIndex == 0)
+        {
+            return LogEntryInfo.Tomb;
+        }
+
+        if (nextIndex == LogEntryInfo.Tomb.Index)
+        {
+            return LogEntryInfo.Tomb;
+        }
+
+        if (nextIndex == _log.Count + 1)
+        {
+            return new(_log[^1].Term, nextIndex - 1);
+        }
+
+        return new( _log[nextIndex - 1].Term, nextIndex - 1 );
     }
 }

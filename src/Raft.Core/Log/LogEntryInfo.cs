@@ -2,6 +2,11 @@ namespace Raft.Core.Log;
 
 public readonly record struct LogEntryInfo(Term Term, int Index)
 {
+    /// <summary>
+    /// Используется для указания пустого лога.
+    /// В оригинальной статье используется индексирование с 1.
+    /// Для удобства я использую индексирование с 0.
+    /// </summary>
     private const int TombIndex = -1;
     
     /// <summary>
