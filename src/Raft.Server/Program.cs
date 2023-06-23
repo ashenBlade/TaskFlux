@@ -58,7 +58,7 @@ using var commandQueue = new ChannelCommandQueue();
 using var node = RaftNode.Create(nodeId, new PeerGroup(peers), null, new Term(1), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, new NullStateMachine());
 var connectionManager = new ExternalConnectionManager(options.Host, options.Port, node, Log.Logger.ForContext<ExternalConnectionManager>());
 var server = new RaftStateObserver(node, Log.Logger.ForContext<RaftStateObserver>());
-var listener = new SubmitCommandListener(node, 9000);
+var listener = new SubmitCommandListener(node, 9000, Log.ForContext<SubmitCommandListener>());
 
 using var cts = new CancellationTokenSource();
 
