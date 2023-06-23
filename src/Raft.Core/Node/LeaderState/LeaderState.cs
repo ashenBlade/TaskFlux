@@ -37,6 +37,7 @@ internal class LeaderState: BaseNodeState
     {
         _logger.Verbose("Запускаю обработчиков узлов");
         var tasks = _processors.Select(x => x.StartServingAsync(_cts.Token));
+        Array.ForEach(_processors, static p => p.NotifyHeartbeatTimeout());
         try
         {
             await Task.WhenAll(tasks);

@@ -9,6 +9,7 @@ using Raft.Log.InMemory;
 using Raft.Peer;
 using Raft.Peer.Decorators;
 using Raft.Server;
+using Raft.Server.HttpModule;
 using Raft.Server.Infrastructure;
 using Raft.Server.Options;
 using Raft.Timers;
@@ -58,7 +59,10 @@ using var commandQueue = new ChannelCommandQueue();
 using var node = RaftNode.Create(nodeId, new PeerGroup(peers), null, new Term(1), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, new NullStateMachine());
 var connectionManager = new ExternalConnectionManager(options.Host, options.Port, node, Log.Logger.ForContext<ExternalConnectionManager>());
 var server = new RaftStateObserver(node, Log.Logger.ForContext<RaftStateObserver>());
-var listener = new SubmitCommandListener(node, 9000, Log.ForContext<SubmitCommandListener>());
+
+var httpModule = CreateHttpRequestModule(configuration);
+
+httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(node, Log.ForContext<SubmitCommandRequestHandler>()));
 
 using var cts = new CancellationTokenSource();
 
@@ -78,7 +82,7 @@ try
         server.RunAsync(cts.Token), 
         connectionManager.RunAsync(cts.Token), 
         commandQueue.RunAsync(cts.Token),
-        listener.RunAsync(cts.Token));
+        httpModule.RunAsync(cts.Token));
 }
 catch (Exception e)
 {
@@ -92,4 +96,15 @@ void ValidateOptions(RaftServerOptions peersOptions)
     {
         throw new Exception($"Найдены ошибки при валидации конфигурации: {string.Join(',', errors.Select(x => x.ErrorMessage))}");
     }
+}
+
+HttpRequestModule CreateHttpRequestModule(IConfiguration config)
+{
+    var httpModuleOptions = config.GetRequiredSection("HTTP")
+                               .Get<HttpModuleOptions>()
+               ?? throw new ApplicationException("Настройки для HTTP модуля не найдены");
+
+    var module = new HttpRequestModule(httpModuleOptions.Port, Log.ForContext<HttpRequestModule>());
+
+    return module;
 }

@@ -4,7 +4,7 @@
       context: src
       dockerfile: Raft.Server/Dockerfile
     ports:
-      - '9000:9000'
+      - '9000:2602'
     environment:
       PEERS__0__HOST: raft.server.2
       PEERS__0__PORT: 5000
@@ -15,13 +15,15 @@
       NODE_ID: 1
       LISTEN_PORT: 5000
       LISTEN_HOST: 0.0.0.0
+      HTTP__HOSTNAME_OR_ADDRESS: 12.12.12.12
+      HTTP__PORT: 2602
       
   raft.server.2:
     build:
       context: src
       dockerfile: Raft.Server/Dockerfile
     ports:
-      - '9001:9000'
+      - '9001:2602'
     environment:
       PEERS__0__HOST: raft.server.1
       PEERS__0__PORT: 5000
@@ -32,13 +34,15 @@
       NODE_ID: 2
       LISTEN_PORT: 5000
       LISTEN_HOST: 0.0.0.0
+      HTTP__HOSTNAME_OR_ADDRESS: 0.0.0.0
+      HTTP__PORT: 2602
       
   raft.server.3:
     build:
       context: src
       dockerfile: Raft.Server/Dockerfile
     ports:
-      - '9002:9000'
+      - '9002:2602'
     environment:
       PEERS__0__HOST: raft.server.1
       PEERS__0__PORT: 5000
@@ -49,3 +53,5 @@
       NODE_ID: 3
       LISTEN_PORT: 5000
       LISTEN_HOST: 0.0.0.0
+      HTTP__HOSTNAME_OR_ADDRESS: 0.0.0.0
+      HTTP__PORT: 2602

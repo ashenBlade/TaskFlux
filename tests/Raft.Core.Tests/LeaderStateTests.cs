@@ -5,7 +5,6 @@ using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 using Raft.Core.Node;
 using Raft.Core.Node.LeaderState;
-using Range = Moq.Range;
 
 namespace Raft.Core.Tests;
 
@@ -58,7 +57,7 @@ public class LeaderStateTests
             l.Setup(x => x.GetFrom(It.IsAny<int>())).Returns(Array.Empty<LogEntry>());
         });
         
-        using var stateMachine = CreateLeaderNode(term, 
+        using var node = CreateLeaderNode(term, 
             null,
             peers.Select(x => x.Object),
             heartbeatTimer: heartbeatTimer.Object,
@@ -242,6 +241,46 @@ public class LeaderStateTests
         public IRequestQueue CreateQueue()
         {
             return new SingleHeartbeatRequestQueue(_lastLogEntry);
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public async Task ПриСтартеLeaderState__ДолженОтправитьHeartbeatНаВсеУзлы(int peersCount)
+    {
+        var term = new Term(1);
+        var heartbeatTimer = new Mock<ITimer>().Apply(t =>
+        {
+            t.Setup(x => x.Stop());
+            t.Setup(x => x.Start());
+        });
+        var jobQueue = new SingleRunJobQueue();
+        var peerTerm = term.Increment();
+        var peers = Enumerable.Range(0, peersCount)
+                              .Select(_ => new Mock<IPeer>()
+                                  .Apply(p => p.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(),
+                                                    It.IsAny<CancellationToken>()))
+                                               .ReturnsAsync(new AppendEntriesResponse(peerTerm, true))
+                                               .Verifiable()))
+                              .ToArray();
+        using var node = CreateLeaderNode(term, 
+            null,
+            peers.Select(x => x.Object),
+            heartbeatTimer: heartbeatTimer.Object,
+            jobQueue: jobQueue,
+            requestQueueFactory: new SingleHeartbeatRequestQueueFactory(0));
+        
+        var task = jobQueue.Run();
+        
+        await task;
+        
+        foreach (var peer in peers)
+        {
+            peer.Verify(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()), Times.Once());
         }
     }
 
