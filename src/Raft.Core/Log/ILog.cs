@@ -9,7 +9,7 @@ public interface ILog
     /// </summary>
     /// <param name="prefix">Запись в другом логе</param>
     /// <returns><c>true</c> - префиксы логов совпадают, <c>false</c> - иначе</returns>
-    public bool IsConsistentWith(LogEntryInfo prefix);
+    public bool Contains(LogEntryInfo prefix);
 
     /// <summary>
     /// Добавить в лог переданные записи, начиная с <see cref="startIndex"/> индекса.

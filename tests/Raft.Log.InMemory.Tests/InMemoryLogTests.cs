@@ -6,10 +6,10 @@ namespace Raft.Log.InMemory.Tests;
 public class InMemoryLogTests
 {
     [Fact]
-    public void IsConsistentWith__КогдаЛогПустойИСравниваемаяПозицияTomb__ДолженВернутьTrue()
+    public void Contains__КогдаЛогПустойИСравниваемаяПозицияTomb__ДолженВернутьTrue()
     {
         var log = new InMemoryLog();
-        var actual = log.IsConsistentWith(LogEntryInfo.Tomb);
+        var actual = log.Contains(LogEntryInfo.Tomb);
         Assert.True(actual);
     }
 
@@ -176,5 +176,102 @@ public class InMemoryLogTests
         log.AppendUpdateRange(appended, lastIndex + 1);
         var actual = log.Entries.Skip(lastIndex + 1).ToArray();
         Assert.Equal(appended, actual);
+    }
+
+    public static IEnumerable<object[]> LogEntries = new[]
+    {
+        new object[]
+        {
+            new LogEntry[]{new(new Term(1), "data1")}
+        },
+        new object[]
+        {
+            new LogEntry[]{new(new Term(1), "data1"), new(new(2), "data2")}
+        },
+        new object[]
+        {
+            new LogEntry[]{new(new(1), "data1"), new(new(2), "data2"), new(new(3), "data3")}
+        },
+        new object[]
+        {
+            new LogEntry[]{new(new(1), "data1"), new(new(2), "data2"), new(new(3), "data3"), new(new(3), "data4"), new(new(3), "data5"), new(new(4), "data6")}
+        },
+        new object[]
+        {
+            new LogEntry[]{new(new(100), "data0"), new(new(190), ""), new(new(2000), "234234")}
+        },
+        
+    };
+
+    [Theory]
+    [MemberData(nameof(LogEntries))]
+    public void Contains__КогдаЛогНеПустойИПереданПрефиксПустогоЛога__ДолженВернутьTrue(IEnumerable<LogEntry> entries)
+    {
+        var log = new InMemoryLog(entries);
+        var logEntry = LogEntryInfo.Tomb;
+        Assert.True(log.Contains(logEntry));
+    }
+
+    [Theory]
+    [MemberData(nameof(LogEntries))]
+    public void Contains__КогдаЛогНеПустойИПередаетсяПоследнийЭлементЛога__ДолженВернутьTrue(
+        IEnumerable<LogEntry> entries)
+    {
+        var logEntries = entries.ToArray();
+        var log = new InMemoryLog(logEntries);
+        var logEntry = logEntries[^1];
+        var lastLogEntry = new LogEntryInfo(logEntry.Term, (^1).GetOffset(logEntries.Length));
+        Assert.True(log.Contains(lastLogEntry));
+    }
+
+    [Theory]
+    [MemberData(nameof(LogEntries))]
+    public void Contains__КогдаЛогНеПустойИПередаетсяЛюбойЭлементИзЛога__ДолженВернутьTrue(
+        IEnumerable<LogEntry> entries)
+    {
+        var logEntries = entries.ToArray();
+        var log = new InMemoryLog(logEntries);
+        for (var i = 0; i < logEntries.Length; i++)
+        {
+            var logEntryInfo = new LogEntryInfo(logEntries[i].Term, i);
+            Assert.True(log.Contains(logEntryInfo));
+        }
+    }
+    
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(1, 2)]
+    [InlineData(2, 2)]
+    [InlineData(5, 1)]
+    [InlineData(2, 10)]
+    [InlineData(232, 10)]
+    public void Contains__КогдаЛогПустойИПередаетсяНеTomb__ДолженВернутьFalse(
+        int term, int index)
+    {
+        var log = new InMemoryLog();
+        Assert.False(log.Contains(new LogEntryInfo(new Term(term), index)));
+    }
+
+    [Theory]
+    [MemberData(nameof(LogEntries))]
+    public void Contains__КогдаПереданныйИндексБольшеМаксимального__ДолженВернутьFalse(
+        IEnumerable<LogEntry> entries)
+    {
+        var logEntries = entries.ToArray();
+        var log = new InMemoryLog(logEntries);
+        var lastLogEntry = new LogEntryInfo(logEntries[^1].Term, logEntries.Length);
+        Assert.False(log.Contains(lastLogEntry));
+    }
+
+    [Theory]
+    [MemberData(nameof(LogEntries))]
+    public void Contains__КогдаПереданныйИндексВалидныйНоТермРазличный__ДолженВернутьFalse(
+        IEnumerable<LogEntry> entries)
+    {
+        var logEntries = entries.ToArray();
+        var log = new InMemoryLog(logEntries);
+        var index = logEntries.Length / 2;
+        var entry = new LogEntryInfo(logEntries[index].Term.Increment(), index);
+        Assert.False(log.Contains(entry));
     }
 }

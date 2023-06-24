@@ -79,20 +79,20 @@ public class RaftTcpSocket: ISocket
         _logger.Debug("Делаю запрос подключения на хост {Host} и порт {Port}", _host, _port);
         using (var cts = CreateTimeoutLinkedTokenSource())
         {
-            await _socket.ConnectAsync(_host, _port, cts.Token);
-            // await Task.Run(() =>
-            // {
-            //     var result = _socket.BeginConnect(_host, _port, null, null);
-            //     var  success = result.AsyncWaitHandle.WaitOne(_requestTimeout, true);
-            //     if (success)
-            //     {
-            //         _socket.EndConnect(result);
-            //     }
-            //     else
-            //     {
-            //         throw new NetworkException(new SocketException(10060)); // Connection timed out
-            //     }
-            // }, cts.Token);
+            // await _socket.ConnectAsync(_host, _port, cts.Token);
+            await Task.Run(() =>
+            {
+                var result = _socket.BeginConnect(_host, _port, null, null);
+                var  success = result.AsyncWaitHandle.WaitOne(_requestTimeout, true);
+                if (success)
+                {
+                    _socket.EndConnect(result);
+                }
+                else
+                {
+                    throw new NetworkException(new SocketException(10060)); // Connection timed out
+                }
+            }, cts.Token);
         }
         
         try

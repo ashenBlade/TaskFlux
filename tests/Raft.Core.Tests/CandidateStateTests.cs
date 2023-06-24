@@ -312,7 +312,7 @@ public class CandidateStateTests
     {
         var mock = new Mock<ILog>();
 
-        mock.Setup(x => x.IsConsistentWith(It.IsAny<LogEntryInfo>())).Returns(isConsistent);
+        mock.Setup(x => x.Contains(It.IsAny<LogEntryInfo>())).Returns(isConsistent);
         
         return mock.Object;
     }
@@ -447,4 +447,46 @@ public class CandidateStateTests
         
         Assert.Equal(NodeRole.Leader, raft.CurrentRole);
     }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(5)]
+    [InlineData(123)]
+    public void ПриОбработкеRequestVote__СТакимЖеТермом__ДолженСтатьFollower(int term)
+    {
+        var currentTerm = new Term(term);
+        var jobQueue = new SingleRunJobQueue();
+        using var raft = CreateCandidateNode(currentTerm, null, jobQueue: jobQueue);
+
+        var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: currentTerm,
+            LastLogEntryInfo: raft.Log.LastEntry);
+
+        raft.Handle(request);
+
+        Assert.Equal(NodeRole.Follower, raft.CurrentRole);
+    }
+    
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(5)]
+    [InlineData(123)]
+    public void ПриОбработкеRequestVote__СТакимЖеТермом__ДолженОставитьПрежднийТерм(int term)
+    {
+        var currentTerm = new Term(term);
+        var jobQueue = new SingleRunJobQueue();
+        using var node = CreateCandidateNode(currentTerm, null, jobQueue: jobQueue);
+
+        var request = new RequestVoteRequest(
+            CandidateId: new NodeId(2),
+            CandidateTerm: currentTerm,
+            LastLogEntryInfo: node.Log.LastEntry);
+
+        node.Handle(request);
+
+        Assert.Equal(node.CurrentTerm, currentTerm);
+    }
+    
+    
 }

@@ -43,7 +43,7 @@ public class Helpers
         return Mock.Of<ILog>(x => x.LastEntry == entry && 
                                   x.CommitIndex == commitIndex &&
                                   x.LastApplied == lastApplied &&
-                                  x.IsConsistentWith(It.IsAny<LogEntryInfo>()) == true);
+                                  x.Contains(It.IsAny<LogEntryInfo>()) == true);
     }
 
     public static RaftNode CreateNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)

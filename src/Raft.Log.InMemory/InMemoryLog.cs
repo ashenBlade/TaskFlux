@@ -52,7 +52,7 @@ public class InMemoryLog: ILog
         _log = new();
     }
     
-    public bool IsConsistentWith(LogEntryInfo prefix)
+    public bool Contains(LogEntryInfo prefix)
     {
         if (prefix.IsTomb)
         {

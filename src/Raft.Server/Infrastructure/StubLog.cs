@@ -17,7 +17,7 @@ public class StubLog: ILog
         
     }
     
-    public bool IsConsistentWith(LogEntryInfo prefix)
+    public bool Contains(LogEntryInfo prefix)
     {
         return true;
     }

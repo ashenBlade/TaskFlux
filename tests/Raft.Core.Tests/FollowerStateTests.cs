@@ -165,7 +165,7 @@ public class FollowerStateTests
         var oldTerm = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
         timer.Setup(x => x.Reset()).Verifiable();
-        var log = new Mock<ILog>().Apply(l => l.Setup(x => x.IsConsistentWith(It.IsAny<LogEntryInfo>())).Returns(true));
+        var log = new Mock<ILog>().Apply(l => l.Setup(x => x.Contains(It.IsAny<LogEntryInfo>())).Returns(true));
         using var raft = CreateNode(oldTerm, null, electionTimer: timer.Object, log: log.Object);
         var leaderTerm = new Term(term);
         var request = AppendEntriesRequest.Heartbeat(leaderTerm, 0,
@@ -195,7 +195,7 @@ public class FollowerStateTests
         new Mock<ILog>()
            .Apply(l =>
             {
-                l.Setup(x => x.IsConsistentWith(It.IsAny<LogEntryInfo>()))
+                l.Setup(x => x.Contains(It.IsAny<LogEntryInfo>()))
                  .Returns(isConsistentWith);
             })
            .Object;
@@ -219,5 +219,17 @@ public class FollowerStateTests
         
         Assert.False(raft.VotedFor.HasValue);
     }
-    
+
+    [Fact]
+    public void ПриЗапросеHeartbeat__СБолееВысокимТермом__ДолженОстатьсяFollower()
+    {
+        var oldTerm = new Term(1);
+        
+        using var node = CreateNode(oldTerm, null, log: CreateLog(isConsistentWith: true));
+
+        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.Log.CommitIndex, new NodeId(2), node.Log.LastEntry);
+        node.Handle(request);
+        
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+    }
 }
