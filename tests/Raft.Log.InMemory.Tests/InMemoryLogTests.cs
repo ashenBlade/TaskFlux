@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Raft.Core;
 using Raft.Core.Log;
 
@@ -273,5 +274,255 @@ public class InMemoryLogTests
         var index = logEntries.Length / 2;
         var entry = new LogEntryInfo(logEntries[index].Term.Increment(), index);
         Assert.False(log.Contains(entry));
+    }
+
+    [Fact]
+    public void AppendUpdateRange__КогдаЛогПустИндекс0ПереданныйМассивПуст__НеДолженДобавитьНичегоВЛог()
+    {
+        var log = new InMemoryLog();
+        log.AppendUpdateRange(Array.Empty<LogEntry>(), 0);
+        Assert.Empty(log.Entries);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public void AppendUpdateRange__КогдаЛогПустИндекс0ВПереданномМассивеЕстьЭлементы__ДолженДобавитьВсеПереданныеЭлементы(
+        int elementsCount)
+    {
+        var log = new InMemoryLog();
+        var entries = Enumerable.Range(1, elementsCount)
+                                .Select(x => new LogEntry(new Term(x), $"data{x}"))
+                                .ToArray();
+        log.AppendUpdateRange(entries, 0);
+        Assert.Equal(entries, log.Entries);
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(1, 2)]
+    [InlineData(2, 1)]
+    [InlineData(2, 10)]
+    [InlineData(12, 10)]
+    public void
+        AppendUpdateRange__КогдаВЛогеЕстьЭлементыПереданСледующийПослеПоследнегоЭлементаИндекс__ДолженДобавитьВсеПереданныеЭлементыВКонец(
+        int initialElementsCount,
+        int toAddCount)
+    {
+        var initial = Enumerable.Range(1, initialElementsCount)
+                                .Select(t => new LogEntry(new(t), $"data{t}"))
+                                .ToArray();
+        var toAdd = Enumerable.Range(initialElementsCount + 1, toAddCount)
+                              .Select(t => new LogEntry(new(t), $"data{t}"))
+                              .ToArray();
+        var log = new InMemoryLog(initial);
+        log.AppendUpdateRange(toAdd, initial.Length);
+        Assert.Equal(initial.Concat(toAdd), log.Entries);
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 10)]
+    [InlineData(10, 2)]
+    [InlineData(40, 40)]
+    [InlineData(0, 1)]
+    [InlineData(0, 0)]
+    [InlineData(1, 0)]
+    [InlineData(2, 0)]
+    public void
+        AppendUpdateRange__КогдаВЛогеЕстьЭлементыПереданоНесколькоЭлементовСИндексом0__ДолженЗаменитьТекущийЛогПереданнымиЭлементами(
+        int initialCount,
+        int toAddCount)
+    {
+        var initial = Enumerable.Range(1, initialCount)
+                                .Select(t => new LogEntry(new(t), $"data{t}"))
+                                .ToArray();
+        var toAdd = Enumerable.Range(initialCount + 1, toAddCount)
+                              .Select(t => new LogEntry(new(t), $"data{t}"))
+                              .ToArray();
+        
+        var log = new InMemoryLog(initial);
+        log.AppendUpdateRange(toAdd, 0);
+        Assert.Equal(toAdd, log.Entries);
+    }
+
+    [Theory]
+    [InlineData(1, 1, 0)]
+    [InlineData(5, 2, 3)]
+    [InlineData(2, 4, 1)]
+    [InlineData(5, 1, 2)]
+    public void
+        AppendUpdateRange__КогдаВЛогеЕстьЭлементыПереданоНесколькоЭлементовСУказаннымИндексом__ДолженЗаменитьЭлементыСУказанногоИндексаНаПереданныеЭлементы(
+        int initialCount,
+        int toAddCount,
+        int index)
+    {
+        var initial = Enumerable.Range(1, initialCount)
+                                .Select(t => new LogEntry(new(t), $"data{t}"))
+                                .ToArray();
+        var toAdd = Enumerable.Range(initialCount + 1, toAddCount)
+                              .Select(t => new LogEntry(new(t), $"data{t}"))
+                              .ToArray();
+        
+        var log = new InMemoryLog(initial);
+        log.AppendUpdateRange(toAdd, index);
+        Assert.Equal(initial.Take(index).Concat(toAdd), log.Entries);
+    }
+
+    public static IEnumerable<object[]> InitialToAddIndexExpected = new[]
+    {
+        new object[]
+        {
+            new LogEntry[]{ new(new(1), "data1"), new(new(1), "data2"), new(new(1), "data3") },
+            new LogEntry[]{new(new(1), "data2"), new(new(2), "data4")},
+            1,
+            new LogEntry[] {new(new(1), "data1"), new(new(1), "data2"), new(new(2), "data4")}
+        },
+        new object[]
+        {
+            new LogEntry[]{ new(new(1), "data1"), new(new(2), "data2"), new(new(3), "data3") },
+            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") },
+            2,
+            new LogEntry[]{ new(new(1), "data1"), new(new(2), "data2"), new(new(4), "data2"), new(new(4), "data4") }
+        },
+        new object[]
+        {
+            new LogEntry[]{ new(new(1), "data1"), new(new(2), "data2"), new(new(3), "data3"), new(new(3), "data5") },
+            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") },
+            1,
+            new LogEntry[]{ new(new(1), "data1"), new(new(4), "data2"), new(new(4), "data4") }
+        },
+        new object[]
+        {
+            new LogEntry[]{ },
+            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") },
+            0,
+            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") }
+        },
+        new object[]
+        {
+            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") },
+            new LogEntry[]{ },
+            0,
+            new LogEntry[]{ }
+        },
+        new object[]
+        {
+            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") },
+            new LogEntry[]{ new(new(5), "data4"), new(new(6), "data11") },
+            1,
+            new LogEntry[]{ new(new(4), "data2"), new(new(5), "data4"), new(new(6), "data11") }
+        }
+    };
+
+    [Theory]
+    [MemberData(nameof(InitialToAddIndexExpected))]
+    public void
+        AppendUpdateRange__КогдаВПереданномМассивеЕстьСовпадающиеЭлементы__ДолженОбновитьТолькоРазличающиесяЧасти(
+        LogEntry[] initial,
+        LogEntry[] toAdd,
+        int index,
+        LogEntry[] expected)
+    {
+        var log = new InMemoryLog(initial);
+        log.AppendUpdateRange(toAdd, index);
+        Assert.Equal(expected, log.Entries);
+    }
+
+    [Fact]
+    public void Conflicts__КогдаЛогПустойИПереданTomb__ДолженВернутьFalse()
+    {
+        var log = new InMemoryLog();
+        Assert.False(log.Conflicts(LogEntryInfo.Tomb));
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(1, 2)]
+    [InlineData(2, 2)]
+    [InlineData(2, 6)]
+    [InlineData(3, 6)]
+    [InlineData(100, 0)]
+    [InlineData(100, 10)]
+    public void Conflicts__КогдаЛогПустойИПереданВалидныйПрефикс__ДолженВернутьFalse(int term, int index)
+    {
+        var log = new InMemoryLog();
+        Assert.False(log.Conflicts(new LogEntryInfo(new Term(term), index)));
+    }
+
+    
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 1)]
+    [InlineData(10, 5)]
+    public void Conflicts__КогдаВЛогеЕстьЭлементыИПереданБольшийТерм__ДолженВернутьFalse(int elementsCount, int index)
+    {
+        var elements = Enumerable.Range(1, elementsCount)
+                                 .Select(t => new LogEntry(new(t), $"data{t}"))
+                                 .ToArray();
+        var log = new InMemoryLog(elements);
+        var lastLogEntry = new LogEntryInfo(new(elements.Length + 1), index);
+        Assert.False(log.Conflicts(lastLogEntry));
+    }
+
+    [Fact]
+    public void Conflicts__КогдаПередаетсяСвойЖеПоследнийЭлемент__ДолженВернутьFalse()
+    {
+        var elements = Enumerable.Range(1, 10)
+                                 .Select(t => new LogEntry(new(t), $"data{t}"))
+                                 .ToArray();
+        var log = new InMemoryLog(elements);
+        Assert.False(log.Conflicts(log.LastEntry));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public void Conflicts__КогдаПередаетсяЭлементСПоследнимТермомНоБольшимИндексом__ДолженВернутьFalse(int indexDelta)
+    {
+        var elements = Enumerable.Range(1, 10)
+                                 .Select(t => new LogEntry(new(t), $"data{t}"))
+                                 .ToArray();
+        var log = new InMemoryLog(elements);
+        var lastEntry = log.LastEntry;
+        Assert.False(log.Conflicts(lastEntry with {Index = lastEntry.Index + indexDelta}));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public void Conflicts__КогдаПередаетсяЭлементСОдинаковымПоследнимТермомМеньшимИндексом__ДолженВернутьTrue(
+        int indexDelta)
+    {
+        var elements = Enumerable.Range(1, 10)
+                                 .Select(t => new LogEntry(new(t), $"data{t}"))
+                                 .ToArray();
+        var log = new InMemoryLog(elements);
+        var lastEntry = log.LastEntry;
+        Assert.True(log.Conflicts(lastEntry with {Index = lastEntry.Index - indexDelta}));
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 2)]
+    [InlineData(3, 4)]
+    [InlineData(100, 3)]
+    [InlineData(100, 7)]
+    public void Conflicts__КогдаПередаетсяЭлементСБольшимИндексомИМеньшимТермом__ДолженВернутьTrue(
+        int indexDelta,
+        int termDelta)
+    {
+        var elements = Enumerable.Range(1, 10)
+                                 .Select(t => new LogEntry(new(t), $"data{t}"))
+                                 .ToArray();
+        var log = new InMemoryLog(elements);
+        var lastEntry = log.LastEntry;
+        Assert.True(log.Conflicts(new LogEntryInfo(new( lastEntry.Term.Value - termDelta ), lastEntry.Index + indexDelta)));
     }
 }

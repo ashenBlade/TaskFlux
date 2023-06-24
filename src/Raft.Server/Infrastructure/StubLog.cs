@@ -12,6 +12,11 @@ public class StubLog: ILog
 
     public IReadOnlyList<LogEntry> Entries { get; }
 
+    public bool Conflicts(LogEntryInfo prefix)
+    {
+        return default;
+    }
+
     public void AppendUpdateRange(IEnumerable<LogEntry> entries, int startIndex)
     {
         

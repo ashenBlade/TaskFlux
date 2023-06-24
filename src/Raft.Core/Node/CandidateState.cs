@@ -163,32 +163,7 @@ internal class CandidateState: BaseNodeState
         
         if (0 < request.Entries.Count)
         {
-            // Записи могут перекрываться. (например, новый лидер затирает старые записи)
-            // Поэтому необходимо найти индекс,
-            // начиная с которого необходимо добавить в лог новые записи.
-
-            // Индекс расхождения в нашем логе
-            for (int logIndex = request.PrevLogEntryInfo.Index + 1, 
-                     
-                     // Соответвующий индекс в массиве новых элементов
-                     newEntriesIndex = 0; 
-                 
-                 logIndex < Log.Entries.Count && 
-                 newEntriesIndex < request.Entries.Count; 
-                 
-                 logIndex++,
-                 newEntriesIndex++)
-            {
-                if (Log.Entries[logIndex].Term == request.Entries[newEntriesIndex].Term) 
-                    continue;
-                
-                // Может случиться так, что все присланные вхождения уже есть в нашем логе
-                if (newEntriesIndex < request.Entries.Count)
-                {
-                    Log.AppendUpdateRange(request.Entries.Skip(newEntriesIndex), logIndex);
-                }
-                break;
-            }
+            Log.AppendUpdateRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
 
         if (Log.CommitIndex < request.LeaderCommit)
@@ -215,7 +190,6 @@ internal class CandidateState: BaseNodeState
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            _logger.Debug("Получен RequestVote с большим термом {MyTerm} < {NewTerm}. Перехожу в Follower", CurrentTerm, request.CandidateTerm);
             CurrentTerm = request.CandidateTerm;
             VotedFor = request.CandidateId;
             CurrentState = FollowerState.Create(Node);
@@ -233,7 +207,7 @@ internal class CandidateState: BaseNodeState
         // Отдать свободный голос можем только за кандидата 
         if (canVote && 
             // У которого лог в консистентном с нашим состоянием
-            Log.Contains(request.LastLogEntryInfo))
+            !Log.Conflicts(request.LastLogEntryInfo))
         {
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();

@@ -7,6 +7,34 @@ public class InMemoryLog: ILog
     private List<LogEntry> _log;
     public IReadOnlyList<LogEntry> Entries => _log;
 
+    public bool Conflicts(LogEntryInfo prefix)
+    {
+        // Неважно на каком индексе последний элемент.
+        // Если он последний, то наши старые могут быть заменены
+        
+        // Наш:      | 1 | 1 | 2 | 3 |
+        // Другой 1: | 1 | 1 | 2 | 3 | 4 | 5 |
+        // Другой 2: | 1 | 5 | 
+        if (LastEntry.Term < prefix.Term)
+        {
+            return false;
+        }
+
+        // В противном случае голос отдает только за тех,
+        // префикс лога, которых не меньше нашего
+        
+        // Наш:      | 1 | 1 | 2 | 3 |
+        // Другой 1: | 1 | 1 | 2 | 3 | 3 | 3 |
+        // Другой 2: | 1 | 1 | 2 | 3 |
+        if (prefix.Term == LastEntry.Term && 
+            LastEntry.Index <= prefix.Index)
+        {
+            return false;
+        }
+        
+        return true;
+    }
+
     public void AppendUpdateRange(IEnumerable<LogEntry> entries, int startIndex)
     {
         if (_log.Count < startIndex)
@@ -27,10 +55,7 @@ public class InMemoryLog: ILog
 
             // Новый записи полностью входят в старые записи
             // TODO: оптимизировать
-            // var previous = _log.GetRange(0, startIndex);
-            // _log.Take(startIndex).Concat(entries).ToList()
-            // previous.AddRange(entries.ToArray());
-            _log = _log.Take(startIndex - 1)
+            _log = _log.Take(startIndex)
                        .Concat(entries)
                        .ToList();
         }

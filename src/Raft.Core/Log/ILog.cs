@@ -5,11 +5,20 @@ public interface ILog
     public IReadOnlyList<LogEntry> Entries { get; }
 
     /// <summary>
-    /// Проверить консистентность лога для указанного префикса лога
+    /// Содержит ли текущий лог все элементы до указанного индекса включительно
     /// </summary>
-    /// <param name="prefix">Запись в другом логе</param>
+    /// <param name="prefix">Информация о записи в другом логе</param>
     /// <returns><c>true</c> - префиксы логов совпадают, <c>false</c> - иначе</returns>
+    /// <remarks>Вызывается в AppendEntries для проверки возможности добавления новых записей</remarks>
     public bool Contains(LogEntryInfo prefix);
+
+    /// <summary>
+    /// Конфликтует ли текущий лог с переданным (используется префикс)
+    /// </summary>
+    /// <param name="prefix">Последний элемент сравниваемого лога</param>
+    /// <returns><c>true</c> - конфликтует, <c>false</c> - иначе</returns>
+    /// <remarks>Вызывается в RequestVote для проверки актуальности лога</remarks>
+    public bool Conflicts(LogEntryInfo prefix);
 
     /// <summary>
     /// Добавить в лог переданные записи, начиная с <see cref="startIndex"/> индекса.

@@ -77,32 +77,7 @@ internal class LeaderState: BaseNodeState
         
         if (0 < request.Entries.Count)
         {
-            // Записи могут перекрываться. (например, новый лидер затирает старые записи)
-            // Поэтому необходимо найти индекс,
-            // начиная с которого необходимо добавить в лог новые записи.
-
-            // Индекс расхождения в нашем логе
-            for (int logIndex = request.PrevLogEntryInfo.Index + 1, 
-                     
-                     // Соответвующий индекс в массиве новых элементов
-                     newEntriesIndex = 0; 
-                 
-                 logIndex < Log.Entries.Count && 
-                 newEntriesIndex < request.Entries.Count; 
-                 
-                 logIndex++,
-                 newEntriesIndex++)
-            {
-                if (Log.Entries[logIndex].Term == request.Entries[newEntriesIndex].Term) 
-                    continue;
-                
-                // Может случиться так, что все присланные вхождения уже есть в нашем логе
-                if (newEntriesIndex < request.Entries.Count)
-                {
-                    Log.AppendUpdateRange(request.Entries.Skip(newEntriesIndex), logIndex);
-                }
-                break;
-            }
+            Log.AppendUpdateRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
 
         if (Log.CommitIndex < request.LeaderCommit)
@@ -110,13 +85,11 @@ internal class LeaderState: BaseNodeState
             Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
         }
 
-
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)
     {
-        // Мы в более актуальном Term'е
         if (request.CandidateTerm < CurrentTerm)
         {
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
@@ -124,7 +97,6 @@ internal class LeaderState: BaseNodeState
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            _logger.Debug("Получен RequestVote с большим термом {MyTerm} < {NewTerm}. Перехожу в Follower", CurrentTerm, request.CandidateTerm);
             CurrentTerm = request.CandidateTerm;
             VotedFor = request.CandidateId;
             CurrentState = FollowerState.Create(Node);
@@ -136,13 +108,12 @@ internal class LeaderState: BaseNodeState
         var canVote = 
             // Ранее не голосовали
             VotedFor is null || 
-            // Текущий лидер/кандидат посылает этот запрос (почему бы не согласиться)
+            // В этом терме мы за него уже проголосовали
             VotedFor == request.CandidateId;
         
         // Отдать свободный голос можем только за кандидата 
-        if (canVote && 
-            // У которого лог в консистентном с нашим состоянием
-            Log.Contains(request.LastLogEntryInfo))
+        if (canVote &&                              // За которого можем проголосовать и
+            !Log.Conflicts(request.LastLogEntryInfo)) // У которого лог не хуже нашего
         {
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();

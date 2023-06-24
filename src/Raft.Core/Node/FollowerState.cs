@@ -47,7 +47,7 @@ internal class  FollowerState: BaseNodeState
         // Отдать свободный голос можем только за кандидата 
         if (canVote && 
             // У которого лог в консистентном с нашим состоянием
-            Log.Contains(request.LastLogEntryInfo))
+            !Log.Conflicts(request.LastLogEntryInfo))
         {
             CurrentTerm = request.CandidateTerm;
             VotedFor = request.CandidateId;
@@ -83,34 +83,9 @@ internal class  FollowerState: BaseNodeState
         
         if (0 < request.Entries.Count)
         {
-            // Записи могут перекрываться. (например, новый лидер затирает старые записи)
-            // Поэтому необходимо найти индекс,
-            // начиная с которого необходимо добавить в лог новые записи.
-
-            // Индекс расхождения в нашем логе
-            for (int logIndex = request.PrevLogEntryInfo.Index + 1, 
-                     
-                     // Соответвующий индекс в массиве новых элементов
-                     newEntriesIndex = 0; 
-                 
-                 logIndex < Log.Entries.Count && 
-                 newEntriesIndex < request.Entries.Count; 
-                 
-                 logIndex++,
-                 newEntriesIndex++)
-            {
-                if (Log.Entries[logIndex].Term == request.Entries[newEntriesIndex].Term) 
-                    continue;
-                
-                // Может случиться так, что все присланные вхождения уже есть в нашем логе
-                if (newEntriesIndex < request.Entries.Count)
-                {
-                    Log.AppendUpdateRange(request.Entries.Skip(newEntriesIndex), logIndex);
-                }
-                break;
-            }
+            Log.AppendUpdateRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
-
+        
         if (Log.CommitIndex < request.LeaderCommit)
         {
             Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
