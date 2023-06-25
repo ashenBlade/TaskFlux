@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.Net;
 using Microsoft.Extensions.Configuration;
 using Raft.CommandQueue;
 using Raft.Core;
@@ -6,6 +7,7 @@ using Raft.Core.Log;
 using Raft.Core.Node;
 using Raft.JobQueue;
 using Raft.Log.InMemory;
+using Raft.Network.Socket;
 using Raft.Peer;
 using Raft.Peer.Decorators;
 using Raft.Server;
@@ -36,12 +38,13 @@ var nodeId = new NodeId(options.NodeId);
 var requestTimeout = TimeSpan.FromSeconds(1);
 
 var peers = options.Peers
-                   .Select(peerInfo =>
+                   .Select(p =>
                     {
-                        var peerId = new NodeId(peerInfo.Id);
-                        var tcpSocket = new RaftTcpSocket(peerInfo.Host, peerInfo.Port, nodeId, requestTimeout, options.ReceiveBufferSize, Log.ForContext("SourceContext", $"RaftTcpSocket-{peerId.Value}"));
-                        var socket = new SingleAccessSocketDecorator(new NetworkExceptionWrapperDecorator(tcpSocket));
-                        IPeer peer = new TcpPeer(peerId, socket, Log.ForContext("SourceContext", $"TcpPeer-{peerId.Value}"));
+                        var endpoint = GetEndpoint(p.Host, p.Port);
+                        var id = new NodeId(p.Id);
+                        var connection = new RemoteSocketNodeConnection(endpoint, Log.ForContext("SourceContext", $"RemoteSocketNodeConnection({id.Value})"));
+                        IPeer peer = new TcpPeer(connection, id, nodeId, Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
+                        peer = new ExclusiveAccessPeerDecorator(peer);
                         peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
                         return peer;
                     })
@@ -107,4 +110,14 @@ HttpRequestModule CreateHttpRequestModule(IConfiguration config)
     var module = new HttpRequestModule(httpModuleOptions.Port, Log.ForContext<HttpRequestModule>());
 
     return module;
+}
+
+EndPoint GetEndpoint(string host, int port)
+{
+    if (IPAddress.TryParse(host, out var ip))
+    {
+        return new IPEndPoint(ip, port);
+    }
+
+    return new DnsEndPoint(host, port);
 }

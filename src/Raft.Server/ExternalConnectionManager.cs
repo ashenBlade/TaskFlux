@@ -1,10 +1,13 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using Raft.Core;
 using Raft.Core.Node;
 using Raft.Network;
+using Raft.Network.Packets;
+using Raft.Network.Socket;
 using Raft.Peer;
 using Serilog;
 
@@ -51,28 +54,35 @@ public class ExternalConnectionManager
             {
                 var client = await listener.AcceptTcpClientAsync(token);
                 _logger.Debug("Клиент {Address} подключился. Начинаю обработку его запроса",
-                    ( ( IPEndPoint ) client.Client.RemoteEndPoint! ).Address.ToString());
+                    client.Client.RemoteEndPoint?.ToString());
                 try
                 {
-                    if (TryGetPeerId(client, out var peerId))
+                    var conn = new SocketNodeConnection(client.Client);
+                    if (await TryAuthenticateAsync(conn) is {} nodeId)
                     {
-                        await ResponseOk(client, token);
-                        BeginNewClientSession(peerId, client, token);
+                        var connection = new RemoteSocketNodeConnection(client.Client,
+                            _logger.ForContext("SourceContext", $"NodeConnectionProcessor({nodeId.Value})"));
+                        await connection.SendAsync(new ConnectResponsePacket(true), token);
+                        BeginNewClientSession(nodeId, connection, client, token);
                     }
                     else
                     {
-                        _logger.Debug("Клиент с адресом {@Address} не смог подключиться. Не удалось получить Id хоста",
-                            client.Client.RemoteEndPoint);
+                        _logger.Debug("Клиент с адресом {Address} не смог подключиться: не удалось получить Id хоста. Закрываю соединение",
+                            client.Client.RemoteEndPoint?.ToString());
+                        await conn.SendAsync(new ConnectResponsePacket(false), token);
+                        client.Close();
+                        client.Dispose();
                     }
                 }
                 catch (Exception e)
                 {
-                    _logger.Warning(e, "Ошибка при подключении клиента {@Address}", client.Client.RemoteEndPoint);
+                    _logger.Warning(e, "Поймано необработанное исключение при подключении клиента {Address}", client.Client.RemoteEndPoint?.ToString());
+                    client.Close();
                     client.Dispose();
                 }
             }
         }
-        catch (OperationCanceledException canceledException)
+        catch (OperationCanceledException)
         {
             _logger.Information("Запрошено завершение работы. Закрываю все соединения");    
         }
@@ -87,14 +97,20 @@ public class ExternalConnectionManager
         }
     }
 
-    private void BeginNewClientSession(NodeId id, TcpClient client, CancellationToken token)
+    private void CloseConnection(TcpClient client)
     {
-        var processor = new NodeConnectionProcessor(id, client, _raft,
+        client.Close();
+        client.Dispose();
+    }
+
+    private void BeginNewClientSession(NodeId id, IRemoteNodeConnection connection, TcpClient client, CancellationToken token)
+    {
+        var processor = new NodeConnectionProcessor(id, connection, client, _raft, 
             _logger.ForContext("SourceContext", $"ОбработчикКлиента{id.Value}"))
             {
                 CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(token)
             };
-        _logger.Debug("Добавляю ноду в список обрабатываемых");
+        _logger.Debug("Добавляю узел в список обрабатываемых");
         _nodes.AddOrUpdate(id,
             _ => processor,
             (_, old) =>
@@ -107,30 +123,15 @@ public class ExternalConnectionManager
         _ = processor.ProcessClientBackground();
     }
 
-    private async Task ResponseOk(TcpClient client, CancellationToken token)
+    private static async Task<NodeId?> TryAuthenticateAsync(INodeConnection connection)
     {
-        var memory = new MemoryStream();
-        var writer = new BinaryWriter(memory, Encoding.Default, true);
-        writer.Write((byte)RequestType.Connect);
-        writer.Write(true);
-        var stream = client.GetStream();
-        _logger.Debug("Отвечаю клиенту положительно");
-        await stream.WriteAsync(memory.ToArray(), token);
-    }
-
-    private bool TryGetPeerId(TcpClient client, out NodeId id)
-    {
-        var stream = client.GetStream();
-        var reader = new BinaryReader(stream, Encoding.UTF8, true);
-        var marker = reader.ReadByte();
-        if (marker is not (byte)RequestType.Connect)
+        var packet = await connection.ReceiveAsync();
+        if (packet is {PacketType: PacketType.ConnectRequest})
         {
-            _logger.Warning("От клиента {@Address} поступил запрос на присодинение, но первый пакет не был пакетом соединения", client.Client.RemoteEndPoint);
-            id = NodeId.None;
-            return false;
+            var request = ( ConnectRequestPacket ) packet;
+            return request.Id;
         }
-        id = new( reader.ReadInt32() );
-        _logger.Verbose("Подключенный клиент передал Id {Id}", id.Value);
-        return true;
+
+        return null; 
     }
 }

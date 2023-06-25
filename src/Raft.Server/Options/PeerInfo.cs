@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Raft.Server.Options;
 
-public class PeerInfo
+public record PeerInfo
 {
     [Required]
     [ConfigurationKeyName("PORT")]
@@ -14,4 +14,5 @@ public class PeerInfo
     [Required]
     [ConfigurationKeyName("ID")]
     public int Id { get; set; }
+
 }

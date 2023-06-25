@@ -22,7 +22,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\src\Raft.Network\Raft.Network.csproj" />
+      <ProjectReference Include="..\..\src\Raft.Network.Socket\Raft.Network.Socket.csproj" />
     </ItemGroup>
 
 </Project>
