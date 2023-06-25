@@ -71,10 +71,4 @@ public class RemoteSocketNodeConnection: SocketNodeConnection, IRemoteNodeConnec
             return cts;
         }
     }
-
-    public void Dispose()
-    {
-        Socket.Close();
-        Socket.Dispose();
-    }
 }

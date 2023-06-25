@@ -44,7 +44,7 @@ internal class CandidateState: BaseNodeState
     /// Всем отправившим ответ узлам (отдавшим голос или нет) запросы больше не посылаем.
     /// Грубо говоря, этот метод работает пока все узлы не ответят
     /// </remarks>
-    internal async Task RunQuorum()
+    private async Task RunQuorum()
     {
         try
         {
@@ -60,7 +60,7 @@ internal class CandidateState: BaseNodeState
         }
     }
 
-    internal async Task RunQuorumInner(CancellationToken token)
+    private async Task RunQuorumInner(CancellationToken token)
     {
         _logger.Debug("Запускаю кворум для получения большинства голосов");
         var leftPeers = new List<IPeer>(PeerGroup.Peers.Count);

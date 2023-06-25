@@ -1,5 +1,4 @@
 using Raft.Core;
-using Raft.Core.Commands;
 using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 

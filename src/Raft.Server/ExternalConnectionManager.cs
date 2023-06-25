@@ -1,14 +1,11 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Text;
 using Raft.Core;
 using Raft.Core.Node;
 using Raft.Network;
 using Raft.Network.Packets;
 using Raft.Network.Socket;
-using Raft.Peer;
 using Serilog;
 
 namespace Raft.Server;
@@ -95,12 +92,6 @@ public class ExternalConnectionManager
         {
             node.Value.Dispose();
         }
-    }
-
-    private void CloseConnection(TcpClient client)
-    {
-        client.Close();
-        client.Dispose();
     }
 
     private void BeginNewClientSession(NodeId id, IRemoteNodeConnection connection, TcpClient client, CancellationToken token)

@@ -35,8 +35,6 @@ ValidateOptions(options);
 
 var nodeId = new NodeId(options.NodeId);
 
-var requestTimeout = TimeSpan.FromSeconds(1);
-
 var peers = options.Peers
                    .Select(p =>
                     {

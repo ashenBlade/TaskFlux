@@ -15,10 +15,10 @@ public class RaftServerOptions
     [Required]
     [ConfigurationKeyName("LISTEN_PORT")]
     public int Port { get; set; }
-    
+
     [Required]
     [ConfigurationKeyName("LISTEN_HOST")]
-    public string Host { get; set; }
+    public string Host { get; set; } = "localhost";
 
     [ConfigurationKeyName("RECEIVE_BUFFER_SIZE")]
     public int ReceiveBufferSize { get; set; } = 128;

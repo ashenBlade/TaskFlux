@@ -1,6 +1,5 @@
 using System.Net.Sockets;
 using Raft.Core;
-using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Node;
 using Raft.Network;
 using Raft.Network.Packets;
@@ -21,11 +20,11 @@ public class NodeConnectionProcessor : IDisposable
     }
 
     public CancellationTokenSource CancellationTokenSource { get; init; } = null!;
-    public NodeId Id { get; init; }
-    public TcpClient Client { get; set; }
-    public IRemoteNodeConnection Connection { get; init; }
-    public RaftNode Node { get; init; }
-    public ILogger Logger { get; init; }
+    private NodeId Id { get; }
+    private TcpClient Client { get; }
+    private IRemoteNodeConnection Connection { get; }
+    private RaftNode Node { get; }
+    private ILogger Logger { get; }
 
     public async Task ProcessClientBackground()
     {
@@ -93,7 +92,8 @@ public class NodeConnectionProcessor : IDisposable
         catch (ObjectDisposedException)
         { }
 
-        Connection.Dispose();
+        Client.Close();
+        Client.Dispose();
         CancellationTokenSource.Dispose();
     }
 }
