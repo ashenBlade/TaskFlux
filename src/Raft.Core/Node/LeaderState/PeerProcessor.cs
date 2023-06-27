@@ -8,13 +8,13 @@ namespace Raft.Core.Node.LeaderState;
 internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue)
 {
     private PeerInfo Info { get; } = new(State.Node.Log.LastEntry.Index + 1);
-    private bool IsBusy { get; set; }
-    
+    private volatile bool _isBusy;
+
     private readonly record struct OperationScope(PeerProcessor? Processor): IDisposable
     {
         public static OperationScope Begin(PeerProcessor processor)
         {
-            processor.IsBusy = true;
+            processor._isBusy = true;
             return new OperationScope(processor);
         }
 
@@ -22,7 +22,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
         {
             if (Processor is not null)
             {
-                Processor.IsBusy = false;
+                Processor._isBusy = false;
             }
         }
     }
@@ -123,7 +123,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
 
     public void NotifyHeartbeatTimeout()
     {
-        if (!IsBusy)
+        if (!_isBusy)
         {
             Queue.AddHeartbeat();
         }

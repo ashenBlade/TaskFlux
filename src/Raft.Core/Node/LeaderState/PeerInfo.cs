@@ -13,7 +13,7 @@ public class PeerInfo
     /// <summary>
     /// Индекс последней зафиксированной (реплицированной) записи в логе
     /// </summary>
-    public int MatchIndex { get; private set; }
+    private int MatchIndex { get; set; }
     
     public PeerInfo(int nextIndex)
     {

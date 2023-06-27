@@ -25,9 +25,21 @@ public class RemoteSocketNodeConnection: SocketNodeConnection, IRemoteNodeConnec
 
     public async ValueTask DisconnectAsync(CancellationToken token = default)
     {
+        if (!Socket.Connected)
+        {
+            return;
+        }
+
         _logger.Verbose("Отключаю соединение");
-        await Socket.DisconnectAsync(true, token);
-        _logger.Verbose("Соедидение отключено");
+        try
+        {
+            await Socket.DisconnectAsync(true, token);
+            _logger.Verbose("Соединение отключено");
+        }
+        catch (SocketException se) when (se.SocketErrorCode is SocketError.NotConnected)
+        {
+            _logger.Verbose("Запрошено разъединение с неподключенным узлом");
+        }
     }
 
     public async ValueTask ConnectAsync(CancellationToken token = default)
