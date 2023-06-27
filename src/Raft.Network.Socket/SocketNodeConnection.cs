@@ -54,7 +54,7 @@ public class SocketNodeConnection: INodeConnection
         
             while (0 < Socket.Available)
             {
-                received = await Socket.ReceiveAsync(buffer, SocketFlags.None);
+                received = await Socket.ReceiveAsync(buffer, SocketFlags.None, token);
                 memory.Write(buffer, 0, received);
             }
         }
@@ -65,6 +65,7 @@ public class SocketNodeConnection: INodeConnection
         }
 
         var array = memory.ToArray();
+        
         return array is {Length:>0}
                    ? Deserialize(array)
                    : null;

@@ -28,29 +28,34 @@ var configuration = new ConfigurationBuilder()
                    .AddEnvironmentVariables()
                    .Build();
 
-var options = configuration.Get<RaftServerOptions>() 
-           ?? throw new Exception("Не найдено настроек");
+var networkOptions = configuration.GetSection("NETWORK") is {} section 
+                  && section.Exists()
+                         ? section.Get<NetworkOptions>() ?? NetworkOptions.Default
+                         : NetworkOptions.Default;
 
-ValidateOptions(options);
+var serverOptions = configuration.Get<RaftServerOptions>() 
+                 ?? throw new Exception("Не найдено настроек сервера");
 
-var nodeId = new NodeId(options.NodeId);
+ValidateOptions(serverOptions);
 
-var peers = options.Peers
-                   .Select(p =>
-                    {
-                        var endpoint = GetEndpoint(p.Host, p.Port);
-                        var id = new NodeId(p.Id);
-                        var connection = new RemoteSocketNodeConnection(endpoint, Log.ForContext("SourceContext", $"RemoteSocketNodeConnection({id.Value})"));
-                        IPeer peer = new TcpPeer(connection, id, nodeId, Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
-                        peer = new ExclusiveAccessPeerDecorator(peer);
-                        peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
-                        return peer;
-                    })
-                   .ToArray();
+var nodeId = new NodeId(serverOptions.NodeId);
 
-Log.Logger.Information("Узлы кластера: {Peers}", options.Peers);
+var peers = serverOptions.Peers
+                         .Select(p =>
+                          {
+                              var endpoint = GetEndpoint(p.Host, p.Port);
+                              var id = new NodeId(p.Id);
+                              var connection = new RemoteSocketNodeConnection(endpoint, Log.ForContext("SourceContext", $"RemoteSocketNodeConnection({id.Value})"));
+                              IPeer peer = new TcpPeer(connection, id, nodeId, networkOptions.ConnectionTimeout, networkOptions.RequestTimeout, Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
+                              peer = new ExclusiveAccessPeerDecorator(peer);
+                              peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
+                              return peer;
+                          })
+                         .ToArray();
 
-using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5));
+Log.Logger.Information("Узлы кластера: {Peers}", serverOptions.Peers);
+
+using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
 using var heartbeatTimer = new SystemTimersTimer( TimeSpan.FromSeconds(1) );
 
 var log = new InMemoryLog(Enumerable.Empty<LogEntry>());
@@ -58,7 +63,7 @@ var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
 
 using var commandQueue = new ChannelCommandQueue();
 using var node = RaftNode.Create(nodeId, new PeerGroup(peers), null, new Term(1), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, new NullStateMachine());
-var connectionManager = new ExternalConnectionManager(options.Host, options.Port, node, Log.Logger.ForContext<ExternalConnectionManager>());
+var connectionManager = new ExternalConnectionManager(serverOptions.Host, serverOptions.Port, node, networkOptions, Log.Logger.ForContext<ExternalConnectionManager>());
 var server = new RaftStateObserver(node, Log.Logger.ForContext<RaftStateObserver>());
 
 var httpModule = CreateHttpRequestModule(configuration);
@@ -102,8 +107,8 @@ void ValidateOptions(RaftServerOptions peersOptions)
 HttpRequestModule CreateHttpRequestModule(IConfiguration config)
 {
     var httpModuleOptions = config.GetRequiredSection("HTTP")
-                               .Get<HttpModuleOptions>()
-               ?? throw new ApplicationException("Настройки для HTTP модуля не найдены");
+                                  .Get<HttpModuleOptions>()
+                         ?? throw new ApplicationException("Настройки для HTTP модуля не найдены");
 
     var module = new HttpRequestModule(httpModuleOptions.Port, Log.ForContext<HttpRequestModule>());
 

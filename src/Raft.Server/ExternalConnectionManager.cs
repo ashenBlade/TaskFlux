@@ -6,6 +6,7 @@ using Raft.Core.Node;
 using Raft.Network;
 using Raft.Network.Packets;
 using Raft.Network.Socket;
+using Raft.Server.Options;
 using Serilog;
 
 namespace Raft.Server;
@@ -15,14 +16,16 @@ public class ExternalConnectionManager
     private readonly string _host;
     private readonly int _port;
     private readonly RaftNode _raft;
+    private readonly NetworkOptions _networkOptions;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<NodeId, NodeConnectionProcessor> _nodes = new();
 
-    public ExternalConnectionManager(string host, int port, RaftNode raft, ILogger logger)
+    public ExternalConnectionManager(string host, int port, RaftNode raft, NetworkOptions networkOptions, ILogger logger)
     {
         _host = host;
         _port = port;
         _raft = raft;
+        _networkOptions = networkOptions;
         _logger = logger;
     }
 

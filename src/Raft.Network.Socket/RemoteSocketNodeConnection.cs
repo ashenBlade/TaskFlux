@@ -42,7 +42,7 @@ public class RemoteSocketNodeConnection: SocketNodeConnection, IRemoteNodeConnec
         }
     }
 
-    public async ValueTask ConnectAsync(CancellationToken token = default)
+    public async ValueTask<bool> ConnectAsync(CancellationToken token = default)
     {
         if (_endPoint is null)
         {
@@ -55,32 +55,25 @@ public class RemoteSocketNodeConnection: SocketNodeConnection, IRemoteNodeConnec
             await Socket.DisconnectAsync(true, token);
         }
         
-        ConnectAsyncCore(token);
+        return await ConnectAsyncCore(token);
     }
 
-    private void ConnectAsyncCore(CancellationToken token)
+    private async ValueTask<bool> ConnectAsyncCore(CancellationToken token)
     {
-        while (token.IsCancellationRequested is false)
+        try
         {
-            _logger.Verbose("Отправляю запрос соединения");
-            using var cts = Create();
-            var asyncResult = Socket.BeginConnect(_endPoint!, null, null);
-            var success = asyncResult.AsyncWaitHandle.WaitOne(TimeSpan.FromMilliseconds(500));
-            if (success)
-            {
-                return;
-            }
-                
-            _logger.Verbose("Таймаут соединения превышен. Делаю повторную попытку соединения");
+            await Socket.ConnectAsync(_endPoint!, token);
+            return true;
         }
-        
-        _logger.Verbose("Не удалось установить соединие. Токен был отменен");
-
-        CancellationTokenSource Create()
+        catch (SocketException se) when (se.SocketErrorCode is 
+                                             SocketError.NetworkDown or
+                                             SocketError.NetworkReset or 
+                                             SocketError.NetworkUnreachable or 
+                                             SocketError.HostNotFound or 
+                                             SocketError.HostUnreachable or 
+                                             SocketError.HostDown)
         {
-            var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
-            cts.CancelAfter(TimeSpan.FromMilliseconds(500));
-            return cts;
+            return false;
         }
     }
 }
