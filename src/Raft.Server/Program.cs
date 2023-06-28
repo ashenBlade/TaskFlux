@@ -45,7 +45,7 @@ var peers = serverOptions.Peers
                           {
                               var endpoint = GetEndpoint(p.Host, p.Port);
                               var id = new NodeId(p.Id);
-                              var connection = new RemoteSocketNodeConnection(endpoint, Log.ForContext("SourceContext", $"RemoteSocketNodeConnection({id.Value})"));
+                              var connection = new RemoteSocketNodeConnection(endpoint, Log.ForContext("SourceContext", $"RemoteSocketNodeConnection({id.Value})"), networkOptions.ConnectionTimeout);
                               IPeer peer = new TcpPeer(connection, id, nodeId, networkOptions.ConnectionTimeout, networkOptions.RequestTimeout, Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
                               peer = new ExclusiveAccessPeerDecorator(peer);
                               peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
@@ -56,14 +56,14 @@ var peers = serverOptions.Peers
 Log.Logger.Information("Узлы кластера: {Peers}", serverOptions.Peers);
 
 using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
-using var heartbeatTimer = new SystemTimersTimer( TimeSpan.FromSeconds(1) );
+using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
 
 var log = new InMemoryLog(Enumerable.Empty<LogEntry>());
 var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
 
 using var commandQueue = new ChannelCommandQueue();
 using var node = RaftNode.Create(nodeId, new PeerGroup(peers), null, new Term(1), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, new NullStateMachine());
-var connectionManager = new ExternalConnectionManager(serverOptions.Host, serverOptions.Port, node, networkOptions, Log.Logger.ForContext<ExternalConnectionManager>());
+var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, node, Log.Logger.ForContext<NodeConnectionManager>());
 var server = new RaftStateObserver(node, Log.Logger.ForContext<RaftStateObserver>());
 
 var httpModule = CreateHttpRequestModule(configuration);
@@ -82,7 +82,7 @@ Console.CancelKeyPress += (_, args) =>
 try
 {
     Log.Logger.Information("Запускаю Election Timer");
-    node.ElectionTimer.Start();
+    electionTimer.Start();
     Log.Logger.Information("Запукаю фоновые задачи");
     await Task.WhenAll(
         server.RunAsync(cts.Token), 
@@ -94,6 +94,7 @@ catch (Exception e)
 {
     Log.Fatal(e, "Ошибка во время работы сервера");
 }
+Log.CloseAndFlush();
 
 void ValidateOptions(RaftServerOptions peersOptions)
 {

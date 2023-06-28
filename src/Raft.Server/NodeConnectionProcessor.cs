@@ -10,7 +10,7 @@ namespace Raft.Server;
 
 public class NodeConnectionProcessor : IDisposable
 {
-    public NodeConnectionProcessor(NodeId id, IRemoteNodeConnection connection, TcpClient client, RaftNode node, ILogger logger)
+    public NodeConnectionProcessor(NodeId id, IRemoteNodeConnection connection, Socket client, RaftNode node, ILogger logger)
     {
         Id = id;
         Connection = connection;
@@ -21,7 +21,7 @@ public class NodeConnectionProcessor : IDisposable
 
     public CancellationTokenSource CancellationTokenSource { get; init; } = null!;
     private NodeId Id { get; }
-    private TcpClient Client { get; }
+    private Socket Client { get; }
     private IRemoteNodeConnection Connection { get; }
     private RaftNode Node { get; }
     private ILogger Logger { get; }
