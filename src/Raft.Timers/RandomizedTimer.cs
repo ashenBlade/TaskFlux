@@ -43,7 +43,6 @@ public class RandomizedTimer: ITimer, IDisposable
         var timer = CreateTimer();
         timer.Enabled = true;
         _timer = timer;
-        _timer.Enabled = true;
     }
 
     public void Reset()
@@ -56,7 +55,6 @@ public class RandomizedTimer: ITimer, IDisposable
         var timer = CreateTimer();
         timer.Enabled = true;
         _timer = timer;
-        _timer.Enabled = true;
     }
 
     public void Stop()

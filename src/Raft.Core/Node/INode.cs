@@ -1,6 +1,7 @@
 using Raft.CommandQueue;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
+using Raft.Core.Commands.Submit;
 using Raft.Core.Log;
 using Serilog;
 
@@ -64,7 +65,12 @@ public interface INode
     /// Группа других узлов кластера
     /// </summary>
     public PeerGroup PeerGroup { get; }
-
-    public HeartbeatResponse Handle(HeartbeatRequest request);
+    
+    /// <summary>
+    /// Машина состояний, которую мы реплицируем
+    /// </summary>
+    public IStateMachine StateMachine { get; }
     public RequestVoteResponse Handle(RequestVoteRequest request);
+    public AppendEntriesResponse Handle(AppendEntriesRequest request);
+    public SubmitResponse Handle(SubmitRequest request);
 }

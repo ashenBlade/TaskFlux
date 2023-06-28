@@ -1,5 +1,7 @@
 using Raft.Core.Commands;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
+using Raft.Core.Commands.Submit;
 using Serilog;
 
 namespace Raft.Core.Node;
@@ -14,15 +16,15 @@ internal class CandidateState: BaseNodeState
     {
         _logger = logger;
         _cts = new();
-        Node.ElectionTimer.Timeout += OnElectionTimerTimeout;
-        Node.JobQueue.EnqueueInfinite(RunQuorum, _cts.Token);
+        ElectionTimer.Timeout += OnElectionTimerTimeout;
+        JobQueue.EnqueueInfinite(RunQuorum, _cts.Token);
     }
 
     private async Task<RequestVoteResponse?[]> SendRequestVotes(List<IPeer> peers, CancellationToken token)
     {
         // Отправляем запрос всем пирам
-        var request = new RequestVoteRequest(CandidateId: Node.Id,
-            CandidateTerm: Node.CurrentTerm, LastLog: Node.Log.LastLogEntry);
+        var request = new RequestVoteRequest(CandidateId: Id,
+            CandidateTerm: CurrentTerm, LastLogEntryInfo: Log.LastEntry);
 
         var requests = new Task<RequestVoteResponse?>[peers.Count];
         for (var i = 0; i < peers.Count; i++)
@@ -42,7 +44,7 @@ internal class CandidateState: BaseNodeState
     /// Всем отправившим ответ узлам (отдавшим голос или нет) запросы больше не посылаем.
     /// Грубо говоря, этот метод работает пока все узлы не ответят
     /// </remarks>
-    internal async Task RunQuorum()
+    private async Task RunQuorum()
     {
         try
         {
@@ -58,12 +60,12 @@ internal class CandidateState: BaseNodeState
         }
     }
 
-    internal async Task RunQuorumInner(CancellationToken token)
+    private async Task RunQuorumInner(CancellationToken token)
     {
         _logger.Debug("Запускаю кворум для получения большинства голосов");
-        var leftPeers = new List<IPeer>(Node.PeerGroup.Peers.Count);
-        var term = Node.CurrentTerm;
-        leftPeers.AddRange(Node.PeerGroup.Peers);
+        var leftPeers = new List<IPeer>(PeerGroup.Peers.Count);
+        var term = CurrentTerm;
+        leftPeers.AddRange(PeerGroup.Peers);
         
         var notResponded = new List<IPeer>();
         var votes = 0;
@@ -89,12 +91,12 @@ internal class CandidateState: BaseNodeState
                     votes++;
                     _logger.Verbose("Узел {NodeId} отдал голос за", leftPeers[i].Id);
                 }
-                else if (Node.CurrentTerm < response.CurrentTerm)
+                else if (CurrentTerm < response.CurrentTerm)
                 {
                     _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", leftPeers[i].Id);
                     _cts.Cancel();
 
-                    Node.CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.CurrentTerm, null, this, Node));
+                    CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.CurrentTerm, null, this, Node));
                     return;
                 }
                 else
@@ -121,21 +123,103 @@ internal class CandidateState: BaseNodeState
             return;
         }
 
-        Node.CommandQueue.Enqueue(new MoveToLeaderStateCommand(this, Node));
+        CommandQueue.Enqueue(new MoveToLeaderStateCommand(this, Node));
         
         bool QuorumReached()
         {
-            return Node.PeerGroup.IsQuorumReached(votes);
+            return PeerGroup.IsQuorumReached(votes);
         }
     }
 
     private void OnElectionTimerTimeout()
     {
-        Node.ElectionTimer.Timeout -= OnElectionTimerTimeout;
+        ElectionTimer.Timeout -= OnElectionTimerTimeout;
 
         _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
 
-        Node.CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, Node));
+        CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, Node));
+    }
+
+
+    public override AppendEntriesResponse Apply(AppendEntriesRequest request)
+    {
+        if (request.Term < CurrentTerm)
+        {
+            return AppendEntriesResponse.Fail(CurrentTerm);
+        }
+
+        if (CurrentTerm < request.Term)
+        {
+            CurrentState = FollowerState.Create(Node);
+            ElectionTimer.Start();
+            CurrentTerm = request.Term;
+            VotedFor = null;
+        }
+        
+        if (Log.Contains(request.PrevLogEntryInfo) is false)
+        {
+            return AppendEntriesResponse.Fail(CurrentTerm);
+        }
+        
+        if (0 < request.Entries.Count)
+        {
+            Log.AppendUpdateRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
+        }
+
+        if (Log.CommitIndex < request.LeaderCommit)
+        {
+            Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
+        }
+
+
+        return AppendEntriesResponse.Ok(CurrentTerm);
+    }
+
+    public override SubmitResponse Apply(SubmitRequest request)
+    {
+        throw new InvalidOperationException("Текущий узел в состоянии Candidate");
+    }
+
+    public override RequestVoteResponse Apply(RequestVoteRequest request)
+    {
+        // Мы в более актуальном Term'е
+        if (request.CandidateTerm < CurrentTerm)
+        {
+            return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
+        }
+
+        if (CurrentTerm < request.CandidateTerm)
+        {
+            CurrentTerm = request.CandidateTerm;
+            VotedFor = request.CandidateId;
+            CurrentState = FollowerState.Create(Node);
+            ElectionTimer.Start();
+
+            return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
+        }
+        
+        var canVote = 
+            // Ранее не голосовали
+            VotedFor is null || 
+            // Текущий лидер/кандидат посылает этот запрос (почему бы не согласиться)
+            VotedFor == request.CandidateId;
+        
+        // Отдать свободный голос можем только за кандидата 
+        if (canVote && 
+            // У которого лог в консистентном с нашим состоянием
+            !Log.Conflicts(request.LastLogEntryInfo))
+        {
+            CurrentState = FollowerState.Create(Node);
+            ElectionTimer.Start();
+            CurrentTerm = request.CandidateTerm;
+            VotedFor = request.CandidateId;
+            
+            return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
+        }
+        
+        // Кандидат только что проснулся и не знает о текущем состоянии дел. 
+        // Обновим его
+        return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
     }
 
     public override void Dispose()
@@ -143,12 +227,12 @@ internal class CandidateState: BaseNodeState
         try
         {
             _cts.Cancel();
-            _cts?.Dispose();
+            _cts.Dispose();
         }
         catch (ObjectDisposedException)
         { }
-        Node.ElectionTimer.Timeout -= OnElectionTimerTimeout;
-        base.Dispose();
+        
+        ElectionTimer.Timeout -= OnElectionTimerTimeout;
     }
 
     internal static CandidateState Create(INode node)

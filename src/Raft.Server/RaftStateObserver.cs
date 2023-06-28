@@ -5,15 +5,15 @@ using Serilog;
 
 namespace Raft.Server;
 
-public partial class RaftStateObserver
+public class RaftStateObserver
 {
-    private readonly RaftNode _raft;
+    private readonly RaftNode _node;
     private readonly ILogger _logger;
 
 
-    public RaftStateObserver(RaftNode raft, ILogger logger)
+    public RaftStateObserver(RaftNode node, ILogger logger)
     {
-        _raft = raft;
+        _node = node;
         _logger = logger;
     }
 
@@ -23,8 +23,8 @@ public partial class RaftStateObserver
         {
             while (token.IsCancellationRequested is false)
             {
-                _logger.Information("Состояние: {State}; Терм {Term}", _raft.CurrentRole, _raft.CurrentTerm);
-                await Task.Delay(TimeSpan.FromSeconds(5), token);
+                _logger.Information("Состояние: {State}; Терм {Term}; Лог: {@Entries}; Голос За: {VotedFor}", _node.CurrentRole, _node.CurrentTerm, _node.Log, _node.VotedFor);
+                await Task.Delay(TimeSpan.FromSeconds(2.5), token);
             }
         }
         catch (TaskCanceledException)

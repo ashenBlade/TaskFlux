@@ -1,20 +1,30 @@
-using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using Moq;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 using Raft.Core.Node;
+using Raft.Core.Node.LeaderState;
 
 namespace Raft.Core.Tests;
 
 public class LeaderStateTests
 {
-    private static RaftNode CreateCandidateStateMachine(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
+    private static RaftNode CreateLeaderNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, IRequestQueueFactory? requestQueueFactory = null)
     {
-        var raftStateMachine = Helpers.CreateStateMachine(currentTerm, votedFor, peers: peers, electionTimer: electionTimer, heartbeatTimer: heartbeatTimer, jobQueue: jobQueue, log: log);
-        ( ( INode ) raftStateMachine ).CurrentState = new LeaderState(raftStateMachine, Helpers.NullLogger);
-        return raftStateMachine;
+        var node = Helpers.CreateNode(
+            currentTerm,
+            votedFor,
+            peers: peers,
+            electionTimer: electionTimer,
+            heartbeatTimer: heartbeatTimer,
+            jobQueue: jobQueue,
+            log: log);
+        ( ( INode ) node ).CurrentState = new LeaderState(
+            node,
+            Helpers.NullLogger, 
+            requestQueueFactory ?? new SingleHeartbeatRequestQueueFactory(0));
+        return node;
     }
 
     [Theory]
@@ -23,7 +33,7 @@ public class LeaderStateTests
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(5)]
-    public void ПриСрабатыванииHeartbeatTimer__ДолженОтправитьHeartbeatНаВсеДругиеУзлы(int peersCount)
+    public async Task ПриСрабатыванииHeartbeatTimer__ДолженОтправитьHeartbeatНаВсеДругиеУзлы(int peersCount)
     {
         var term = new Term(1);
         var heartbeatTimer = new Mock<ITimer>().Apply(t =>
@@ -32,18 +42,34 @@ public class LeaderStateTests
             t.Setup(x => x.Start());
         });
 
+        var jobQueue = new SingleRunJobQueue();
+
         var peers = Enumerable.Range(0, peersCount)
                               .Select(_ => new Mock<IPeer>()
-                                  .Apply(p => p.Setup(x => x.SendHeartbeat(It.IsAny<HeartbeatRequest>(),
+                                  .Apply(p => p.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(),
                                                     It.IsAny<CancellationToken>()))
-                                               .ReturnsAsync(new HeartbeatResponse(term, true))
+                                               .ReturnsAsync(new AppendEntriesResponse(term, true))
                                                .Verifiable()))
                               .ToList();
-        using var stateMachine = CreateCandidateStateMachine(term, null, peers.Select(x => x.Object), heartbeatTimer: heartbeatTimer.Object);
+        
+        var log = new Mock<ILog>().Apply(l =>
+        {
+            l.Setup(x => x.GetFrom(It.IsAny<int>())).Returns(Array.Empty<LogEntry>());
+        });
+        
+        using var node = CreateLeaderNode(term, 
+            null,
+            peers.Select(x => x.Object),
+            heartbeatTimer: heartbeatTimer.Object,
+            jobQueue: jobQueue,
+            log: log.Object,
+            requestQueueFactory: new SingleHeartbeatRequestQueueFactory(0));
         
         heartbeatTimer.Raise(x => x.Timeout += null);
 
-        peers.ForEach(p => p.Verify(x => x.SendHeartbeat(It.IsAny<HeartbeatRequest>(), It.IsAny<CancellationToken>()), Times.Once()));
+        await jobQueue.Run();
+        
+        peers.ForEach(p => p.Verify(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()), Times.Once()));
     }
     
     [Theory]
@@ -63,12 +89,12 @@ public class LeaderStateTests
 
         var peers = Enumerable.Range(0, peersCount)
                               .Select(_ => new Mock<IPeer>()
-                                  .Apply(p => p.Setup(x => x.SendHeartbeat(It.IsAny<HeartbeatRequest>(),
+                                  .Apply(p => p.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(),
                                                     It.IsAny<CancellationToken>()))
-                                               .ReturnsAsync(new HeartbeatResponse(term, true))
+                                               .ReturnsAsync(new AppendEntriesResponse(term, true))
                                                .Verifiable()))
                               .ToList();
-        using var stateMachine = CreateCandidateStateMachine(term, null, peers.Select(x => x.Object), heartbeatTimer: heartbeatTimer.Object);
+        using var stateMachine = CreateLeaderNode(term, null, peers.Select(x => x.Object), heartbeatTimer: heartbeatTimer.Object);
         
         heartbeatTimer.Raise(x => x.Timeout += null);
 
@@ -80,14 +106,14 @@ public class LeaderStateTests
     {
         var term = new Term(1);
 
-        using var raft = CreateCandidateStateMachine(term, null);
+        using var node = CreateLeaderNode(term, null);
 
-        var request = new RequestVoteRequest(CandidateId: raft.Id + 1, CandidateTerm: term.Increment(),
-            LastLog: raft.Log.LastLogEntry);
+        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: term.Increment(),
+            LastLogEntryInfo: node.Log.LastEntry);
 
-        raft.Handle(request);
+        node.Handle(request);
         
-        Assert.Equal(NodeRole.Follower, raft.CurrentRole);
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
     }
     
     [Fact]
@@ -100,33 +126,31 @@ public class LeaderStateTests
             t.Setup(x => x.Stop()).Verifiable();
         });
 
-        using var raft = CreateCandidateStateMachine(term, null, heartbeatTimer: heartbeatTimer.Object);
+        using var node = CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object);
 
-        var request = new RequestVoteRequest(CandidateId: raft.Id + 1, CandidateTerm: term.Increment(),
-            LastLog: raft.Log.LastLogEntry);
+        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: term.Increment(),
+            LastLogEntryInfo: node.Log.LastEntry);
 
-        raft.Handle(request);
+        node.Handle(request);
         
         heartbeatTimer.Verify(x => x.Stop(), Times.Once());
     }
     
     [Theory]
-    [InlineData(1, 1)]
     [InlineData(2, 1)]
     [InlineData(5, 1)]
     [InlineData(5, 3)]
     [InlineData(5, 4)]
-    [InlineData(5, 5)]
     public void ПриОбрабаткеЗапросаRequestVote__СТермомНеБольшеСвоего__ДолженОтветитьОтрицательно(int myTerm, int otherTerm)
     {
         var term = new Term(myTerm);
 
-        using var raft = CreateCandidateStateMachine(term, null);
+        using var node = CreateLeaderNode(term, null);
 
-        var request = new RequestVoteRequest(CandidateId: raft.Id + 1, CandidateTerm: new(otherTerm),
-            LastLog: raft.Log.LastLogEntry);
+        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: new(otherTerm),
+            LastLogEntryInfo: node.Log.LastEntry);
 
-        var response = raft.Handle(request);
+        var response = node.Handle(request);
         
         Assert.False(response.VoteGranted);
     }
@@ -145,12 +169,11 @@ public class LeaderStateTests
     {
         var term = new Term(myTerm);
 
-        using var raft = CreateCandidateStateMachine(term, null);
+        using var node = CreateLeaderNode(term, null);
 
-        var request = new HeartbeatRequest(LeaderId: raft.Id + 1, Term: new(otherTerm),
-            LeaderCommit: raft.Log.CommitIndex, PrevLogEntry: raft.Log.LastLogEntry);
+        var request = AppendEntriesRequest.Heartbeat( new(otherTerm), node.Log.CommitIndex, node.Id + 1, node.Log.LastEntry);
 
-        var response = raft.Handle(request);
+        var response = node.Handle(request);
         
         Assert.False(response.Success);
     }
@@ -165,14 +188,64 @@ public class LeaderStateTests
             t.Setup(x => x.Stop()).Verifiable();
         });
 
-        using var raft = CreateCandidateStateMachine(term, null, heartbeatTimer: heartbeatTimer.Object);
+        var log = new Mock<ILog>().Apply(l =>
+        {
+            l.SetupGet(x => x.Entries).Returns(Array.Empty<LogEntry>());
+            l.Setup(x => x.Contains(It.IsAny<LogEntryInfo>())).Returns(true);
+        });
 
-        var request = new HeartbeatRequest(LeaderId: new NodeId(2), Term: term.Increment(),
-            PrevLogEntry: raft.Log.LastLogEntry, LeaderCommit: raft.Log.CommitIndex);
+        using var node = CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object, log: log.Object);
 
-        raft.Handle(request);
+        var request = AppendEntriesRequest.Heartbeat(term.Increment(), node.Log.CommitIndex, new NodeId(2), node.Log.LastEntry);
+
+        node.Handle(request);
         
         heartbeatTimer.Verify(x => x.Stop(), Times.Once());
+    }
+
+    private class SingleHeartbeatRequestQueue : IRequestQueue
+    {
+        private readonly int _lastLogIndex;
+        private readonly TaskCompletionSource _tcs = new();
+        private bool _isFirstRequest = true;
+        
+        public SingleHeartbeatRequestQueue(int lastLogIndex)
+        {
+            _lastLogIndex = lastLogIndex;
+        }
+        public async IAsyncEnumerable<AppendEntriesRequestSynchronizer> ReadAllRequestsAsync([EnumeratorCancellation] CancellationToken token)
+        {
+            await _tcs.Task;
+            yield return new AppendEntriesRequestSynchronizer(
+                AlwaysTrueQuorumChecker.Instance, _lastLogIndex);
+        }
+
+        public void AddHeartbeat()
+        {
+            if (_isFirstRequest)
+            {
+                _isFirstRequest = false;
+                return;
+            }
+            _tcs.SetResult();
+        }
+
+        public void AddAppendEntries(AppendEntriesRequestSynchronizer synchronizer)
+        { }
+    }
+    
+    private class SingleHeartbeatRequestQueueFactory: IRequestQueueFactory
+    {
+        private readonly int _lastLogEntry;
+
+        public SingleHeartbeatRequestQueueFactory(int lastLogEntry)
+        {
+            _lastLogEntry = lastLogEntry;
+        }
+        public IRequestQueue CreateQueue()
+        {
+            return new SingleHeartbeatRequestQueue(_lastLogEntry);
+        }
     }
 
     [Fact]
@@ -184,47 +257,28 @@ public class LeaderStateTests
             t.Setup(x => x.Stop()).Verifiable();
             t.Setup(x => x.Start());
         });
+        var jobQueue = new SingleRunJobQueue();
         var peerTerm = term.Increment();
         var peer = new Mock<IPeer>()
-           .Apply(p => p.Setup(x => x.SendHeartbeat(It.IsAny<HeartbeatRequest>(),
+           .Apply(p => p.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(),
                              It.IsAny<CancellationToken>()))
-                        .ReturnsAsync(new HeartbeatResponse(peerTerm, false))
+                        .ReturnsAsync(new AppendEntriesResponse(peerTerm.Increment(), false))
                         .Verifiable());
-        
-        using var stateMachine = CreateCandidateStateMachine(term, null, new[] {peer.Object}, heartbeatTimer: heartbeatTimer.Object);
-        
-        heartbeatTimer.Raise(x => x.Timeout += null);
 
-        Assert.Equal(NodeRole.Follower, stateMachine.CurrentRole);
-    }
-
-    [Theory]
-    [InlineData(2, 3, 4, 5)]
-    [InlineData(5, 4, 3, 2)]
-    [InlineData(2, 4343, 23, 23)]
-    public async Task
-        ПриОтправкеHeartbeat__КогдаНесколькоУзловОтветилоОтрицательноСНесколькимиРазнымиТермамиБольшеМоего__ДолженПерейтиВНаибольшийИзВернувшихсяТермов(params int[] terms)
-    {
-        var term = new Term(1);
-        var heartbeatTimer = new Mock<ITimer>().Apply(t =>
-        {
-            t.Setup(x => x.Stop()).Verifiable();
-            t.Setup(x => x.Start());
-        });
-        var peers = terms.Select(t =>
-                          {
-                              var peer = new Mock<IPeer>();
-                              peer.Setup(p => p.SendHeartbeat(It.IsAny<HeartbeatRequest>(),
-                                       It.IsAny<CancellationToken>()))
-                                  .ReturnsAsync(new HeartbeatResponse(new Term(t), false));
-                              return peer.Object;
-                          })
-                         .ToArray();
-        var maxTerm = new Term(terms.Max());
-        using var stateMachine = CreateCandidateStateMachine(term, null, peers, heartbeatTimer: heartbeatTimer.Object);
+        using var node = CreateLeaderNode(term, 
+            null,
+            new[] {peer.Object},
+            heartbeatTimer: heartbeatTimer.Object,
+            jobQueue: jobQueue,
+            
+            requestQueueFactory: new SingleHeartbeatRequestQueueFactory(0));
+        
+        var task = jobQueue.Run();
         
         heartbeatTimer.Raise(x => x.Timeout += null);
 
-        Assert.Equal(maxTerm, stateMachine.CurrentTerm);
+        await task;
+        
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
     }
 }

@@ -1,6 +1,5 @@
 using Raft.Core;
-using Raft.Core.Commands;
-using Raft.Core.Commands.Heartbeat;
+using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 
 namespace Raft.Server.Infrastructure;
@@ -19,9 +18,9 @@ public class NetworkExceptionDelayPeerDecorator: IPeer
     public NodeId Id =>
         _peer.Id;
 
-    public async Task<HeartbeatResponse?> SendHeartbeat(HeartbeatRequest request, CancellationToken token)
+    public async Task<AppendEntriesResponse?> SendAppendEntries(AppendEntriesRequest request, CancellationToken token)
     {
-        var response = await _peer.SendHeartbeat(request, token);
+        var response = await _peer.SendAppendEntries(request, token);
         if (response is null)
         {
             await Task.Delay(_delay, token);
@@ -37,10 +36,5 @@ public class NetworkExceptionDelayPeerDecorator: IPeer
             await Task.Delay(_delay, token);
         }
         return response;
-    }
-
-    public async Task SendAppendEntries(CancellationToken token)
-    {
-        await _peer.SendAppendEntries(token);
     }
 }

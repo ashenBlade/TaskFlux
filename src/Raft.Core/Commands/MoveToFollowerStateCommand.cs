@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Raft.Core.Node;
 
 namespace Raft.Core.Commands;

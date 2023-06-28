@@ -9,6 +9,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\Raft.Core\Raft.Core.csproj" />
+      <ProjectReference Include="..\Raft.Network.Socket\Raft.Network.Socket.csproj" />
       <ProjectReference Include="..\Raft.Network\Raft.Network.csproj" />
     </ItemGroup>
 
