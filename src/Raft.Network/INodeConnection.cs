@@ -8,7 +8,7 @@ public interface INodeConnection
     /// <param name="packet">Пакет, который нужно отправить</param>
     /// <param name="token">Токен отмены</param>
     /// <returns><c>true</c> - пакет отправлен успешно, <c>false</c> - не удалось отправить пакет</returns>
-    public Task<bool> SendAsync(IPacket packet, CancellationToken token = default);
+    public ValueTask<bool> SendAsync(IPacket packet, CancellationToken token = default);
     
     /// <summary>
     /// Получить от узла пакет данных

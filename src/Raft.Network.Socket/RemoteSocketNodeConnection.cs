@@ -1,6 +1,7 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 using Serilog;
+using Serilog.Core;
 
 namespace Raft.Network.Socket;
 
@@ -9,6 +10,8 @@ public class RemoteSocketNodeConnection: SocketNodeConnection, IRemoteNodeConnec
     private readonly EndPoint? _endPoint;
     private readonly ILogger _logger;
     private readonly TimeSpan _connectTimeout;
+
+    public bool Connected => Socket.Connected;
 
     public RemoteSocketNodeConnection(EndPoint endPoint, ILogger logger, TimeSpan connectTimeout)
         : base(new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
@@ -99,14 +102,19 @@ public class RemoteSocketNodeConnection: SocketNodeConnection, IRemoteNodeConnec
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
             var connectTask = Socket.ConnectAsync(_endPoint!, cts.Token).AsTask();
             var delayTask = Task.Delay(_connectTimeout, CancellationToken.None);
+            _logger.Debug("Начинаю подключение");
             await Task.WhenAny(connectTask, delayTask);
+            _logger.Debug("Заканчиваю подключение");
             if (delayTask.IsCompleted)
             {
+                _logger.Debug("Превышен таймаут запроса подключения");
                 cts.Cancel();
                 return false;
             }
             
+            _logger.Debug("Подключение ОК");
             await connectTask;
+            _logger.Debug("Подключение ОК 2");
             
             return true;
         }
@@ -125,7 +133,7 @@ public class RemoteSocketNodeConnection: SocketNodeConnection, IRemoteNodeConnec
                                              SocketError.HostUnreachable or
                                              SocketError.HostDown)
         { }
-        
+
         return false;
     }
 }

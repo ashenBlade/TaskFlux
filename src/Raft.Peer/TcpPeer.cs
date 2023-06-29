@@ -34,6 +34,11 @@ public class TcpPeer: IPeer
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (!await CheckConnectionAsync(token))
+        {
+            return null;
+        }
+        
         while (token.IsCancellationRequested is false)
         {
             using var cts = CreateTimeoutCts(token, _requestTimeout);
@@ -88,7 +93,12 @@ public class TcpPeer: IPeer
     public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(request);
-
+        
+        if (!await CheckConnectionAsync(token))
+        {
+            return null;
+        }
+        
         while (token.IsCancellationRequested is false)
         {
             using var cts = CreateTimeoutCts(token, _requestTimeout);
@@ -140,6 +150,21 @@ public class TcpPeer: IPeer
         return null;
     }
 
+    private async ValueTask<bool> CheckConnectionAsync(CancellationToken token = default)
+    {
+        while (token.IsCancellationRequested is false)
+        {
+            if (_connection.Connected)
+            {
+                return true;
+            }
+
+            await EstablishConnectionAsync(token);
+        }
+
+        return false;
+    }
+
     private async Task<bool> EstablishConnectionAsync(CancellationToken token = default)
     {
         _logger.Debug("Начинаю устанавливать соединение");
@@ -151,6 +176,7 @@ public class TcpPeer: IPeer
                 var success = await _connection.ConnectAsync(cts.Token);
                 if (!success)
                 {
+                    _logger.Debug("Подключение неуспешно");
                     return false;
                 }
             }

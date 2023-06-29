@@ -2,6 +2,7 @@ namespace Raft.Network.Socket;
 
 public interface IRemoteNodeConnection: INodeConnection
 {
+    public bool Connected { get; }
     public ValueTask DisconnectAsync(CancellationToken token = default);
     
     /// <summary>

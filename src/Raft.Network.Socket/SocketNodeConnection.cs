@@ -16,7 +16,7 @@ public class SocketNodeConnection: INodeConnection
     }
 
 
-    public async Task<bool> SendAsync(IPacket packet, CancellationToken token = default)
+    public async ValueTask<bool> SendAsync(IPacket packet, CancellationToken token = default)
     {
         var buffer = Serialize(packet);
         try
