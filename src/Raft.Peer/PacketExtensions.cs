@@ -1,4 +1,6 @@
-namespace Raft.Network.Socket;
+using Raft.Network;
+
+namespace Raft.Peer;
 
 internal static class PacketExtensions
 {

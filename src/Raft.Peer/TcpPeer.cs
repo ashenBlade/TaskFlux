@@ -6,7 +6,6 @@ using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Network;
 using Raft.Network.Packets;
-using Raft.Network.Socket;
 using Serilog;
 
 namespace Raft.Peer;
@@ -135,21 +134,12 @@ public class TcpPeer: IPeer
         return await TryEstablishConnectionAsync(token);
     }
 
-    private async Task<bool> TryEstablishConnectionAsync(CancellationToken token = default)
+    private async ValueTask<bool> TryEstablishConnectionAsync(CancellationToken token = default)
     {
         _logger.Debug("Начинаю устанавливать соединение");
-        try
+        var connected = await _client.ConnectAsync(_endPoint, _connectionTimeout, token);
+        if (!connected)
         {
-            var success = await _client.TryConnectAsync(_endPoint, _connectionTimeout, token);
-            if (!success)
-            {
-                return false;
-            }
-            
-        }
-        catch (SocketException)
-        {
-            _logger.Debug("Подключение неуспешно");
             return false;
         }
 

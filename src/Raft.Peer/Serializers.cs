@@ -2,10 +2,11 @@
 using System.Text;
 using Raft.Core;
 using Raft.Core.Log;
+using Raft.Network;
 using Raft.Network.Packets;
 
-[assembly: InternalsVisibleTo("Raft.Network.Socket.Tests")]
-namespace Raft.Network.Socket;
+[assembly: InternalsVisibleTo("Raft.Peer.Tests")]
+namespace Raft.Peer;
 
 internal static class Serializers
 {

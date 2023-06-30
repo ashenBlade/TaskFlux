@@ -5,7 +5,7 @@ using Raft.Core;
 using Raft.Core.Node;
 using Raft.Network;
 using Raft.Network.Packets;
-using Raft.Network.Socket;
+using Raft.Peer;
 using Serilog;
 
 namespace Raft.Server;
@@ -42,50 +42,11 @@ public class NodeConnectionManager
         }
         
         _logger.Information("Начинаю прослушивать входящие запросы");
-        server.Listen(10);
+        server.Listen();
+        
         try
         {
-            while (token.IsCancellationRequested is false)
-            {
-                var client = server.Accept();
-                var clientAddress = client.RemoteEndPoint?.ToString();
-                _logger.Debug("Клиент {Address} подключился. Начинаю обработку его запроса", clientAddress);
-                try
-                {
-                    var packetClient = new PacketClient(client);
-                    if (TryAuthenticate(packetClient) is {} nodeId)
-                    {
-                        var connection = new RemoteSocketNodeConnection(client,
-                            _logger.ForContext("SourceContext", $"NodeConnectionProcessor({nodeId.Value})"));
-                        
-                        // connection.SendAsync(new ConnectResponsePacket(true), token);
-                        var success = packetClient.Send(new ConnectResponsePacket(true), token);
-                        if (!success)
-                        {
-                            _logger.Information("Узел {Node} отключился во время ответа на пакет успешной авторизации", nodeId);
-                            client.Disconnect(false);
-                            client.Close();
-                            client.Dispose();
-                            continue;
-                        }
-                        BeginNewClientSession(nodeId, connection, client, token);
-                    }
-                    else
-                    {
-                        _logger.Debug("Клиент с адресом {Address} не смог подключиться: не удалось получить Id хоста. Закрываю соединение",
-                            clientAddress);
-                        packetClient.Send(new ConnectResponsePacket(false), token);
-                        client.Close();
-                        client.Dispose();
-                    }
-                }
-                catch (Exception e)
-                {
-                    _logger.Warning(e, "Поймано необработанное исключение при подключении клиента {Address}", clientAddress);
-                    client.Close();
-                    client.Dispose();
-                }
-            }
+            RunMainLoop(token, server);
         }
         catch (OperationCanceledException)
         {
@@ -103,19 +64,66 @@ public class NodeConnectionManager
         }
     }
 
-    private void BeginNewClientSession(NodeId id, IRemoteNodeConnection connection, Socket client, CancellationToken token)
+    private void RunMainLoop(CancellationToken token, Socket server)
     {
-        var processor = new NodeConnectionProcessor(id, connection, client, _raft, 
-            _logger.ForContext("SourceContext", $"ОбработчикКлиента{id.Value}"))
+        while (token.IsCancellationRequested is false)
+        {
+            var client = server.Accept();
+            var clientAddress = client.RemoteEndPoint?.ToString();
+            _logger.Debug("Клиент {Address} подключился. Начинаю обработку его запроса", clientAddress);
+            _ = ProcessConnectedClientAsync(token, client, clientAddress);
+        }
+    }
+
+    private async Task ProcessConnectedClientAsync(CancellationToken token, Socket client, string? clientAddress)
+    {
+        try
+        {
+            var packetClient = new PacketClient(client);
+            if (await TryAuthenticateAsync(packetClient, token) is { } nodeId)
+            {
+                var success = await packetClient.SendAsync(new ConnectResponsePacket(true), token);
+                if (!success)
+                {
+                    _logger.Information("Узел {Node} отключился во время ответа на пакет успешной авторизации", nodeId);
+                    await client.DisconnectAsync(false, token);
+                    client.Close();
+                    client.Dispose();
+                    return;
+                }
+
+                BeginNewClientSession(nodeId, packetClient, token);
+            }
+            else
+            {
+                _logger.Debug(
+                    "Клиент с адресом {Address} не смог подключиться: не удалось получить Id хоста. Закрываю соединение",
+                    clientAddress);
+                await packetClient.SendAsync(new ConnectResponsePacket(false), token);
+                client.Close();
+                client.Dispose();
+            }
+        }
+        catch (Exception e)
+        {
+            _logger.Warning(e, "Поймано необработанное исключение при подключении клиента {Address}", clientAddress);
+            client.Close();
+            client.Dispose();
+        }
+    }
+
+    private void BeginNewClientSession(NodeId id, PacketClient client, CancellationToken token)
+    {
+        var processor = new NodeConnectionProcessor(id, client, _raft, 
+            _logger.ForContext("SourceContext", $"NodeConnectionProcessor({id.Value})"))
             {
                 CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(token)
             };
-        _logger.Debug("Добавляю узел в список обрабатываемых");
         _nodes.AddOrUpdate(id,
             _ => processor,
             (_, old) =>
             {
-                _logger.Verbose("В списке соединений уже было соединение с для текущего Id. Закрываю старое соединение");
+                _logger.Information("В списке соединений уже было соединение с для текущего Id. Закрываю старое соединение");
                 old.Dispose();
                 return processor;
             });
@@ -123,9 +131,9 @@ public class NodeConnectionManager
         _ = processor.ProcessClientBackground();
     }
 
-    private static NodeId? TryAuthenticate(PacketClient client)
+    private static async Task<NodeId?> TryAuthenticateAsync(PacketClient client, CancellationToken token)
     {
-        var packet = client.Receive();
+        var packet = await client.ReceiveAsync(token);
         if (packet is {PacketType: PacketType.ConnectRequest})
         {
             var request = ( ConnectRequestPacket ) packet;

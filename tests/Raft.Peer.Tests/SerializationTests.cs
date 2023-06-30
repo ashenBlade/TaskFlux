@@ -3,7 +3,7 @@ using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
 
-namespace Raft.Network.Socket.Tests;
+namespace Raft.Peer.Tests;
 
 public class SerializationTests
 {

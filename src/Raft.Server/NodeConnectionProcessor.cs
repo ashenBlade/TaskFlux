@@ -3,17 +3,16 @@ using Raft.Core;
 using Raft.Core.Node;
 using Raft.Network;
 using Raft.Network.Packets;
-using Raft.Network.Socket;
+using Raft.Peer;
 using Serilog;
 
 namespace Raft.Server;
 
 public class NodeConnectionProcessor : IDisposable
 {
-    public NodeConnectionProcessor(NodeId id, IRemoteNodeConnection connection, Socket client, RaftNode node, ILogger logger)
+    public NodeConnectionProcessor(NodeId id, PacketClient client, RaftNode node, ILogger logger)
     {
         Id = id;
-        Connection = connection;
         Client = client;
         Node = node;
         Logger = logger;
@@ -21,33 +20,44 @@ public class NodeConnectionProcessor : IDisposable
 
     public CancellationTokenSource CancellationTokenSource { get; init; } = null!;
     private NodeId Id { get; }
-    private Socket Client { get; }
-    private IRemoteNodeConnection Connection { get; }
+    private Socket Socket => Client.Socket;
+    private PacketClient Client { get; }
     private RaftNode Node { get; }
     private ILogger Logger { get; }
 
     public async Task ProcessClientBackground()
     {
         var token = CancellationTokenSource.Token;
-        var connection = Connection;
-        Logger.Debug("Начинаю обрабатывать запросы клиента {Id}", Id);
-        while (token.IsCancellationRequested is false)
+        Logger.Information("Начинаю обрабатывать запросы клиента {Id}", Id);
+        try
         {
-            var packet = await connection.ReceiveAsync(token);
-            if (packet is null)
+            while (token.IsCancellationRequested is false)
             {
-                Logger.Information("От узла пришел пустой пакет. Соединение разорвано. Прекращаю обработку");
-                break;
-            }
+                var packet = await Client.ReceiveAsync(token);
+                if (packet is null)
+                {
+                    Logger.Information("От узла пришел пустой пакет. Соединение разорвано. Прекращаю обработку");
+                    break;
+                }
 
-            Logger.Debug("От клиента получен пакет {Packet}", packet);
-            var success = await ProcessPacket(packet, token);
-            if (!success)
-            {
-                break;
+                Logger.Debug("От клиента получен пакет {Packet}", packet);
+                var success = await ProcessPacket(packet, token);
+                if (!success)
+                {
+                    break;
+                }
             }
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        { }
+        catch (Exception e)
+        {
+            Logger.Warning(e, "Во время обработки узла {Node} возникло необработанное исключение", Id);
+            CloseClient();
+        }
     }
+
+
 
     private async Task<bool> ProcessPacket(IPacket packet, CancellationToken token)
     {
@@ -71,7 +81,7 @@ public class NodeConnectionProcessor : IDisposable
             var request = ( ( AppendEntriesRequestPacket ) packet ).Request;
             var result = Node.Handle(request);
             Logger.Debug("Запрос обработан: {Result}", result);
-            await Connection.SendAsync(new AppendEntriesResponsePacket(result), token);
+            await Client.SendAsync(new AppendEntriesResponsePacket(result), token);
         }
 
         async Task ProcessRequestVoteAsync()
@@ -79,8 +89,19 @@ public class NodeConnectionProcessor : IDisposable
             var request = ((RequestVoteRequestPacket ) packet ).Request;
             var result = Node.Handle(request);
             Logger.Debug("Запрос обработан: {Result}", result);
-            await Connection.SendAsync(new RequestVoteResponsePacket(result), token);
+            await Client.SendAsync(new RequestVoteResponsePacket(result), token);
         }
+    }
+
+    private void CloseClient()
+    {
+        if (!Socket.Connected)
+        {
+            return;
+        }
+        Logger.Information("Закрываю соединение с узлом");
+        Client.Socket.Disconnect(false);
+        Client.Socket.Close();
     }
 
     public void Dispose()
@@ -92,8 +113,8 @@ public class NodeConnectionProcessor : IDisposable
         catch (ObjectDisposedException)
         { }
 
-        Client.Close();
-        Client.Dispose();
+        CloseClient();
+        Socket.Dispose();
         CancellationTokenSource.Dispose();
     }
 }

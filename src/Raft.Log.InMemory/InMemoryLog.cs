@@ -99,8 +99,6 @@ public class InMemoryLog: ILog
                                          : LogEntryInfo.Tomb;
     public int CommitIndex { get; set; }
     public int LastApplied { get; set; }
-    
-    public LogEntry this[int index] => _log[index];
 
     public IReadOnlyList<LogEntry> GetFrom(int index)
     {

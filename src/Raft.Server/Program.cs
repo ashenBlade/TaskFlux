@@ -9,7 +9,6 @@ using Raft.Core.Log;
 using Raft.Core.Node;
 using Raft.JobQueue;
 using Raft.Log.InMemory;
-using Raft.Network.Socket;
 using Raft.Peer;
 using Raft.Peer.Decorators;
 using Raft.Server;
@@ -73,8 +72,7 @@ var httpModule = CreateHttpRequestModule(configuration);
 
 var th = new Thread(o =>
 {
-    Console.WriteLine(o?.GetType());
-    var (value, token) = ( SomeClass<NodeConnectionManager> ) o!;
+    var (value, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
     value.Run(token);
 })
     {
@@ -96,7 +94,7 @@ Console.CancelKeyPress += (_, args) =>
 try
 {
     Log.Logger.Information("Запускаю менеджер подключений узлов");
-    th.Start(new SomeClass<NodeConnectionManager>(connectionManager, cts.Token));
+    th.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
     
     Log.Logger.Information("Запускаю Election Timer");
     electionTimer.Start();

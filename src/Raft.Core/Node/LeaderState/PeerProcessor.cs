@@ -65,8 +65,16 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
                 LeaderId: Node.Id,
                 PrevLogEntryInfo: Node.Log.GetPrecedingEntryInfo(Info.NextIndex), 
                 Entries: Node.Log.GetFrom(Info.NextIndex));
-
-            var response = await Peer.SendAppendEntries(request, token);
+            AppendEntriesResponse? response;
+            try
+            {
+                response = await Peer.SendAppendEntries(request, token);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                throw;
+            }
             
             // 2. Если ответ не вернулся (null) - соединение было разорвано. Прекратить обработку
             if (response is null)

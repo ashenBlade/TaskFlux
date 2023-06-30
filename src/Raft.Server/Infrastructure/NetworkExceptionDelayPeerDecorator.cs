@@ -4,6 +4,9 @@ using Raft.Core.Commands.RequestVote;
 
 namespace Raft.Server.Infrastructure;
 
+/// <summary>
+/// Используется при тестах на одной машине, чтобы не грузить бесконечными запросами соединения
+/// </summary>
 public class NetworkExceptionDelayPeerDecorator: IPeer
 {
     private readonly IPeer _peer;
