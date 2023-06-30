@@ -1,30 +1,26 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 using Serilog;
-using Serilog.Core;
 
 namespace Raft.Network.Socket;
 
 public class RemoteSocketNodeConnection: SocketNodeConnection, IRemoteNodeConnection
 {
     private readonly EndPoint? _endPoint;
-    private readonly ILogger _logger;
     private readonly TimeSpan _connectTimeout;
 
     public bool Connected => Socket.Connected;
 
     public RemoteSocketNodeConnection(EndPoint endPoint, ILogger logger, TimeSpan connectTimeout)
-        : base(new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
+        : base(new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp), logger)
     {
         _endPoint = endPoint;
-        _logger = logger;
         _connectTimeout = connectTimeout;
     }
 
     public RemoteSocketNodeConnection(System.Net.Sockets.Socket existingSocket, ILogger logger) 
-        : base(existingSocket)
+        : base(existingSocket, logger)
     {
-        _logger = logger;
         _endPoint = null;
     }
 
@@ -35,15 +31,15 @@ public class RemoteSocketNodeConnection: SocketNodeConnection, IRemoteNodeConnec
             return;
         }
 
-        _logger.Verbose("Отключаю соединение");
+        Logger.Verbose("Отключаю соединение");
         try
         {
             await Socket.DisconnectAsync(true, token);
-            _logger.Verbose("Соединение отключено");
+            Logger.Verbose("Соединение отключено");
         }
         catch (SocketException se) when (se.SocketErrorCode is SocketError.NotConnected)
         {
-            _logger.Verbose("Запрошено разъединение с неподключенным узлом");
+            Logger.Verbose("Запрошено разъединение с неподключенным узлом");
         }
     }
 
@@ -56,15 +52,20 @@ public class RemoteSocketNodeConnection: SocketNodeConnection, IRemoteNodeConnec
         
         if (Socket.Connected)
         {
-            _logger.Verbose("Отключаю соединение");
+            Logger.Verbose("Отключаю соединение");
             await Socket.DisconnectAsync(true, token);
         }
-        
+        else
+        {
+            Logger.Verbose("Соединение не подключено");
+        }
+
         return await ConnectAsyncCore(token);
     }
 
     private async ValueTask<bool> ConnectAsyncCore(CancellationToken token)
     {
+        Logger.Verbose("Начинаю операцию подключения");
         try
         {
             // При установлении подключения возможна такая ситуация:
@@ -99,22 +100,45 @@ public class RemoteSocketNodeConnection: SocketNodeConnection, IRemoteNodeConnec
             // !!! Создание нового CancellationTokenSource с таймаутом не работает (причина не ясна)
             // Поэтому использую Task.Delay( /*timeout*/ ) с Task.WhenAny
             
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
-            var connectTask = Socket.ConnectAsync(_endPoint!, cts.Token).AsTask();
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            // var connectTask = Socket.ConnectAsync(_endPoint!, cts.Token).AsTask();
+
+            var connectTask = Task.Run(async () =>
+            {
+                // ReSharper disable once AccessToDisposedClosure
+                await Socket.ConnectAsync(_endPoint!, cts.Token);
+                // try
+                // {
+                // }
+                // catch (ObjectDisposedException disposed) when (disposed.ObjectName.Contains("Token"))
+                // { }
+            }, token);
+
+            Logger.Verbose("2");
             var delayTask = Task.Delay(_connectTimeout, CancellationToken.None);
-            _logger.Debug("Начинаю подключение");
+            Logger.Verbose("3");
+            Logger.Debug("Начинаю подключение");
             await Task.WhenAny(connectTask, delayTask);
-            _logger.Debug("Заканчиваю подключение");
+            Logger.Debug("Заканчиваю подключение");
             if (delayTask.IsCompleted)
             {
-                _logger.Debug("Превышен таймаут запроса подключения");
+                Logger.Debug("Превышен таймаут запроса подключения");
                 cts.Cancel();
+                cts.Dispose();
                 return false;
             }
-            
-            _logger.Debug("Подключение ОК");
-            await connectTask;
-            _logger.Debug("Подключение ОК 2");
+
+            try
+            {
+                Logger.Verbose("Таймаут не превышен. завершаю таску 1");
+                await connectTask;
+                Logger.Verbose("Таска завершена 2");
+            }
+            catch (Exception)
+            {
+                cts.Dispose();
+                throw;
+            }
             
             return true;
         }

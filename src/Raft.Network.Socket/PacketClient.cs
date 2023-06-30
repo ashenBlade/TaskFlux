@@ -1,51 +1,52 @@
 using System.ComponentModel;
+using System.Net;
 using System.Net.Sockets;
 using Raft.Network.Packets;
-using Serilog;
 
 namespace Raft.Network.Socket;
 
-public class SocketNodeConnection: INodeConnection
+public class PacketClient
 {
-    protected ILogger Logger { get; }
     private const int DefaultBufferSize = 128;
-    
-    protected readonly System.Net.Sockets.Socket Socket;
+    public System.Net.Sockets.Socket Socket { get; }
 
-    public SocketNodeConnection(System.Net.Sockets.Socket socket, ILogger logger)
+    public PacketClient(System.Net.Sockets.Socket socket)
     {
-        Logger = logger;
         Socket = socket;
     }
 
+    private NetworkStream CreateStream() => new(Socket, false);
 
-    public async ValueTask<bool> SendAsync(IPacket packet, CancellationToken token = default)
+    public bool Send(IPacket packet, CancellationToken token = default)
+    {
+#pragma warning disable CA2012
+        return SendCore(false, packet, token).GetAwaiter().GetResult();
+#pragma warning restore CA2012
+    }
+    public ValueTask<bool> SendAsync(IPacket packet, CancellationToken token = default)
+    {
+        return SendCore(true, packet, token);
+    }
+
+    public async ValueTask<bool> SendCore(bool useAsync, IPacket packet, CancellationToken token)
     {
         if (!Socket.Connected)
         {
-            Logger.Verbose("Попытка отправки пакета с неподключенным сокетом");
             return false;
         }
         
         var buffer = Serialize(packet);
         try
         {
-            var sent = await Socket.SendAsync(buffer, SocketFlags.None, token);
-            if (Socket.Connected is false)
+            if (useAsync)
             {
-                Logger.Verbose("Во время отправки соединение было разорвано");
-                return false;
+                await using var stream = CreateStream();
+                await stream.WriteAsync(buffer.AsMemory(), token);
             }
-            
-            while (sent < buffer.Length)
+            else
             {
-                var currentSent = await Socket.SendAsync(buffer.AsMemory(sent), SocketFlags.None, token);
-                if (Socket.Connected is false)
-                {
-                    Logger.Verbose("Во время отправки соединение было разорвано");
-                    return false;
-                }
-                sent += currentSent;
+                using var stream = CreateStream();
+                stream.Write(buffer.AsSpan());
             }
 
             return true;
@@ -55,44 +56,81 @@ public class SocketNodeConnection: INodeConnection
         {
             return false;
         }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+    
+    public ValueTask<IPacket?> ReceiveAsync(CancellationToken token = default)
+    {
+        return ReceiveCoreAsync(true, token);
     }
 
-    public async ValueTask<IPacket?> ReceiveAsync(CancellationToken token = default)
+    public IPacket? Receive(CancellationToken token = default)
+    {
+#pragma warning disable CA2012
+        return ReceiveCoreAsync(false, token).GetAwaiter().GetResult();
+#pragma warning restore CA2012
+    }
+
+    private async ValueTask<IPacket?> ReceiveCoreAsync(bool useAsync, CancellationToken token)
     {
         if (!Socket.Connected)
         {
-            Logger.Verbose("При попытке получить ответ от сервера сокет был закрыт");
             return null;
         }
         
         using var memory = new MemoryStream();
+        using var stream = CreateStream();
         try
         {
             var buffer = new byte[DefaultBufferSize];
-            var received = await Socket.ReceiveAsync(buffer, SocketFlags.None, token);
+            var received = useAsync 
+                               ? await stream.ReadAsync(buffer, token)
+                               : stream.Read(buffer);
             if (received == 0 || !Socket.Connected)
             {
-                Logger.Verbose("Во время чтения ответа от клиента соединение было разорвано 1");
-                await Socket.DisconnectAsync(true, token);
+                if (useAsync)
+                {
+                    await Socket.DisconnectAsync(true, token);
+                }
+                else
+                {
+                    Socket.Disconnect(true);
+                }
                 return null;
             }
-            
+
             memory.Write(buffer, 0, received);
-        
+
             while (0 < Socket.Available)
             {
-                received = await Socket.ReceiveAsync(buffer, SocketFlags.None, token);
-                if (received == 0 || !Socket.Connected)
+                received = useAsync 
+                               ? await stream.ReadAsync(buffer, token)
+                               : stream.Read(buffer);
+                if (received == 0)
                 {
-                    Logger.Verbose("Во время чтения ответа от клиента соединение было разорвано");
-                    await Socket.DisconnectAsync(true, token);
+                    if (useAsync)
+                    {
+                        await Socket.DisconnectAsync(true, token);
+                    }
+                    else
+                    {
+                        Socket.Disconnect(true);
+                    }
                     return null;
                 }
+
                 memory.Write(buffer, 0, received);
             }
         }
-        catch (SocketException se) 
+        catch (SocketException se)
             when (IsNetworkError(se.SocketErrorCode))
+        {
+            return null;
+        }
+        catch (IOException)
         {
             return null;
         }
@@ -103,7 +141,7 @@ public class SocketNodeConnection: INodeConnection
                    ? Deserialize(array)
                    : null;
     }
-    
+
     private static byte[] Serialize(IPacket packet)
     {
         return packet.PacketType switch
@@ -127,18 +165,24 @@ public class SocketNodeConnection: INodeConnection
                };
     }
     
-    private static bool IsNetworkError(SocketError se)
+    private static bool IsNetworkError(SocketError error)
     {
-        return se is 
+        return error is 
                    SocketError.Shutdown or 
                    SocketError.NotConnected or 
                    SocketError.Disconnecting or 
+                   
                    SocketError.ConnectionReset or 
                    SocketError.ConnectionAborted or 
                    SocketError.ConnectionRefused or 
+                   
                    SocketError.NetworkDown or 
                    SocketError.NetworkReset or 
-                   SocketError.NetworkUnreachable;
+                   SocketError.NetworkUnreachable or 
+                   
+                   SocketError.HostDown or 
+                   SocketError.HostUnreachable or 
+                   SocketError.HostNotFound;
     }
 
     private static IPacket Deserialize(byte[] buffer)
@@ -160,6 +204,30 @@ public class SocketNodeConnection: INodeConnection
                 return new AppendEntriesResponsePacket(Serializers.AppendEntriesResponse.Deserialize(buffer));
             default:
                 throw new InvalidEnumArgumentException(nameof(marker), (int) marker, typeof(PacketType));
+        }
+    }
+
+    public async ValueTask<bool> TryConnectAsync(EndPoint endPoint, TimeSpan timeout, CancellationToken token = default)
+    {
+        var delayTask = Task.Delay(timeout, CancellationToken.None);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var connectTask = Socket.ConnectAsync(endPoint, cts.Token)
+                                .AsTask();
+        await Task.WhenAny(connectTask, delayTask);
+        if (delayTask.IsCompleted)
+        {
+            cts.Cancel();
+            return false;
+        }
+
+        return true;
+    }
+
+    public async ValueTask DisconnectAsync(CancellationToken token = default)
+    {
+        if (Socket.Connected)
+        {
+            await Socket.DisconnectAsync(true, token);
         }
     }
 }

@@ -1,5 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Net;
+using System.Net.Sockets;
 using Microsoft.Extensions.Configuration;
 using Raft.CommandQueue;
 using Raft.Core;
@@ -45,8 +47,9 @@ var peers = serverOptions.Peers
                           {
                               var endpoint = GetEndpoint(p.Host, p.Port);
                               var id = new NodeId(p.Id);
-                              var connection = new RemoteSocketNodeConnection(endpoint, Log.ForContext("SourceContext", $"RemoteSocketNodeConnection({id.Value})"), networkOptions.ConnectionTimeout);
-                              IPeer peer = new TcpPeer(connection, id, nodeId, networkOptions.ConnectionTimeout, networkOptions.RequestTimeout, Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
+                              var client = new PacketClient(new Socket(AddressFamily.InterNetwork, SocketType.Stream,
+                                  ProtocolType.Tcp));
+                              IPeer peer = new TcpPeer(client, endpoint, id, nodeId, networkOptions.ConnectionTimeout, networkOptions.RequestTimeout, Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
                               peer = new ExclusiveAccessPeerDecorator(peer);
                               peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
                               return peer;
@@ -68,6 +71,17 @@ var server = new RaftStateObserver(node, Log.Logger.ForContext<RaftStateObserver
 
 var httpModule = CreateHttpRequestModule(configuration);
 
+var th = new Thread(o =>
+{
+    Console.WriteLine(o?.GetType());
+    var (value, token) = ( SomeClass<NodeConnectionManager> ) o!;
+    value.Run(token);
+})
+    {
+        Priority = ThreadPriority.Highest, 
+        Name = "Обработчик подключений узлов",
+    };
+
 httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(node, Log.ForContext<SubmitCommandRequestHandler>()));
 
 using var cts = new CancellationTokenSource();
@@ -81,12 +95,15 @@ Console.CancelKeyPress += (_, args) =>
 
 try
 {
+    Log.Logger.Information("Запускаю менеджер подключений узлов");
+    th.Start(new SomeClass<NodeConnectionManager>(connectionManager, cts.Token));
+    
     Log.Logger.Information("Запускаю Election Timer");
     electionTimer.Start();
+    
     Log.Logger.Information("Запукаю фоновые задачи");
     await Task.WhenAll(
-        server.RunAsync(cts.Token), 
-        connectionManager.RunAsync(cts.Token), 
+        server.RunAsync(cts.Token),
         commandQueue.RunAsync(cts.Token),
         httpModule.RunAsync(cts.Token));
 }
@@ -94,6 +111,12 @@ catch (Exception e)
 {
     Log.Fatal(e, "Ошибка во время работы сервера");
 }
+finally
+{
+    cts.Cancel();
+    th.Join();
+}
+
 Log.CloseAndFlush();
 
 void ValidateOptions(RaftServerOptions peersOptions)

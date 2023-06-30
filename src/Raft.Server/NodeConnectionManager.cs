@@ -26,9 +26,8 @@ public class NodeConnectionManager
         _logger = logger;
     }
     
-    public async Task RunAsync(CancellationToken token)
+    public void Run(CancellationToken token)
     {
-        await Task.Yield();
         _logger.Information("Модуль взаимодействия с другими узлами запускается");
         var endpoint = GetListenAddress();
         using var server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
@@ -43,32 +42,39 @@ public class NodeConnectionManager
         }
         
         _logger.Information("Начинаю прослушивать входящие запросы");
-        server.Listen();
+        server.Listen(10);
         try
         {
             while (token.IsCancellationRequested is false)
             {
-                server.Poll(0, SelectMode.SelectRead);
-                var client = await server.AcceptAsync(token);
+                var client = server.Accept();
                 var clientAddress = client.RemoteEndPoint?.ToString();
                 _logger.Debug("Клиент {Address} подключился. Начинаю обработку его запроса", clientAddress);
                 try
                 {
-                    var snc = new SocketNodeConnection(client);
-                    if (await TryAuthenticateAsync(snc) is {} nodeId)
+                    var packetClient = new PacketClient(client);
+                    if (TryAuthenticate(packetClient) is {} nodeId)
                     {
                         var connection = new RemoteSocketNodeConnection(client,
                             _logger.ForContext("SourceContext", $"NodeConnectionProcessor({nodeId.Value})"));
                         
-                        await connection.SendAsync(new ConnectResponsePacket(true), token);
-                        
+                        // connection.SendAsync(new ConnectResponsePacket(true), token);
+                        var success = packetClient.Send(new ConnectResponsePacket(true), token);
+                        if (!success)
+                        {
+                            _logger.Information("Узел {Node} отключился во время ответа на пакет успешной авторизации", nodeId);
+                            client.Disconnect(false);
+                            client.Close();
+                            client.Dispose();
+                            continue;
+                        }
                         BeginNewClientSession(nodeId, connection, client, token);
                     }
                     else
                     {
                         _logger.Debug("Клиент с адресом {Address} не смог подключиться: не удалось получить Id хоста. Закрываю соединение",
                             clientAddress);
-                        await snc.SendAsync(new ConnectResponsePacket(false), token);
+                        packetClient.Send(new ConnectResponsePacket(false), token);
                         client.Close();
                         client.Dispose();
                     }
@@ -117,9 +123,9 @@ public class NodeConnectionManager
         _ = processor.ProcessClientBackground();
     }
 
-    private static async Task<NodeId?> TryAuthenticateAsync(INodeConnection connection)
+    private static NodeId? TryAuthenticate(PacketClient client)
     {
-        var packet = await connection.ReceiveAsync();
+        var packet = client.Receive();
         if (packet is {PacketType: PacketType.ConnectRequest})
         {
             var request = ( ConnectRequestPacket ) packet;

@@ -6,7 +6,11 @@ namespace Raft.Core.Node.LeaderState;
 internal record ChannelRequestQueue(ILog Log): IRequestQueue
 {
     private readonly Channel<AppendEntriesRequestSynchronizer> _channel =
-        Channel.CreateUnbounded<AppendEntriesRequestSynchronizer>();
+        Channel.CreateUnbounded<AppendEntriesRequestSynchronizer>(new UnboundedChannelOptions()
+        {
+            SingleReader = true,
+            SingleWriter = false,
+        });
        
     public IAsyncEnumerable<AppendEntriesRequestSynchronizer> ReadAllRequestsAsync(CancellationToken token)
     {
