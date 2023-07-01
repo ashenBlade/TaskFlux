@@ -8,7 +8,6 @@ namespace Raft.Core.Tests;
 
 public class FollowerStateTests
 {
-    // private static FollowerState CreateState(INode node) => new(node, Helpers.NullLogger);
     private static readonly NodeId NodeId = new(1);
     private static readonly LogEntryInfo LastLogEntryInfo = new(new Term(1), 0);
 
@@ -29,7 +28,7 @@ public class FollowerStateTests
     [Fact]
     public void ПриСоздании__ПервоеСостояниеДолжноБыть__Follower()
     {
-        var machine = RaftNode.Create(new(1), new PeerGroup(Array.Empty<IPeer>()), null, new(1), Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullJobQueue, Mock.Of<ILog>(x => x.LastEntry == LastLogEntryInfo && x.CommitIndex == 0 && x.LastApplied == 0), Helpers.DefaultCommandQueue, Helpers.NullStateMachine);
+        var machine = RaftNode.Create(new(1), new PeerGroup(Array.Empty<IPeer>()), Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullJobQueue, Mock.Of<ILog>(x => x.LastEntry == LastLogEntryInfo && x.CommitIndex == 0 && x.LastApplied == 0), Helpers.DefaultCommandQueue, Helpers.NullStateMachine, Helpers.NullMetadataStorage);
         Assert.Equal(NodeRole.Follower, machine.CurrentRole);
     }
     
@@ -212,12 +211,12 @@ public class FollowerStateTests
                                  ? null
                                  : new NodeId(oldVotedFor.Value);
         
-        using var raft = CreateNode(oldTerm, votedForId, log: CreateLog(true));
+        using var node = CreateNode(oldTerm, votedForId, log: CreateLog(true));
 
-        var request = AppendEntriesRequest.Heartbeat(raft.CurrentTerm.Increment(), raft.Log.CommitIndex, new NodeId(2), raft.Log.LastEntry);
-        raft.Handle(request);
+        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.Log.CommitIndex, new NodeId(2), node.Log.LastEntry);
+        node.Handle(request);
         
-        Assert.False(raft.VotedFor.HasValue);
+        Assert.False(node.VotedFor.HasValue);
     }
 
     [Fact]

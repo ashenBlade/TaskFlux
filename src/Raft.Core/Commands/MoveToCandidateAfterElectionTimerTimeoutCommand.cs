@@ -12,8 +12,7 @@ internal class MoveToCandidateAfterElectionTimerTimeoutCommand: UpdateCommand
     {
         Node.ElectionTimer.Stop();
         Node.CurrentState = CandidateState.Create(Node);
-        Node.CurrentTerm = Node.CurrentTerm.Increment();
-        Node.VotedFor = Node.Id;
+        Node.UpdateState(Node.CurrentTerm.Increment(), Node.Id);
         Node.ElectionTimer.Start();
     }
 }

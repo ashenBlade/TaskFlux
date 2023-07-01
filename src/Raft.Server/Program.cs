@@ -15,6 +15,7 @@ using Raft.Server;
 using Raft.Server.HttpModule;
 using Raft.Server.Infrastructure;
 using Raft.Server.Options;
+using Raft.Storage.InMemory;
 using Raft.Timers;
 using Serilog;
 // ReSharper disable CoVariantArrayConversion
@@ -64,13 +65,16 @@ var log = new InMemoryLog(Enumerable.Empty<LogEntry>());
 var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
 
 using var commandQueue = new ChannelCommandQueue();
-using var node = RaftNode.Create(nodeId, new PeerGroup(peers), null, new Term(1), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, new NullStateMachine());
+var storage = new InMemoryMetadataStorage(new Term(1), null);
+var stateMachine = new NullStateMachine();
+
+using var node = RaftNode.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine, storage);
 var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, node, Log.Logger.ForContext<NodeConnectionManager>());
 var server = new RaftStateObserver(node, Log.Logger.ForContext<RaftStateObserver>());
 
 var httpModule = CreateHttpRequestModule(configuration);
 
-var th = new Thread(o =>
+var nodeConnectionThread = new Thread(o =>
 {
     var (value, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
     value.Run(token);
@@ -95,7 +99,7 @@ Console.CancelKeyPress += (_, args) =>
 try
 {
     Log.Logger.Information("Запускаю менеджер подключений узлов");
-    th.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
+    nodeConnectionThread.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
     
     Log.Logger.Information("Запускаю Election Timer");
     electionTimer.Start();
@@ -113,7 +117,7 @@ catch (Exception e)
 finally
 {
     cts.Cancel();
-    th.Join();
+    nodeConnectionThread.Join();
 }
 
 Log.CloseAndFlush();

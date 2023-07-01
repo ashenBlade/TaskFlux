@@ -18,7 +18,6 @@ internal class MoveToFollowerStateCommand: UpdateCommand
     {
         Node.CurrentState = FollowerState.Create(Node);
         Node.ElectionTimer.Start();
-        Node.CurrentTerm = _term;
-        Node.VotedFor = _votedFor;
+        Node.UpdateState(_term, _votedFor);
     }
 }
