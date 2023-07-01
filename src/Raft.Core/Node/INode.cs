@@ -20,6 +20,11 @@ public interface INode
     public Term CurrentTerm { get; internal set; }
     
     /// <summary>
+    /// Текущая роль узла
+    /// </summary>
+    public NodeRole CurrentRole { get; }
+    
+    /// <summary>
     /// Id кандидата, за которого проголосовала текущая нода
     /// </summary>
     public NodeId? VotedFor { get; internal set; }

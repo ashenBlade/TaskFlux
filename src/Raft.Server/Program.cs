@@ -81,6 +81,7 @@ var th = new Thread(o =>
     };
 
 httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(node, Log.ForContext<SubmitCommandRequestHandler>()));
+httpModule.AddHandler(HttpMethod.Get, "/metrics", new PrometheusRequestHandler(node));
 
 using var cts = new CancellationTokenSource();
 

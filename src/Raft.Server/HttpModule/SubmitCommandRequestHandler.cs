@@ -26,7 +26,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
     {
         response.KeepAlive = false;
         response.ContentType = "application/json";
-
+        
         if (!request.HasEntityBody)
         {
             _logger.Debug("В теле запроса не было данных");

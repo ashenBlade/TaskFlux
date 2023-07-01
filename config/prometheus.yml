@@ -1,0 +1,11 @@
+scrape_configs: 
+  - job_name: raft
+    metrics_path: /metrics
+    scrape_interval: 500ms
+    static_configs: 
+      - targets: 
+          - 'raft.server.1:2602'
+          - 'raft.server.2:2602'
+          - 'raft.server.3:2602'
+    
+    
