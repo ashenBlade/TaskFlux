@@ -6,7 +6,7 @@ using Raft.Network.Packets;
 using Raft.Peer;
 using Serilog;
 
-namespace Raft.Server;
+namespace Raft.Host;
 
 public class NodeConnectionProcessor : IDisposable
 {

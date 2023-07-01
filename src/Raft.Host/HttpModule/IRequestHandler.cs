@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace Raft.Server.HttpModule;
+namespace Raft.Host.HttpModule;
 
 public interface IRequestHandler
 {

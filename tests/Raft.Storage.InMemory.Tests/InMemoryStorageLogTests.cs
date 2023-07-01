@@ -1,15 +1,25 @@
-using System.Security.Cryptography;
 using Raft.Core;
 using Raft.Core.Log;
 
-namespace Raft.Log.InMemory.Tests;
+namespace Raft.Storage.InMemory.Tests;
 
-public class InMemoryLogTests
+public class InMemoryStorageLogTests
 {
+    private static StorageLog CreateLogInMemory(params LogEntry[] initial)
+    {
+        return new StorageLog(new InMemoryLogStorage(initial));
+    }
+    
+    private static StorageLog CreateLogInMemory(IEnumerable<LogEntry> initial)
+    {
+        return new StorageLog(new InMemoryLogStorage(initial));
+    }
+
+
     [Fact]
     public void Contains__КогдаЛогПустойИСравниваемаяПозицияTomb__ДолженВернутьTrue()
     {
-        var log = new InMemoryLog();
+        var log = CreateLogInMemory();
         var actual = log.Contains(LogEntryInfo.Tomb);
         Assert.True(actual);
     }
@@ -19,7 +29,7 @@ public class InMemoryLogTests
     [InlineData(1)]
     public void GetFrom__СПустымЛогомДолженВернутьПустойМассив(int index)
     {
-        var log = new InMemoryLog();
+        var log = CreateLogInMemory();
         var actual = log.GetFrom(index);
         Assert.Empty(actual);
     }
@@ -28,7 +38,7 @@ public class InMemoryLogTests
     public void GetFrom__СЕдинственнымЭлементомЛогаКогдаИндекс0__ДолженВернутьМассивИзЭтогоЭлемента()
     {
         var element = new LogEntry(new Term(1), "data");
-        var log = new InMemoryLog(new[] {element});
+        var log = CreateLogInMemory(new[] {element});
         var actual = log.GetFrom(0);
         Assert.Single(actual);
         Assert.Equal(actual[0], element);
@@ -38,7 +48,7 @@ public class InMemoryLogTests
     public void GetFrom__СЕдинственнымЭлементомИИндексом1__ДолженВернутьПустойМассив()
     {
         var element = new LogEntry(new Term(1), "data");
-        var log = new InMemoryLog(new[] {element});
+        var log = CreateLogInMemory(element);
         var actual = log.GetFrom(0);
         Assert.Single(actual);
         Assert.Equal(actual[0], element);
@@ -60,7 +70,7 @@ public class InMemoryLogTests
                                  .Select(i => new LogEntry(new Term(i), "data"))
                                  .ToArray();
         
-        var log = new InMemoryLog(first.Concat(expected));
+        var log = CreateLogInMemory(first.Concat(expected));
 
         var actual = log.GetFrom(startIndex);
         Assert.Equal(expected, actual);
@@ -76,7 +86,7 @@ public class InMemoryLogTests
         var elements = Enumerable.Range(1, elementsCount)
                                  .Select(i => new LogEntry(new Term(i), Random.Shared.Next().ToString()))
                                  .ToArray();
-        var log = new InMemoryLog(elements);
+        var log = CreateLogInMemory(elements);
         var actual = log.GetFrom(elementsCount);
         Assert.Empty(actual);
     }
@@ -84,7 +94,7 @@ public class InMemoryLogTests
     [Fact]
     public void GetPrecedingEntryInfo__СПустымЛогомИИндексомРавным0__ДолженВернутьTomb()
     {
-        var log = new InMemoryLog();
+        var log = CreateLogInMemory();
         var actual = log.GetPrecedingEntryInfo(0);
         Assert.Equal(LogEntryInfo.Tomb, actual);
     }
@@ -92,7 +102,7 @@ public class InMemoryLogTests
     [Fact]
     public void GetPrecedingEntryInfo__С1ЭлементомВЛогеИИндексомРавным1__ДолженВернутьХранимыйЭлемент()
     {
-        var log = new InMemoryLog(new[] {new LogEntry(new Term(1), "data")});
+        var log = CreateLogInMemory(new[] {new LogEntry(new Term(1), "data")});
         var expected = new LogEntryInfo(new Term(1), 0);
         
         var actual = log.GetPrecedingEntryInfo(1);
@@ -111,7 +121,7 @@ public class InMemoryLogTests
                                  .Select(i => new LogEntry(new Term(i), Random.Shared.Next().ToString()))
                                  .ToArray();
 
-        var log = new InMemoryLog(elements);
+        var log = CreateLogInMemory(elements);
         
         for (var i = 1; i < elements.Length; i++)
         {
@@ -132,7 +142,7 @@ public class InMemoryLogTests
                                  .Select(i => new LogEntry(new Term(i), Random.Shared.Next().ToString()))
                                  .ToArray();
 
-        var log = new InMemoryLog(elements);
+        var log = CreateLogInMemory(elements);
         
         for (var i = 1; i < elements.Length; i++)
         {
@@ -172,10 +182,10 @@ public class InMemoryLogTests
     [MemberData(nameof(InitialAppendedLogEntries))]
     public void AppendUpdateRange__СИндексомСледующимПослеПоследнегоЭлемента__ДолженДобавитьЭлементыВКонецЛога(LogEntry[] initialEntries, LogEntry[] appended)
     {
-        var log = new InMemoryLog(initialEntries);
+        var log = CreateLogInMemory(initialEntries);
         var lastIndex = log.LastEntry.Index;
         log.AppendUpdateRange(appended, lastIndex + 1);
-        var actual = log.Entries.Skip(lastIndex + 1).ToArray();
+        var actual = log.ReadLog().Skip(lastIndex + 1).ToArray();
         Assert.Equal(appended, actual);
     }
 
@@ -208,7 +218,7 @@ public class InMemoryLogTests
     [MemberData(nameof(LogEntries))]
     public void Contains__КогдаЛогНеПустойИПереданПрефиксПустогоЛога__ДолженВернутьTrue(IEnumerable<LogEntry> entries)
     {
-        var log = new InMemoryLog(entries);
+        var log = CreateLogInMemory(entries);
         var logEntry = LogEntryInfo.Tomb;
         Assert.True(log.Contains(logEntry));
     }
@@ -219,7 +229,7 @@ public class InMemoryLogTests
         IEnumerable<LogEntry> entries)
     {
         var logEntries = entries.ToArray();
-        var log = new InMemoryLog(logEntries);
+        var log = CreateLogInMemory(logEntries);
         var logEntry = logEntries[^1];
         var lastLogEntry = new LogEntryInfo(logEntry.Term, (^1).GetOffset(logEntries.Length));
         Assert.True(log.Contains(lastLogEntry));
@@ -231,7 +241,8 @@ public class InMemoryLogTests
         IEnumerable<LogEntry> entries)
     {
         var logEntries = entries.ToArray();
-        var log = new InMemoryLog(logEntries);
+        var log = CreateLogInMemory(logEntries);
+        
         for (var i = 0; i < logEntries.Length; i++)
         {
             var logEntryInfo = new LogEntryInfo(logEntries[i].Term, i);
@@ -249,7 +260,7 @@ public class InMemoryLogTests
     public void Contains__КогдаЛогПустойИПередаетсяНеTomb__ДолженВернутьFalse(
         int term, int index)
     {
-        var log = new InMemoryLog();
+        var log = CreateLogInMemory();
         Assert.False(log.Contains(new LogEntryInfo(new Term(term), index)));
     }
 
@@ -259,7 +270,7 @@ public class InMemoryLogTests
         IEnumerable<LogEntry> entries)
     {
         var logEntries = entries.ToArray();
-        var log = new InMemoryLog(logEntries);
+        var log = CreateLogInMemory(logEntries);
         var lastLogEntry = new LogEntryInfo(logEntries[^1].Term, logEntries.Length);
         Assert.False(log.Contains(lastLogEntry));
     }
@@ -270,7 +281,7 @@ public class InMemoryLogTests
         IEnumerable<LogEntry> entries)
     {
         var logEntries = entries.ToArray();
-        var log = new InMemoryLog(logEntries);
+        var log = CreateLogInMemory(logEntries);
         var index = logEntries.Length / 2;
         var entry = new LogEntryInfo(logEntries[index].Term.Increment(), index);
         Assert.False(log.Contains(entry));
@@ -279,9 +290,9 @@ public class InMemoryLogTests
     [Fact]
     public void AppendUpdateRange__КогдаЛогПустИндекс0ПереданныйМассивПуст__НеДолженДобавитьНичегоВЛог()
     {
-        var log = new InMemoryLog();
+        var log = CreateLogInMemory();
         log.AppendUpdateRange(Array.Empty<LogEntry>(), 0);
-        Assert.Empty(log.Entries);
+        Assert.Empty(log.ReadLog());
     }
 
     [Theory]
@@ -292,12 +303,12 @@ public class InMemoryLogTests
     public void AppendUpdateRange__КогдаЛогПустИндекс0ВПереданномМассивеЕстьЭлементы__ДолженДобавитьВсеПереданныеЭлементы(
         int elementsCount)
     {
-        var log = new InMemoryLog();
+        var log = CreateLogInMemory();
         var entries = Enumerable.Range(1, elementsCount)
                                 .Select(x => new LogEntry(new Term(x), $"data{x}"))
                                 .ToArray();
         log.AppendUpdateRange(entries, 0);
-        Assert.Equal(entries, log.Entries);
+        Assert.Equal(entries, log.ReadLog());
     }
 
     [Theory]
@@ -317,9 +328,9 @@ public class InMemoryLogTests
         var toAdd = Enumerable.Range(initialElementsCount + 1, toAddCount)
                               .Select(t => new LogEntry(new(t), $"data{t}"))
                               .ToArray();
-        var log = new InMemoryLog(initial);
+        var log = CreateLogInMemory(initial);
         log.AppendUpdateRange(toAdd, initial.Length);
-        Assert.Equal(initial.Concat(toAdd), log.Entries);
+        Assert.Equal(initial.Concat(toAdd), log.ReadLog());
     }
 
     [Theory]
@@ -339,13 +350,14 @@ public class InMemoryLogTests
         var initial = Enumerable.Range(1, initialCount)
                                 .Select(t => new LogEntry(new(t), $"data{t}"))
                                 .ToArray();
+        
         var toAdd = Enumerable.Range(initialCount + 1, toAddCount)
                               .Select(t => new LogEntry(new(t), $"data{t}"))
                               .ToArray();
         
-        var log = new InMemoryLog(initial);
+        var log = CreateLogInMemory(initial);
         log.AppendUpdateRange(toAdd, 0);
-        Assert.Equal(toAdd, log.Entries);
+        Assert.Equal(toAdd, log.ReadLog());
     }
 
     [Theory]
@@ -366,9 +378,9 @@ public class InMemoryLogTests
                               .Select(t => new LogEntry(new(t), $"data{t}"))
                               .ToArray();
         
-        var log = new InMemoryLog(initial);
+        var log = CreateLogInMemory(initial);
         log.AppendUpdateRange(toAdd, index);
-        Assert.Equal(initial.Take(index).Concat(toAdd), log.Entries);
+        Assert.Equal(initial.Take(index).Concat(toAdd), log.ReadLog());
     }
 
     public static IEnumerable<object[]> InitialToAddIndexExpected = new[]
@@ -426,15 +438,15 @@ public class InMemoryLogTests
         int index,
         LogEntry[] expected)
     {
-        var log = new InMemoryLog(initial);
+        var log = CreateLogInMemory(initial);
         log.AppendUpdateRange(toAdd, index);
-        Assert.Equal(expected, log.Entries);
+        Assert.Equal(expected, log.ReadLog());
     }
 
     [Fact]
     public void Conflicts__КогдаЛогПустойИПереданTomb__ДолженВернутьFalse()
     {
-        var log = new InMemoryLog();
+        var log = CreateLogInMemory();
         Assert.False(log.Conflicts(LogEntryInfo.Tomb));
     }
 
@@ -448,7 +460,7 @@ public class InMemoryLogTests
     [InlineData(100, 10)]
     public void Conflicts__КогдаЛогПустойИПереданВалидныйПрефикс__ДолженВернутьFalse(int term, int index)
     {
-        var log = new InMemoryLog();
+        var log = CreateLogInMemory();
         Assert.False(log.Conflicts(new LogEntryInfo(new Term(term), index)));
     }
 
@@ -462,7 +474,7 @@ public class InMemoryLogTests
         var elements = Enumerable.Range(1, elementsCount)
                                  .Select(t => new LogEntry(new(t), $"data{t}"))
                                  .ToArray();
-        var log = new InMemoryLog(elements);
+        var log = CreateLogInMemory(elements);
         var lastLogEntry = new LogEntryInfo(new(elements.Length + 1), index);
         Assert.False(log.Conflicts(lastLogEntry));
     }
@@ -473,7 +485,7 @@ public class InMemoryLogTests
         var elements = Enumerable.Range(1, 10)
                                  .Select(t => new LogEntry(new(t), $"data{t}"))
                                  .ToArray();
-        var log = new InMemoryLog(elements);
+        var log = CreateLogInMemory(elements);
         Assert.False(log.Conflicts(log.LastEntry));
     }
 
@@ -487,7 +499,7 @@ public class InMemoryLogTests
         var elements = Enumerable.Range(1, 10)
                                  .Select(t => new LogEntry(new(t), $"data{t}"))
                                  .ToArray();
-        var log = new InMemoryLog(elements);
+        var log = CreateLogInMemory(elements);
         var lastEntry = log.LastEntry;
         Assert.False(log.Conflicts(lastEntry with {Index = lastEntry.Index + indexDelta}));
     }
@@ -503,7 +515,7 @@ public class InMemoryLogTests
         var elements = Enumerable.Range(1, 10)
                                  .Select(t => new LogEntry(new(t), $"data{t}"))
                                  .ToArray();
-        var log = new InMemoryLog(elements);
+        var log = CreateLogInMemory(elements);
         var lastEntry = log.LastEntry;
         Assert.True(log.Conflicts(lastEntry with {Index = lastEntry.Index - indexDelta}));
     }
@@ -521,7 +533,7 @@ public class InMemoryLogTests
         var elements = Enumerable.Range(1, 10)
                                  .Select(t => new LogEntry(new(t), $"data{t}"))
                                  .ToArray();
-        var log = new InMemoryLog(elements);
+        var log = CreateLogInMemory(elements);
         var lastEntry = log.LastEntry;
         Assert.True(log.Conflicts(new LogEntryInfo(new( lastEntry.Term.Value - termDelta ), lastEntry.Index + indexDelta)));
     }

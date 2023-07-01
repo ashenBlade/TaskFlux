@@ -8,7 +8,7 @@ using Raft.Core.Log;
 using Raft.Core.Node;
 using Serilog;
 
-namespace Raft.Server.HttpModule;
+namespace Raft.Host.HttpModule;
 
 public class SubmitCommandRequestHandler: IRequestHandler
 {

@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel.DataAnnotations;
-using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Configuration;
@@ -8,23 +7,23 @@ using Raft.Core;
 using Raft.Core.Log;
 using Raft.Core.Node;
 using Raft.JobQueue;
-using Raft.Log.InMemory;
 using Raft.Peer;
 using Raft.Peer.Decorators;
-using Raft.Server;
-using Raft.Server.HttpModule;
-using Raft.Server.Infrastructure;
-using Raft.Server.Options;
+using Raft.Host;
+using Raft.Host.HttpModule;
+using Raft.Host.Infrastructure;
+using Raft.Host.Options;
 using Raft.Storage.InMemory;
 using Raft.Timers;
 using Serilog;
+
 // ReSharper disable CoVariantArrayConversion
 
 Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Verbose()
-            .Enrich.FromLogContext()
-            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss.ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
-            .CreateLogger();
+                    .MinimumLevel.Verbose()
+                    .Enrich.FromLogContext()
+                    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss.ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
+                    .CreateLogger();
 
 var configuration = new ConfigurationBuilder()
                    .AddEnvironmentVariables()
@@ -61,7 +60,7 @@ Log.Logger.Information("Узлы кластера: {Peers}", serverOptions.Peers
 using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
 using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
 
-var log = new InMemoryLog(Enumerable.Empty<LogEntry>());
+var log = new StorageLog(new InMemoryLogStorage());
 var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
 
 using var commandQueue = new ChannelCommandQueue();
@@ -70,7 +69,7 @@ var stateMachine = new NullStateMachine();
 
 using var node = RaftNode.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine, storage);
 var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, node, Log.Logger.ForContext<NodeConnectionManager>());
-var server = new RaftStateObserver(node, Log.Logger.ForContext<RaftStateObserver>());
+var server = new NodeStateObserver(node, Log.Logger.ForContext<NodeStateObserver>());
 
 var httpModule = CreateHttpRequestModule(configuration);
 

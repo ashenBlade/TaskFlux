@@ -2,7 +2,7 @@ using Raft.Core;
 using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 
-namespace Raft.Server.Infrastructure;
+namespace Raft.Host.Infrastructure;
 
 /// <summary>
 /// Используется при тестах на одной машине, чтобы не грузить бесконечными запросами соединения

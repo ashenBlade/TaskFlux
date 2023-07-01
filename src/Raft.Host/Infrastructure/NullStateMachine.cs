@@ -1,6 +1,6 @@
 using Raft.Core.Node;
 
-namespace Raft.Server.Infrastructure;
+namespace Raft.Host.Infrastructure;
 
 public class NullStateMachine: IStateMachine
 {

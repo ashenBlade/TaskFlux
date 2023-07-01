@@ -2,7 +2,7 @@
   raft.server.1:
     build:
       context: src
-      dockerfile: Raft.Server/Dockerfile
+      dockerfile: Raft.Host/Dockerfile
     ports:
       - '9000:2602'
     environment:
@@ -22,7 +22,7 @@
   raft.server.2:
     build:
       context: src
-      dockerfile: Raft.Server/Dockerfile
+      dockerfile: Raft.Host/Dockerfile
     ports:
       - '9001:2602'
     environment:
@@ -42,7 +42,7 @@
   raft.server.3:
     build:
       context: src
-      dockerfile: Raft.Server/Dockerfile
+      dockerfile: Raft.Host/Dockerfile
     ports:
       - '9002:2602'
     environment:

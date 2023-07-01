@@ -7,9 +7,9 @@ public readonly record struct Term
     public int Value { get; } = StartTerm;
     public Term(int term)
     {
-        if (term <= 0)
+        if (term < StartTerm)
         {
-            throw new ArgumentOutOfRangeException(nameof(term), term, "Терм может быть только положительным");
+            throw new ArgumentOutOfRangeException(nameof(term), term, $"Терм не может быть меньше начального {StartTerm}");
         }
 
         Value = term;

@@ -3,15 +3,15 @@ using Serilog;
 
 // ReSharper disable ContextualLoggerProblem
 
-namespace Raft.Server;
+namespace Raft.Host;
 
-public class RaftStateObserver
+public class NodeStateObserver
 {
     private readonly RaftNode _node;
     private readonly ILogger _logger;
 
 
-    public RaftStateObserver(RaftNode node, ILogger logger)
+    public NodeStateObserver(RaftNode node, ILogger logger)
     {
         _node = node;
         _logger = logger;
@@ -23,7 +23,7 @@ public class RaftStateObserver
         {
             while (token.IsCancellationRequested is false)
             {
-                _logger.Information("Состояние: {State}; Терм {Term}; Лог: {@Entries}; Голос За: {VotedFor}", _node.CurrentRole, _node.CurrentTerm, _node.Log, _node.VotedFor);
+                _logger.Information("Состояние: {State}; Терм {Term}; Лог: {@Entries}; Голос За: {VotedFor}", _node.CurrentRole, _node.CurrentTerm, _node.Log.ReadLog(), _node.VotedFor);
                 await Task.Delay(TimeSpan.FromSeconds(2.5), token);
             }
         }

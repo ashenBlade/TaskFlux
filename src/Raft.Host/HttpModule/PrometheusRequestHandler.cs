@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using Raft.Core.Node;
 
-namespace Raft.Server.HttpModule;
+namespace Raft.Host.HttpModule;
 
 public class PrometheusRequestHandler: IRequestHandler
 {

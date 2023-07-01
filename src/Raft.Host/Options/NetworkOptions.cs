@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 
-namespace Raft.Server.Options;
+namespace Raft.Host.Options;
 
 public class NetworkOptions
 {
