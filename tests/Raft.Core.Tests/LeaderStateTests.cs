@@ -190,7 +190,7 @@ public class LeaderStateTests
 
         var log = new Mock<ILog>().Apply(l =>
         {
-            l.SetupGet(x => x.ReadLog()).Returns(Array.Empty<LogEntry>());
+            l.Setup(x => x.ReadLog()).Returns(Array.Empty<LogEntry>());
             l.Setup(x => x.Contains(It.IsAny<LogEntryInfo>())).Returns(true);
         });
 
