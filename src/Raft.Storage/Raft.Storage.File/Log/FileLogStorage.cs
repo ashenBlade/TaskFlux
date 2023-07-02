@@ -42,8 +42,7 @@ public class FileLogStorage: ILogStorage
     /// Список отображений: индекс записи - позиция в файле (потоке)
     /// </summary>
     private List<PositionTerm>? _index;
-    private List<PositionTerm> Index => _index ?? throw new IncompleteInitializationException("Список индексов не был инициализирован");
-    
+
     /// <summary>
     /// Флаг инициализации
     /// </summary>
@@ -53,17 +52,17 @@ public class FileLogStorage: ILogStorage
     {
         if (!file.CanRead)
         {
-            throw new IOException("Переданный поток не поддерживает чтение");
+            throw new ArgumentException("Переданный поток не поддерживает чтение", nameof(file));
         }
 
         if (!file.CanSeek)
         {
-            throw new IOException("Переданный поток не поддерживает позиционирование");
+            throw new ArgumentException("Переданный поток не поддерживает позиционирование", nameof(file));
         }
 
         if (!file.CanWrite)
         {
-            throw new IOException("Переданный поток не поддерживает запись");
+            throw new ArgumentException("Переданный поток не поддерживает запись", nameof(file));
         }
         
         _file = file;
@@ -158,17 +157,17 @@ public class FileLogStorage: ILogStorage
             throw;
         }
         
-        Index.Add(new PositionTerm(entry.Term, savedLastPosition));
-        return new LogEntryInfo(entry.Term, Index.Count - 1);
+        _index!.Add(new PositionTerm(entry.Term, savedLastPosition));
+        return new LogEntryInfo(entry.Term, _index.Count - 1);
     }
 
     public LogEntryInfo AppendRange(IEnumerable<LogEntry> entries, int index)
     {
         CheckInitialized();
         
-        if (Index.Count < index)
+        if (_index!.Count < index)
         {
-            throw new ArgumentOutOfRangeException(nameof(index), index, $"Индекс для вставки записи превысил наибольший хранимый индекс {Index.Count}");
+            throw new ArgumentOutOfRangeException(nameof(index), index, $"Индекс для вставки записи превысил наибольший хранимый индекс {_index.Count}");
         }
 
         // Вместо поочередной записи используем буффер в памяти.
@@ -180,20 +179,21 @@ public class FileLogStorage: ILogStorage
         var newIndexes = new List<PositionTerm>();
         using var memory = new MemoryStream(( sizeof(int) + 128 ) * entriesArray.Length);
         using var writer = new BinaryWriter(memory, Encoding, true);
+        var oldLength = _file.Length;
         
-        var startPosition = index == Index.Count 
+        var startPosition = index == _index!.Count
                                 ? _file.Length
-                                : _index![index].Position;
-        
+                                : _index[index].Position;
+
         foreach (var entry in entriesArray)
         {
+            var currentPosition = startPosition + memory.Position;
             writer.Write(entry.Term.Value);
             writer.Write(entry.Data);
-            newIndexes.Add(new PositionTerm(entry.Term, startPosition + memory.Length));
+            newIndexes.Add(new PositionTerm(entry.Term, currentPosition));
         }
-        
-        
-        if (index == Index.Count)
+
+        if (index == _index.Count)
         {
             _file.Seek(0, SeekOrigin.End);
         }
@@ -205,6 +205,14 @@ public class FileLogStorage: ILogStorage
         var dataBytes = memory.ToArray();
         _writer.Write(dataBytes);
         _writer.Flush();
+        
+        // Текущая позиция в файле находится в самом конце актуальных данных
+        // Если не обрезать файл, то будут читаться мусорные байты
+        // Потом надо заменить на специальный маркер
+        if (_file.Position < oldLength)
+        {
+            _file.SetLength(_file.Position);
+        }
             
         _index!.RemoveRange(index, _index.Count - index);
         _index.AddRange(newIndexes);
@@ -216,9 +224,9 @@ public class FileLogStorage: ILogStorage
     {
         CheckInitialized();
         
-        return Index.Count == 0
+        return _index!.Count == 0
                    ? LogEntryInfo.Tomb
-                   : new LogEntryInfo(Index[^1].Term, Index.Count - 1);
+                   : new LogEntryInfo(_index[^1].Term, _index.Count - 1);
     }
     
 
@@ -232,7 +240,7 @@ public class FileLogStorage: ILogStorage
                 "Следующий индекс записи в логе не может быть отрицательным");
         }
 
-        if (nextIndex > Index.Count)
+        if (nextIndex > _index!.Count)
         {
             throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
                 "Следующий индекс записи в логе не может быть больше размера лога");
@@ -240,19 +248,19 @@ public class FileLogStorage: ILogStorage
 
         return nextIndex == 0
                    ? LogEntryInfo.Tomb
-                   : new LogEntryInfo(Index[nextIndex - 1].Term, nextIndex - 1);
+                   : new LogEntryInfo(_index[nextIndex - 1].Term, nextIndex - 1);
     }
 
     public LogEntryInfo GetLastLogEntry()
     {
         CheckInitialized();
         
-        if (Index.Count == 0)
+        if (_index!.Count == 0)
         {
             return LogEntryInfo.Tomb;
         }
 
-        return new LogEntryInfo(Index[^1].Term, Index.Count - 1);
+        return new LogEntryInfo(_index[^1].Term, _index.Count - 1);
     }
     
     public IReadOnlyList<LogEntry> ReadAll()
@@ -265,11 +273,11 @@ public class FileLogStorage: ILogStorage
     public IReadOnlyList<LogEntry> ReadFrom(int startIndex)
     {
         CheckInitialized();
-        if (Index.Count == startIndex)
+        if (_index!.Count == startIndex)
         {
             return Array.Empty<LogEntry>();
         }
-        var position = Index[startIndex].Position;
+        var position = _index[startIndex].Position;
         return ReadLogCore(position);
     }
 
@@ -292,7 +300,7 @@ public class FileLogStorage: ILogStorage
     {
         CheckInitialized();
         
-        return new LogEntryInfo(Index[index].Term, index);
+        return new LogEntryInfo(_index![index].Term, index);
     }
 
     private static void Serialize(LogEntry entry, BinaryWriter writer)
@@ -301,9 +309,22 @@ public class FileLogStorage: ILogStorage
         writer.Write(entry.Data);
     }
 
-    public static FileLogStorage Initialize(Stream fileStream)
+    /// <summary>
+    /// Создать новый <see cref="FileLogStorage"/> и тут же его инициализировать
+    /// </summary>
+    /// <param name="stream">Переданный поток. В проде - файл (<see cref="FileStream"/>)</param>
+    /// <returns>Новый, иницилизированный <see cref="FileLogStorage"/></returns>
+    /// <exception cref="ArgumentException"><paramref name="stream"/> - не поддерживает чтение, запись или позиционирование</exception>
+    /// <exception cref="InvalidDataException">
+    /// Обнаружены ошибки во время инициализации файла (потока) данных: <br/>
+    ///    - Поток не пуст и при этом его размер меньше минимального (размер заголовка) <br/> 
+    ///    - Полученное магическое число не соответствует требуемому <br/>
+    ///    - Указанная в файле версия несовместима с текущей <br/>\
+    /// </exception>
+    /// <exception cref="IOException">Ошибка во время чтения из потока</exception>
+    public static FileLogStorage Initialize(Stream stream)
     {
-        var logStorage = new FileLogStorage(fileStream);
+        var logStorage = new FileLogStorage(stream);
         logStorage.Initialize();
         return logStorage;
     }

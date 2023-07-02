@@ -181,9 +181,9 @@ ILogStorage CreateLogStorage(Stream stream)
     {
         logStorage = FileLogStorage.Initialize(stream);
     }
-    catch (IncompleteInitializationException initializationException)
+    catch (InvalidDataException invalidDataException)
     {
-        Log.Fatal(initializationException, "Ошибка при инициализации лога из переданного файла");
+        Log.Fatal(invalidDataException, "Ошибка при инициализации лога из переданного файла");
         throw;
     }
     catch (Exception e)

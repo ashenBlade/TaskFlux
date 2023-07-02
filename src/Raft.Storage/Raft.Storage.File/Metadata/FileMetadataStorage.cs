@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics.Arm;
 using System.Text;
 using Raft.Core;
 
@@ -37,6 +38,21 @@ public class FileMetadataStorage: IMetadataStorage
     
     public FileMetadataStorage(Stream file, Term initialTerm, NodeId? initialVotedFor)
     {
+        if (!file.CanRead)
+        {
+            throw new ArgumentException("Переданный поток не поддерживает чтение", nameof(file));
+        }
+
+        if (!file.CanSeek)
+        {
+            throw new ArgumentException("Переданный поток не поддерживает позиционирование", nameof(file));
+        }
+
+        if (!file.CanWrite)
+        {
+            throw new ArgumentException("Переданный поток не поддерживает запись", nameof(file));
+        }
+        
         _file = file;
         InitialTerm = initialTerm;
         InitialVotedFor = initialVotedFor;
@@ -162,6 +178,21 @@ public class FileMetadataStorage: IMetadataStorage
         }
     }
 
+    /// <summary>
+    /// Создать новый <see cref="FileMetadataStorage"/> и тут же его иницилизировать
+    /// </summary>
+    /// <param name="stream">Поток хранимых данных. На проде - это файл (<see cref="FileStream"/>)</param>
+    /// <param name="defaultTerm">Терм по умолчанию, если исходный файл был пуст/не иницилизирован</param>
+    /// <param name="defaultVotedFor">Отданный голос по умолчанию, если исходный файл был пуст/не иницилизирован</param>
+    /// <returns>Новый, инициализированный <see cref="FileMetadataStorage"/></returns>
+    /// <exception cref="ArgumentException"><paramref name="stream"/> - не поддерживает чтение, запись или позиционирование</exception>
+    /// <exception cref="InvalidDataException">
+    /// Обнаружены ошибки во время инициализации файла (потока) данных: <br/>
+    ///    - Поток не пуст и при этом его размер меньше минимального (размер заголовка) <br/> 
+    ///    - Полученное магическое число не соответствует требуемому <br/>
+    ///    - Указанная в файле версия несовместима с текущей <br/>\
+    /// </exception>
+    /// <exception cref="IOException">Во время чтения данных произошла ошибка</exception>
     public static FileMetadataStorage Initialize(Stream stream, Term defaultTerm, NodeId? defaultVotedFor)
     {
         var storage = new FileMetadataStorage(stream, defaultTerm, defaultVotedFor);
