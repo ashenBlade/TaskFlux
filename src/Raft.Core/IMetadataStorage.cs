@@ -5,13 +5,13 @@ public interface IMetadataStorage
     /// <summary>
     /// Последний сохраненный терм
     /// </summary>
-    public Term Term { get; }
-    
+    public Term ReadTerm();
+
     /// <summary>
     /// Последний отданный голос
     /// </summary>
-    public NodeId? VotedFor { get; }
-    
+    public NodeId? ReadVotedFor();
+
     /// <summary>
     /// Атомарно обновить метаданные узла
     /// </summary>

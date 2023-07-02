@@ -15,8 +15,8 @@ public class RaftNode: IDisposable, INode
         ( ( INode ) this ).CurrentState.Role;
     public ILogger Logger { get; }
     public NodeId Id { get; }
-    public Term CurrentTerm => MetadataStorage.Term;
-    public NodeId? VotedFor => MetadataStorage.VotedFor;
+    public Term CurrentTerm => MetadataStorage.ReadTerm();
+    public NodeId? VotedFor => MetadataStorage.ReadVotedFor();
     public PeerGroup PeerGroup { get; }
     public IStateMachine StateMachine { get; }
     public IMetadataStorage MetadataStorage { get; }

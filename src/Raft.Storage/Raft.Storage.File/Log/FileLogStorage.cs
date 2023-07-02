@@ -7,12 +7,7 @@ namespace Raft.Storage.File;
 
 public class FileLogStorage: ILogStorage
 {
-    private const int Marker = 0x2F6F0F2F;
-
-    /// <summary>
-    /// Позиция, на которой расположено число версии
-    /// </summary>
-    private const int VersionPositionByte = 4;
+    private const int Marker = Constants.Marker;
 
     /// <summary>
     /// Версия-константа для бинарной совместимости.
@@ -39,6 +34,9 @@ public class FileLogStorage: ILogStorage
     /// Используется базовый <see cref="Stream"/> вместо <see cref="FileStream"/> для тестирования
     /// </remarks>
     private readonly Stream _file;
+
+    private readonly BinaryReader _reader;
+    private readonly BinaryWriter _writer;
 
     /// <summary>
     /// Список отображений: индекс записи - позиция в файле (потоке)
@@ -69,6 +67,8 @@ public class FileLogStorage: ILogStorage
         }
         
         _file = file;
+        _writer = new BinaryWriter(file, Encoding, true);
+        _reader = new BinaryReader(file, Encoding, true);
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -88,12 +88,10 @@ public class FileLogStorage: ILogStorage
         if (_file.Length == 0)
         {
             _file.Seek(0, SeekOrigin.Begin);
-            // Файл пуст
-            using (var writer = new BinaryWriter(_file, Encoding, true))
-            {
-                writer.Write(Marker);
-                writer.Write(CurrentVersion);
-            }
+            _writer.Write(Marker);
+            _writer.Write(CurrentVersion);
+            _writer.Flush();
+            
             _index = new List<PositionTerm>();
             _initialized = true;
             return;
@@ -108,14 +106,13 @@ public class FileLogStorage: ILogStorage
         _file.Seek(0, SeekOrigin.Begin);
         
         // Валидируем заголовок
-        using var reader = new BinaryReader(_file, Encoding, true);
-        var marker = reader.ReadInt32();
+        var marker = _reader.ReadInt32();
         if (marker != Marker)
         {
             throw new InvalidDataException($"Считанный из файла маркер не равен требуемому. Ожидалось: {Marker}. Получено: {marker}");
         }
 
-        var version = reader.ReadInt32();
+        var version = _reader.ReadInt32();
         if (CurrentVersion < version)
         {
             throw new InvalidDataException(
@@ -127,11 +124,11 @@ public class FileLogStorage: ILogStorage
         // Воссоздаем индекс
         try
         {
-            while (reader.PeekChar() != -1)
+            while (_reader.PeekChar() != -1)
             {
                 var position = _file.Position;
-                var term = reader.ReadInt32();
-                var stringLength = reader.Read7BitEncodedInt();
+                var term = _reader.ReadInt32();
+                var stringLength = _reader.Read7BitEncodedInt();
                 _file.Seek(stringLength, SeekOrigin.Current);
                 index.Add(new PositionTerm(new Term(term), position));
             }
@@ -148,21 +145,20 @@ public class FileLogStorage: ILogStorage
     public LogEntryInfo Append(LogEntry entry)
     {
         CheckInitialized();
-        
-        var initialPosition = _file.Position;
+
+        var savedLastPosition = _file.Seek(0, SeekOrigin.End);
         try
         {
-            using var writer = new BinaryWriter(_file, Encoding, true);
-            Serialize(entry, writer);
-            writer.Flush();
+            Serialize(entry, _writer);
+            _writer.Flush();
         }
         catch (Exception)
         {
-            try { _file.Position = initialPosition; } catch (Exception) { /* */ }
+            try { _file.Position = savedLastPosition; } catch (Exception) { /* */ }
             throw;
         }
         
-        Index.Add(new PositionTerm(entry.Term, initialPosition));
+        Index.Add(new PositionTerm(entry.Term, savedLastPosition));
         return new LogEntryInfo(entry.Term, Index.Count - 1);
     }
 
@@ -175,7 +171,6 @@ public class FileLogStorage: ILogStorage
             throw new ArgumentOutOfRangeException(nameof(index), index, $"Индекс для вставки записи превысил наибольший хранимый индекс {Index.Count}");
         }
 
-        
         // Вместо поочередной записи используем буффер в памяти.
         // Сначала запишем сериализованные данные на него, одновременно создавая новые записи индекса.
         // После быстро запишем данные на диск и обновим список индексов 
@@ -185,7 +180,11 @@ public class FileLogStorage: ILogStorage
         var newIndexes = new List<PositionTerm>();
         using var memory = new MemoryStream(( sizeof(int) + 128 ) * entriesArray.Length);
         using var writer = new BinaryWriter(memory, Encoding, true);
-        var startPosition = _file.Position + 1;
+        
+        var startPosition = index == Index.Count 
+                                ? _file.Length
+                                : _index![index].Position;
+        
         foreach (var entry in entriesArray)
         {
             writer.Write(entry.Term.Value);
@@ -193,9 +192,6 @@ public class FileLogStorage: ILogStorage
             newIndexes.Add(new PositionTerm(entry.Term, startPosition + memory.Length));
         }
         
-        var dataBytes = memory.ToArray();
-        
-        _file.Seek(0, SeekOrigin.End);
         
         if (index == Index.Count)
         {
@@ -203,11 +199,12 @@ public class FileLogStorage: ILogStorage
         }
         else
         {
-            _file.Position = Index[index].Position;
+            _file.Seek(startPosition, SeekOrigin.Begin);
         }
         
-        _file.Write(dataBytes);
-        _file.Flush();
+        var dataBytes = memory.ToArray();
+        _writer.Write(dataBytes);
+        _writer.Flush();
             
         _index!.RemoveRange(index, _index.Count - index);
         _index.AddRange(newIndexes);
@@ -280,11 +277,11 @@ public class FileLogStorage: ILogStorage
     {
         _file.Seek(position, SeekOrigin.Begin);
         var list = new List<LogEntry>();
-        using var reader = new BinaryReader(_file, Encoding, true);
-        while (reader.PeekChar() != -1)
+        
+        while (_reader.PeekChar() != -1)
         {
-            var term = new Term(reader.ReadInt32());
-            var data = reader.ReadString();
+            var term = new Term(_reader.ReadInt32());
+            var data = _reader.ReadString();
             list.Add(new LogEntry(term, data));
         }
 

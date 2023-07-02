@@ -7,9 +7,25 @@ public class StubMetadataStorage: IMetadataStorage
         Term = term;
         VotedFor = votedFor;
     }
-    
-    public Term Term { get; set; }
-    public NodeId? VotedFor { get; set; }
+
+    private Term _term;
+
+    public Term Term
+    {
+        set => _term = value;
+    }
+
+    public Term ReadTerm() => _term;
+
+    private NodeId? _votedFor;
+
+    public NodeId? VotedFor
+    {
+        set => _votedFor = value;
+    }
+
+    public NodeId? ReadVotedFor() => _votedFor;
+
     public void Update(Term term, NodeId? votedFor)
     {
         Term = term;

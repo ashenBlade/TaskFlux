@@ -29,4 +29,9 @@ public class RaftServerOptions
     [Required]
     [ConfigurationKeyName("LOG_FILE")]
     public string LogFile { get; set; } = null!;
+
+
+    [Required]
+    [ConfigurationKeyName("METADATA_FILE")]
+    public string MetadataFile { get; set; } = null!;
 }

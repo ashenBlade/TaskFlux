@@ -15,7 +15,6 @@ using Raft.Peer;
 using Raft.Peer.Decorators;
 using Raft.Storage.File;
 using Raft.Storage.File.Decorators;
-using Raft.Storage.InMemory;
 using Raft.Timers;
 using Serilog;
 
@@ -57,23 +56,26 @@ var peers = serverOptions.Peers
                           })
                          .ToArray();
 
-Log.Logger.Information("Узлы кластера: {Peers}", serverOptions.Peers);
+Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
+
+Log.Information("Открываю файл с логом предзаписи");
+await using var fileStream = GetLogFileStream(serverOptions);
+Log.Information("Инициализирую хранилище лога предзаписи");
+var log = new StorageLog(CreateLogStorage(fileStream));
+
+
+Log.Logger.Information("Открываю файл с метаданными");
+await using var metadataFileStream = OpenMetadataFile(serverOptions);
+Log.Logger.Information("Инициализирую хранилище метаданных");
+var metadataStorage = CreateMetadataStorage(metadataFileStream);
 
 using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
 using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
-
-Log.Logger.Information("Начинаю чтение лога с диска");
-await using var fileStream = GetLogFileStream(serverOptions);
-
-var log = new StorageLog(CreateLogStorage(fileStream));
-Log.Logger.Information("Лог считан");
+using var commandQueue = new ChannelCommandQueue();
+var stateMachine = new NullStateMachine();
 var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
 
-using var commandQueue = new ChannelCommandQueue();
-var storage = new InMemoryMetadataStorage(new Term(1), null);
-var stateMachine = new NullStateMachine();
-
-using var node = RaftNode.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine, storage);
+using var node = RaftNode.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine, metadataStorage);
 var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, node, Log.Logger.ForContext<NodeConnectionManager>());
 var server = new NodeStateObserver(node, Log.Logger.ForContext<NodeStateObserver>());
 
@@ -126,6 +128,7 @@ finally
 }
 
 Log.CloseAndFlush();
+
 
 void ValidateOptions( RaftServerOptions peersOptions)
 {
@@ -192,4 +195,42 @@ ILogStorage CreateLogStorage(Stream stream)
     logStorage = new ExclusiveAccessLogStorageDecorator(logStorage);
     logStorage = new LastLogEntryCachingFileLogStorageDecorator(logStorage);
     return logStorage;
+}
+
+FileStream OpenMetadataFile(RaftServerOptions options)
+{
+    try
+    {
+        return File.Open(options.MetadataFile, FileMode.OpenOrCreate);
+    }
+    catch (Exception e)
+    {
+        Log.Fatal(e, "Ошибка во время доступа к файлу с метаданными по пути: {File}", options.MetadataFile);
+        throw;
+    }
+}
+
+IMetadataStorage CreateMetadataStorage(Stream stream)
+{
+    stream = new BufferedStream(stream);
+    IMetadataStorage storage;
+    try
+    {
+        storage = FileMetadataStorage.Initialize(stream, new Term(1), null);
+    }
+    catch (InvalidDataException invalidDataException)
+    {
+        Log.Fatal(invalidDataException, "Переданный файл метаданных был в невалидном состоянии");
+        throw;
+    }
+    catch (Exception e)
+    {
+        Log.Fatal(e, "Ошибка во время инициализации файла метаданных");
+        throw;
+    }
+    
+    storage = new CachingFileMetadataStorageDecorator(storage);
+    storage = new ExclusiveAccessMetadataStorageDecorator(storage);
+    
+    return storage;
 }
