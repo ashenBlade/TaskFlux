@@ -6,13 +6,15 @@ using Raft.CommandQueue;
 using Raft.Core;
 using Raft.Core.Log;
 using Raft.Core.Node;
-using Raft.JobQueue;
-using Raft.Peer;
-using Raft.Peer.Decorators;
 using Raft.Host;
 using Raft.Host.HttpModule;
 using Raft.Host.Infrastructure;
 using Raft.Host.Options;
+using Raft.JobQueue;
+using Raft.Peer;
+using Raft.Peer.Decorators;
+using Raft.Storage.File;
+using Raft.Storage.File.Decorators;
 using Raft.Storage.InMemory;
 using Raft.Timers;
 using Serilog;
@@ -20,10 +22,10 @@ using Serilog;
 // ReSharper disable CoVariantArrayConversion
 
 Log.Logger = new LoggerConfiguration()
-                    .MinimumLevel.Verbose()
-                    .Enrich.FromLogContext()
-                    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss.ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
-                    .CreateLogger();
+            .MinimumLevel.Verbose()
+            .Enrich.FromLogContext()
+            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss.ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
+            .CreateLogger();
 
 var configuration = new ConfigurationBuilder()
                    .AddEnvironmentVariables()
@@ -60,7 +62,11 @@ Log.Logger.Information("Узлы кластера: {Peers}", serverOptions.Peers
 using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
 using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
 
-var log = new StorageLog(new InMemoryLogStorage());
+Log.Logger.Information("Начинаю чтение лога с диска");
+await using var fileStream = GetLogFileStream(serverOptions);
+
+var log = new StorageLog(CreateLogStorage(fileStream));
+Log.Logger.Information("Лог считан");
 var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
 
 using var commandQueue = new ChannelCommandQueue();
@@ -74,10 +80,10 @@ var server = new NodeStateObserver(node, Log.Logger.ForContext<NodeStateObserver
 var httpModule = CreateHttpRequestModule(configuration);
 
 var nodeConnectionThread = new Thread(o =>
-{
-    var (value, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
-    value.Run(token);
-})
+    {
+        var (value, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
+        value.Run(token);
+    })
     {
         Priority = ThreadPriority.Highest, 
         Name = "Обработчик подключений узлов",
@@ -121,7 +127,7 @@ finally
 
 Log.CloseAndFlush();
 
-void ValidateOptions(RaftServerOptions peersOptions)
+void ValidateOptions( RaftServerOptions peersOptions)
 {
     var errors = new List<ValidationResult>();
     if (!Validator.TryValidateObject(peersOptions, new ValidationContext(peersOptions), errors, true))
@@ -147,6 +153,43 @@ EndPoint GetEndpoint(string host, int port)
     {
         return new IPEndPoint(ip, port);
     }
-
+    
     return new DnsEndPoint(host, port);
+}
+
+FileStream GetLogFileStream(RaftServerOptions options)
+{
+    try
+    {
+        return File.Open(options.LogFile, FileMode.OpenOrCreate, FileAccess.ReadWrite);
+    }
+    catch (Exception e)
+    {
+        Log.Fatal(e, "Не удалось получить доступ к файлу лога {Filename}", options.LogFile);
+        throw;
+    }
+}
+
+ILogStorage CreateLogStorage(Stream stream)
+{
+    stream = new BufferedStream(stream);
+    ILogStorage logStorage;
+    try
+    {
+        logStorage = FileLogStorage.Initialize(stream);
+    }
+    catch (IncompleteInitializationException initializationException)
+    {
+        Log.Fatal(initializationException, "Ошибка при инициализации лога из переданного файла");
+        throw;
+    }
+    catch (Exception e)
+    {
+        Log.Fatal(e, "Неизвестная ошибка при инициализации лога");
+        throw;
+    }
+
+    logStorage = new ExclusiveAccessLogStorageDecorator(logStorage);
+    logStorage = new LastLogEntryCachingFileLogStorageDecorator(logStorage);
+    return logStorage;
 }

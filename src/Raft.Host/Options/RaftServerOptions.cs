@@ -25,4 +25,8 @@ public class RaftServerOptions
 
     [ConfigurationKeyName("ELECTION_TIMEOUT")]
     public TimeSpan ElectionTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    [Required]
+    [ConfigurationKeyName("LOG_FILE")]
+    public string LogFile { get; set; } = null!;
 }

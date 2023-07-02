@@ -6,7 +6,7 @@ public class StorageLog: ILog
     public LogEntryInfo LastEntry => _storage.GetLastLogEntry();
     public int CommitIndex { get; set; }
     public int LastApplied { get; set; }
-    public IReadOnlyList<LogEntry> ReadLog() => _storage.GetAllEntries();
+    public IReadOnlyList<LogEntry> ReadLog() => _storage.ReadAll();
 
     public StorageLog(ILogStorage storage)
     {
@@ -62,7 +62,7 @@ public class StorageLog: ILog
 
         
         if (prefix.Index <= LastEntry.Index && // Наш лог не меньше (используется PrevLogEntry, поэтому нет +1)
-            prefix.Term == _storage.GetAt(prefix.Index).Term) // Термы записей одинковые
+            prefix.Term == _storage.GetAt(prefix.Index).Term) // Термы записей одинаковые
         {
             return true;
         }
@@ -77,7 +77,7 @@ public class StorageLog: ILog
         {
             return Array.Empty<LogEntry>();
         }
-        return _storage.GetFrom(index);
+        return _storage.ReadFrom(index);
     }
 
     public void Commit(int index)

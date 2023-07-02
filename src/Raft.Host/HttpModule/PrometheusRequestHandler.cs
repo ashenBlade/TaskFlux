@@ -19,7 +19,7 @@ public class PrometheusRequestHandler: IRequestHandler
         {
             builder.AppendLine("# TYPE raft_current_role gauge");
             builder.AppendLine("# HELP raft_current_role Current role of node");
-            builder.AppendLine($@"raft_current_role {( int ) _node.CurrentRole} 1688183586760");
+            builder.AppendLine($@"raft_current_role {( int ) _node.CurrentRole} 4");
         }
 
         builder.AppendLine();
@@ -27,13 +27,13 @@ public class PrometheusRequestHandler: IRequestHandler
         {
             builder.AppendLine("# TYPE raft_current_term gauge");
             builder.AppendLine("# HELP raft_current_term Current term of node");
-            builder.AppendLine($@"raft_current_term {_node.CurrentTerm.Value} 1688183586760");
+            builder.AppendLine($@"raft_current_term {_node.CurrentTerm.Value} 1688219093125");
         }
 
-        builder.AppendLine();
-        builder.AppendLine("# EOF");
+        builder.AppendLine("\n# EOF");
         
-        response.ContentType = "text/plain; charset=utf-8";
+        response.ContentType = "text/plain; charset=utf-8; version=0.0.4";
+        response.Headers.Add("Last-Modified", DateTime.Now.ToString("R"));
         response.StatusCode = 200;
         
         await using var writer = new StreamWriter(response.OutputStream, Encoding.UTF8);

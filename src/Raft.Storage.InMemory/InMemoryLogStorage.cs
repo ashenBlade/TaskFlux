@@ -49,7 +49,7 @@ public class InMemoryLogStorage: ILogStorage
         return GetLastLogEntryCore();
     }
 
-    public IReadOnlyList<LogEntry> GetAllEntries()
+    public IReadOnlyList<LogEntry> ReadAll()
     {
         return _log;
     }
@@ -72,7 +72,7 @@ public class InMemoryLogStorage: ILogStorage
         return new LogEntryInfo(last.Term, _log.Count - 1);
     }
 
-    public IReadOnlyList<LogEntry> GetFrom(int startIndex)
+    public IReadOnlyList<LogEntry> ReadFrom(int startIndex)
     {
         return _log.GetRange(startIndex, _log.Count - startIndex);
     }

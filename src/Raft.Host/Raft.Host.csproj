@@ -15,6 +15,7 @@
       <ProjectReference Include="..\Raft.JobQueue\Raft.JobQueue.csproj" />
       <ProjectReference Include="..\Raft.Peer\Raft.Peer.csproj" />
       <ProjectReference Include="..\Raft.Storage.InMemory\Raft.Storage.InMemory.csproj" />
+      <ProjectReference Include="..\Raft.Storage\Raft.Storage.File\Raft.Storage.File.csproj" />
       <ProjectReference Include="..\Raft.Timers\Raft.Timers.csproj" />
     </ItemGroup>
 

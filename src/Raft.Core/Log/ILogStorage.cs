@@ -21,7 +21,7 @@ public interface ILogStorage
     /// Получить все записи, хранящиеся в логе
     /// </summary>
     /// <returns>Все записи из лога</returns>
-    public IReadOnlyList<LogEntry> GetAllEntries();
+    public IReadOnlyList<LogEntry> ReadAll();
     
     /// <summary>
     /// Получить информацию о предшествующей записе из лога
@@ -40,7 +40,7 @@ public interface ILogStorage
     /// </summary>
     /// <param name="startIndex">Индекс, начиная с которого получить записи лога</param>
     /// <returns>Записи лога</returns>
-    public IReadOnlyList<LogEntry> GetFrom(int startIndex);
+    public IReadOnlyList<LogEntry> ReadFrom(int startIndex);
 
     /// <summary>
     /// Получить информацию о записи по индексу
