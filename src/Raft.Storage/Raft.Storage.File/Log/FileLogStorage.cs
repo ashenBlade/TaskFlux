@@ -123,13 +123,13 @@ public class FileLogStorage: ILogStorage
         // Воссоздаем индекс
         try
         {
-            while (_reader.PeekChar() != -1)
+            long filePosition;
+            while ((filePosition = _file.Position ) < _file.Length)
             {
-                var position = _file.Position;
                 var term = _reader.ReadInt32();
                 var stringLength = _reader.Read7BitEncodedInt();
                 _file.Seek(stringLength, SeekOrigin.Current);
-                index.Add(new PositionTerm(new Term(term), position));
+                index.Add(new PositionTerm(new Term(term), filePosition));
             }
         }
         catch (EndOfStreamException e)
@@ -286,7 +286,7 @@ public class FileLogStorage: ILogStorage
         _file.Seek(position, SeekOrigin.Begin);
         var list = new List<LogEntry>();
         
-        while (_reader.PeekChar() != -1)
+        while (_file.Position != _file.Length)
         {
             var term = new Term(_reader.ReadInt32());
             var data = _reader.ReadString();

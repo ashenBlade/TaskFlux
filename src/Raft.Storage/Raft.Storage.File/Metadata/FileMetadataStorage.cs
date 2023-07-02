@@ -137,18 +137,19 @@ public class FileMetadataStorage: IMetadataStorage
                 $"Хранившаяся в файле версия больше текущей. Считанная версия: {version}. Текущая версия: {CurrentVersion}");
         }
 
-        if (_reader.PeekChar() == -1)
+        
+        if (_file.Position == _file.Length)
         {
             // Дальше нет данных, поэтому инициализируем начальными 
             WriteAll(InitialTerm, InitialVotedFor, _writer);
             _initialized = true;
             return;
         }
-
+        
         // Пропускаем чтение терма
         _writer.Seek(sizeof(int), SeekOrigin.Current);
 
-        if (_reader.PeekChar() == -1)
+        if (_file.Position == _file.Length)
         {
             WriteVote(InitialVotedFor, _writer);   
         }
