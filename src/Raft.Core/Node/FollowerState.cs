@@ -6,7 +6,7 @@ using Serilog;
 
 namespace Raft.Core.Node;
 
-internal class  FollowerState: BaseNodeState
+internal class FollowerState: BaseNodeState
 {
     public override NodeRole Role => NodeRole.Follower;
     private readonly ILogger _logger;
@@ -32,8 +32,9 @@ internal class  FollowerState: BaseNodeState
         if (CurrentTerm < request.CandidateTerm)
         {
             _logger.Debug("Получен RequestVote с большим термом {MyTerm} < {NewTerm}. Перехожу в Follower", CurrentTerm, request.CandidateTerm);
-            CurrentTerm = request.CandidateTerm;
-            VotedFor = request.CandidateId;
+            // CurrentTerm = request.CandidateTerm;
+            // VotedFor = request.CandidateId;
+            Node.UpdateState(request.CandidateTerm, request.CandidateId);
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -49,8 +50,9 @@ internal class  FollowerState: BaseNodeState
             // У которого лог в консистентном с нашим состоянием
             !Log.Conflicts(request.LastLogEntryInfo))
         {
-            CurrentTerm = request.CandidateTerm;
-            VotedFor = request.CandidateId;
+            // CurrentTerm = request.CandidateTerm;
+            // VotedFor = request.CandidateId;
+            Node.UpdateState(request.CandidateTerm, request.CandidateId);
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -72,8 +74,9 @@ internal class  FollowerState: BaseNodeState
 
         if (CurrentTerm < request.Term)
         {
-            CurrentTerm = request.Term;
-            VotedFor = null;
+            // CurrentTerm = request.Term;
+            // VotedFor = null;
+            Node.UpdateState(request.Term, null);
         }
         
         if (Log.Contains(request.PrevLogEntryInfo) is false)
@@ -90,7 +93,6 @@ internal class  FollowerState: BaseNodeState
         {
             Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
         }
-
 
         return AppendEntriesResponse.Ok(CurrentTerm);
     }

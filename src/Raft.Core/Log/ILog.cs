@@ -2,7 +2,7 @@ namespace Raft.Core.Log;
 
 public interface ILog
 {
-    public IReadOnlyList<LogEntry> Entries { get; }
+    public IReadOnlyList<LogEntry> ReadLog();
 
     /// <summary>
     /// Содержит ли текущий лог все элементы до указанного индекса включительно

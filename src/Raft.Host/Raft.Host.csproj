@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net6.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+        <LangVersion>latest</LangVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Raft.CommandQueue\Raft.CommandQueue.Channel\Raft.CommandQueue.Channel.csproj" />
+      <ProjectReference Include="..\Raft.Core\Raft.Core.csproj" />
+      <ProjectReference Include="..\Raft.JobQueue\Raft.JobQueue.csproj" />
+      <ProjectReference Include="..\Raft.Peer\Raft.Peer.csproj" />
+      <ProjectReference Include="..\Raft.Storage.InMemory\Raft.Storage.InMemory.csproj" />
+      <ProjectReference Include="..\Raft.Storage\Raft.Storage.File\Raft.Storage.File.csproj" />
+      <ProjectReference Include="..\Raft.Timers\Raft.Timers.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Microsoft.Extensions.Configuration" Version="7.0.0" />
+      <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="7.0.4" />
+      <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="7.0.0" />
+      <PackageReference Include="Serilog" Version="2.12.0" />
+      <PackageReference Include="Serilog.Sinks.Console" Version="4.1.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Content Include="..\..\.dockerignore">
+        <Link>.dockerignore</Link>
+      </Content>
+    </ItemGroup>
+
+</Project>

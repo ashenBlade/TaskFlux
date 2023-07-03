@@ -13,16 +13,21 @@ public interface INode
     /// ID текущего узла
     /// </summary>
     public NodeId Id { get; }
+
+    /// <summary>
+    /// Текущая роль узла
+    /// </summary>
+    public NodeRole CurrentRole => CurrentState.Role;
     
     /// <summary>
     /// Номер текущего терма
     /// </summary>
-    public Term CurrentTerm { get; internal set; }
+    public Term CurrentTerm { get; }
     
     /// <summary>
     /// Id кандидата, за которого проголосовала текущая нода
     /// </summary>
-    public NodeId? VotedFor { get; internal set; }
+    public NodeId? VotedFor { get; }
     
     /// <summary>
     /// Текущее состояние узла в зависимости от роли: Follower, Candidate, Leader
@@ -30,7 +35,7 @@ public interface INode
     internal INodeState CurrentState { get; set; }
 
     /// <summary>
-    /// Логгер для убобства
+    /// Логгер для удобства
     /// </summary>
     ILogger Logger { get; }
     
@@ -70,6 +75,15 @@ public interface INode
     /// Машина состояний, которую мы реплицируем
     /// </summary>
     public IStateMachine StateMachine { get; }
+
+    public IMetadataStorage MetadataStorage { get; }
+
+    /// <summary>
+    /// Обновить состояние узла
+    /// </summary>
+    /// <param name="newTerm">Новый терм</param>
+    /// <param name="votedFor">Отданный голос</param>
+    public void UpdateState(Term newTerm, NodeId? votedFor);
     public RequestVoteResponse Handle(RequestVoteRequest request);
     public AppendEntriesResponse Handle(AppendEntriesRequest request);
     public SubmitResponse Handle(SubmitRequest request);

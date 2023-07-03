@@ -2,7 +2,7 @@
   raft.server.1:
     build:
       context: src
-      dockerfile: Raft.Server/Dockerfile
+      dockerfile: Raft.Host/Dockerfile
     ports:
       - '9000:2602'
     environment:
@@ -14,15 +14,18 @@
       PEERS__1__ID: 3
       NODE_ID: 1
       LISTEN_PORT: 5000
+      LOG_FILE: /var/lib/raft/wal.log
+      METADATA_FILE: /var/lib/raft/metadata.log
 #      LISTEN_HOST: 0.0.0.0
       LISTEN_HOST: raft.server.1
-      HTTP__HOSTNAME_OR_ADDRESS: 12.12.12.12
       HTTP__PORT: 2602
+    volumes:
+      - raft.1.volume:/var/lib/raft
       
   raft.server.2:
     build:
       context: src
-      dockerfile: Raft.Server/Dockerfile
+      dockerfile: Raft.Host/Dockerfile
     ports:
       - '9001:2602'
     environment:
@@ -33,16 +36,19 @@
       PEERS__1__PORT: 5000
       PEERS__1__ID: 3
       NODE_ID: 2
+      LOG_FILE: /var/lib/raft/wal.log
+      METADATA_FILE: /var/lib/raft/metadata.log
       LISTEN_PORT: 5000
 #      LISTEN_HOST: 0.0.0.0
       LISTEN_HOST: raft.server.2
-      HTTP__HOSTNAME_OR_ADDRESS: 0.0.0.0
       HTTP__PORT: 2602
+    volumes:
+      - raft.2.volume:/var/lib/raft
       
   raft.server.3:
     build:
       context: src
-      dockerfile: Raft.Server/Dockerfile
+      dockerfile: Raft.Host/Dockerfile
     ports:
       - '9002:2602'
     environment:
@@ -54,7 +60,29 @@
       PEERS__1__ID: 2
       NODE_ID: 3
       LISTEN_PORT: 5000
+      LOG_FILE: /var/lib/raft/wal.log
+      METADATA_FILE: /var/lib/raft/metadata.log
 #      LISTEN_HOST: 0.0.0.0
       LISTEN_HOST: raft.server.3
-      HTTP__HOSTNAME_OR_ADDRESS: 0.0.0.0
       HTTP__PORT: 2602
+    volumes:
+      - raft.3.volume:/var/lib/raft
+  
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      
+  grafana:
+    image: grafana/grafana
+    ports:
+      - '3000:3000'
+    depends_on: 
+      - prometheus
+
+volumes:
+  raft.1.volume: 
+  raft.2.volume: 
+  raft.3.volume: 

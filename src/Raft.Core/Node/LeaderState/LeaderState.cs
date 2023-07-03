@@ -66,8 +66,9 @@ internal class LeaderState: BaseNodeState
         {
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
-            CurrentTerm = request.Term;
-            VotedFor = null;
+            // CurrentTerm = request.Term;
+            // VotedFor = null;
+            Node.UpdateState(request.Term, null);
         }
         
         if (Log.Contains(request.PrevLogEntryInfo) is false)
@@ -97,8 +98,9 @@ internal class LeaderState: BaseNodeState
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            CurrentTerm = request.CandidateTerm;
-            VotedFor = request.CandidateId;
+            // CurrentTerm = request.CandidateTerm;
+            // VotedFor = request.CandidateId;
+            Node.UpdateState(request.CandidateTerm, request.CandidateId);
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
 
@@ -115,10 +117,11 @@ internal class LeaderState: BaseNodeState
         if (canVote &&                              // За которого можем проголосовать и
             !Log.Conflicts(request.LastLogEntryInfo)) // У которого лог не хуже нашего
         {
+            Node.UpdateState(request.CandidateTerm, request.CandidateId);
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
-            CurrentTerm = request.CandidateTerm;
-            VotedFor = request.CandidateId;
+            // CurrentTerm = request.CandidateTerm;
+            // VotedFor = request.CandidateId;
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -144,7 +147,8 @@ internal class LeaderState: BaseNodeState
     {
         // Добавляем команду в лог
 
-        var appended = Log.Append(new LogEntry( CurrentTerm, request.Command ));
+        var entry = new LogEntry( CurrentTerm, request.Command );
+        var appended = Log.Append(entry);
         // Сигнализируем узлам, чтобы принялись за работу
         var synchronizer = new AppendEntriesRequestSynchronizer(PeerGroup, appended.Index);
         Array.ForEach(_processors, p => p.NotifyAppendEntries(synchronizer));

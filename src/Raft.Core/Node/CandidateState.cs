@@ -152,8 +152,9 @@ internal class CandidateState: BaseNodeState
         {
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
-            CurrentTerm = request.Term;
-            VotedFor = null;
+            // CurrentTerm = request.Term;
+            // VotedFor = null;
+            Node.UpdateState(request.Term, null);
         }
         
         if (Log.Contains(request.PrevLogEntryInfo) is false)
@@ -190,8 +191,9 @@ internal class CandidateState: BaseNodeState
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            CurrentTerm = request.CandidateTerm;
-            VotedFor = request.CandidateId;
+            // CurrentTerm = request.CandidateTerm;
+            // VotedFor = request.CandidateId;
+            Node.UpdateState(request.CandidateTerm, request.CandidateId);
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
 
@@ -211,8 +213,9 @@ internal class CandidateState: BaseNodeState
         {
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
-            CurrentTerm = request.CandidateTerm;
-            VotedFor = request.CandidateId;
+            // CurrentTerm = request.CandidateTerm;
+            // VotedFor = request.CandidateId;
+            Node.UpdateState(request.CandidateTerm, request.CandidateId);
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }

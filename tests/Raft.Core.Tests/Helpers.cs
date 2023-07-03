@@ -6,7 +6,7 @@ using Serilog;
 
 namespace Raft.Core.Tests;
 
-public class Helpers
+public static class Helpers
 {
     public static readonly NodeId NodeId = new(1);
     public static readonly LogEntryInfo LastLogEntryInfo = new(new Term(1), 0);
@@ -14,6 +14,12 @@ public class Helpers
     public static readonly IJobQueue NullJobQueue = CreateNullJobQueue();
     public static readonly ITimer NullTimer = CreateNullTimer();
     public static readonly IStateMachine NullStateMachine = CreateNullStateMachine();
+    public static readonly IMetadataStorage NullMetadataStorage = CreateNullStorage();
+
+    private static IMetadataStorage CreateNullStorage()
+    {
+        return new StubMetadataStorage(Term.Start, null);
+    }
 
     private static IStateMachine CreateNullStateMachine()
     {
@@ -50,14 +56,13 @@ public class Helpers
     {
         return RaftNode.Create(NodeId, 
             new PeerGroup(peers?.ToArray() ?? Array.Empty<IPeer>()),
-            votedFor,
-            currentTerm,
             NullLogger, 
             electionTimer ?? Mock.Of<ITimer>(),
             heartbeatTimer ?? Mock.Of<ITimer>(), 
             jobQueue ?? NullJobQueue,
             log ?? CreateLog(),
             commandQueue ?? DefaultCommandQueue,
-            NullStateMachine);
+            NullStateMachine,
+            new StubMetadataStorage(currentTerm, votedFor));
     }
 }

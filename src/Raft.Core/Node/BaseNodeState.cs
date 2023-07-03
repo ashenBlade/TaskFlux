@@ -10,18 +10,8 @@ internal abstract class BaseNodeState: INodeState
 {
     internal INode Node { get; }
     protected ILog Log => Node.Log;
-
-    protected Term CurrentTerm
-    {
-        get => Node.CurrentTerm;
-        set => Node.CurrentTerm = value;
-    }
-    
-    protected NodeId? VotedFor
-    {
-        get => Node.VotedFor;
-        set => Node.VotedFor = value;
-    }
+    protected Term CurrentTerm => Node.CurrentTerm;
+    protected NodeId? VotedFor => Node.VotedFor;
     protected ICommandQueue CommandQueue => Node.CommandQueue;
     protected IStateMachine StateMachine => Node.StateMachine;
     protected NodeId Id => Node.Id;

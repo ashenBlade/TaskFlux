@@ -15,10 +15,11 @@ public class RaftNode: IDisposable, INode
         ( ( INode ) this ).CurrentState.Role;
     public ILogger Logger { get; }
     public NodeId Id { get; }
-    public Term CurrentTerm { get; set; }
-    public NodeId? VotedFor { get; set; }
+    public Term CurrentTerm => MetadataStorage.ReadTerm();
+    public NodeId? VotedFor => MetadataStorage.ReadVotedFor();
     public PeerGroup PeerGroup { get; }
     public IStateMachine StateMachine { get; }
+    public IMetadataStorage MetadataStorage { get; }
 
     // Выставляем вручную в .Create
     private INodeState? _currentState;
@@ -39,7 +40,7 @@ public class RaftNode: IDisposable, INode
     public ICommandQueue CommandQueue { get; } 
     public ILog Log { get; }
 
-    private RaftNode(NodeId id, PeerGroup peerGroup, NodeId? votedFor, Term currentTerm, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log, ICommandQueue commandQueue, IStateMachine stateMachine)
+    private RaftNode(NodeId id, PeerGroup peerGroup, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log, ICommandQueue commandQueue, IStateMachine stateMachine, IMetadataStorage metadataStorage)
     {
         Id = id;
         Logger = logger;
@@ -50,8 +51,12 @@ public class RaftNode: IDisposable, INode
         Log = log;
         CommandQueue = commandQueue;
         StateMachine = stateMachine;
-        VotedFor = votedFor;
-        CurrentTerm = currentTerm;
+        MetadataStorage = metadataStorage;
+    }
+
+    public void UpdateState(Term newTerm, NodeId? votedFor)
+    {
+        MetadataStorage.Update(newTerm, votedFor);
     }
 
     public RequestVoteResponse Handle(RequestVoteRequest request)
@@ -71,17 +76,16 @@ public class RaftNode: IDisposable, INode
     
     public static RaftNode Create(NodeId id,
                                   PeerGroup peerGroup,
-                                  NodeId? votedFor,
-                                  Term currentTerm,
                                   ILogger logger,
                                   ITimer electionTimer,
                                   ITimer heartbeatTimer,
                                   IJobQueue jobQueue,
                                   ILog log,
                                   ICommandQueue commandQueue,
-                                  IStateMachine stateMachine)
+                                  IStateMachine stateMachine,
+                                  IMetadataStorage metadataStorage)
     {
-        var raft = new RaftNode(id, peerGroup, votedFor, currentTerm, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine);
+        var raft = new RaftNode(id, peerGroup, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine, metadataStorage);
         raft._currentState = FollowerState.Create(raft);
         return raft;
     }

@@ -1,6 +1,5 @@
 using Raft.Core.Commands;
 using Raft.Core.Commands.AppendEntries;
-using Raft.Core.Log;
 
 namespace Raft.Core.Node.LeaderState;
 
@@ -10,7 +9,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
     private PeerInfo Info { get; } = new(State.Node.Log.LastEntry.Index + 1);
     private volatile bool _isBusy;
 
-    private readonly record struct OperationScope(PeerProcessor? Processor): IDisposable
+    private readonly record struct OperationScope(PeerProcessor Processor): IDisposable
     {
         public static OperationScope Begin(PeerProcessor processor)
         {
@@ -20,10 +19,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
 
         public void Dispose()
         {
-            if (Processor is not null)
-            {
-                Processor._isBusy = false;
-            }
+            Processor._isBusy = false;
         }
     }
 
@@ -34,10 +30,11 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
     /// <remarks><paramref name="token"/> может быть отменен, когда переходим в новое состояние</remarks>
     public async Task StartServingAsync(CancellationToken token)
     {
-        await foreach (var requestSynchronizer in Queue.ReadAllRequestsAsync(token))
+        await foreach (var rs in Queue.ReadAllRequestsAsync(token))
         {
             using var _ = OperationScope.Begin(this);
-            var success = await ProcessRequestAsync(requestSynchronizer, token);
+            var success = await ProcessRequestAsync(rs, token);
+            rs.NotifyComplete();
             if (!success)
             {
                 return;
@@ -68,13 +65,21 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
                 LeaderId: Node.Id,
                 PrevLogEntryInfo: Node.Log.GetPrecedingEntryInfo(Info.NextIndex), 
                 Entries: Node.Log.GetFrom(Info.NextIndex));
-
-            var response = await Peer.SendAppendEntries(request, token);
+            AppendEntriesResponse? response;
+            try
+            {
+                response = await Peer.SendAppendEntries(request, token);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                throw;
+            }
             
-            // 2. Если ответ не вернулся (null) - сделать еще одну попытку: goto 1
+            // 2. Если ответ не вернулся (null) - соединение было разорвано. Прекратить обработку
             if (response is null)
             {
-                continue;
+                return true;
             }
             
             // 3. Если ответ успешный 
@@ -92,8 +97,6 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
                 }
                 
                 // 3.4. Уведомляем об успешной отправке команды на узел
-                synchronizer.NotifyComplete();
-                
                 return true;
             }
             
