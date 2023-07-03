@@ -27,16 +27,20 @@ public class PrometheusRequestHandler: IRequestHandler
         {
             builder.AppendLine("# TYPE raft_current_term gauge");
             builder.AppendLine("# HELP raft_current_term Current term of node");
-            builder.AppendLine($@"raft_current_term {_node.CurrentTerm.Value} 1688219093125");
+            builder.AppendLine($@"raft_current_term {_node.CurrentTerm.Value} 4");
         }
 
         builder.AppendLine("\n# EOF");
         
         response.ContentType = "text/plain; charset=utf-8; version=0.0.4";
-        response.Headers.Add("Last-Modified", DateTime.Now.ToString("R"));
-        response.StatusCode = 200;
+        response.Headers.Add("Last-Modified", ( DateTime.Now - TimeSpan.FromSeconds(1) ).ToString("R"));
+        response.StatusCode = (int)HttpStatusCode.OK;
+        response.KeepAlive = false;
+        response.ContentEncoding = Encoding.UTF8;
+        response.SendChunked = true;
         
-        await using var writer = new StreamWriter(response.OutputStream, Encoding.UTF8);
-        await writer.WriteAsync(builder.ToString());
+        var bytes = Encoding.UTF8.GetBytes(builder.ToString());
+        response.ContentLength64 = bytes.Length;
+        await response.OutputStream.WriteAsync(bytes, token);
     }
 }

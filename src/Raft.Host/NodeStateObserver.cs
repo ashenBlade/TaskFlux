@@ -10,7 +10,6 @@ public class NodeStateObserver
     private readonly RaftNode _node;
     private readonly ILogger _logger;
 
-
     public NodeStateObserver(RaftNode node, ILogger logger)
     {
         _node = node;
@@ -23,7 +22,7 @@ public class NodeStateObserver
         {
             while (token.IsCancellationRequested is false)
             {
-                _logger.Information("Состояние: {State}; Терм {Term}; Лог: {@Entries}; Голос За: {VotedFor}", _node.CurrentRole, _node.CurrentTerm, _node.Log.ReadLog(), _node.VotedFor);
+                _logger.Information("Состояние: {State}; Терм {Term}; Последняя запись лога: {@LastEntry}; Голос За: {VotedFor}", _node.CurrentRole, _node.CurrentTerm, _node.Log.LastEntry, _node.VotedFor);
                 await Task.Delay(TimeSpan.FromSeconds(2.5), token);
             }
         }

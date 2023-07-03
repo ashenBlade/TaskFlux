@@ -18,7 +18,6 @@
       METADATA_FILE: /var/lib/raft/metadata.log
 #      LISTEN_HOST: 0.0.0.0
       LISTEN_HOST: raft.server.1
-      HTTP__HOSTNAME_OR_ADDRESS: 12.12.12.12
       HTTP__PORT: 2602
     volumes:
       - raft.1.volume:/var/lib/raft
@@ -42,7 +41,6 @@
       LISTEN_PORT: 5000
 #      LISTEN_HOST: 0.0.0.0
       LISTEN_HOST: raft.server.2
-      HTTP__HOSTNAME_OR_ADDRESS: 0.0.0.0
       HTTP__PORT: 2602
     volumes:
       - raft.2.volume:/var/lib/raft
@@ -66,7 +64,6 @@
       METADATA_FILE: /var/lib/raft/metadata.log
 #      LISTEN_HOST: 0.0.0.0
       LISTEN_HOST: raft.server.3
-      HTTP__HOSTNAME_OR_ADDRESS: 0.0.0.0
       HTTP__PORT: 2602
     volumes:
       - raft.3.volume:/var/lib/raft
