@@ -1,4 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using Raft.Core;
 using Raft.Core.Log;
@@ -127,8 +128,8 @@ public class FileLogStorage: ILogStorage
             while ((filePosition = _file.Position ) < _file.Length)
             {
                 var term = _reader.ReadInt32();
-                var stringLength = _reader.Read7BitEncodedInt();
-                _file.Seek(stringLength, SeekOrigin.Current);
+                var dataLength = _reader.ReadInt32();
+                _file.Seek(dataLength, SeekOrigin.Current);
                 index.Add(new PositionTerm(new Term(term), filePosition));
             }
         }
@@ -188,8 +189,7 @@ public class FileLogStorage: ILogStorage
         foreach (var entry in entriesArray)
         {
             var currentPosition = startPosition + memory.Position;
-            writer.Write(entry.Term.Value);
-            writer.Write(entry.Data);
+            Serialize(entry, writer);
             newIndexes.Add(new PositionTerm(entry.Term, currentPosition));
         }
 
@@ -289,7 +289,14 @@ public class FileLogStorage: ILogStorage
         while (_file.Position != _file.Length)
         {
             var term = new Term(_reader.ReadInt32());
-            var data = _reader.ReadString();
+            var length = _reader.ReadInt32();
+            var data = new byte[length];
+            var read = _reader.Read(data);
+            if (read < length)
+            {
+                throw new InvalidDataException(
+                    $"Файл в неконсистентном состоянии: указанная длина буфера {length}, но удалось прочитать {read}");
+            }
             list.Add(new LogEntry(term, data));
         }
 
@@ -306,6 +313,7 @@ public class FileLogStorage: ILogStorage
     private static void Serialize(LogEntry entry, BinaryWriter writer)
     {
         writer.Write(entry.Term.Value);
+        writer.Write(entry.Data.Length);
         writer.Write(entry.Data);
     }
 

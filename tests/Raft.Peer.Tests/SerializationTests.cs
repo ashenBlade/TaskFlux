@@ -1,3 +1,4 @@
+using System.Text;
 using Raft.Core;
 using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
@@ -7,6 +8,8 @@ namespace Raft.Peer.Tests;
 
 public class SerializationTests
 {
+    private static LogEntry Entry(int term, string data) => new LogEntry(new Term(term), Encoding.UTF8.GetBytes(data));
+    
     [Theory]
     [InlineData(1, 1, 1, 1)]
     [InlineData(1, 2, 1, 4)]
@@ -72,9 +75,9 @@ public class SerializationTests
     public void ПриСериализацииAppendEntriesRequest__СОднойКомандой__ДолженДесериализоватьОбъектСОднимLogEntry(
         int term, int leaderId, int leaderCommit, int logTerm, int logIndex, int logEntryTerm, string command)
     {
-        var heartbeat = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), new LogEntry[]
+        var heartbeat = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), new[]
         {
-            new(new Term(logEntryTerm), command)
+            Entry(logEntryTerm, command),
         });
         var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(heartbeat));
         Assert.Single(actual.Entries.ToArray());
@@ -89,30 +92,30 @@ public class SerializationTests
     public void ПриСериализацииAppendEntriesRequest__СОднойКомандой__ДолженДесериализоватьLogEntryСТемиЖеДанными(
         int term, int leaderId, int leaderCommit, int logTerm, int logIndex, int logEntryTerm, string command)
     {
-        var logEntry = new LogEntry(new Term(logEntryTerm), command);
-        var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), new LogEntry[]
+        var expected = Entry(logEntryTerm, command);
+        var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), new[]
         {
-            logEntry
+            expected
         });
         var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(request)).Entries.Single();
-        Assert.Equal(logEntry, actual);
+        Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
     }
 
     public static IEnumerable<object[]> СериализацияAppendEntriesСНесколькимиКомандами = new[]
     {
         new object[]
         {
-            1, 1, 1, 1, 1, new LogEntry[]{new(new Term(1), "payload"), new(new Term(2), "hello"), new(new Term(3), "world")}
+            1, 1, 1, 1, 1, new[]{Entry(1, "payload"), Entry(2, "hello"), Entry(3, "world")}
         },
         new object[]
         {
-            2, 1, 1, 5, 2, new LogEntry[]{new(new Term(5), ""), new(new Term(3), "    ")}
+            2, 1, 1, 5, 2, new[]{Entry(5, ""), Entry(3, "    ")}
         },
         new object[]
         {
-            32, 31, 21, 11, 20, new LogEntry[]
+            32, 31, 21, 11, 20, new[]
             {
-                new(new Term(1), "payload"), new(new Term(2), "hello"), new(new Term(3), "world"), new(new Term(4), "Привет мир")
+                Entry(1, "payload"), Entry(2, "hello"), Entry(3, "world"), Entry(4, "Привет мир")
             }
         },
     };
@@ -134,6 +137,6 @@ public class SerializationTests
     {
         var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), entries);
         var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(request)).Entries;
-        Assert.Equal(entries, actual);
+        Assert.Equal(entries, actual, LogEntryEqualityComparer.Instance);
     }
 }

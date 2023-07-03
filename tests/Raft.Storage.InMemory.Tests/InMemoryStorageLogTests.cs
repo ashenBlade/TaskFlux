@@ -1,3 +1,4 @@
+using System.Text;
 using Raft.Core;
 using Raft.Core.Log;
 
@@ -5,6 +6,7 @@ namespace Raft.Storage.InMemory.Tests;
 
 public class InMemoryStorageLogTests
 {
+    private static LogEntry Entry(int term, string data) => new(new Term(term), Encoding.UTF8.GetBytes(data));
     private static StorageLog CreateLogInMemory(params LogEntry[] initial)
     {
         return new StorageLog(new InMemoryLogStorage(initial));
@@ -37,7 +39,7 @@ public class InMemoryStorageLogTests
     [Fact]
     public void GetFrom__СЕдинственнымЭлементомЛогаКогдаИндекс0__ДолженВернутьМассивИзЭтогоЭлемента()
     {
-        var element = new LogEntry(new Term(1), "data");
+        var element = Entry(1, "data");
         var log = CreateLogInMemory(new[] {element});
         var actual = log.GetFrom(0);
         Assert.Single(actual);
@@ -47,7 +49,7 @@ public class InMemoryStorageLogTests
     [Fact]
     public void GetFrom__СЕдинственнымЭлементомИИндексом1__ДолженВернутьПустойМассив()
     {
-        var element = new LogEntry(new Term(1), "data");
+        var element = Entry(1, "data");
         var log = CreateLogInMemory(element);
         var actual = log.GetFrom(0);
         Assert.Single(actual);
@@ -64,10 +66,10 @@ public class InMemoryStorageLogTests
     public void GetFrom__СНесколькимиЭлементами__ДолженВернутьЭлементыСОпределенногоИндекса(int startIndex, int totalCount)
     {
         var first = Enumerable.Range(1, startIndex)
-                              .Select(i => new LogEntry(new Term(i), "data"))
+                              .Select(i => Entry(i, "data"))
                               .ToArray();
         var expected = Enumerable.Range(startIndex, totalCount - startIndex)
-                                 .Select(i => new LogEntry(new Term(i), "data"))
+                                 .Select(i => Entry(i, "data"))
                                  .ToArray();
         
         var log = CreateLogInMemory(first.Concat(expected));
@@ -84,7 +86,7 @@ public class InMemoryStorageLogTests
     public void GetFrom__СИндексомРавнымКоличествуЭлементов__ДолженВернутьПустойМассив(int elementsCount)
     {
         var elements = Enumerable.Range(1, elementsCount)
-                                 .Select(i => new LogEntry(new Term(i), Random.Shared.Next().ToString()))
+                                 .Select(i => Entry(i, Random.Shared.Next().ToString()))
                                  .ToArray();
         var log = CreateLogInMemory(elements);
         var actual = log.GetFrom(elementsCount);
@@ -102,7 +104,7 @@ public class InMemoryStorageLogTests
     [Fact]
     public void GetPrecedingEntryInfo__С1ЭлементомВЛогеИИндексомРавным1__ДолженВернутьХранимыйЭлемент()
     {
-        var log = CreateLogInMemory(new[] {new LogEntry(new Term(1), "data")});
+        var log = CreateLogInMemory(new[] {Entry(1, "data")});
         var expected = new LogEntryInfo(new Term(1), 0);
         
         var actual = log.GetPrecedingEntryInfo(1);
@@ -118,7 +120,7 @@ public class InMemoryStorageLogTests
     public void GetPrecedingEntryInfo__СНесколькимиЭлементамиВЛоге__ДолженВернутьЭлементСПредыдущимИндексом(int elementsCount)
     {
         var elements = Enumerable.Range(1, elementsCount)
-                                 .Select(i => new LogEntry(new Term(i), Random.Shared.Next().ToString()))
+                                 .Select(i => Entry(i, Random.Shared.Next().ToString()))
                                  .ToArray();
 
         var log = CreateLogInMemory(elements);
@@ -139,7 +141,7 @@ public class InMemoryStorageLogTests
         int elementsCount)
     {
         var elements = Enumerable.Range(1, elementsCount)
-                                 .Select(i => new LogEntry(new Term(i), Random.Shared.Next().ToString()))
+                                 .Select(i => Entry(i, Random.Shared.Next().ToString()))
                                  .ToArray();
 
         var log = CreateLogInMemory(elements);
@@ -155,25 +157,25 @@ public class InMemoryStorageLogTests
     {
         new object[]
         {
-            new LogEntry[]
+            new[]
             {
-                new(new Term(1), "data1"), new(new Term(1), "data2"),
-                new(new Term(1), "data3"), new(new Term(1), "data4"),
+                Entry(1, "data1"), Entry(1, "data2"),
+                Entry(1, "data3"), Entry(1, "data4"),
             },
-            new LogEntry[]
+            new[]
             {
-                new(new (1), "data5")
+                Entry(1, "data5")
             }
         },
         new object[]
         {
-            new LogEntry[]
+            new[]
             {
-                new(new Term(1), "data1"),
+                Entry(1, "data1"),
             },
-            new LogEntry[]
+            new[]
             {
-                new(new (1), "data2"), new(new(2), "data3")
+                Entry(1, "data2"), Entry(2, "data3")
             }
         },
     };
@@ -193,23 +195,23 @@ public class InMemoryStorageLogTests
     {
         new object[]
         {
-            new LogEntry[]{new(new Term(1), "data1")}
+            new[]{Entry(1, "data1")}
         },
         new object[]
         {
-            new LogEntry[]{new(new Term(1), "data1"), new(new(2), "data2")}
+            new[]{Entry(1, "data1"), Entry(2, "data2")}
         },
         new object[]
         {
-            new LogEntry[]{new(new(1), "data1"), new(new(2), "data2"), new(new(3), "data3")}
+            new[]{Entry(1, "data1"), Entry(2, "data2"), Entry(3, "data3")}
         },
         new object[]
         {
-            new LogEntry[]{new(new(1), "data1"), new(new(2), "data2"), new(new(3), "data3"), new(new(3), "data4"), new(new(3), "data5"), new(new(4), "data6")}
+            new[]{Entry(1, "data1"), Entry(2, "data2"), Entry(3, "data3"), Entry(3, "data4"), Entry(3, "data5"), Entry(4, "data6")}
         },
         new object[]
         {
-            new LogEntry[]{new(new(100), "data0"), new(new(190), ""), new(new(2000), "234234")}
+            new[]{Entry(100, "data0"), Entry(190, ""), Entry(2000, "234234")}
         },
         
     };
@@ -305,7 +307,7 @@ public class InMemoryStorageLogTests
     {
         var log = CreateLogInMemory();
         var entries = Enumerable.Range(1, elementsCount)
-                                .Select(x => new LogEntry(new Term(x), $"data{x}"))
+                                .Select(x => Entry(x, $"data{x}"))
                                 .ToArray();
         log.AppendUpdateRange(entries, 0);
         Assert.Equal(entries, log.ReadLog());
@@ -323,10 +325,10 @@ public class InMemoryStorageLogTests
         int toAddCount)
     {
         var initial = Enumerable.Range(1, initialElementsCount)
-                                .Select(t => new LogEntry(new(t), $"data{t}"))
+                                .Select(t => Entry(t, $"data{t}"))
                                 .ToArray();
         var toAdd = Enumerable.Range(initialElementsCount + 1, toAddCount)
-                              .Select(t => new LogEntry(new(t), $"data{t}"))
+                              .Select(t => Entry(t, $"data{t}"))
                               .ToArray();
         var log = CreateLogInMemory(initial);
         log.AppendUpdateRange(toAdd, initial.Length);
@@ -348,11 +350,11 @@ public class InMemoryStorageLogTests
         int toAddCount)
     {
         var initial = Enumerable.Range(1, initialCount)
-                                .Select(t => new LogEntry(new(t), $"data{t}"))
+                                .Select(t => Entry(t, $"data{t}"))
                                 .ToArray();
         
         var toAdd = Enumerable.Range(initialCount + 1, toAddCount)
-                              .Select(t => new LogEntry(new(t), $"data{t}"))
+                              .Select(t => Entry(t, $"data{t}"))
                               .ToArray();
         
         var log = CreateLogInMemory(initial);
@@ -372,10 +374,10 @@ public class InMemoryStorageLogTests
         int index)
     {
         var initial = Enumerable.Range(1, initialCount)
-                                .Select(t => new LogEntry(new(t), $"data{t}"))
+                                .Select(t => Entry(t, $"data{t}"))
                                 .ToArray();
         var toAdd = Enumerable.Range(initialCount + 1, toAddCount)
-                              .Select(t => new LogEntry(new(t), $"data{t}"))
+                              .Select(t => Entry(t, $"data{t}"))
                               .ToArray();
         
         var log = CreateLogInMemory(initial);
@@ -387,45 +389,45 @@ public class InMemoryStorageLogTests
     {
         new object[]
         {
-            new LogEntry[]{ new(new(1), "data1"), new(new(1), "data2"), new(new(1), "data3") },
-            new LogEntry[]{new(new(1), "data2"), new(new(2), "data4")},
+            new[]{ Entry(1, "data1"), Entry(1, "data2"), Entry(1, "data3") },
+            new[]{Entry(1, "data2"), Entry(2, "data4")},
             1,
-            new LogEntry[] {new(new(1), "data1"), new(new(1), "data2"), new(new(2), "data4")}
+            new[] {Entry(1, "data1"), Entry(1, "data2"), Entry(2, "data4")}
         },
         new object[]
         {
-            new LogEntry[]{ new(new(1), "data1"), new(new(2), "data2"), new(new(3), "data3") },
-            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") },
+            new[]{ Entry(1, "data1"), Entry(2, "data2"), Entry(3, "data3") },
+            new[]{ Entry(4, "data2"), Entry(4, "data4") },
             2,
-            new LogEntry[]{ new(new(1), "data1"), new(new(2), "data2"), new(new(4), "data2"), new(new(4), "data4") }
+            new[]{ Entry(1, "data1"), Entry(2, "data2"), Entry(4, "data2"), Entry(4, "data4") }
         },
         new object[]
         {
-            new LogEntry[]{ new(new(1), "data1"), new(new(2), "data2"), new(new(3), "data3"), new(new(3), "data5") },
-            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") },
+            new[]{ Entry(1, "data1"), Entry(2, "data2"), Entry(3, "data3"), Entry(3, "data5") },
+            new[]{ Entry(4, "data2"), Entry(4, "data4") },
             1,
-            new LogEntry[]{ new(new(1), "data1"), new(new(4), "data2"), new(new(4), "data4") }
+            new[]{ Entry(1, "data1"), Entry(4, "data2"), Entry(4, "data4") }
         },
         new object[]
         {
             new LogEntry[]{ },
-            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") },
+            new[]{ Entry(4, "data2"), Entry(4, "data4") },
             0,
-            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") }
+            new[]{ Entry(4, "data2"), Entry(4, "data4") }
         },
         new object[]
         {
-            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") },
+            new[]{ Entry(4, "data2"), Entry(4, "data4") },
             new LogEntry[]{ },
             0,
             new LogEntry[]{ }
         },
         new object[]
         {
-            new LogEntry[]{ new(new(4), "data2"), new(new(4), "data4") },
-            new LogEntry[]{ new(new(5), "data4"), new(new(6), "data11") },
+            new[]{ Entry(4, "data2"), Entry(4, "data4") },
+            new[]{ Entry(5, "data4"), Entry(6, "data11") },
             1,
-            new LogEntry[]{ new(new(4), "data2"), new(new(5), "data4"), new(new(6), "data11") }
+            new[]{ Entry(4, "data2"), Entry(5, "data4"), Entry(6, "data11") }
         }
     };
 
@@ -472,7 +474,7 @@ public class InMemoryStorageLogTests
     public void Conflicts__КогдаВЛогеЕстьЭлементыИПереданБольшийТерм__ДолженВернутьFalse(int elementsCount, int index)
     {
         var elements = Enumerable.Range(1, elementsCount)
-                                 .Select(t => new LogEntry(new(t), $"data{t}"))
+                                 .Select(t => Entry(t, $"data{t}"))
                                  .ToArray();
         var log = CreateLogInMemory(elements);
         var lastLogEntry = new LogEntryInfo(new(elements.Length + 1), index);
@@ -483,7 +485,7 @@ public class InMemoryStorageLogTests
     public void Conflicts__КогдаПередаетсяСвойЖеПоследнийЭлемент__ДолженВернутьFalse()
     {
         var elements = Enumerable.Range(1, 10)
-                                 .Select(t => new LogEntry(new(t), $"data{t}"))
+                                 .Select(t => Entry(t, $"data{t}"))
                                  .ToArray();
         var log = CreateLogInMemory(elements);
         Assert.False(log.Conflicts(log.LastEntry));
@@ -497,7 +499,7 @@ public class InMemoryStorageLogTests
     public void Conflicts__КогдаПередаетсяЭлементСПоследнимТермомНоБольшимИндексом__ДолженВернутьFalse(int indexDelta)
     {
         var elements = Enumerable.Range(1, 10)
-                                 .Select(t => new LogEntry(new(t), $"data{t}"))
+                                 .Select(t => Entry(t, $"data{t}"))
                                  .ToArray();
         var log = CreateLogInMemory(elements);
         var lastEntry = log.LastEntry;
@@ -513,7 +515,7 @@ public class InMemoryStorageLogTests
         int indexDelta)
     {
         var elements = Enumerable.Range(1, 10)
-                                 .Select(t => new LogEntry(new(t), $"data{t}"))
+                                 .Select(t => Entry(t, $"data{t}"))
                                  .ToArray();
         var log = CreateLogInMemory(elements);
         var lastEntry = log.LastEntry;
@@ -531,7 +533,7 @@ public class InMemoryStorageLogTests
         int termDelta)
     {
         var elements = Enumerable.Range(1, 10)
-                                 .Select(t => new LogEntry(new(t), $"data{t}"))
+                                 .Select(t => Entry(t, $"data{t}"))
                                  .ToArray();
         var log = CreateLogInMemory(elements);
         var lastEntry = log.LastEntry;

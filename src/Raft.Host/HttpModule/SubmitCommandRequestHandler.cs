@@ -76,10 +76,12 @@ public class SubmitCommandRequestHandler: IRequestHandler
         await writer.WriteAsync(SerializeResponse(false, "В теле запроса не указаны данные"));
     }
 
-    private async Task<string> GetRequestBodyAsync(HttpListenerRequest request)
+    private async Task<byte[]> GetRequestBodyAsync(HttpListenerRequest request)
     {
-        using var reader = new StreamReader(request.InputStream, Encoding);
-        return await reader.ReadToEndAsync();
+        var memory = new MemoryStream((int)request.ContentLength64);
+        await request.InputStream.CopyToAsync(memory);
+
+        return memory.ToArray();
     }
 
     private string SerializeResponse(bool success, string? message, LogEntry? createdEntry = null)

@@ -1,3 +1,3 @@
 namespace Raft.Core.Commands.Submit;
 
-public record SubmitRequest(string Command);
+public record SubmitRequest(byte[] Command);

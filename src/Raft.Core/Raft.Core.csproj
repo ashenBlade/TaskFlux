@@ -21,6 +21,7 @@
     
     <ItemGroup>
       <ProjectReference Include="..\Raft.CommandQueue\Raft.CommandQueue\Raft.CommandQueue.csproj" />
+      <ProjectReference Include="..\Raft.StateMachine\Raft.StateMachine\Raft.StateMachine.csproj" />
     </ItemGroup>
 
 </Project>

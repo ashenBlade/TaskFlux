@@ -13,6 +13,7 @@ using Raft.Host.Options;
 using Raft.JobQueue;
 using Raft.Peer;
 using Raft.Peer.Decorators;
+using Raft.StateMachine.Null;
 using Raft.Storage.File;
 using Raft.Storage.File.Decorators;
 using Raft.Timers;

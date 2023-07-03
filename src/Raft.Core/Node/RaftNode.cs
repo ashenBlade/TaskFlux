@@ -4,6 +4,7 @@ using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Commands.Submit;
 using Raft.Core.Log;
+using Raft.StateMachine;
 using Serilog;
 
 namespace Raft.Core.Node;

@@ -157,12 +157,12 @@ internal class LeaderState: BaseNodeState
         synchronizer.LogReplicated.Wait(_cts.Token);
         
         // Пытаемся применить команду к машине состояний
-        StateMachine.Submit(request.Command);
+        var response = StateMachine.Apply(request.Command);
         
         // Обновляем индекс последней закоммиченной записи
         Log.Commit(appended.Index);
         
         // Возвращаем результат
-        return new SubmitResponse(new LogEntry(appended.Term, request.Command));
+        return new SubmitResponse(new LogEntry(appended.Term, request.Command), response);
     }
 }

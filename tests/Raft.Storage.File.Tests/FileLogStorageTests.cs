@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text;
 using Raft.Core;
 using Raft.Core.Log;
 
@@ -6,6 +7,9 @@ namespace Raft.Storage.File.Tests;
 
 public class FileLogStorageTests
 {
+    public static LogEntry Entry(int term, string data) 
+        => new(new Term(term), Encoding.UTF8.GetBytes(data));
+    
     [Fact]
     public void ReadLog__КогдаЛогПуст__ДолженВернутьПустойСписок()
     {
@@ -42,7 +46,7 @@ public class FileLogStorageTests
         using var memory = new MemoryStream();
         var storage = new FileLogStorage(memory);
         
-        var entry = new LogEntry(new Term(1), "some data");
+        var entry = Entry(1, "some data");
         storage.Append(entry);
         var log = storage.ReadAll();
         
@@ -55,11 +59,11 @@ public class FileLogStorageTests
         using var memory = new MemoryStream();
         var storage = new FileLogStorage(memory);
         
-        var expected = new LogEntry(new Term(1), "some data");
+        var expected = Entry(1, "some data");
         storage.Append(expected);
         var actual = storage.ReadAll().Single();
         
-        Assert.Equal(expected, actual);
+        Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
     }
 
     [Theory]
@@ -76,7 +80,7 @@ public class FileLogStorageTests
 
         for (int i = 1; i <= entriesCount; i++)
         {
-            var expected = new LogEntry(new Term(i), $"some data {i}");
+            var expected = Entry(i, $"some data {i}");
             storage.Append(expected);
             
         }
@@ -98,7 +102,7 @@ public class FileLogStorageTests
         var storage = new FileLogStorage(memory);
 
         var expected = Enumerable.Range(1, entriesCount)
-                                 .Select(i => new LogEntry(new Term(i), $"data{i}"))
+                                 .Select(i => Entry(i, $"data{i}"))
                                  .ToArray();
 
         foreach (var entry in expected)
@@ -107,7 +111,7 @@ public class FileLogStorageTests
         }
         
         var actual = storage.ReadAll();
-        Assert.Equal(expected, actual);
+        Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
     }
     
     [Theory]
@@ -122,7 +126,7 @@ public class FileLogStorageTests
         var storage = new FileLogStorage(memory);
 
         var expected = Enumerable.Range(1, entriesCount)
-                                 .Select(i => new LogEntry(new Term(i), $"data{i}"))
+                                 .Select(i => Entry(i, $"data{i}"))
                                  .ToArray();
 
         storage.AppendRange(expected, 0);
@@ -146,12 +150,12 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var storage = new FileLogStorage(memory);
-        var expected = new LogEntry(new Term(2), "sample data");
+        var expected = Entry(2, "sample data");
         
         storage.Append(expected);
         var actual = storage.ReadFrom(0).Single();
         
-        Assert.Equal(expected, actual);
+        Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
     }
 
     [Theory]
@@ -169,7 +173,7 @@ public class FileLogStorageTests
         var storage = new FileLogStorage(memory);
 
         var expected = Enumerable.Range(1, entriesCount)
-                                 .Select(i => new LogEntry(new Term(i), $"data{i}"))
+                                 .Select(i => Entry(i, $"data{i}"))
                                  .ToArray();
 
         storage.AppendRange(expected, 0);
@@ -177,7 +181,7 @@ public class FileLogStorageTests
         for (int i = 0; i < readCount; i++)
         {
             var actual = storage.ReadAll();
-            Assert.Equal(expected, actual);
+            Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
         }
     }
 
@@ -192,7 +196,7 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
 
         var firstLog = new FileLogStorage(memory);
@@ -200,7 +204,7 @@ public class FileLogStorageTests
         var secondLog = new FileLogStorage(memory);
         var actual = secondLog.ReadAll();
         
-        Assert.Equal(entries, actual);
+        Assert.Equal(entries, actual, LogEntryEqualityComparer.Instance);
     }
 
     [Theory]
@@ -213,10 +217,10 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, initialSize)
-                                .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         var appended = Enumerable.Range(1 + initialSize, appendSize)
-                                 .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                 .Select(i => Entry(i, $"data {i}"))
                                  .ToArray();
         var expected = initial.Concat(appended).ToArray();
         
@@ -225,7 +229,7 @@ public class FileLogStorageTests
         firstLog.AppendRange(appended, initialSize);
         
         var actual = firstLog.ReadAll();
-        Assert.Equal(expected, actual);
+        Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
     }
 
     [Theory]
@@ -246,10 +250,10 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, initialSize)
-                                .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         var appended = Enumerable.Range(1 + initialSize, appendSize)
-                                 .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                 .Select(i => Entry(i, $"data {i}"))
                                  .ToArray();
         var expected = initial.Take(index)
                               .Concat(appended)
@@ -260,7 +264,7 @@ public class FileLogStorageTests
         firstLog.AppendRange(appended, index);
         
         var actual = firstLog.ReadAll();
-        Assert.Equal(expected, actual);
+        Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
     }
 
     [Theory]
@@ -284,10 +288,10 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, initialCount)
-                                .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         var appended = Enumerable.Range(1 + initialCount, appendCount)
-                                 .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                 .Select(i => Entry(i, $"data {i}"))
                                  .ToArray();
         
         var expected = initial.Take(index)
@@ -299,7 +303,7 @@ public class FileLogStorageTests
         firstLog.AppendRange(appended, index);
         
         var actual = firstLog.ReadAll();
-        Assert.Equal(expected, actual);
+        Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
     }
 
     [Theory]
@@ -313,7 +317,7 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, logSize)
-                                .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         
         var log = new FileLogStorage(memory);
@@ -348,7 +352,7 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, logSize)
-                                .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         var expected = LogEntryInfo.Tomb;
         
@@ -370,7 +374,7 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, logSize)
-                                .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         var expected = new LogEntryInfo(initial[^1].Term, initial.Length - 1);
         
@@ -392,7 +396,7 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, logSize)
-                                .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         
         var log = new FileLogStorage(memory);
@@ -431,7 +435,7 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, logSize)
-                                .Select(i => new LogEntry(new Term(i), $"data {i}"))
+                                .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         
         var log = new FileLogStorage(memory);

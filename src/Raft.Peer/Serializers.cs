@@ -102,6 +102,7 @@ internal static class Serializers
             foreach (var entry in request.Entries)
             {
                 writer.Write(entry.Term.Value);
+                writer.Write7BitEncodedInt(entry.Data.Length);
                 writer.Write(entry.Data);
             }
 
@@ -135,7 +136,14 @@ internal static class Serializers
             for (int i = 0; i < entriesCount; i++)
             {
                 var logTerm = reader.ReadInt32();
-                var data = reader.ReadString();
+                var length = reader.Read7BitEncodedInt();
+                var data = new byte[length];
+                var read = reader.Read(data);
+                if (read < length)
+                {
+                    throw new InvalidDataException(
+                        $"Ошибка чтения команды: указанное количество байт не равно прочитанному. Прочитано: {read}. Указано: {length}");
+                }
                 entries.Add(new LogEntry(new Term(logTerm), data));
             }
             
