@@ -56,9 +56,10 @@ public class SubmitCommandRequestHandler: IRequestHandler
     private async Task RespondSuccessAsync(HttpListenerResponse response,
                                            SubmitResponse submitResponse)
     {
-        response.StatusCode = ( int ) HttpStatusCode.Created;
-        await using var writer = new StreamWriter(response.OutputStream, Encoding);
-        await writer.WriteAsync(SerializeResponse(true, null, submitResponse.CreatedEntry));
+        submitResponse.Response.WriteTo(response.OutputStream);
+        // response.StatusCode = ( int ) HttpStatusCode.Created;
+        // await using var writer = new StreamWriter(response.OutputStream, Encoding);
+        // await writer.WriteAsync(SerializeResponse(true, null, submitResponse.CreatedEntry));
     }
 
     private async Task RespondNotLeaderAsync(HttpListenerResponse response)

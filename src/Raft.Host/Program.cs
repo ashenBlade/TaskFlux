@@ -1,6 +1,9 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
+using JobQueue.InMemory;
+using JobQueue.SortedQueue;
 using Microsoft.Extensions.Configuration;
 using Raft.CommandQueue;
 using Raft.Core;
@@ -13,6 +16,9 @@ using Raft.Host.Options;
 using Raft.JobQueue;
 using Raft.Peer;
 using Raft.Peer.Decorators;
+using Raft.StateMachine;
+using Raft.StateMachine.JobQueue;
+using Raft.StateMachine.JobQueue.StringSerialization;
 using Raft.StateMachine.Null;
 using Raft.Storage.File;
 using Raft.Storage.File.Decorators;
@@ -73,7 +79,7 @@ var metadataStorage = CreateMetadataStorage(metadataFileStream);
 using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
 using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
 using var commandQueue = new ChannelCommandQueue();
-var stateMachine = new NullStateMachine();
+var stateMachine = CreateStateMachine();
 var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
 
 using var node = RaftNode.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine, metadataStorage);
@@ -234,4 +240,13 @@ IMetadataStorage CreateMetadataStorage(Stream stream)
     storage = new ExclusiveAccessMetadataStorageDecorator(storage);
     
     return storage;
+}
+
+IStateMachine CreateStateMachine()
+{
+    Log.Information("Создаю пустую очередь задач в памяти");
+    var unboundedJobQueue = new UnboundedJobQueue(new PriorityQueueSortedQueue<int, byte[]>());
+    Log.Information("Использую строковый десериализатор команд с кодировкой UTF-8");
+    var stringCommandDeserializer = new StringCommandDeserializer(Encoding.UTF8);
+    return new ProxyJobQueueStateMachine(new SingleQueueJobQueueStateMachine(unboundedJobQueue), stringCommandDeserializer);
 }

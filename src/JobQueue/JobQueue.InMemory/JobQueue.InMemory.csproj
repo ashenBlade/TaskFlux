@@ -7,7 +7,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Raft.StateMachine\Raft.StateMachine.csproj" />
+      <ProjectReference Include="..\JobQueue.Core\JobQueue.Core.csproj" />
+      <ProjectReference Include="..\JobQueue.SortedQueue\JobQueue.SortedQueue.csproj" />
     </ItemGroup>
 
 </Project>
