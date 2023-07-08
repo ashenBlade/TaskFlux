@@ -152,8 +152,6 @@ internal class CandidateState: BaseNodeState
         {
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
-            // CurrentTerm = request.Term;
-            // VotedFor = null;
             Node.UpdateState(request.Term, null);
         }
         
@@ -171,14 +169,13 @@ internal class CandidateState: BaseNodeState
         {
             Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
         }
-
-
+        
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
 
     public override SubmitResponse Apply(SubmitRequest request)
     {
-        throw new InvalidOperationException("Текущий узел в состоянии Candidate");
+        return SubmitResponse.NotALeader;
     }
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)
@@ -191,8 +188,6 @@ internal class CandidateState: BaseNodeState
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            // CurrentTerm = request.CandidateTerm;
-            // VotedFor = request.CandidateId;
             Node.UpdateState(request.CandidateTerm, request.CandidateId);
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
@@ -213,8 +208,6 @@ internal class CandidateState: BaseNodeState
         {
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
-            // CurrentTerm = request.CandidateTerm;
-            // VotedFor = request.CandidateId;
             Node.UpdateState(request.CandidateTerm, request.CandidateId);
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);

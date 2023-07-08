@@ -48,4 +48,6 @@ public interface ILogStorage
     /// <param name="index"></param>
     /// <returns></returns>
     public LogEntryInfo GetAt(int index);
+
+    IReadOnlyList<LogEntry> GetRange(int start, int end);
 }

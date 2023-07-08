@@ -18,4 +18,10 @@ public class ProxyJobQueueStateMachine: IStateMachine
         var command = _deserializer.Deserialize(rawCommand);
         return command.Apply(_stateMachine);
     }
+
+    public void ApplyNoResponse(byte[] rawCommand)
+    {
+        var command = _deserializer.Deserialize(rawCommand);
+        command.ApplyNoResponse(_stateMachine);
+    }
 }

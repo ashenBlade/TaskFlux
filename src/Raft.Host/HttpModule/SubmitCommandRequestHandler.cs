@@ -36,30 +36,23 @@ public class SubmitCommandRequestHandler: IRequestHandler
         
         var body = await GetRequestBodyAsync(request);
         _logger.Debug("Принял запрос от клиента. Тело: {Body}", body);
-        
-        SubmitResponse submitResponse;
-        try
+
+        var submitResponse = _node.Handle(new SubmitRequest(body));
+
+        if (submitResponse.WasLeader)
         {
-            submitResponse = _node.Handle(new SubmitRequest(body));
-        }
-        catch (InvalidOperationException)
-        {
-            _logger.Debug("Текущий узел не лидер");
-            await RespondNotLeaderAsync(response);
+            RespondSuccessAsync(response, submitResponse);
             return;
         }
         
-        _logger.Debug("Команда успешно выполнилась");
-        await RespondSuccessAsync(response, submitResponse);
+        await RespondNotLeaderAsync(response);
     }
     
-    private async Task RespondSuccessAsync(HttpListenerResponse response,
+    private void RespondSuccessAsync(HttpListenerResponse response,
                                            SubmitResponse submitResponse)
     {
+        response.StatusCode = ( int ) HttpStatusCode.OK;
         submitResponse.Response.WriteTo(response.OutputStream);
-        // response.StatusCode = ( int ) HttpStatusCode.Created;
-        // await using var writer = new StreamWriter(response.OutputStream, Encoding);
-        // await writer.WriteAsync(SerializeResponse(true, null, submitResponse.CreatedEntry));
     }
 
     private async Task RespondNotLeaderAsync(HttpListenerResponse response)
@@ -72,7 +65,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
 
     private async Task RespondEmptyBodyNotAcceptedAsync(HttpListenerResponse response)
     {
-        await using var writer = new StreamWriter(response.OutputStream, Encoding);
+        await using var writer = new StreamWriter(response.OutputStream, Encoding, leaveOpen: true);
         response.StatusCode = (int)HttpStatusCode.UnprocessableEntity;
         await writer.WriteAsync(SerializeResponse(false, "В теле запроса не указаны данные"));
     }

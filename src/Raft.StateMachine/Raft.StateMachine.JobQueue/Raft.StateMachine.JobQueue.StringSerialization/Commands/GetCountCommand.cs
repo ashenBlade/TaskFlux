@@ -16,4 +16,7 @@ public class GetCountCommand: ICommand
     {
         return new GetCountStringResponse(stateMachine.Apply(_request));
     }
+
+    public void ApplyNoResponse(IJobQueueStateMachine stateMachine)
+    { }
 }

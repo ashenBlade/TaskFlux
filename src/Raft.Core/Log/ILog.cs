@@ -1,3 +1,5 @@
+using Raft.StateMachine;
+
 namespace Raft.Core.Log;
 
 public interface ILog
@@ -64,8 +66,7 @@ public interface ILog
     /// Закоммитить лог по переданному индексу
     /// </summary>
     /// <param name="index">Индекс новой закомиченной записи</param>
-    public void Commit(int index);
-
-    
+    /// <returns>Результат коммита лога</returns>
+    public CommitDelta Commit(int index);
     public LogEntryInfo GetPrecedingEntryInfo(int nextIndex);
 }

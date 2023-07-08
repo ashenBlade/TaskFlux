@@ -16,4 +16,9 @@ public class DequeueCommand: ICommand
         var response = stateMachine.Apply(_request);
         return new DequeueStringResponse(response);
     }
+
+    public void ApplyNoResponse(IJobQueueStateMachine stateMachine)
+    {
+        stateMachine.Apply(_request);
+    }
 }

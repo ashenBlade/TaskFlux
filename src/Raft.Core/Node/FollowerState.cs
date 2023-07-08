@@ -32,8 +32,6 @@ internal class FollowerState: BaseNodeState
         if (CurrentTerm < request.CandidateTerm)
         {
             _logger.Debug("Получен RequestVote с большим термом {MyTerm} < {NewTerm}. Перехожу в Follower", CurrentTerm, request.CandidateTerm);
-            // CurrentTerm = request.CandidateTerm;
-            // VotedFor = request.CandidateId;
             Node.UpdateState(request.CandidateTerm, request.CandidateId);
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -64,9 +62,8 @@ internal class FollowerState: BaseNodeState
 
     public override AppendEntriesResponse Apply(AppendEntriesRequest request)
     {
-        _logger.Verbose("Получен Heartbeat");
         ElectionTimer.Reset();
-        
+        _logger.Debug("AppendEntriesRequest: {Request}", request);
         if (request.Term < CurrentTerm)
         {
             return AppendEntriesResponse.Fail(CurrentTerm);
@@ -74,8 +71,6 @@ internal class FollowerState: BaseNodeState
 
         if (CurrentTerm < request.Term)
         {
-            // CurrentTerm = request.Term;
-            // VotedFor = null;
             Node.UpdateState(request.Term, null);
         }
         
@@ -99,7 +94,7 @@ internal class FollowerState: BaseNodeState
 
     public override SubmitResponse Apply(SubmitRequest request)
     {
-        throw new InvalidOperationException("Текущий узел в состоянии Follower");
+        return SubmitResponse.NotALeader;
     }
 
     internal static FollowerState Create(INode node)

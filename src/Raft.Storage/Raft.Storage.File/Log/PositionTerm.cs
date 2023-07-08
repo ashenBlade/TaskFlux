@@ -1,6 +1,6 @@
 using Raft.Core;
 
-namespace Raft.Storage.File;
+namespace Raft.Storage.File.Log;
 
 /// <summary>
 /// Информация о записи в логе файла

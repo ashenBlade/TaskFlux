@@ -22,6 +22,8 @@ using Raft.StateMachine.JobQueue.StringSerialization;
 using Raft.StateMachine.Null;
 using Raft.Storage.File;
 using Raft.Storage.File.Decorators;
+using Raft.Storage.File.Log;
+using Raft.Storage.File.Log.Decorators;
 using Raft.Timers;
 using Serilog;
 
@@ -65,26 +67,29 @@ var peers = serverOptions.Peers
 
 Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
 
-Log.Information("Открываю файл с логом предзаписи");
-await using var fileStream = GetLogFileStream(serverOptions);
-Log.Information("Инициализирую хранилище лога предзаписи");
-var log = new StorageLog(CreateLogStorage(fileStream));
-
-
 Log.Logger.Information("Открываю файл с метаданными");
 await using var metadataFileStream = OpenMetadataFile(serverOptions);
 Log.Logger.Information("Инициализирую хранилище метаданных");
-var metadataStorage = CreateMetadataStorage(metadataFileStream);
+var (metadataStorage, fileMetadataStorage) = CreateMetadataStorage(metadataFileStream);
+
+Log.Information("Открываю файл с логом предзаписи");
+await using var fileStream = GetLogFileStream(serverOptions);
+Log.Information("Инициализирую хранилище лога предзаписи");
+var (storage, _) = CreateLogStorage(fileStream);
+var log = new StorageLog(storage);
+
+Log.Information("Создаю очередь машины состояний");
+var jobQueue = CreateJobQueueStateMachine();
+Log.Information("Подписываюсь на событие коммита");
 
 using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
 using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
 using var commandQueue = new ChannelCommandQueue();
-var stateMachine = CreateStateMachine();
-var jobQueue = new TaskJobQueue(Log.Logger.ForContext<TaskJobQueue>());
 
-using var node = RaftNode.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftNode>(), electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine, metadataStorage);
+using var node = CreateRaftNode(nodeId, peers, electionTimer, heartbeatTimer, log, commandQueue, jobQueue, metadataStorage);
+
 var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, node, Log.Logger.ForContext<NodeConnectionManager>());
-var server = new NodeStateObserver(node, Log.Logger.ForContext<NodeStateObserver>());
+var stateObserver = new NodeStateObserver(node, Log.Logger.ForContext<NodeStateObserver>());
 
 var httpModule = CreateHttpRequestModule(configuration);
 
@@ -120,7 +125,7 @@ try
     
     Log.Logger.Information("Запукаю фоновые задачи");
     await Task.WhenAll(
-        server.RunAsync(cts.Token),
+        stateObserver.RunAsync(cts.Token),
         commandQueue.RunAsync(cts.Token),
         httpModule.RunAsync(cts.Token));
 }
@@ -137,7 +142,7 @@ finally
 Log.CloseAndFlush();
 
 
-void ValidateOptions( RaftServerOptions peersOptions)
+void ValidateOptions(RaftServerOptions peersOptions)
 {
     var errors = new List<ValidationResult>();
     if (!Validator.TryValidateObject(peersOptions, new ValidationContext(peersOptions), errors, true))
@@ -180,13 +185,13 @@ FileStream GetLogFileStream(RaftServerOptions options)
     }
 }
 
-ILogStorage CreateLogStorage(Stream stream)
+( ILogStorage, FileLogStorage ) CreateLogStorage(Stream stream)
 {
     stream = new BufferedStream(stream);
-    ILogStorage logStorage;
+    FileLogStorage fileStorage;
     try
     {
-        logStorage = FileLogStorage.Initialize(stream);
+        fileStorage = FileLogStorage.Initialize(stream);
     }
     catch (InvalidDataException invalidDataException)
     {
@@ -199,9 +204,9 @@ ILogStorage CreateLogStorage(Stream stream)
         throw;
     }
 
-    logStorage = new ExclusiveAccessLogStorageDecorator(logStorage);
+    ILogStorage logStorage = new ExclusiveAccessLogStorageDecorator(fileStorage);
     logStorage = new LastLogEntryCachingFileLogStorageDecorator(logStorage);
-    return logStorage;
+    return ( logStorage, fileStorage );
 }
 
 FileStream OpenMetadataFile(RaftServerOptions options)
@@ -217,13 +222,13 @@ FileStream OpenMetadataFile(RaftServerOptions options)
     }
 }
 
-IMetadataStorage CreateMetadataStorage(Stream stream)
+( IMetadataStorage, FileMetadataStorage ) CreateMetadataStorage(Stream stream)
 {
     stream = new BufferedStream(stream);
-    IMetadataStorage storage;
+    FileMetadataStorage fileStorage;
     try
     {
-        storage = FileMetadataStorage.Initialize(stream, new Term(1), null);
+        fileStorage = FileMetadataStorage.Initialize(stream, new Term(1), null);
     }
     catch (InvalidDataException invalidDataException)
     {
@@ -236,17 +241,23 @@ IMetadataStorage CreateMetadataStorage(Stream stream)
         throw;
     }
     
-    storage = new CachingFileMetadataStorageDecorator(storage);
+    IMetadataStorage storage = new CachingFileMetadataStorageDecorator(fileStorage);
     storage = new ExclusiveAccessMetadataStorageDecorator(storage);
     
-    return storage;
+    return ( storage, fileStorage );
 }
 
-IStateMachine CreateStateMachine()
+IStateMachine CreateJobQueueStateMachine()
 {
     Log.Information("Создаю пустую очередь задач в памяти");
     var unboundedJobQueue = new UnboundedJobQueue(new PriorityQueueSortedQueue<int, byte[]>());
     Log.Information("Использую строковый десериализатор команд с кодировкой UTF-8");
     var stringCommandDeserializer = new StringCommandDeserializer(Encoding.UTF8);
     return new ProxyJobQueueStateMachine(new SingleQueueJobQueueStateMachine(unboundedJobQueue), stringCommandDeserializer);
+}
+
+RaftNode CreateRaftNode(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine stateMachine, IMetadataStorage metadataStorage)
+{
+    var jobQueue = new TaskJobQueue(Log.ForContext<TaskJobQueue>());
+    return RaftNode.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftNode>(), randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage);
 }

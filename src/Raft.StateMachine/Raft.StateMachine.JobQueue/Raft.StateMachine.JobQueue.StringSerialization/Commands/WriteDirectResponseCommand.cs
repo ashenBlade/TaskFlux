@@ -16,6 +16,9 @@ public class WriteDirectResponseCommand: BaseStringResponse, ICommand
         return this;
     }
 
+    public void ApplyNoResponse(IJobQueueStateMachine stateMachine)
+    { }
+
     protected override void Accept(StreamWriter writer)
     {
         writer.Write(_response);

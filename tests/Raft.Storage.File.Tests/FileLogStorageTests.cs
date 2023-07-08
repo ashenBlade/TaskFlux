@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text;
 using Raft.Core;
 using Raft.Core.Log;
+using Raft.Storage.File.Log;
 
 namespace Raft.Storage.File.Tests;
 

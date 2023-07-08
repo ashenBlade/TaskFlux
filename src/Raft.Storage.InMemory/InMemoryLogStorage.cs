@@ -81,4 +81,9 @@ public class InMemoryLogStorage: ILogStorage
     {
         return new LogEntryInfo(_log[index].Term, index);
     }
+
+    public IReadOnlyList<LogEntry> GetRange(int start, int end)
+    {
+        return _log.GetRange(start, end);
+    }
 }

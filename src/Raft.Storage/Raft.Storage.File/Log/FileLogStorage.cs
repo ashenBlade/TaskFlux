@@ -1,10 +1,10 @@
 ﻿using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Text;
 using Raft.Core;
 using Raft.Core.Log;
+using Raft.StateMachine;
 
-namespace Raft.Storage.File;
+namespace Raft.Storage.File.Log;
 
 public class FileLogStorage: ILogStorage
 {
@@ -42,12 +42,12 @@ public class FileLogStorage: ILogStorage
     /// <summary>
     /// Список отображений: индекс записи - позиция в файле (потоке)
     /// </summary>
-    private List<PositionTerm>? _index;
+    private List<PositionTerm> _index = null!;
 
     /// <summary>
     /// Флаг инициализации
     /// </summary>
-    private bool _initialized;
+    private volatile bool _initialized;
     
     public FileLogStorage(Stream file)
     {
@@ -158,7 +158,7 @@ public class FileLogStorage: ILogStorage
             throw;
         }
         
-        _index!.Add(new PositionTerm(entry.Term, savedLastPosition));
+        _index.Add(new PositionTerm(entry.Term, savedLastPosition));
         return new LogEntryInfo(entry.Term, _index.Count - 1);
     }
 
@@ -166,7 +166,7 @@ public class FileLogStorage: ILogStorage
     {
         CheckInitialized();
         
-        if (_index!.Count < index)
+        if (_index.Count < index)
         {
             throw new ArgumentOutOfRangeException(nameof(index), index, $"Индекс для вставки записи превысил наибольший хранимый индекс {_index.Count}");
         }
@@ -182,7 +182,7 @@ public class FileLogStorage: ILogStorage
         using var writer = new BinaryWriter(memory, Encoding, true);
         var oldLength = _file.Length;
         
-        var startPosition = index == _index!.Count
+        var startPosition = index == _index.Count
                                 ? _file.Length
                                 : _index[index].Position;
 
@@ -214,7 +214,7 @@ public class FileLogStorage: ILogStorage
             _file.SetLength(_file.Position);
         }
             
-        _index!.RemoveRange(index, _index.Count - index);
+        _index.RemoveRange(index, _index.Count - index);
         _index.AddRange(newIndexes);
 
         return GetLastLogEntryInfoCore();
@@ -224,7 +224,7 @@ public class FileLogStorage: ILogStorage
     {
         CheckInitialized();
         
-        return _index!.Count == 0
+        return _index.Count == 0
                    ? LogEntryInfo.Tomb
                    : new LogEntryInfo(_index[^1].Term, _index.Count - 1);
     }
@@ -240,7 +240,7 @@ public class FileLogStorage: ILogStorage
                 "Следующий индекс записи в логе не может быть отрицательным");
         }
 
-        if (nextIndex > _index!.Count)
+        if (nextIndex > _index.Count)
         {
             throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
                 "Следующий индекс записи в логе не может быть больше размера лога");
@@ -255,7 +255,7 @@ public class FileLogStorage: ILogStorage
     {
         CheckInitialized();
         
-        if (_index!.Count == 0)
+        if (_index.Count == 0)
         {
             return LogEntryInfo.Tomb;
         }
@@ -267,47 +267,80 @@ public class FileLogStorage: ILogStorage
     {
         CheckInitialized();
         
-        return ReadLogCore(DataStartPosition);
+        return ReadLogCore(DataStartPosition, _index.Count);
     }
 
     public IReadOnlyList<LogEntry> ReadFrom(int startIndex)
     {
         CheckInitialized();
-        if (_index!.Count == startIndex)
+        if (_index.Count == startIndex)
         {
             return Array.Empty<LogEntry>();
         }
         var position = _index[startIndex].Position;
-        return ReadLogCore(position);
+        return ReadLogCore(position, _index.Count - startIndex);
     }
 
-    private IReadOnlyList<LogEntry> ReadLogCore(long position)
+    private IReadOnlyList<LogEntry> ReadLogCore(long position, int sizeHint)
+    {
+        var list = new List<LogEntry>(sizeHint);
+        list.AddRange(ReadLogIncrementally(position));
+        return list;
+    }
+
+    private IEnumerable<LogEntry> ReadLogIncrementally(long position)
     {
         _file.Seek(position, SeekOrigin.Begin);
-        var list = new List<LogEntry>();
         
         while (_file.Position != _file.Length)
         {
             var term = new Term(_reader.ReadInt32());
-            var length = _reader.ReadInt32();
-            var data = new byte[length];
+            var bufferLength = _reader.ReadInt32();
+            var data = new byte[bufferLength];
             var read = _reader.Read(data);
-            if (read < length)
+            if (read < bufferLength)
             {
                 throw new InvalidDataException(
-                    $"Файл в неконсистентном состоянии: указанная длина буфера {length}, но удалось прочитать {read}");
+                    $"Файл в неконсистентном состоянии: указанная длина буфера {bufferLength}, но удалось прочитать {read}");
             }
-            list.Add(new LogEntry(term, data));
+            yield return new LogEntry(term, data);
         }
-
-        return list;
     }
 
     public LogEntryInfo GetAt(int index)
     {
         CheckInitialized();
         
-        return new LogEntryInfo(_index![index].Term, index);
+        return new LogEntryInfo(_index[index].Term, index);
+    }
+
+    public IReadOnlyList<LogEntry> GetRange(int start, int end)
+    {
+        CheckInitialized();
+        
+        if (_index.Count < end)
+        {
+            throw new InvalidOperationException($"Индекс конца больше размера лога. Индекс конца: {end}. Размер лога: {_index.Count}");
+        }
+
+        if (end < start)
+        {
+            throw new ArgumentException($"Индекс конца не может быть раньше индекса начала. Индекс начала: {start}. Индекс конца: {end}");
+        }
+
+        // Индексы включительно
+        var count = end - start + 1;
+        var entries = new List<LogEntry>(count);
+        try
+        {
+            entries.AddRange(ReadLogIncrementally(_index[start].Position).Take(count));
+        }
+        catch (Exception)
+        {
+            Serilog.Log.Error("Ошибка на позиции старта {Position} для индекса {Index}", _index[start].Position, start);
+            throw;
+        }
+        return entries;
     }
 
     private static void Serialize(LogEntry entry, BinaryWriter writer)

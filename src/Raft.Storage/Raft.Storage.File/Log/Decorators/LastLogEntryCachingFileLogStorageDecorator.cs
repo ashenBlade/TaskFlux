@@ -1,6 +1,6 @@
 using Raft.Core.Log;
 
-namespace Raft.Storage.File.Decorators;
+namespace Raft.Storage.File.Log.Decorators;
 
 /// <summary>
 /// Декоратор для быстрого доступа к последней записи в логе.
@@ -63,5 +63,10 @@ public class LastLogEntryCachingFileLogStorageDecorator: ILogStorage
             return _lastLogEntry;
         }
         return _storage.GetAt(index);
+    }
+
+    public IReadOnlyList<LogEntry> GetRange(int start, int end)
+    {
+        return _storage.GetRange(start, end);
     }
 }

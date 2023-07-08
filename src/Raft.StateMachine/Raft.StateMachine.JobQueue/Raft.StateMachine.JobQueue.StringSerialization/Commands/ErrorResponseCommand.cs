@@ -22,4 +22,7 @@ public class ErrorResponseCommand: BaseStringResponse, ICommand
     {
         return this;
     }
+
+    public void ApplyNoResponse(IJobQueueStateMachine stateMachine)
+    { }
 }

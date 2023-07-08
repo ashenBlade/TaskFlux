@@ -6,4 +6,7 @@ public class NullStateMachine: IStateMachine
     {
         return NullResponse.Instance;
     }
+
+    public void ApplyNoResponse(byte[] rawCommand)
+    { }
 }

@@ -1,6 +1,6 @@
 using Raft.Core.Log;
 
-namespace Raft.Storage.File.Decorators;
+namespace Raft.Storage.File.Log.Decorators;
 
 public class ExclusiveAccessLogStorageDecorator: ILogStorage
 {
@@ -121,6 +121,23 @@ public class ExclusiveAccessLogStorageDecorator: ILogStorage
         {
             _lock.Enter(ref taken);
             return _log.GetAt(index);
+        }
+        finally
+        {
+            if (taken)
+            {
+                _lock.Exit();
+            }
+        }
+    }
+
+    public IReadOnlyList<LogEntry> GetRange(int start, int end)
+    {
+        var taken = false;
+        try
+        {
+            _lock.Enter(ref taken);
+            return _log.GetRange(start, end);
         }
         finally
         {

@@ -36,7 +36,6 @@ internal class LeaderState: BaseNodeState
     
     private void OnHeartbeatTimer()
     {
-        _logger.Verbose("Сработал Heartbeat таймер. Отправляю команду всем обработчикам узлов");
         Array.ForEach(_processors, static p => p.NotifyHeartbeatTimeout());
         HeartbeatTimer.Start();
     }
@@ -66,8 +65,6 @@ internal class LeaderState: BaseNodeState
         {
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
-            // CurrentTerm = request.Term;
-            // VotedFor = null;
             Node.UpdateState(request.Term, null);
         }
         
@@ -98,8 +95,6 @@ internal class LeaderState: BaseNodeState
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            // CurrentTerm = request.CandidateTerm;
-            // VotedFor = request.CandidateId;
             Node.UpdateState(request.CandidateTerm, request.CandidateId);
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
@@ -120,8 +115,6 @@ internal class LeaderState: BaseNodeState
             Node.UpdateState(request.CandidateTerm, request.CandidateId);
             CurrentState = FollowerState.Create(Node);
             ElectionTimer.Start();
-            // CurrentTerm = request.CandidateTerm;
-            // VotedFor = request.CandidateId;
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -146,23 +139,23 @@ internal class LeaderState: BaseNodeState
     public override SubmitResponse Apply(SubmitRequest request)
     {
         // Добавляем команду в лог
-
         var entry = new LogEntry( CurrentTerm, request.Command );
         var appended = Log.Append(entry);
-        // Сигнализируем узлам, чтобы принялись за работу
+        
+        // Сигнализируем узлам, чтобы принялись реплицировать
         var synchronizer = new AppendEntriesRequestSynchronizer(PeerGroup, appended.Index);
         Array.ForEach(_processors, p => p.NotifyAppendEntries(synchronizer));
         
         // Ждем достижения кворума
         synchronizer.LogReplicated.Wait(_cts.Token);
         
-        // Пытаемся применить команду к машине состояний
+        // Применяем команду к машине состояний
         var response = StateMachine.Apply(request.Command);
         
         // Обновляем индекс последней закоммиченной записи
         Log.Commit(appended.Index);
         
         // Возвращаем результат
-        return new SubmitResponse(new LogEntry(appended.Term, request.Command), response);
+        return SubmitResponse.Success(response);
     }
 }

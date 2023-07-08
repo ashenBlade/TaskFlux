@@ -49,7 +49,6 @@ public class TcpPeer: IPeer
         using var cts = CreateTimeoutCts(token, _requestTimeout);
         try
         {
-            _logger.Debug("Делаю запрос AppendEntries");
             var success = await _client.SendAsync(new AppendEntriesRequestPacket(request), cts.Token);
             if (!success)
             {
@@ -57,16 +56,13 @@ public class TcpPeer: IPeer
                 return null;
             }
         
-            _logger.Debug("Запрос AppendEntries отослан. Получаю ответ");
             var packet = await _client.ReceiveAsync(cts.Token);
             if (packet is null)
             {
                 _logger.Debug("Узел вернул null. Соединение было закрыто");
                 return null;
             }
-        
-            _logger.Debug("Ответ получен: {Response}", packet);
-
+            
             return packet.PacketType switch
                    {
                        PacketType.AppendEntriesResponse => ( ( AppendEntriesResponsePacket ) packet ).Response,

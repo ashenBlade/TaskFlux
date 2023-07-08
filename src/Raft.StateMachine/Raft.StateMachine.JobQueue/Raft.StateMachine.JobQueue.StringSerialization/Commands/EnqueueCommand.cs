@@ -15,4 +15,7 @@ public class EnqueueCommand: ICommand
     {
         return new EnqueueStringResponse(stateMachine.Apply(_request));
     }
+
+    public void ApplyNoResponse(IJobQueueStateMachine stateMachine)
+    { }
 }

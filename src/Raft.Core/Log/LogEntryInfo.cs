@@ -7,7 +7,7 @@ public readonly record struct LogEntryInfo(Term Term, int Index)
     /// В оригинальной статье используется индексирование с 1.
     /// Для удобства я использую индексирование с 0.
     /// </summary>
-    private const int TombIndex = -1;
+    public const int TombIndex = -1;
     
     /// <summary>
     /// Пустая запись.

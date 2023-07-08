@@ -4,8 +4,8 @@ public class StorageLog: ILog
 {
     private readonly ILogStorage _storage;
     public LogEntryInfo LastEntry => _storage.GetLastLogEntry();
-    public int CommitIndex { get; set; }
-    public int LastApplied { get; set; }
+    public int CommitIndex { get; private set; } = LogEntryInfo.TombIndex;
+    public int LastApplied { get; private set; } = LogEntryInfo.TombIndex;
     public IReadOnlyList<LogEntry> ReadLog() => _storage.ReadAll();
 
     public StorageLog(ILogStorage storage)
@@ -69,8 +69,7 @@ public class StorageLog: ILog
 
         return false;
     }
-
-
+    
     public IReadOnlyList<LogEntry> GetFrom(int index)
     {
         if (LastEntry.Index < index)
@@ -80,9 +79,22 @@ public class StorageLog: ILog
         return _storage.ReadFrom(index);
     }
 
-    public void Commit(int index)
+
+    public CommitDelta Commit(int index)
     {
-        CommitIndex = index;
+        if (LastEntry.Index < index)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), index,
+                $"Невозможно выполнить коммит: переданный индекс больше количества хранимых записей - {LastEntry.Index}");
+        }
+
+        var previous = CommitIndex;
+        if (CommitIndex < index)
+        {
+            CommitIndex = index;
+        }
+
+        return new CommitDelta(previous, index);
     }
 
     public LogEntryInfo GetPrecedingEntryInfo(int nextIndex)
@@ -93,5 +105,14 @@ public class StorageLog: ILog
         }
         
         return _storage.GetPrecedingLogEntryInfo(nextIndex);
+    }
+
+    public void SetLastApplied(int index)
+    {
+        if (index < LogEntryInfo.TombIndex)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), index, "Переданный индекс меньше TombIndex");
+        }
+        LastApplied = index;
     }
 }
