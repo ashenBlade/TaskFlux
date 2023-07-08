@@ -81,6 +81,7 @@ internal class LeaderState: BaseNodeState
         if (Log.CommitIndex < request.LeaderCommit)
         {
             Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
+            Log.ApplyUncommitted(StateMachine);
         }
 
         return AppendEntriesResponse.Ok(CurrentTerm);
@@ -154,6 +155,7 @@ internal class LeaderState: BaseNodeState
         
         // Обновляем индекс последней закоммиченной записи
         Log.Commit(appended.Index);
+        Log.SetLastApplied(appended.Index);
         
         // Возвращаем результат
         return SubmitResponse.Success(response);

@@ -67,6 +67,13 @@ public interface ILog
     /// </summary>
     /// <param name="index">Индекс новой закомиченной записи</param>
     /// <returns>Результат коммита лога</returns>
-    public CommitDelta Commit(int index);
+    public void Commit(int index);
     public LogEntryInfo GetPrecedingEntryInfo(int nextIndex);
+    /// <summary>
+    /// Применить непримененные записи к указанной машине состояний
+    /// </summary>
+    /// <param name="stateMachine">Машина состояний, для которой нужно применить команды</param>
+    public void ApplyUncommitted(IStateMachine stateMachine);
+
+    void SetLastApplied(int index);
 }

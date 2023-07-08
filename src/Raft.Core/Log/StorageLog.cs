@@ -1,3 +1,5 @@
+using Raft.StateMachine;
+
 namespace Raft.Core.Log;
 
 public class StorageLog: ILog
@@ -5,7 +7,7 @@ public class StorageLog: ILog
     private readonly ILogStorage _storage;
     public LogEntryInfo LastEntry => _storage.GetLastLogEntry();
     public int CommitIndex { get; private set; } = LogEntryInfo.TombIndex;
-    public int LastApplied { get; private set; } = LogEntryInfo.TombIndex;
+    public int LastApplied { get; private set; } = 0;
     public IReadOnlyList<LogEntry> ReadLog() => _storage.ReadAll();
 
     public StorageLog(ILogStorage storage)
@@ -80,7 +82,7 @@ public class StorageLog: ILog
     }
 
 
-    public CommitDelta Commit(int index)
+    public void Commit(int index)
     {
         if (LastEntry.Index < index)
         {
@@ -88,13 +90,10 @@ public class StorageLog: ILog
                 $"Невозможно выполнить коммит: переданный индекс больше количества хранимых записей - {LastEntry.Index}");
         }
 
-        var previous = CommitIndex;
         if (CommitIndex < index)
         {
             CommitIndex = index;
         }
-
-        return new CommitDelta(previous, index);
     }
 
     public LogEntryInfo GetPrecedingEntryInfo(int nextIndex)
@@ -107,12 +106,28 @@ public class StorageLog: ILog
         return _storage.GetPrecedingLogEntryInfo(nextIndex);
     }
 
+    public void ApplyUncommitted(IStateMachine stateMachine)
+    {
+        if (CommitIndex <= LastApplied || CommitIndex == -1)
+        {
+            return;
+        }
+
+        foreach (var (_, data) in _storage.GetRange(LastApplied, CommitIndex))
+        {
+            stateMachine.Apply(data);
+        }
+
+        LastApplied = CommitIndex;
+    }
+
     public void SetLastApplied(int index)
     {
         if (index < LogEntryInfo.TombIndex)
         {
             throw new ArgumentOutOfRangeException(nameof(index), index, "Переданный индекс меньше TombIndex");
         }
+        
         LastApplied = index;
     }
 }

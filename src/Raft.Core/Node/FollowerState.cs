@@ -87,6 +87,7 @@ internal class FollowerState: BaseNodeState
         if (Log.CommitIndex < request.LeaderCommit)
         {
             Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
+            Log.ApplyUncommitted(StateMachine);
         }
 
         return AppendEntriesResponse.Ok(CurrentTerm);
