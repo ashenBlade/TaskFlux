@@ -13,11 +13,12 @@ internal interface IRequestQueue
     /// <returns>Асинхронный поток команд</returns>
     /// <remarks>Вызывается читателем - <see cref="PeerProcessor"/></remarks>
     public IAsyncEnumerable<AppendEntriesRequestSynchronizer> ReadAllRequestsAsync(CancellationToken token);
+    
     /// <summary>
     /// Послать команду на отправку Heartbeat
     /// </summary>
     /// <remarks>Вызывается при срабатывании Heartbeat Timeout</remarks>
-    public void AddHeartbeat();
+    public void AddHeartbeatIfEmpty();
     
     /// <summary>
     /// Добавить в очередь <paramref name="synchronizer"/>

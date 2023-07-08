@@ -220,7 +220,7 @@ public class LeaderStateTests
                 AlwaysTrueQuorumChecker.Instance, _lastLogIndex);
         }
 
-        public void AddHeartbeat()
+        public void AddHeartbeatIfEmpty()
         {
             if (_isFirstRequest)
             {

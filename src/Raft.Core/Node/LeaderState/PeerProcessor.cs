@@ -7,21 +7,6 @@ namespace Raft.Core.Node.LeaderState;
 internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue)
 {
     private PeerInfo Info { get; } = new(State.Node.Log.LastEntry.Index + 1);
-    private volatile bool _isBusy;
-
-    private readonly record struct OperationScope(PeerProcessor Processor): IDisposable
-    {
-        public static OperationScope Begin(PeerProcessor processor)
-        {
-            processor._isBusy = true;
-            return new OperationScope(processor);
-        }
-
-        public void Dispose()
-        {
-            Processor._isBusy = false;
-        }
-    }
 
     /// <summary>
     /// Метод для обработки узла
@@ -32,7 +17,6 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
     {
         await foreach (var rs in Queue.ReadAllRequestsAsync(token))
         {
-            using var _ = OperationScope.Begin(this);
             var success = await ProcessRequestAsync(rs, token);
             rs.NotifyComplete();
             if (!success)
@@ -126,10 +110,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
 
     public void NotifyHeartbeatTimeout()
     {
-        if (!_isBusy)
-        {
-            Queue.AddHeartbeat();
-        }
+        Queue.AddHeartbeatIfEmpty();
     }
 
     public void NotifyAppendEntries(AppendEntriesRequestSynchronizer synchronizer)
