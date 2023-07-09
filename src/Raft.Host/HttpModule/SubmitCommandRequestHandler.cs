@@ -4,8 +4,13 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Raft.Core.Commands.Submit;
-using Raft.Core.Log;
 using Raft.Core.Node;
+using Raft.Host.Infrastructure;
+using Raft.StateMachine.JobQueue.Commands;
+using Raft.StateMachine.JobQueue.Commands.Dequeue;
+using Raft.StateMachine.JobQueue.Commands.Enqueue;
+using Raft.StateMachine.JobQueue.Commands.Error;
+using Raft.StateMachine.JobQueue.Commands.GetCount;
 using Serilog;
 
 namespace Raft.Host.HttpModule;
@@ -26,6 +31,13 @@ public class SubmitCommandRequestHandler: IRequestHandler
     {
         response.KeepAlive = false;
         response.ContentType = "application/json";
+
+        if (!_node.IsLeader())
+        {
+            _logger.Debug("Пришел запрос, но текущий узел не лидер");
+            await RespondNotLeaderAsync(response);
+            return;
+        }
         
         if (!request.HasEntityBody)
         {
@@ -34,27 +46,183 @@ public class SubmitCommandRequestHandler: IRequestHandler
             return;
         }
         
-        var body = await GetRequestBodyAsync(request);
-        _logger.Debug("Принял запрос от клиента. Тело: {Body}", body);
+        _logger.Debug("Читаю строку запроса клиента");
+        var requestString = await ReadRequestStringAsync(request);
 
-        var submitResponse = _node.Handle(new SubmitRequest(body));
-
-        if (submitResponse.WasLeader)
+        if (string.IsNullOrWhiteSpace(requestString))
         {
-            RespondSuccessAsync(response, submitResponse);
+            _logger.Debug("В теле запроса не было данных");
+            await RespondEmptyBodyNotAcceptedAsync(response);
             return;
         }
-        
-        await RespondNotLeaderAsync(response);
-    }
-    
-    private void RespondSuccessAsync(HttpListenerResponse response,
-                                           SubmitResponse submitResponse)
-    {
-        response.StatusCode = ( int ) HttpStatusCode.OK;
-        submitResponse.Response.WriteTo(response.OutputStream);
+
+        if (TrySerializeRequestPayload(requestString, out var payload))
+        {
+            var submitResponse = _node.Handle(new SubmitRequest(payload));
+            if (submitResponse.WasLeader)
+            {
+                RespondSuccessAsync(response, submitResponse);
+                return;
+            }
+            
+            await RespondNotLeaderAsync(response);
+            return;
+        }
+
+        await RespondInvalidRequestStringAsync(response);
     }
 
+    private async Task RespondInvalidRequestStringAsync(HttpListenerResponse response)
+    {
+        var body = SerializeResponse(false, "Ошибка десериализации команды");
+        await using var writer = new StreamWriter(response.OutputStream);
+        await writer.WriteAsync(body);
+        await writer.FlushAsync();
+    }
+
+    private static bool TrySerializeRequestPayload(string requestString, out byte[] payload)
+    {
+        try
+        {
+            var tokens = requestString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        
+            // Точно будет хотя бы 1 элемент, т.к. проверяли выше, что строка не пуста
+            var command = tokens[0];
+            IDefaultRequest? request = null;
+            if (command.Equals("enqueue", StringComparison.InvariantCultureIgnoreCase) 
+             && tokens.Length == 3)
+            {
+                var key = int.Parse(tokens[1]);
+                var data = Encoding.GetBytes( tokens[2] );
+                request = new EnqueueRequest(key, data);
+            }
+            else if (command.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase) 
+                  && tokens.Length == 1)
+            {
+                request = DequeueRequest.Instance;
+            }
+            else if (command.Equals("count", StringComparison.InvariantCultureIgnoreCase) 
+                  && tokens.Length == 1)
+            {
+                request = GetCountRequest.Instance;
+            }
+
+            if (request is null)
+            {
+                payload = Array.Empty<byte>();
+                return false;
+            }
+
+            var visitor = new SerializerDefaultRequestVisitor();
+            request.Accept(visitor);
+            payload = visitor.Payload;
+            return true;
+        }
+        catch (Exception)
+        {
+            payload = Array.Empty<byte>();
+            return false;
+        }
+    }
+
+    private class SerializerDefaultRequestVisitor : IDefaultRequestVisitor
+    {
+        public byte[] Payload { get; private set; } = Array.Empty<byte>();
+        
+        public void Visit(DequeueRequest request)
+        {
+            using var memory = new MemoryStream();
+            using var writer = new BinaryWriter(memory);
+            DefaultRequestSerializer.Instance.Serialize(request, writer);
+            Payload = memory.ToArray();
+        }
+
+        public void Visit(EnqueueRequest request)
+        {
+            using var memory = new MemoryStream();
+            using var writer = new BinaryWriter(memory);
+            DefaultRequestSerializer.Instance.Serialize(request, writer);
+            Payload = memory.ToArray();
+        }
+
+        public void Visit(GetCountRequest request)
+        {
+            using var memory = new MemoryStream();
+            using var writer = new BinaryWriter(memory);
+            DefaultRequestSerializer.Instance.Serialize(request, writer);
+            Payload = memory.ToArray();
+        }
+    }
+
+    private void RespondSuccessAsync(HttpListenerResponse response,
+                                     SubmitResponse submitResponse)
+    {
+        var visitor = VisitResponse();
+
+        response.StatusCode = ( int ) ( visitor.Ok
+                                            ? HttpStatusCode.OK
+                                            : HttpStatusCode.BadRequest );
+
+        using var writer = new StreamWriter(response.OutputStream, leaveOpen: true);
+
+        writer.WriteAsync(SerializeResponse(visitor.Ok, visitor.Payload));
+
+        HttpResponseDefaultResponseVisitor VisitResponse()
+        {
+            using var memory = new MemoryStream();
+            submitResponse.Response.WriteTo(memory);
+            var defaultResponse = DefaultResponseDeserializer.Instance.Deserialize(memory.ToArray());
+            var v = new HttpResponseDefaultResponseVisitor();
+            defaultResponse.Accept(v);
+            return v;
+        }
+    }
+
+    private class HttpResponseDefaultResponseVisitor : IDefaultResponseVisitor
+    {
+        public Dictionary<string, object?> Payload { get; set; } = new();
+        public bool Ok { get; set; } = true;
+        
+        private void SetError()
+        {
+            Ok = false;
+        }
+        
+        public void Visit(DequeueResponse response)
+        {
+            if (response.Success)
+            {
+                Payload["ok"] = true;
+                Payload["key"] = response.Key;
+                Payload["data"] = Convert.ToBase64String(response.Payload);
+            }
+            else
+            {
+                Payload["ok"] = false;
+            }
+        }
+
+        public void Visit(EnqueueResponse response)
+        {
+            Payload["ok"] = response.Success;
+        }
+
+        public void Visit(GetCountResponse response)
+        {
+            Payload["count"] = response.Count;
+        }
+
+        public void Visit(ErrorResponse response)
+        {
+            SetError();
+
+            if (!string.IsNullOrWhiteSpace(response.Message))
+            {
+                Payload["message"] = response.Message;
+            }
+        }
+    }
+    
     private async Task RespondNotLeaderAsync(HttpListenerResponse response)
     {
         response.StatusCode = ( int ) HttpStatusCode.MisdirectedRequest;
@@ -70,21 +238,23 @@ public class SubmitCommandRequestHandler: IRequestHandler
         await writer.WriteAsync(SerializeResponse(false, "В теле запроса не указаны данные"));
     }
 
-    private async Task<byte[]> GetRequestBodyAsync(HttpListenerRequest request)
+    private async Task<string> ReadRequestStringAsync(HttpListenerRequest request)
     {
-        var memory = new MemoryStream((int)request.ContentLength64);
-        await request.InputStream.CopyToAsync(memory);
-
-        return memory.ToArray();
+        using var reader = new StreamReader(request.InputStream, leaveOpen: true);
+        return await reader.ReadToEndAsync();
     }
 
-    private string SerializeResponse(bool success, string? message, LogEntry? createdEntry = null)
+    private string SerializeResponse(bool success, string? message)
+    {
+        return SerializeResponse(success, new Dictionary<string, object?>() {{"message", message}});
+    }
+
+    private string SerializeResponse(bool success, Dictionary<string, object?>? payload)
     {
         return JsonSerializer.Serialize(new Response()
         {
-            Message = message,
             Success = success,
-            CreatedEntry = createdEntry
+            Payload = payload
         }, new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
@@ -96,7 +266,6 @@ public class SubmitCommandRequestHandler: IRequestHandler
     private class Response
     {
         public bool Success { get; set; }
-        public string? Message { get; set; } 
-        public LogEntry? CreatedEntry { get; set; }
+        public Dictionary<string, object?>? Payload { get; set; }
     }
 }
