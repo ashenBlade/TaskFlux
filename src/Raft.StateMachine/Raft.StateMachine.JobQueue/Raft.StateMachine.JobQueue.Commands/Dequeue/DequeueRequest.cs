@@ -1,10 +1,10 @@
 namespace Raft.StateMachine.JobQueue.Commands.Dequeue;
 
-public record DequeueRequest(): IDefaultRequest
+public record DequeueRequest(): IJobQueueRequest
 {
     public static readonly DequeueRequest Instance = new();
     public RequestType Type => RequestType.DequeueRequest;
-    public void Accept(IDefaultRequestVisitor visitor)
+    public void Accept(IJobQueueRequestVisitor visitor)
     {
         visitor.Visit(this);
     }

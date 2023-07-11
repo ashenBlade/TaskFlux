@@ -2,13 +2,11 @@ using Raft.StateMachine.JobQueue.Commands.Dequeue;
 using Raft.StateMachine.JobQueue.Commands.Enqueue;
 using Raft.StateMachine.JobQueue.Commands.GetCount;
 
-namespace Raft.StateMachine.JobQueue.Commands;
+namespace Raft.StateMachine.JobQueue.Commands.Serializers;
 
-public class DefaultRequestDeserializer
+public class DefaultCommandDeserializer: ICommandDeserializer
 {
-    public static readonly DefaultRequestDeserializer Instance = new();
-    
-    public IDefaultRequest Deserialize(byte[] payload)
+    public ICommand Deserialize(byte[] payload)
     {
         using var stream = new MemoryStream(payload);
         using var reader = new BinaryReader(stream);
@@ -27,17 +25,17 @@ public class DefaultRequestDeserializer
         }
     }
     
-    private GetCountRequest ParseGetCountRequest(BinaryReader _)
+    private GetCountCommand ParseGetCountRequest(BinaryReader reader)
     {
-        return GetCountRequest.Instance;
+        return new GetCountCommand(GetCountRequest.Instance);
     }
     
-    private DequeueRequest ParseDequeueRequest(BinaryReader _)
+    private DequeueCommand ParseDequeueRequest(BinaryReader reader)
     {
-        return DequeueRequest.Instance;
+        return new DequeueCommand(DequeueRequest.Instance);
     }
     
-    private EnqueueRequest ParseEnqueueRequest(BinaryReader reader)
+    private EnqueueCommand ParseEnqueueRequest(BinaryReader reader)
     {
         var key = reader.ReadInt32();
         var bufferLength = reader.ReadInt32();
@@ -49,6 +47,6 @@ public class DefaultRequestDeserializer
                 $"Прочитанное количество байт из тела не равно указанному размеру тела. Указано: {bufferLength}. Прочитано: {read}");
         }
 
-        return new EnqueueRequest(key, buffer);
+        return new EnqueueCommand(new EnqueueRequest(key, buffer));
     }
 }

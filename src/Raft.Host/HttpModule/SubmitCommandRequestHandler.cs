@@ -88,7 +88,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         
             // Точно будет хотя бы 1 элемент, т.к. проверяли выше, что строка не пуста
             var command = tokens[0];
-            IDefaultRequest? request = null;
+            IJobQueueRequest? request = null;
             if (command.Equals("enqueue", StringComparison.InvariantCultureIgnoreCase) 
              && tokens.Length == 3)
             {
@@ -113,7 +113,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
                 return false;
             }
 
-            var visitor = new SerializerDefaultRequestVisitor();
+            var visitor = new SerializerJobQueueRequestVisitor();
             request.Accept(visitor);
             payload = visitor.Payload;
             return true;
@@ -125,7 +125,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         }
     }
 
-    private class SerializerDefaultRequestVisitor : IDefaultRequestVisitor
+    private class SerializerJobQueueRequestVisitor : IJobQueueRequestVisitor
     {
         public byte[] Payload { get; private set; } = Array.Empty<byte>();
         
@@ -133,7 +133,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         {
             using var memory = new MemoryStream();
             using var writer = new BinaryWriter(memory);
-            DefaultRequestSerializer.Instance.Serialize(request, writer);
+            JobQueueRequestSerializer.Instance.Serialize(request, writer);
             Payload = memory.ToArray();
         }
 
@@ -141,7 +141,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         {
             using var memory = new MemoryStream();
             using var writer = new BinaryWriter(memory);
-            DefaultRequestSerializer.Instance.Serialize(request, writer);
+            JobQueueRequestSerializer.Instance.Serialize(request, writer);
             Payload = memory.ToArray();
         }
 
@@ -149,7 +149,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         {
             using var memory = new MemoryStream();
             using var writer = new BinaryWriter(memory);
-            DefaultRequestSerializer.Instance.Serialize(request, writer);
+            JobQueueRequestSerializer.Instance.Serialize(request, writer);
             Payload = memory.ToArray();
         }
     }
@@ -167,18 +167,18 @@ public class SubmitCommandRequestHandler: IRequestHandler
 
         writer.WriteAsync(SerializeResponse(visitor.Ok, visitor.Payload));
 
-        HttpResponseDefaultResponseVisitor VisitResponse()
+        HttpResponseJobQueueResponseVisitor VisitResponse()
         {
             using var memory = new MemoryStream();
             submitResponse.Response.WriteTo(memory);
             var defaultResponse = DefaultResponseDeserializer.Instance.Deserialize(memory.ToArray());
-            var v = new HttpResponseDefaultResponseVisitor();
+            var v = new HttpResponseJobQueueResponseVisitor();
             defaultResponse.Accept(v);
             return v;
         }
     }
 
-    private class HttpResponseDefaultResponseVisitor : IDefaultResponseVisitor
+    private class HttpResponseJobQueueResponseVisitor : IJobQueueResponseVisitor
     {
         public Dictionary<string, object?> Payload { get; set; } = new();
         public bool Ok { get; set; } = true;

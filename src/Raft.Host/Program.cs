@@ -19,6 +19,7 @@ using Raft.Peer.Decorators;
 using Raft.StateMachine;
 using Raft.StateMachine.JobQueue;
 using Raft.StateMachine.JobQueue.Commands;
+using Raft.StateMachine.JobQueue.Commands.Serializers;
 using Raft.Storage.File;
 using Raft.Storage.File.Decorators;
 using Raft.Storage.File.Log;

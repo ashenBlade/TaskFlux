@@ -6,7 +6,7 @@ using Raft.Core.Log;
 
 namespace Raft.Peer.Tests;
 
-public class SerializationTests
+public class RaftRequestSerializationTests
 {
     private static LogEntry Entry(int term, string data) => new LogEntry(new Term(term), Encoding.UTF8.GetBytes(data));
     

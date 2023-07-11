@@ -5,7 +5,7 @@ using Raft.StateMachine.JobQueue.Commands.GetCount;
 
 namespace Raft.StateMachine.JobQueue.Commands;
 
-public interface IDefaultResponseVisitor
+public interface IJobQueueResponseVisitor
 {
     public void Visit(DequeueResponse response);
     public void Visit(EnqueueResponse response);

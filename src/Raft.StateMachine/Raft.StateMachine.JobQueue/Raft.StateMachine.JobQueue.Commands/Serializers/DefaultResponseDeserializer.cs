@@ -9,7 +9,7 @@ public class DefaultResponseDeserializer
 {
     public static readonly DefaultResponseDeserializer Instance = new();
     
-    public IDefaultResponse Deserialize(byte[] payload)
+    public IJobQueueResponse Deserialize(byte[] payload)
     {
         using var stream = new MemoryStream(payload);
         using var reader = new BinaryReader(stream);
