@@ -86,4 +86,9 @@ public class InMemoryLogStorage: ILogStorage
     {
         return _log.GetRange(start, end);
     }
+
+    public void Flush(int index)
+    {
+        // OK
+    }
 }

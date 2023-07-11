@@ -7,7 +7,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Raft.Core\Raft.Core.csproj" />
+      <ProjectReference Include="..\..\Raft.Core\Raft.Core.csproj" />
+      <ProjectReference Include="..\Raft.Log\Raft.Log.csproj" />
     </ItemGroup>
 
 </Project>

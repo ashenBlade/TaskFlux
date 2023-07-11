@@ -68,12 +68,24 @@ public interface ILog
     /// <param name="index">Индекс новой закомиченной записи</param>
     /// <returns>Результат коммита лога</returns>
     public void Commit(int index);
+    
+    /// <summary>
+    /// Получить информацию о записи, предшествующей указанной
+    /// </summary>
+    /// <param name="nextIndex">Индекс следующей записи</param>
+    /// <returns>Информацию о следующей записи в логе</returns>
+    /// <remarks>Если указанный индекс 0, то вернется <see cref="LogEntryInfo.Tomb"/></remarks>
     public LogEntryInfo GetPrecedingEntryInfo(int nextIndex);
+    
     /// <summary>
     /// Применить непримененные записи к указанной машине состояний
     /// </summary>
     /// <param name="stateMachine">Машина состояний, для которой нужно применить команды</param>
     public void ApplyUncommitted(IStateMachine stateMachine);
 
+    /// <summary>
+    /// Указать новый индекс последней примененной записи
+    /// </summary>
+    /// <param name="index">Индекс записи в логе</param>
     void SetLastApplied(int index);
 }

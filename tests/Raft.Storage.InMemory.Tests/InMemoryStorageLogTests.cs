@@ -1,6 +1,7 @@
 using System.Text;
 using Raft.Core;
 using Raft.Core.Log;
+using Raft.Log;
 
 namespace Raft.Storage.InMemory.Tests;
 

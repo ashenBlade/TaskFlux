@@ -2,7 +2,6 @@
 using System.Text;
 using Raft.Core;
 using Raft.Core.Log;
-using Raft.StateMachine;
 
 namespace Raft.Storage.File.Log;
 
@@ -65,7 +64,8 @@ public class FileLogStorage: ILogStorage
         {
             throw new ArgumentException("Переданный поток не поддерживает запись", nameof(file));
         }
-        
+
+
         _file = file;
         _writer = new BinaryWriter(file, Encoding, true);
         _reader = new BinaryReader(file, Encoding, true);
@@ -341,6 +341,15 @@ public class FileLogStorage: ILogStorage
             throw;
         }
         return entries;
+    }
+
+    public void Flush(int index)
+    {
+        CheckInitialized();
+        
+        // Проверяем индекс на размер лога (индекса)
+        
+        throw new NotImplementedException();
     }
 
     private static void Serialize(LogEntry entry, BinaryWriter writer)

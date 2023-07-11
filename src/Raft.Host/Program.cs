@@ -14,6 +14,7 @@ using Raft.Host.HttpModule;
 using Raft.Host.Infrastructure;
 using Raft.Host.Options;
 using Raft.JobQueue;
+using Raft.Log;
 using Raft.Peer;
 using Raft.Peer.Decorators;
 using Raft.StateMachine;

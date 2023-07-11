@@ -49,5 +49,17 @@ public interface ILogStorage
     /// <returns></returns>
     public LogEntryInfo GetAt(int index);
 
+    /// <summary>
+    /// Получить срез лога с <paramref name="start"/> до <paramref name="end"/> индекса включительно
+    /// </summary>
+    /// <param name="start">Индекс начала включительно</param>
+    /// <param name="end">Индекс конца включительно</param>
+    /// <returns>Срез лога на указанных границах</returns>
     IReadOnlyList<LogEntry> GetRange(int start, int end);
+
+    /// <summary>
+    /// Сбросить на диск все предшествующие указанному индексу включительно записи на диск 
+    /// </summary>
+    /// <param name="index">Индекс, до которого нужно сбросить все записи включительно</param>
+    void Flush(int index);
 }

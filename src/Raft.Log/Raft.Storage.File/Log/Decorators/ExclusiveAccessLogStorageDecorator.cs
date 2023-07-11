@@ -147,4 +147,21 @@ public class ExclusiveAccessLogStorageDecorator: ILogStorage
             }
         }
     }
+
+    public void Flush(int index)
+    {
+        var taken = false;
+        try
+        {
+            _lock.Enter(ref taken);
+            _log.Flush(index);
+        }
+        finally
+        {
+            if (taken)
+            {
+                _lock.Exit();
+            }
+        }
+    }
 }

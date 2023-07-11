@@ -22,7 +22,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\src\Raft.Storage\Raft.Storage.File\Raft.Storage.File.csproj" />
+      <ProjectReference Include="..\..\src\Raft.Log\Raft.Storage.File\Raft.Storage.File.csproj" />
     </ItemGroup>
 
 </Project>

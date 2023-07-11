@@ -1,6 +1,8 @@
+using Raft.Core;
+using Raft.Core.Log;
 using Raft.StateMachine;
 
-namespace Raft.Core.Log;
+namespace Raft.Log;
 
 public class StorageLog: ILog
 {
@@ -9,6 +11,14 @@ public class StorageLog: ILog
     public int CommitIndex { get; private set; } = LogEntryInfo.TombIndex;
     public int LastApplied { get; private set; } = 0;
     public IReadOnlyList<LogEntry> ReadLog() => _storage.ReadAll();
+
+    /// <summary>
+    /// Список не примененных записей лога.
+    /// В него добавляются все незакоммиченные записи лога.
+    /// При вызове <see cref="Commit"/> из этой очереди берутся все записи
+    /// до указанного индекса и записываются в <see cref="_storage"/> (Flush)
+    /// </summary>
+    // private readonly LinkedList<LogEntryIndex> _buffer = new();
 
     public StorageLog(ILogStorage storage)
     {
@@ -81,19 +91,9 @@ public class StorageLog: ILog
         return _storage.ReadFrom(index);
     }
 
-
     public void Commit(int index)
     {
-        if (LastEntry.Index < index)
-        {
-            throw new ArgumentOutOfRangeException(nameof(index), index,
-                $"Невозможно выполнить коммит: переданный индекс больше количества хранимых записей - {LastEntry.Index}");
-        }
-
-        if (CommitIndex < index)
-        {
-            CommitIndex = index;
-        }
+        
     }
 
     public LogEntryInfo GetPrecedingEntryInfo(int nextIndex)
