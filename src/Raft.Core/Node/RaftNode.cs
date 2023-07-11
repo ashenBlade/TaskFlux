@@ -25,14 +25,19 @@ public class RaftNode: IDisposable, INode
     // Выставляем вручную в .Create
     private INodeState? _currentState;
 
-   INodeState INode.CurrentState
+    INodeState INode.CurrentState
     {
-        get => _currentState ?? throw new ArgumentNullException(nameof(_currentState), "Текущее состояние еще не проставлено");
+        get => GetCurrentStateCheck();
         set
         {
             _currentState?.Dispose();
             _currentState = value;
         }
+    }
+
+    private INodeState GetCurrentStateCheck()
+    {
+        return _currentState ?? throw new ArgumentNullException(nameof(_currentState), "Текущее состояние еще не проставлено");
     }
 
     public ITimer ElectionTimer { get; }
@@ -72,7 +77,7 @@ public class RaftNode: IDisposable, INode
 
     public SubmitResponse Handle(SubmitRequest request)
     {
-        return CommandQueue.Enqueue(new SubmitCommand(request, this));
+        return GetCurrentStateCheck().Apply(request);
     }
     
     public static RaftNode Create(NodeId id,
