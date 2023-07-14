@@ -63,7 +63,6 @@ internal class FollowerState: BaseNodeState
     public override AppendEntriesResponse Apply(AppendEntriesRequest request)
     {
         ElectionTimer.Reset();
-        _logger.Debug("AppendEntriesRequest: {Request}", request);
         if (request.Term < CurrentTerm)
         {
             return AppendEntriesResponse.Fail(CurrentTerm);

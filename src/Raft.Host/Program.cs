@@ -33,112 +33,120 @@ Log.Logger = new LoggerConfiguration()
             .Enrich.FromLogContext()
             .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss.ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
             .CreateLogger();
-
-var configuration = new ConfigurationBuilder()
-                   .AddEnvironmentVariables()
-                   .Build();
-
-var networkOptions = configuration.GetSection("NETWORK") is {} section 
-                  && section.Exists()
-                         ? section.Get<NetworkOptions>() ?? NetworkOptions.Default
-                         : NetworkOptions.Default;
-
-var serverOptions = configuration.Get<RaftServerOptions>() 
-                 ?? throw new Exception("Не найдено настроек сервера");
-
-ValidateOptions(serverOptions);
-
-var nodeId = new NodeId(serverOptions.NodeId);
-
-var peers = serverOptions.Peers
-                         .Select(p =>
-                          {
-                              var endpoint = GetEndpoint(p.Host, p.Port);
-                              var id = new NodeId(p.Id);
-                              var client = new PacketClient(new Socket(AddressFamily.InterNetwork, SocketType.Stream,
-                                  ProtocolType.Tcp));
-                              IPeer peer = new TcpPeer(client, endpoint, id, nodeId, networkOptions.ConnectionTimeout, networkOptions.RequestTimeout, Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
-                              peer = new ExclusiveAccessPeerDecorator(peer);
-                              peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
-                              return peer;
-                          })
-                         .ToArray();
-
-Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
-
-Log.Logger.Information("Открываю файл с метаданными");
-await using var metadataFileStream = OpenMetadataFile(serverOptions);
-Log.Logger.Information("Инициализирую хранилище метаданных");
-var (metadataStorage, fileMetadataStorage) = CreateMetadataStorage(metadataFileStream);
-
-Log.Information("Открываю файл с логом предзаписи");
-await using var fileStream = GetLogFileStream(serverOptions);
-Log.Information("Инициализирую хранилище лога предзаписи");
-var (storage, _) = CreateLogStorage(fileStream);
-var log = new StorageLog(storage);
-
-Log.Information("Создаю очередь машины состояний");
-var jobQueue = CreateJobQueueStateMachine();
-Log.Information("Подписываюсь на событие коммита");
-
-using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
-using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
-using var commandQueue = new ChannelCommandQueue();
-
-using var node = CreateRaftNode(nodeId, peers, electionTimer, heartbeatTimer, log, commandQueue, jobQueue, metadataStorage);
-
-var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, node, Log.Logger.ForContext<NodeConnectionManager>());
-var stateObserver = new NodeStateObserver(node, Log.Logger.ForContext<NodeStateObserver>());
-
-var httpModule = CreateHttpRequestModule(configuration);
-
-var nodeConnectionThread = new Thread(o =>
-    {
-        var (value, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
-        value.Run(token);
-    })
-    {
-        Priority = ThreadPriority.Highest, 
-        Name = "Обработчик подключений узлов",
-    };
-
-httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(node, Log.ForContext<SubmitCommandRequestHandler>()));
-httpModule.AddHandler(HttpMethod.Get, "/metrics", new PrometheusRequestHandler(node));
-
-using var cts = new CancellationTokenSource();
-
-// ReSharper disable once AccessToDisposedClosure
-Console.CancelKeyPress += (_, args) =>
-{
-    cts.Cancel();
-    args.Cancel = true;
-};
-
 try
 {
-    Log.Logger.Information("Запускаю менеджер подключений узлов");
-    nodeConnectionThread.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
+
+    var configuration = new ConfigurationBuilder()
+                       .AddEnvironmentVariables()
+                       .Build();
+
+    var networkOptions = configuration.GetSection("NETWORK") is {} section 
+                      && section.Exists()
+                             ? section.Get<NetworkOptions>() ?? NetworkOptions.Default
+                             : NetworkOptions.Default;
+
+    var serverOptions = configuration.Get<RaftServerOptions>() 
+                     ?? throw new Exception("Не найдено настроек сервера");
+
+    ValidateOptions(serverOptions);
+
+    var nodeId = new NodeId(serverOptions.NodeId);
+
+    var peers = serverOptions.Peers
+                             .Select(p =>
+                              {
+                                  var endpoint = GetEndpoint(p.Host, p.Port);
+                                  var id = new NodeId(p.Id);
+                                  var client = new PacketClient(new Socket(AddressFamily.InterNetwork, SocketType.Stream,
+                                      ProtocolType.Tcp));
+                                  IPeer peer = new TcpPeer(client, endpoint, id, nodeId, networkOptions.ConnectionTimeout, networkOptions.RequestTimeout, Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
+                                  peer = new ExclusiveAccessPeerDecorator(peer);
+                                  peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
+                                  return peer;
+                              })
+                             .ToArray();
+
+    Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
+
+    Log.Logger.Information("Открываю файл с метаданными");
+    await using var metadataFileStream = OpenMetadataFile(serverOptions);
+    Log.Logger.Information("Инициализирую хранилище метаданных");
+    var (metadataStorage, _) = CreateMetadataStorage(metadataFileStream);
+
+    Log.Information("Открываю файл с логом предзаписи");
+    await using var fileStream = GetLogFileStream(serverOptions);
+    Log.Information("Инициализирую хранилище лога предзаписи");
+    var (storage, fileStorage) = CreateLogStorage(fileStream);
+    var log = new StorageLog(storage);
+
+    Log.Information("Создаю очередь машины состояний");
+    var jobQueueStateMachine = CreateJobQueueStateMachine();
+
+    RestoreStateMachineState(log, fileStorage, jobQueueStateMachine);
+
+
+    using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
+    using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
+    using var commandQueue = new ChannelCommandQueue();
+
+    using var node = CreateRaftNode(nodeId, peers, electionTimer, heartbeatTimer, log, commandQueue, jobQueueStateMachine, metadataStorage);
+
+    var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, node, Log.Logger.ForContext<NodeConnectionManager>());
+    var stateObserver = new NodeStateObserver(node, Log.Logger.ForContext<NodeStateObserver>());
+
+    var httpModule = CreateHttpRequestModule(configuration);
+
+    var nodeConnectionThread = new Thread(o =>
+        {
+            var (value, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
+            value.Run(token);
+        })
+        {
+            Priority = ThreadPriority.Highest, 
+            Name = "Обработчик подключений узлов",
+        };
+
+    httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(node, Log.ForContext<SubmitCommandRequestHandler>()));
+    httpModule.AddHandler(HttpMethod.Get, "/metrics", new PrometheusRequestHandler(node));
+
+    using var cts = new CancellationTokenSource();
+
+    // ReSharper disable once AccessToDisposedClosure
+    Console.CancelKeyPress += (_, args) =>
+    {
+        cts.Cancel();
+        args.Cancel = true;
+    };
+
+    try
+    {
+        Log.Logger.Information("Запускаю менеджер подключений узлов");
+        nodeConnectionThread.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
     
-    Log.Logger.Information("Запускаю Election Timer");
-    electionTimer.Start();
+        Log.Logger.Information("Запускаю Election Timer");
+        electionTimer.Start();
     
-    Log.Logger.Information("Запукаю фоновые задачи");
-    await Task.WhenAll(
-        stateObserver.RunAsync(cts.Token),
-        commandQueue.RunAsync(cts.Token),
-        httpModule.RunAsync(cts.Token));
-}
-catch (Exception e)
-{
-    Log.Fatal(e, "Ошибка во время работы сервера");
+        Log.Logger.Information("Запукаю фоновые задачи");
+        await Task.WhenAll(
+            stateObserver.RunAsync(cts.Token),
+            commandQueue.RunAsync(cts.Token),
+            httpModule.RunAsync(cts.Token));
+    }
+    catch (Exception e)
+    {
+        Log.Fatal(e, "Ошибка во время работы сервера");
+    }
+    finally
+    {
+        cts.Cancel();
+        nodeConnectionThread.Join();
+    }
 }
 finally
 {
-    cts.Cancel();
-    nodeConnectionThread.Join();
+    Log.CloseAndFlush();
 }
 
-Log.CloseAndFlush();
 
 
 void ValidateOptions(RaftServerOptions peersOptions)
@@ -258,4 +266,26 @@ RaftNode CreateRaftNode(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, IT
 {
     var jobQueue = new TaskJobQueue(Log.ForContext<TaskJobQueue>());
     return RaftNode.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftNode>(), randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage);
+}
+
+void RestoreStateMachineState(StorageLog storageLog, FileLogStorage fileLogStorage, IStateMachine stateMachine)
+{
+    if (fileLogStorage.Count == 0)
+    {
+        Log.Information("Пропускаю восстановление из лога: лог пуст");
+        return;
+    }
+    
+    try
+    {
+        Log.Information("Восстанавливаю предыдущее состояние из лога");
+        storageLog.ApplyCommitted(stateMachine);
+        Log.Debug("Состояние восстановлено. Применено {Count} записей", fileLogStorage.Count);
+    }
+    catch (Exception e)
+    {
+        Log.Fatal(e, "Ошибка во время восстановления лога");
+        Log.CloseAndFlush();
+        throw;
+    }
 }

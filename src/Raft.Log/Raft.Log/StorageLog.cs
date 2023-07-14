@@ -188,21 +188,6 @@ public class StorageLog: ILog
         }
 
         return _storage.GetAt(index);
-        //
-        // // Запись находится в логе на диске
-        // if (nextIndex <= _storage.Count)
-        // {
-        //     return _storage.GetPrecedingLogEntryInfo(nextIndex);
-        // }
-        //
-        // var bufferIndex = nextIndex - _storage.Count - 1;
-        // if (0 <= bufferIndex && bufferIndex < _buffer.Count)
-        // {
-        //     var bufferEntry = _buffer[bufferIndex];
-        //     return new LogEntryInfo(bufferEntry.Term, nextIndex - 1);
-        // }
-        //
-        // throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex, "Указанный индекс выходит за пределы лога");
     }
 
     public void ApplyCommitted(IStateMachine stateMachine)
