@@ -2,6 +2,8 @@ namespace Raft.Core.Log;
 
 public interface ILogStorage
 {
+    public int Count { get; }
+    
     /// <summary>
     /// Добавить одну запись в конец лога
     /// </summary>
@@ -15,7 +17,7 @@ public interface ILogStorage
     /// <param name="entries">Записи, которые необходимо добавить</param>
     /// <param name="index">Индекс, начиная с которого необходимо добавить записи</param>
     /// <returns>Информация о последней записе лога</returns>
-    public LogEntryInfo AppendRange(IEnumerable<LogEntry> entries, int index);
+    public LogEntryInfo AppendRange(IEnumerable<LogEntry> entries);
     
     /// <summary>
     /// Получить все записи, хранящиеся в логе

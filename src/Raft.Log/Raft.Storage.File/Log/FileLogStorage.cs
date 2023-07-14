@@ -142,6 +142,8 @@ public class FileLogStorage: ILogStorage
         _initialized = true;
     }
 
+    public int Count => _index.Count;
+
     public LogEntryInfo Append(LogEntry entry)
     {
         CheckInitialized();
@@ -162,29 +164,21 @@ public class FileLogStorage: ILogStorage
         return new LogEntryInfo(entry.Term, _index.Count - 1);
     }
 
-    public LogEntryInfo AppendRange(IEnumerable<LogEntry> entries, int index)
+    public LogEntryInfo AppendRange(IEnumerable<LogEntry> entries)
     {
         CheckInitialized();
-        
-        if (_index.Count < index)
-        {
-            throw new ArgumentOutOfRangeException(nameof(index), index, $"Индекс для вставки записи превысил наибольший хранимый индекс {_index.Count}");
-        }
 
         // Вместо поочередной записи используем буффер в памяти.
         // Сначала запишем сериализованные данные на него, одновременно создавая новые записи индекса.
         // После быстро запишем данные на диск и обновим список индексов 
-
+        
         var entriesArray = entries.ToArray();
         
-        var newIndexes = new List<PositionTerm>();
-        using var memory = new MemoryStream(( sizeof(int) + 128 ) * entriesArray.Length);
+        var newIndexes = new List<PositionTerm>(entriesArray.Length);
+        using var memory = CreateMemoryStream();
         using var writer = new BinaryWriter(memory, Encoding, true);
-        var oldLength = _file.Length;
         
-        var startPosition = index == _index.Count
-                                ? _file.Length
-                                : _index[index].Position;
+        var startPosition =  _file.Length;
 
         foreach (var entry in entriesArray)
         {
@@ -192,32 +186,21 @@ public class FileLogStorage: ILogStorage
             Serialize(entry, writer);
             newIndexes.Add(new PositionTerm(entry.Term, currentPosition));
         }
-
-        if (index == _index.Count)
-        {
-            _file.Seek(0, SeekOrigin.End);
-        }
-        else
-        {
-            _file.Seek(startPosition, SeekOrigin.Begin);
-        }
         
         var dataBytes = memory.ToArray();
+        _writer.Seek(0, SeekOrigin.End);
         _writer.Write(dataBytes);
         _writer.Flush();
-        
-        // Текущая позиция в файле находится в самом конце актуальных данных
-        // Если не обрезать файл, то будут читаться мусорные байты
-        // Потом надо заменить на специальный маркер
-        if (_file.Position < oldLength)
-        {
-            _file.SetLength(_file.Position);
-        }
-            
-        _index.RemoveRange(index, _index.Count - index);
         _index.AddRange(newIndexes);
 
         return GetLastLogEntryInfoCore();
+
+        MemoryStream CreateMemoryStream()
+        {
+            var capacity = ( sizeof(int) /* Терм */  + sizeof(int) /* Длина массива */  ) * entriesArray.Length +
+                           entriesArray.Sum(e => e.Data.Length);
+            return new MemoryStream(capacity);
+        }
     }
 
     private LogEntryInfo GetLastLogEntryInfoCore()
@@ -273,7 +256,7 @@ public class FileLogStorage: ILogStorage
     public IReadOnlyList<LogEntry> ReadFrom(int startIndex)
     {
         CheckInitialized();
-        if (_index.Count == startIndex)
+        if (_index.Count <= startIndex)
         {
             return Array.Empty<LogEntry>();
         }

@@ -28,7 +28,7 @@ public interface ILog
     /// </summary>
     /// <param name="entries">Записи, которые необходимо добавить</param>
     /// <param name="startIndex">Индекс, начиная с которого необходимо добавить записи</param>
-    public void AppendUpdateRange(IEnumerable<LogEntry> entries, int startIndex);
+    public void InsertRange(IEnumerable<LogEntry> entries, int startIndex);
     
     /// <summary>
     /// Добавить в лог одну запись
@@ -81,7 +81,7 @@ public interface ILog
     /// Применить непримененные записи к указанной машине состояний
     /// </summary>
     /// <param name="stateMachine">Машина состояний, для которой нужно применить команды</param>
-    public void ApplyUncommitted(IStateMachine stateMachine);
+    public void ApplyCommitted(IStateMachine stateMachine);
 
     /// <summary>
     /// Указать новый индекс последней примененной записи

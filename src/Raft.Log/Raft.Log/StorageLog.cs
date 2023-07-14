@@ -1,28 +1,38 @@
-using Raft.Core;
+using System.Runtime.CompilerServices;
 using Raft.Core.Log;
 using Raft.StateMachine;
-
+[assembly: InternalsVisibleTo("Raft.Log.Tests")]
 namespace Raft.Log;
 
 public class StorageLog: ILog
 {
+    /// <summary>
+    /// Персистентное хранилище записей лога
+    /// </summary>
     private readonly ILogStorage _storage;
-    public LogEntryInfo LastEntry => _storage.GetLastLogEntry();
-    public int CommitIndex { get; private set; } = LogEntryInfo.TombIndex;
-    public int LastApplied { get; private set; } = 0;
+    public LogEntryInfo LastEntry => _buffer.Count > 0 
+                                         ? new LogEntryInfo(_buffer[^1].Term, CommitIndex + _buffer.Count)
+                                         : _storage.GetLastLogEntry();
+
+    public int CommitIndex => _storage.Count - 1;
+    public int LastApplied { get; internal set; } = LogEntryInfo.TombIndex;
     public IReadOnlyList<LogEntry> ReadLog() => _storage.ReadAll();
 
     /// <summary>
-    /// Список не примененных записей лога.
-    /// В него добавляются все незакоммиченные записи лога.
-    /// При вызове <see cref="Commit"/> из этой очереди берутся все записи
-    /// до указанного индекса и записываются в <see cref="_storage"/> (Flush)
+    /// Временный буфер для незакоммиченных записей
     /// </summary>
-    // private readonly LinkedList<LogEntryIndex> _buffer = new();
-
-    public StorageLog(ILogStorage storage)
+    private readonly List<LogEntry> _buffer = new();
+    
+    public StorageLog(ILogStorage storage )
     {
         _storage = storage;
+    }
+
+    // Для тестов
+    internal StorageLog(ILogStorage storage, List<LogEntry> buffer)
+    {
+        _storage = storage;
+        _buffer = buffer;
     }
 
     public bool Conflicts(LogEntryInfo prefix)
@@ -53,16 +63,20 @@ public class StorageLog: ILog
         return true;
     }
 
-    public void AppendUpdateRange(IEnumerable<LogEntry> entries, int startIndex)
+    public void InsertRange(IEnumerable<LogEntry> entries, int startIndex)
     {
-        _storage.AppendRange(entries, startIndex);
+        var actualIndex = startIndex - _storage.Count;
+        var removeCount = _buffer.Count - actualIndex;
+        _buffer.RemoveRange(actualIndex, removeCount);
+        _buffer.AddRange(entries);
     }
 
     public LogEntryInfo Append(LogEntry entry)
     {
-        return _storage.Append(entry);
+        var newIndex = _storage.Count + _buffer.Count;
+        _buffer.Add(entry);
+        return new LogEntryInfo(entry.Term, newIndex);
     }
-    
 
     public bool Contains(LogEntryInfo prefix)
     {
@@ -74,26 +88,75 @@ public class StorageLog: ILog
 
         
         if (prefix.Index <= LastEntry.Index && // Наш лог не меньше (используется PrevLogEntry, поэтому нет +1)
-            prefix.Term == _storage.GetAt(prefix.Index).Term) // Термы записей одинаковые
+            prefix.Term == GetLogEntryInfoAtIndex(prefix.Index).Term) // Термы записей одинаковые
         {
             return true;
         }
 
         return false;
     }
+
+    private LogEntryInfo GetLogEntryInfoAtIndex(int index)
+    {
+        var storageLastEntry = _storage.GetLastLogEntry();
+        if (index <= storageLastEntry.Index)
+        {
+            return _storage.GetAt(index);
+        }
+
+        var bufferEntry = _buffer[index - _storage.Count];
+        return new LogEntryInfo(bufferEntry.Term, index);
+    }
     
     public IReadOnlyList<LogEntry> GetFrom(int index)
     {
-        if (LastEntry.Index < index)
+        if (index <= _storage.Count)
         {
-            return Array.Empty<LogEntry>();
+            // Читаем часть из диска
+            var logEntries = _storage.ReadFrom(index);
+            var result = new List<LogEntry>(logEntries.Count + _buffer.Count);
+            result.AddRange(logEntries);
+            // Прибаляем весь лог в памяти
+            result.AddRange(_buffer);
+            // Конкатенируем
+            return result;
         }
-        return _storage.ReadFrom(index);
+        
+        // Требуемые записи только в памяти 
+        var bufferStartIndex = index - _storage.Count;
+        if (index <= _buffer.Count)
+        {
+            // Берем часть из лога
+            var logPart = _buffer.GetRange(bufferStartIndex, _buffer.Count - bufferStartIndex);
+            
+            // Возвращаем
+            return logPart;
+        }
+        else
+        {
+            // Индекс неверный
+            throw new ArgumentOutOfRangeException(nameof(index), index,
+                "Указанный индекс больше чем последний индекс лога");
+        }
     }
 
     public void Commit(int index)
     {
+        var removeCount = index - _storage.Count + 1;
+        if (removeCount == 0)
+        {
+            return;
+        }
+
+        if (_buffer.Count < removeCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), index,
+                "Указанный индекс больше количества записей в логе");
+        }
         
+        var notCommitted = _buffer.GetRange(0, removeCount);
+        _storage.AppendRange(notCommitted);
+        _buffer.RemoveRange(0, removeCount);
     }
 
     public LogEntryInfo GetPrecedingEntryInfo(int nextIndex)
@@ -102,20 +165,57 @@ public class StorageLog: ILog
         {
             throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex, "Следующий индекс лога не может быть отрицательным");
         }
+
+        if (_storage.Count + _buffer.Count + 1 < nextIndex)
+        {
+            throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
+                "Следующий индекс лога не может быть больше числа записей в логе + 1");
+        }
         
-        return _storage.GetPrecedingLogEntryInfo(nextIndex);
+        if (nextIndex == 0)
+        {
+            return LogEntryInfo.Tomb;
+        }
+        
+        var index = nextIndex - 1;
+
+        // Запись находится в логе
+        if (_storage.Count <= index)
+        {
+            var bufferIndex = index - _storage.Count;
+            var bufferEntry = _buffer[bufferIndex];
+            return new LogEntryInfo(bufferEntry.Term, index);
+        }
+
+        return _storage.GetAt(index);
+        //
+        // // Запись находится в логе на диске
+        // if (nextIndex <= _storage.Count)
+        // {
+        //     return _storage.GetPrecedingLogEntryInfo(nextIndex);
+        // }
+        //
+        // var bufferIndex = nextIndex - _storage.Count - 1;
+        // if (0 <= bufferIndex && bufferIndex < _buffer.Count)
+        // {
+        //     var bufferEntry = _buffer[bufferIndex];
+        //     return new LogEntryInfo(bufferEntry.Term, nextIndex - 1);
+        // }
+        //
+        // throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex, "Указанный индекс выходит за пределы лога");
     }
 
-    public void ApplyUncommitted(IStateMachine stateMachine)
+    public void ApplyCommitted(IStateMachine stateMachine)
     {
-        if (CommitIndex <= LastApplied || CommitIndex == -1)
+        if (CommitIndex <= LastApplied || 
+            CommitIndex == LogEntryInfo.TombIndex)
         {
             return;
         }
 
-        foreach (var (_, data) in _storage.GetRange(LastApplied, CommitIndex))
+        foreach (var (_, data) in _storage.ReadFrom(LastApplied + 1))
         {
-            stateMachine.Apply(data);
+            stateMachine.ApplyNoResponse(data);
         }
 
         LastApplied = CommitIndex;

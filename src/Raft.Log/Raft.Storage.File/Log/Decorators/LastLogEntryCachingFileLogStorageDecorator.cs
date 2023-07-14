@@ -17,6 +17,8 @@ public class LastLogEntryCachingFileLogStorageDecorator: ILogStorage
         _storage = storage;
     }
 
+    public int Count => _storage.Count;
+
     public LogEntryInfo Append(LogEntry entry)
     {
         var last = _storage.Append(entry);
@@ -24,9 +26,9 @@ public class LastLogEntryCachingFileLogStorageDecorator: ILogStorage
         return last;
     }
 
-    public LogEntryInfo AppendRange(IEnumerable<LogEntry> entries, int index)
+    public LogEntryInfo AppendRange(IEnumerable<LogEntry> entries)
     {
-        var last = _storage.AppendRange(entries, index);
+        var last = _storage.AppendRange(entries);
         _lastLogEntry = last;
         return last;
     }

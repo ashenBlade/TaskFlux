@@ -81,13 +81,13 @@ internal class FollowerState: BaseNodeState
         
         if (0 < request.Entries.Count)
         {
-            Log.AppendUpdateRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
+            Log.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
         
         if (Log.CommitIndex < request.LeaderCommit)
         {
             Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
-            Log.ApplyUncommitted(StateMachine);
+            Log.ApplyCommitted(StateMachine);
         }
 
         return AppendEntriesResponse.Ok(CurrentTerm);

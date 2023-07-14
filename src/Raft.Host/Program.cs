@@ -1,7 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using JobQueue.InMemory;
 using JobQueue.SortedQueue;
 using Microsoft.Extensions.Configuration;
@@ -19,7 +18,6 @@ using Raft.Peer;
 using Raft.Peer.Decorators;
 using Raft.StateMachine;
 using Raft.StateMachine.JobQueue;
-using Raft.StateMachine.JobQueue.Commands;
 using Raft.StateMachine.JobQueue.Commands.Serializers;
 using Raft.Storage.File;
 using Raft.Storage.File.Decorators;

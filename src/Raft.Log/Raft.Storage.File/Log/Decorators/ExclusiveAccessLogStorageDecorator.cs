@@ -5,12 +5,14 @@ namespace Raft.Storage.File.Log.Decorators;
 public class ExclusiveAccessLogStorageDecorator: ILogStorage
 {
     private readonly ILogStorage _log;
-    private SpinLock _lock = new();
+    private SpinLock _lock;
 
     public ExclusiveAccessLogStorageDecorator(ILogStorage log)
     {
         _log = log;
     }
+
+    public int Count => _log.Count;
 
     public LogEntryInfo Append(LogEntry entry)
     {
@@ -29,13 +31,13 @@ public class ExclusiveAccessLogStorageDecorator: ILogStorage
         }
     }
 
-    public LogEntryInfo AppendRange(IEnumerable<LogEntry> entries, int index)
+    public LogEntryInfo AppendRange(IEnumerable<LogEntry> entries)
     {
         var taken = false;
         try
         {
             _lock.Enter(ref taken);
-            return _log.AppendRange(entries, index);
+            return _log.AppendRange(entries);
         }
         finally
         {
