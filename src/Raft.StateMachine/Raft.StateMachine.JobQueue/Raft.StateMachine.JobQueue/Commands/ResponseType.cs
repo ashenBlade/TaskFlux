@@ -6,4 +6,5 @@ public enum ResponseType
     Enqueue = 2,
     GetCount = 3,
     Error = 4,
+    Batch = 5,
 }

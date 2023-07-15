@@ -17,7 +17,8 @@ public class ProxyJobQueueStateMachine: IStateMachine
     public IResponse Apply(byte[] rawCommand)
     {
         var command = _deserializer.Deserialize(rawCommand);
-        return command.Apply(_jobQueue);
+        var response = command.Apply(_jobQueue);
+        return new JobQueueResponse(response);
     }
 
     public void ApplyNoResponse(byte[] rawCommand)

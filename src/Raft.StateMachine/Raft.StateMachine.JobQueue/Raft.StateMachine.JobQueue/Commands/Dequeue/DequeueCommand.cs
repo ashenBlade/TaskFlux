@@ -1,4 +1,5 @@
 using JobQueue.Core;
+using Raft.StateMachine.JobQueue.Commands.Serializers;
 
 namespace Raft.StateMachine.JobQueue.Commands.Dequeue;
 
@@ -11,14 +12,14 @@ public class DequeueCommand: ICommand
         _request = request;
     }
     
-    public JobQueueResponse Apply(IJobQueue jobQueue)
+    public IJobQueueResponse Apply(IJobQueue jobQueue)
     {
         if (jobQueue.TryDequeue(out var key, out var payload))
         {
-            return new DequeueJobQueueResponse(DequeueResponse.Ok(key, payload));
+            return DequeueResponse.Ok(key, payload);
         }
 
-        return new DequeueJobQueueResponse(DequeueResponse.Empty);
+        return DequeueResponse.Empty;
     }
 
     public void ApplyNoResponse(IJobQueue jobQueue)

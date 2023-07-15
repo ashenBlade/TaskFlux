@@ -1,8 +1,9 @@
+using Raft.StateMachine.JobQueue.Commands.Batch;
 using Raft.StateMachine.JobQueue.Commands.Dequeue;
 using Raft.StateMachine.JobQueue.Commands.Enqueue;
 using Raft.StateMachine.JobQueue.Commands.GetCount;
 
-namespace Raft.StateMachine.JobQueue.Commands;
+namespace Raft.StateMachine.JobQueue.Commands.Serializers;
 
 public class JobQueueRequestSerializer
 {
@@ -29,7 +30,7 @@ public class JobQueueRequestSerializer
 
         public void Visit(EnqueueRequest request)
         {
-            _writer.Write((int)request.Type);
+            _writer.Write((int)RequestType.EnqueueRequest);
             _writer.Write(request.Key);
             _writer.Write(request.Payload.Length);
             _writer.Write(request.Payload);
@@ -38,6 +39,16 @@ public class JobQueueRequestSerializer
         public void Visit(GetCountRequest request)
         {
             _writer.Write((int)RequestType.GetCountRequest);
+        }
+
+        public void Visit(BatchRequest request)
+        {
+            _writer.Write((int)RequestType.BatchRequest);
+            _writer.Write(request.Requests.Count);
+            foreach (var innerRequest in request.Requests)
+            {
+                innerRequest.Accept(this);
+            }
         }
     }
 }

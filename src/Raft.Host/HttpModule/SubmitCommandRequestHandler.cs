@@ -7,10 +7,12 @@ using Raft.Core.Commands.Submit;
 using Raft.Core.Node;
 using Raft.Host.Infrastructure;
 using Raft.StateMachine.JobQueue.Commands;
+using Raft.StateMachine.JobQueue.Commands.Batch;
 using Raft.StateMachine.JobQueue.Commands.Dequeue;
 using Raft.StateMachine.JobQueue.Commands.Enqueue;
 using Raft.StateMachine.JobQueue.Commands.Error;
 using Raft.StateMachine.JobQueue.Commands.GetCount;
+using Raft.StateMachine.JobQueue.Commands.Serializers;
 using Serilog;
 
 namespace Raft.Host.HttpModule;
@@ -79,13 +81,13 @@ public class SubmitCommandRequestHandler: IRequestHandler
         await writer.WriteAsync(body);
         await writer.FlushAsync();
     }
-
+    
     private static bool TrySerializeRequestPayload(string requestString, out byte[] payload)
     {
         try
         {
             var tokens = requestString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        
+            
             // Точно будет хотя бы 1 элемент, т.к. проверяли выше, что строка не пуста
             var command = tokens[0];
             IJobQueueRequest? request = null;
@@ -113,44 +115,16 @@ public class SubmitCommandRequestHandler: IRequestHandler
                 return false;
             }
 
-            var visitor = new SerializerJobQueueRequestVisitor();
-            request.Accept(visitor);
-            payload = visitor.Payload;
+            using var memory = new MemoryStream();
+            using var writer = new BinaryWriter(memory);
+            JobQueueRequestSerializer.Instance.Serialize(request, writer);
+            payload = memory.ToArray();
             return true;
         }
         catch (Exception)
         {
             payload = Array.Empty<byte>();
             return false;
-        }
-    }
-
-    private class SerializerJobQueueRequestVisitor : IJobQueueRequestVisitor
-    {
-        public byte[] Payload { get; private set; } = Array.Empty<byte>();
-        
-        public void Visit(DequeueRequest request)
-        {
-            using var memory = new MemoryStream();
-            using var writer = new BinaryWriter(memory);
-            JobQueueRequestSerializer.Instance.Serialize(request, writer);
-            Payload = memory.ToArray();
-        }
-
-        public void Visit(EnqueueRequest request)
-        {
-            using var memory = new MemoryStream();
-            using var writer = new BinaryWriter(memory);
-            JobQueueRequestSerializer.Instance.Serialize(request, writer);
-            Payload = memory.ToArray();
-        }
-
-        public void Visit(GetCountRequest request)
-        {
-            using var memory = new MemoryStream();
-            using var writer = new BinaryWriter(memory);
-            JobQueueRequestSerializer.Instance.Serialize(request, writer);
-            Payload = memory.ToArray();
         }
     }
 
@@ -190,6 +164,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         
         public void Visit(DequeueResponse response)
         {
+            Payload["type"] = "dequeue";
             if (response.Success)
             {
                 Payload["ok"] = true;
@@ -204,6 +179,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
 
         public void Visit(EnqueueResponse response)
         {
+            Payload["type"] = "enqueue";
             Payload["ok"] = response.Success;
         }
 
@@ -220,6 +196,26 @@ public class SubmitCommandRequestHandler: IRequestHandler
             {
                 Payload["message"] = response.Message;
             }
+        }
+
+        public void Visit(BatchResponse response)
+        {
+            Payload["type"] = "batch";
+            Payload["count"] = response.Responses.Count;
+            var data = new List<(Dictionary<string, object?> Payload, bool Ok)>();
+            var oldPayload = Payload;
+            var oldOk = Ok;
+            foreach (var innerResponse in response.Responses)
+            {
+                Payload = new Dictionary<string, object?>();
+                Ok = true;
+                innerResponse.Accept(this);
+                data.Add((Payload, Ok));
+            }
+
+            Payload = oldPayload;
+            Ok = oldOk;
+            Payload["data"] = data.Select(tuple => tuple.Payload);
         }
     }
     
