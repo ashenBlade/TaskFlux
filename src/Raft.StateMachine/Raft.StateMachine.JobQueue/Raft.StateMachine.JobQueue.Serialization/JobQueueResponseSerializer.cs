@@ -1,10 +1,11 @@
+using Raft.StateMachine.JobQueue.Commands;
 using Raft.StateMachine.JobQueue.Commands.Batch;
 using Raft.StateMachine.JobQueue.Commands.Dequeue;
 using Raft.StateMachine.JobQueue.Commands.Enqueue;
 using Raft.StateMachine.JobQueue.Commands.Error;
 using Raft.StateMachine.JobQueue.Commands.GetCount;
 
-namespace Raft.StateMachine.JobQueue.Commands.Serializers;
+namespace Raft.StateMachine.JobQueue.Serialization;
 
 public class JobQueueResponseSerializer : IJobQueueResponseSerializer
 {

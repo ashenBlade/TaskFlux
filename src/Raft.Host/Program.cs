@@ -18,7 +18,7 @@ using Raft.Peer;
 using Raft.Peer.Decorators;
 using Raft.StateMachine;
 using Raft.StateMachine.JobQueue;
-using Raft.StateMachine.JobQueue.Commands.Serializers;
+using Raft.StateMachine.JobQueue.Serialization;
 using Raft.Storage.File;
 using Raft.Storage.File.Decorators;
 using Raft.Storage.File.Log;
@@ -259,7 +259,7 @@ IStateMachine CreateJobQueueStateMachine()
     Log.Information("Создаю пустую очередь задач в памяти");
     var unboundedJobQueue = new UnboundedJobQueue(new PriorityQueueSortedQueue<int, byte[]>());
     Log.Information("Использую строковый десериализатор команд с кодировкой UTF-8");
-    return new ProxyJobQueueStateMachine(unboundedJobQueue, new DefaultCommandDeserializer());
+    return new ProxyJobQueueStateMachine(unboundedJobQueue, new JobQueueCommandDeserializer(JobQueueRequestDeserializer.Instance));
 }
 
 RaftNode CreateRaftNode(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine stateMachine, IMetadataStorage metadataStorage)

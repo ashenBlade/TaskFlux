@@ -1,6 +1,5 @@
 using JobQueue.Core;
 using Raft.StateMachine.JobQueue.Commands.Dequeue;
-using Raft.StateMachine.JobQueue.Commands.Serializers;
 
 namespace Raft.StateMachine.JobQueue.Commands.GetCount;
 

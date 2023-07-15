@@ -1,4 +1,4 @@
-namespace Raft.StateMachine.JobQueue.Commands.Serializers;
+namespace Raft.StateMachine.JobQueue.Commands;
 
 public interface IJobQueueResponseSerializer
 {

@@ -12,7 +12,7 @@ using Raft.StateMachine.JobQueue.Commands.Dequeue;
 using Raft.StateMachine.JobQueue.Commands.Enqueue;
 using Raft.StateMachine.JobQueue.Commands.Error;
 using Raft.StateMachine.JobQueue.Commands.GetCount;
-using Raft.StateMachine.JobQueue.Commands.Serializers;
+using Raft.StateMachine.JobQueue.Serialization;
 using Serilog;
 
 namespace Raft.Host.HttpModule;
@@ -84,6 +84,96 @@ public class SubmitCommandRequestHandler: IRequestHandler
     
     private static bool TrySerializeRequestPayload(string requestString, out byte[] payload)
     {
+        var linesArray = SplitLines().ToArray();
+        if (linesArray.Length == 0)
+        {
+            payload = Array.Empty<byte>();
+            return false;
+        }
+
+        if (linesArray.Length == 1)
+        {
+            return TryDeserializeSingleRequest(linesArray[0], out payload);
+        }
+
+        return TryDeserializeBatchRequest(linesArray, out payload);
+
+        IEnumerable<string> SplitLines()
+        {
+            var reader = new StringReader(requestString);
+            while (reader.ReadLine() is {} line)
+            {
+                yield return line;
+            }
+        }
+    }
+
+    private static bool TryDeserializeBatchRequest(string[] requestLines, out byte[] payload)
+    {
+        var requests = new IJobQueueRequest[requestLines.Length];
+        for (var i = 0; i < requests.Length; i++)
+        {
+            if (!TryDeserializeRequest(requestLines[i], out var request))
+            {
+                payload = Array.Empty<byte>();
+                return false;
+            }
+
+            requests[i] = request;
+        }
+
+        var batchRequest = new BatchRequest(requests);
+        using var memory = new MemoryStream();
+        using var writer = new BinaryWriter(memory);
+        JobQueueRequestSerializer.Instance.Serialize(batchRequest, writer);
+        payload = memory.ToArray();
+        return true;
+    }
+
+    private static bool TryDeserializeRequest(string requestString, out IJobQueueRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(requestString))
+        {
+            request = null!;
+            return false;
+        }
+        
+        var tokens = requestString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        
+        try
+        {
+            var command = tokens[0];
+            IJobQueueRequest? parsedRequest = null;
+            if (command.Equals("enqueue", StringComparison.InvariantCultureIgnoreCase) 
+             && tokens.Length == 3)
+            {
+                var key = int.Parse(tokens[1]);
+                var data = Encoding.GetBytes( tokens[2] );
+                parsedRequest = new EnqueueRequest(key, data);
+            }
+            else if (command.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase) 
+                  && tokens.Length == 1)
+            {
+                parsedRequest = DequeueRequest.Instance;
+            }
+            else if (command.Equals("count", StringComparison.InvariantCultureIgnoreCase) 
+                  && tokens.Length == 1)
+            {
+                parsedRequest = GetCountRequest.Instance;
+            }
+
+            request = parsedRequest!;
+            return parsedRequest is not null;
+        }
+        catch (Exception)
+        {
+            request = null!;
+            return false;
+        }
+    }
+
+    private static bool TryDeserializeSingleRequest(string requestString, out byte[] payload)
+    {
         try
         {
             var tokens = requestString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -145,7 +235,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         {
             using var memory = new MemoryStream();
             submitResponse.Response.WriteTo(memory);
-            var defaultResponse = DefaultResponseDeserializer.Instance.Deserialize(memory.ToArray());
+            var defaultResponse = JobQueueResponseDeserializer.Instance.Deserialize(memory.ToArray());
             var v = new HttpResponseJobQueueResponseVisitor();
             defaultResponse.Accept(v);
             return v;
@@ -154,8 +244,8 @@ public class SubmitCommandRequestHandler: IRequestHandler
 
     private class HttpResponseJobQueueResponseVisitor : IJobQueueResponseVisitor
     {
-        public Dictionary<string, object?> Payload { get; set; } = new();
-        public bool Ok { get; set; } = true;
+        public Dictionary<string, object?> Payload { get; private set; } = new();
+        public bool Ok { get; private set; } = true;
         
         private void SetError()
         {

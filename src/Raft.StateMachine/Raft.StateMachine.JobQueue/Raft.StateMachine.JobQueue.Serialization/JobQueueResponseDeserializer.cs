@@ -1,13 +1,14 @@
+using Raft.StateMachine.JobQueue.Commands;
 using Raft.StateMachine.JobQueue.Commands.Dequeue;
 using Raft.StateMachine.JobQueue.Commands.Enqueue;
 using Raft.StateMachine.JobQueue.Commands.Error;
 using Raft.StateMachine.JobQueue.Commands.GetCount;
 
-namespace Raft.StateMachine.JobQueue.Commands;
+namespace Raft.StateMachine.JobQueue.Serialization;
 
-public class DefaultResponseDeserializer
+public class JobQueueResponseDeserializer
 {
-    public static readonly DefaultResponseDeserializer Instance = new();
+    public static readonly JobQueueResponseDeserializer Instance = new();
     
     public IJobQueueResponse Deserialize(byte[] payload)
     {

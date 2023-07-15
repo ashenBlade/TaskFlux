@@ -16,6 +16,7 @@
       <ProjectReference Include="..\Raft.JobQueue\Raft.JobQueue.csproj" />
       <ProjectReference Include="..\Raft.Log\Raft.Storage.File\Raft.Storage.File.csproj" />
       <ProjectReference Include="..\Raft.Peer\Raft.Peer.csproj" />
+      <ProjectReference Include="..\Raft.StateMachine\Raft.StateMachine.JobQueue\Raft.StateMachine.JobQueue.Serialization\Raft.StateMachine.JobQueue.Serialization.csproj" />
       <ProjectReference Include="..\Raft.StateMachine\Raft.StateMachine.JobQueue\Raft.StateMachine.JobQueue\Raft.StateMachine.JobQueue.csproj" />
       <ProjectReference Include="..\Raft.StateMachine\Raft.StateMachine.Null\Raft.StateMachine.Null.csproj" />
       <ProjectReference Include="..\Raft.Timers\Raft.Timers.csproj" />

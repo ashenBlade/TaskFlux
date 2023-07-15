@@ -1,18 +1,25 @@
+using Raft.StateMachine.JobQueue.Commands;
+using Raft.StateMachine.JobQueue.Commands.Batch;
 using Raft.StateMachine.JobQueue.Commands.Dequeue;
 using Raft.StateMachine.JobQueue.Commands.Enqueue;
 using Raft.StateMachine.JobQueue.Commands.GetCount;
 
-namespace Raft.StateMachine.JobQueue.Commands.Serializers;
+namespace Raft.StateMachine.JobQueue.Serialization;
 
-public class DefaultRequestDeserializer
+public class JobQueueRequestDeserializer : IJobQueueRequestDeserializer
 {
-    public static readonly DefaultRequestDeserializer Instance = new();
+    public static readonly JobQueueRequestDeserializer Instance = new();
     
     public IJobQueueRequest Deserialize(byte[] payload)
     {
         using var stream = new MemoryStream(payload);
         using var reader = new BinaryReader(stream);
-        
+
+        return Parse(reader);
+    }
+
+    private static IJobQueueRequest Parse(BinaryReader reader)
+    {
         var marker = (RequestType) reader.ReadInt32();
         switch (marker)
         {
@@ -22,22 +29,37 @@ public class DefaultRequestDeserializer
                 return ParseDequeueRequest(reader);
             case RequestType.GetCountRequest:
                 return ParseGetCountRequest(reader);
+            case RequestType.BatchRequest:
+                return ParseBatchRequest(reader);
             default:
                 throw new InvalidDataException($"Неизвестная команда: {marker}");
         }
     }
-    
-    private GetCountRequest ParseGetCountRequest(BinaryReader _)
+
+    private static BatchRequest ParseBatchRequest(BinaryReader reader)
+    {
+        var requestsCount = reader.ReadInt32();
+        var requests = new List<IJobQueueRequest>();
+
+        for (var i = 0; i < requestsCount; i++)
+        {
+            requests.Add(Parse(reader));
+        }
+        
+        return new BatchRequest(requests);
+    }
+
+    private static GetCountRequest ParseGetCountRequest(BinaryReader _)
     {
         return GetCountRequest.Instance;
     }
     
-    private DequeueRequest ParseDequeueRequest(BinaryReader _)
+    private static DequeueRequest ParseDequeueRequest(BinaryReader _)
     {
         return DequeueRequest.Instance;
     }
     
-    private EnqueueRequest ParseEnqueueRequest(BinaryReader reader)
+    private static EnqueueRequest ParseEnqueueRequest(BinaryReader reader)
     {
         var key = reader.ReadInt32();
         var bufferLength = reader.ReadInt32();
