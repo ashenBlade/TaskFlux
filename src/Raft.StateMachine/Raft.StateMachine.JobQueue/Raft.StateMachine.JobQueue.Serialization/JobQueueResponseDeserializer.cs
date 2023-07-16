@@ -1,4 +1,5 @@
 using Raft.StateMachine.JobQueue.Commands;
+using Raft.StateMachine.JobQueue.Commands.Batch;
 using Raft.StateMachine.JobQueue.Commands.Dequeue;
 using Raft.StateMachine.JobQueue.Commands.Enqueue;
 using Raft.StateMachine.JobQueue.Commands.Error;
@@ -21,9 +22,37 @@ public class JobQueueResponseDeserializer
                    ResponseType.Enqueue  => DeserializeEnqueueResponse(reader),
                    ResponseType.GetCount => DeserializeGetCountResponse(reader),
                    ResponseType.Error    => DeserializeErrorResponse(reader),
+                   ResponseType.Batch => DeserializeBatchResponse(reader),
                    _ => throw new ArgumentOutOfRangeException(nameof(marker), payload[0],
                             "Неизвестный тип ResponseType")
                };
+    }
+
+    private IJobQueueResponse DeserializeResponse(BinaryReader reader)
+    {
+        var marker = (ResponseType) reader.ReadInt32();
+        return marker switch
+               {
+                   ResponseType.Dequeue  => DeserializeDequeueResponse(reader),
+                   ResponseType.Enqueue  => DeserializeEnqueueResponse(reader),
+                   ResponseType.GetCount => DeserializeGetCountResponse(reader),
+                   ResponseType.Error    => DeserializeErrorResponse(reader),
+                   ResponseType.Batch    => DeserializeBatchResponse(reader),
+                   _ => throw new ArgumentOutOfRangeException(nameof(marker), marker,
+                            "Неизвестный тип ResponseType")
+               };
+    }
+
+    private BatchResponse DeserializeBatchResponse(BinaryReader reader)
+    {
+        var count = reader.ReadInt32();
+        var responses = new List<IJobQueueResponse>(count);
+        for (var i = 0; i < count; i++)
+        {
+            responses.Add(DeserializeResponse(reader));
+        }
+
+        return new BatchResponse(responses);
     }
 
     private ErrorResponse DeserializeErrorResponse(BinaryReader reader)

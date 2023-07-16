@@ -8,7 +8,7 @@ using Raft.StateMachine.JobQueue.Serialization;
 
 namespace Raft.StateMachine.JobQueue.Tests;
 
-public class RequestResponseSerializerTests
+public class RequestSerializationTests
 {
     public static readonly JobQueueRequestSerializer Serializer = new();
     public static readonly JobQueueRequestDeserializer Deserializer = new();
