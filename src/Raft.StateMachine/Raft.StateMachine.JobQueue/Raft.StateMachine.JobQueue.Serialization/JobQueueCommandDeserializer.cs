@@ -9,10 +9,12 @@ namespace Raft.StateMachine.JobQueue.Serialization;
 public class JobQueueCommandDeserializer: ICommandDeserializer
 {
     private readonly IJobQueueRequestDeserializer _deserializer;
+    private readonly IJobQueueResponseSerializer _serializer;
 
-    public JobQueueCommandDeserializer(IJobQueueRequestDeserializer deserializer)
+    public JobQueueCommandDeserializer(IJobQueueRequestDeserializer deserializer, IJobQueueResponseSerializer serializer)
     {
         _deserializer = deserializer;
+        _serializer = serializer;
     }
     
     public ICommand Deserialize(byte[] payload)
@@ -20,14 +22,14 @@ public class JobQueueCommandDeserializer: ICommandDeserializer
         var request = _deserializer.Deserialize(payload);
         var visitor = new CommandBuilderRequestVisitor();
         request.Accept(visitor);
-        return visitor.GetResultCheck();
+        return new SerializerJobQueueCommand( visitor.GetResultCheck(), _serializer);
     }
 
     private class CommandBuilderRequestVisitor : IJobQueueRequestVisitor
     {
-        public ICommand? Result { get; private set; }
-        public ICommand GetResultCheck() => Result ?? throw new ApplicationException(
-            "После парсинга в Result оказался null");
+        public IJobQueueCommand? Result { get; private set; }
+        public IJobQueueCommand GetResultCheck() => Result ?? throw new ApplicationException(
+                                                        "После парсинга в Result оказался null");
         public void Visit(DequeueRequest request)
         {
             Result = new DequeueCommand(request);
@@ -45,7 +47,7 @@ public class JobQueueCommandDeserializer: ICommandDeserializer
 
         public void Visit(BatchRequest request)
         {
-            var commands = new List<ICommand>();
+            var commands = new List<IJobQueueCommand>();
             var cachedVisitor = new CommandBuilderRequestVisitor();
             foreach (var innerRequest in request.Requests)
             {

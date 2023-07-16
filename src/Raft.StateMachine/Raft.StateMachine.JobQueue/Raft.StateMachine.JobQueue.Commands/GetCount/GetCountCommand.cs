@@ -3,7 +3,7 @@ using Raft.StateMachine.JobQueue.Commands.Dequeue;
 
 namespace Raft.StateMachine.JobQueue.Commands.GetCount;
 
-public class GetCountCommand: ICommand
+public class GetCountCommand: IJobQueueCommand
 {
     private readonly GetCountRequest _request;
 

@@ -3,9 +3,9 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Raft.Core;
 using Raft.Core.Commands.Submit;
 using Raft.Core.Node;
-using Raft.Host.Infrastructure;
 using Raft.StateMachine.JobQueue.Commands;
 using Raft.StateMachine.JobQueue.Commands.Batch;
 using Raft.StateMachine.JobQueue.Commands.Dequeue;
@@ -15,17 +15,19 @@ using Raft.StateMachine.JobQueue.Commands.GetCount;
 using Raft.StateMachine.JobQueue.Serialization;
 using Serilog;
 
-namespace Raft.Host.HttpModule;
+namespace Raft.Host.Modules.HttpRequest;
 
 public class SubmitCommandRequestHandler: IRequestHandler
 {
     private static readonly Encoding Encoding = Encoding.UTF8;
     private readonly INode _node;
+    private readonly IJobQueueRequestSerializer _requestSerializer;
     private readonly ILogger _logger;
 
-    public SubmitCommandRequestHandler(INode node, ILogger logger)
+    public SubmitCommandRequestHandler(INode node, IJobQueueRequestSerializer requestSerializer, ILogger logger)
     {
         _node = node;
+        _requestSerializer = requestSerializer;
         _logger = logger;
     }
     
@@ -34,7 +36,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         response.KeepAlive = false;
         response.ContentType = "application/json";
 
-        if (!_node.IsLeader())
+        if (_node.CurrentRole != NodeRole.Leader)
         {
             _logger.Debug("Пришел запрос, но текущий узел не лидер");
             await RespondNotLeaderAsync(response);
@@ -82,7 +84,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         await writer.FlushAsync();
     }
     
-    private static bool TrySerializeRequestPayload(string requestString, out byte[] payload)
+    private bool TrySerializeRequestPayload(string requestString, out byte[] payload)
     {
         var linesArray = SplitLines().ToArray();
         if (linesArray.Length == 0)
@@ -108,7 +110,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         }
     }
 
-    private static bool TryDeserializeBatchRequest(string[] requestLines, out byte[] payload)
+    private bool TryDeserializeBatchRequest(string[] requestLines, out byte[] payload)
     {
         var requests = new IJobQueueRequest[requestLines.Length];
         for (var i = 0; i < requests.Length; i++)
@@ -125,7 +127,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         var batchRequest = new BatchRequest(requests);
         using var memory = new MemoryStream();
         using var writer = new BinaryWriter(memory);
-        JobQueueRequestSerializer.Instance.Serialize(batchRequest, writer);
+        _requestSerializer.Serialize(batchRequest, writer);
         payload = memory.ToArray();
         return true;
     }
@@ -172,7 +174,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         }
     }
 
-    private static bool TryDeserializeSingleRequest(string requestString, out byte[] payload)
+    private bool TryDeserializeSingleRequest(string requestString, out byte[] payload)
     {
         try
         {
@@ -207,7 +209,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
 
             using var memory = new MemoryStream();
             using var writer = new BinaryWriter(memory);
-            JobQueueRequestSerializer.Instance.Serialize(request, writer);
+            _requestSerializer.Serialize(request, writer);
             payload = memory.ToArray();
             return true;
         }

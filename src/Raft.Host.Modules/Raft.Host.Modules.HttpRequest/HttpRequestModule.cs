@@ -1,7 +1,7 @@
 using System.Net;
 using Serilog;
 
-namespace Raft.Host.HttpModule;
+namespace Raft.Host.Modules.HttpRequest;
 
 public class HttpRequestModule
 {

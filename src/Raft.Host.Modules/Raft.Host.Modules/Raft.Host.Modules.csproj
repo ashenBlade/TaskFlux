@@ -7,8 +7,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Raft.StateMachine.JobQueue.Commands\Raft.StateMachine.JobQueue.Commands.csproj" />
-      <ProjectReference Include="..\Raft.StateMachine.JobQueue\Raft.StateMachine.JobQueue.csproj" />
+      <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="7.0.0" />
+      <PackageReference Include="Serilog" Version="3.0.1" />
     </ItemGroup>
 
 </Project>

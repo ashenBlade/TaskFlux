@@ -9,8 +9,8 @@ using Raft.Core;
 using Raft.Core.Log;
 using Raft.Core.Node;
 using Raft.Host;
-using Raft.Host.HttpModule;
 using Raft.Host.Infrastructure;
+using Raft.Host.Modules.HttpRequest;
 using Raft.Host.Options;
 using Raft.JobQueue;
 using Raft.Log;
@@ -95,20 +95,18 @@ try
     var stateObserver = new NodeStateObserver(node, Log.Logger.ForContext<NodeStateObserver>());
 
     var httpModule = CreateHttpRequestModule(configuration);
+    httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(node, JobQueueRequestSerializer.Instance, Log.ForContext<SubmitCommandRequestHandler>()));
 
     var nodeConnectionThread = new Thread(o =>
         {
-            var (value, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
-            value.Run(token);
+            var (manager, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
+            manager.Run(token);
         })
         {
             Priority = ThreadPriority.Highest, 
             Name = "Обработчик подключений узлов",
         };
-
-    httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(node, Log.ForContext<SubmitCommandRequestHandler>()));
-    httpModule.AddHandler(HttpMethod.Get, "/metrics", new PrometheusRequestHandler(node));
-
+    
     using var cts = new CancellationTokenSource();
 
     // ReSharper disable once AccessToDisposedClosure
@@ -164,9 +162,7 @@ HttpRequestModule CreateHttpRequestModule(IConfiguration config)
                                   .Get<HttpModuleOptions>()
                          ?? throw new ApplicationException("Настройки для HTTP модуля не найдены");
 
-    var module = new HttpRequestModule(httpModuleOptions.Port, Log.ForContext<HttpRequestModule>());
-
-    return module;
+    return new HttpRequestModule(httpModuleOptions.Port, Log.ForContext<HttpRequestModule>());
 }
 
 EndPoint GetEndpoint(string host, int port)
@@ -259,7 +255,7 @@ IStateMachine CreateJobQueueStateMachine()
     Log.Information("Создаю пустую очередь задач в памяти");
     var unboundedJobQueue = new UnboundedJobQueue(new PriorityQueueSortedQueue<int, byte[]>());
     Log.Information("Использую строковый десериализатор команд с кодировкой UTF-8");
-    return new ProxyJobQueueStateMachine(unboundedJobQueue, new JobQueueCommandDeserializer(JobQueueRequestDeserializer.Instance));
+    return new ProxyJobQueueStateMachine(unboundedJobQueue, new JobQueueCommandDeserializer(JobQueueRequestDeserializer.Instance, JobQueueResponseSerializer.Instance));
 }
 
 RaftNode CreateRaftNode(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine stateMachine, IMetadataStorage metadataStorage)

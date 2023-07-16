@@ -6,7 +6,7 @@ using Raft.StateMachine.JobQueue.Commands.GetCount;
 
 namespace Raft.StateMachine.JobQueue.Serialization;
 
-public class JobQueueRequestSerializer
+public class JobQueueRequestSerializer : IJobQueueRequestSerializer
 {
     public static readonly JobQueueRequestSerializer Instance = new();
 

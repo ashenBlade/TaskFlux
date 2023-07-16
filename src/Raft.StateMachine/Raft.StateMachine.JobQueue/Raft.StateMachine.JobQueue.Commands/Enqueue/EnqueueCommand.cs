@@ -2,7 +2,7 @@ using JobQueue.Core;
 
 namespace Raft.StateMachine.JobQueue.Commands.Enqueue;
 
-public class EnqueueCommand: ICommand
+public class EnqueueCommand: IJobQueueCommand
 {
     private readonly EnqueueRequest _request;
 

@@ -2,7 +2,7 @@ using JobQueue.Core;
 
 namespace Raft.StateMachine.JobQueue.Commands.Error;
 
-public class WriteErrorCommand: ICommand
+public class WriteErrorCommand: IJobQueueCommand
 {
     private readonly ErrorResponse _response;
 

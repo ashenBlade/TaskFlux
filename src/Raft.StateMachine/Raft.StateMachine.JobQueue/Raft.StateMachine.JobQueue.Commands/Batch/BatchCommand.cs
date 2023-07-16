@@ -2,11 +2,11 @@ using JobQueue.Core;
 
 namespace Raft.StateMachine.JobQueue.Commands.Batch;
 
-public class BatchCommand: ICommand
+public class BatchCommand: IJobQueueCommand
 {
-    private readonly ICollection<ICommand> _requests;
+    private readonly ICollection<IJobQueueCommand> _requests;
 
-    public BatchCommand(ICollection<ICommand> requests)
+    public BatchCommand(ICollection<IJobQueueCommand> requests)
     {
         _requests = requests;
     }
@@ -27,7 +27,7 @@ public class BatchCommand: ICommand
     {
         foreach (var request in _requests)
         {
-            request.ApplyNoResponse(jobQueue);
+            request.Apply(jobQueue);
         }
     }
 }

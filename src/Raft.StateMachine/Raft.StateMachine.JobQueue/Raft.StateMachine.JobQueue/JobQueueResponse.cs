@@ -1,13 +1,12 @@
 using System.Text;
-using Raft.StateMachine.JobQueue.Commands;
 
 namespace Raft.StateMachine.JobQueue;
 
 public class JobQueueResponse: IResponse
 {
-    public IJobQueueResponse Response { get; }
+    public ICommandResponse Response { get; }
 
-    public JobQueueResponse(IJobQueueResponse response)
+    public JobQueueResponse(ICommandResponse response)
     {
         Response = response;
     }
@@ -15,7 +14,7 @@ public class JobQueueResponse: IResponse
     public void WriteTo(Stream output)
     {
         using var writer = new BinaryWriter(output, Encoding.UTF8, leaveOpen: true);
-        
+        Response.WriteTo(writer);
         writer.Flush();
     }
 }

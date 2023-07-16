@@ -1,7 +1,6 @@
-using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Configuration;
 
-namespace Raft.Host.Options;
+namespace Raft.Host.Modules.HttpRequest;
 
 public class HttpModuleOptions
 {

@@ -11,8 +11,4 @@
       <ProjectReference Include="..\..\Raft.StateMachine\Raft.StateMachine.csproj" />
     </ItemGroup>
 
-    <ItemGroup>
-      <Folder Include="Commands\Serializers\" />
-    </ItemGroup>
-
 </Project>
