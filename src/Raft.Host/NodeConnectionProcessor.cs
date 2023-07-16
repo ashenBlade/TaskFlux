@@ -40,7 +40,6 @@ public class NodeConnectionProcessor : IDisposable
                     break;
                 }
 
-                Logger.Debug("От клиента получен пакет {Packet}", packet);
                 var success = await ProcessPacket(packet, token);
                 if (!success)
                 {
@@ -80,7 +79,6 @@ public class NodeConnectionProcessor : IDisposable
         {
             var request = ( ( AppendEntriesRequestPacket ) packet ).Request;
             var result = Node.Handle(request);
-            Logger.Debug("Запрос обработан: {Result}", result);
             await Client.SendAsync(new AppendEntriesResponsePacket(result), token);
         }
 
@@ -88,7 +86,6 @@ public class NodeConnectionProcessor : IDisposable
         {
             var request = ((RequestVoteRequestPacket ) packet ).Request;
             var result = Node.Handle(request);
-            Logger.Debug("Запрос обработан: {Result}", result);
             await Client.SendAsync(new RequestVoteResponsePacket(result), token);
         }
     }

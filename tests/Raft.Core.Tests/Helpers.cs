@@ -2,6 +2,7 @@ using Moq;
 using Raft.CommandQueue;
 using Raft.Core.Log;
 using Raft.Core.Node;
+using Raft.StateMachine;
 using Serilog;
 
 namespace Raft.Core.Tests;
@@ -25,7 +26,7 @@ public static class Helpers
     {
         return new Mock<IStateMachine>().Apply(m =>
         {
-            m.Setup(x => x.Submit(It.IsAny<string>()));
+            m.Setup(x => x.Apply(It.IsAny<byte[]>())).Returns(NullResponse.Instance);
         }).Object;
     }
 

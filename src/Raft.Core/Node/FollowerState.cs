@@ -32,8 +32,6 @@ internal class FollowerState: BaseNodeState
         if (CurrentTerm < request.CandidateTerm)
         {
             _logger.Debug("Получен RequestVote с большим термом {MyTerm} < {NewTerm}. Перехожу в Follower", CurrentTerm, request.CandidateTerm);
-            // CurrentTerm = request.CandidateTerm;
-            // VotedFor = request.CandidateId;
             Node.UpdateState(request.CandidateTerm, request.CandidateId);
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -64,9 +62,7 @@ internal class FollowerState: BaseNodeState
 
     public override AppendEntriesResponse Apply(AppendEntriesRequest request)
     {
-        _logger.Verbose("Получен Heartbeat");
         ElectionTimer.Reset();
-        
         if (request.Term < CurrentTerm)
         {
             return AppendEntriesResponse.Fail(CurrentTerm);
@@ -74,8 +70,6 @@ internal class FollowerState: BaseNodeState
 
         if (CurrentTerm < request.Term)
         {
-            // CurrentTerm = request.Term;
-            // VotedFor = null;
             Node.UpdateState(request.Term, null);
         }
         
@@ -86,12 +80,13 @@ internal class FollowerState: BaseNodeState
         
         if (0 < request.Entries.Count)
         {
-            Log.AppendUpdateRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
+            Log.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
         
         if (Log.CommitIndex < request.LeaderCommit)
         {
             Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
+            Log.ApplyCommitted(StateMachine);
         }
 
         return AppendEntriesResponse.Ok(CurrentTerm);
@@ -99,7 +94,7 @@ internal class FollowerState: BaseNodeState
 
     public override SubmitResponse Apply(SubmitRequest request)
     {
-        throw new InvalidOperationException("Текущий узел в состоянии Follower");
+        return SubmitResponse.NotALeader;
     }
 
     internal static FollowerState Create(INode node)
