@@ -1,4 +1,4 @@
-using Raft.Core.Node;
+using Raft.Core.State;
 
 namespace Raft.Core.Commands;
 
@@ -7,8 +7,8 @@ internal class MoveToFollowerStateCommand: UpdateCommand
     private readonly Term _term;
     private readonly NodeId? _votedFor;
 
-    public MoveToFollowerStateCommand(Term term, NodeId? votedFor, INodeState previousState, INode node) 
-        : base(previousState, node)
+    public MoveToFollowerStateCommand(Term term, NodeId? votedFor, IConsensusModuleState previousState, IConsensusModule consensusModule) 
+        : base(previousState, consensusModule)
     {
         _term = term;
         _votedFor = votedFor;
@@ -16,8 +16,8 @@ internal class MoveToFollowerStateCommand: UpdateCommand
 
     protected override void ExecuteUpdate()
     {
-        Node.CurrentState = FollowerState.Create(Node);
-        Node.ElectionTimer.Start();
-        Node.UpdateState(_term, _votedFor);
+        ConsensusModule.CurrentState = FollowerState.Create(ConsensusModule);
+        ConsensusModule.ElectionTimer.Start();
+        ConsensusModule.UpdateState(_term, _votedFor);
     }
 }

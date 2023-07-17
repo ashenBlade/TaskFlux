@@ -3,14 +3,13 @@ using Moq;
 using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
-using Raft.Core.Node;
-using Raft.Core.Node.LeaderState;
+using Raft.Core.State.LeaderState;
 
 namespace Raft.Core.Tests;
 
 public class LeaderStateTests
 {
-    private static RaftNode CreateLeaderNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, IRequestQueueFactory? requestQueueFactory = null)
+    private static RaftConsensusModule CreateLeaderNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, IRequestQueueFactory? requestQueueFactory = null)
     {
         var node = Helpers.CreateNode(
             currentTerm,
@@ -20,7 +19,7 @@ public class LeaderStateTests
             heartbeatTimer: heartbeatTimer,
             jobQueue: jobQueue,
             log: log);
-        ( ( INode ) node ).CurrentState = new LeaderState(
+        ( ( IConsensusModule ) node ).CurrentState = new LeaderState(
             node,
             Helpers.NullLogger, 
             requestQueueFactory ?? new SingleHeartbeatRequestQueueFactory(0));

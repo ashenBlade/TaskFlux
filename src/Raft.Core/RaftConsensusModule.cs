@@ -4,16 +4,17 @@ using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Commands.Submit;
 using Raft.Core.Log;
+using Raft.Core.State;
 using Raft.StateMachine;
 using Serilog;
 
-namespace Raft.Core.Node;
+namespace Raft.Core;
 
 [DebuggerDisplay("Роль: {CurrentRole}; Терм: {CurrentTerm}; Id: {Id}")]
-public class RaftNode: IDisposable, INode
+public class RaftConsensusModule: IDisposable, IConsensusModule
 {
     public NodeRole CurrentRole =>
-        ( ( INode ) this ).CurrentState.Role;
+        ( ( IConsensusModule ) this ).CurrentState.Role;
     public ILogger Logger { get; }
     public NodeId Id { get; }
     public Term CurrentTerm => MetadataStorage.ReadTerm();
@@ -23,9 +24,9 @@ public class RaftNode: IDisposable, INode
     public IMetadataStorage MetadataStorage { get; }
 
     // Выставляем вручную в .Create
-    private INodeState? _currentState;
+    private IConsensusModuleState? _currentState;
 
-    INodeState INode.CurrentState
+    IConsensusModuleState IConsensusModule.CurrentState
     {
         get => GetCurrentStateCheck();
         set
@@ -35,7 +36,7 @@ public class RaftNode: IDisposable, INode
         }
     }
 
-    private INodeState GetCurrentStateCheck()
+    private IConsensusModuleState GetCurrentStateCheck()
     {
         return _currentState ?? throw new ArgumentNullException(nameof(_currentState), "Текущее состояние еще не проставлено");
     }
@@ -46,7 +47,7 @@ public class RaftNode: IDisposable, INode
     public ICommandQueue CommandQueue { get; } 
     public ILog Log { get; }
 
-    private RaftNode(NodeId id, PeerGroup peerGroup, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log, ICommandQueue commandQueue, IStateMachine stateMachine, IMetadataStorage metadataStorage)
+    private RaftConsensusModule(NodeId id, PeerGroup peerGroup, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log, ICommandQueue commandQueue, IStateMachine stateMachine, IMetadataStorage metadataStorage)
     {
         Id = id;
         Logger = logger;
@@ -80,7 +81,7 @@ public class RaftNode: IDisposable, INode
         return GetCurrentStateCheck().Apply(request);
     }
     
-    public static RaftNode Create(NodeId id,
+    public static RaftConsensusModule Create(NodeId id,
                                   PeerGroup peerGroup,
                                   ILogger logger,
                                   ITimer electionTimer,
@@ -91,7 +92,7 @@ public class RaftNode: IDisposable, INode
                                   IStateMachine stateMachine,
                                   IMetadataStorage metadataStorage)
     {
-        var raft = new RaftNode(id, peerGroup, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine, metadataStorage);
+        var raft = new RaftConsensusModule(id, peerGroup, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine, metadataStorage);
         raft._currentState = FollowerState.Create(raft);
         return raft;
     }

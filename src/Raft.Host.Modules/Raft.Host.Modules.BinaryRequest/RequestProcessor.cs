@@ -1,6 +1,6 @@
 using System.Net.Sockets;
+using Raft.Core;
 using Raft.Core.Commands.Submit;
-using Raft.Core.Node;
 using Serilog;
 
 namespace Raft.Host.Modules.BinaryRequest;
@@ -9,13 +9,13 @@ internal class RequestProcessor
 {
     private const int DefaultBufferSize = 256;
     private readonly TcpClient _client;
-    private readonly INode _node;
+    private readonly IConsensusModule _consensusModule;
     private readonly ILogger _logger;
 
-    public RequestProcessor(TcpClient client, INode node, ILogger logger)
+    public RequestProcessor(TcpClient client, IConsensusModule consensusModule, ILogger logger)
     {
         _client = client;
-        _node = node;
+        _consensusModule = consensusModule;
         _logger = logger;
     }
 
@@ -45,7 +45,7 @@ internal class RequestProcessor
                     break;
                 }
 
-                var response = _node.Handle(new SubmitRequest(requestBuffer.ToArray()));
+                var response = _consensusModule.Handle(new SubmitRequest(requestBuffer.ToArray()));
                 if (!response.WasLeader)
                 {
                     // TODO: добавить ответ не лидер

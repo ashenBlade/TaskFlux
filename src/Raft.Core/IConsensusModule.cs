@@ -3,12 +3,13 @@ using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Commands.Submit;
 using Raft.Core.Log;
+using Raft.Core.State;
 using Raft.StateMachine;
 using Serilog;
 
-namespace Raft.Core.Node;
+namespace Raft.Core;
 
-public interface INode
+public interface IConsensusModule
 {
     /// <summary>
     /// ID текущего узла
@@ -33,7 +34,7 @@ public interface INode
     /// <summary>
     /// Текущее состояние узла в зависимости от роли: Follower, Candidate, Leader
     /// </summary>
-    internal INodeState CurrentState { get; set; }
+    internal IConsensusModuleState CurrentState { get; set; }
 
     /// <summary>
     /// Логгер для удобства

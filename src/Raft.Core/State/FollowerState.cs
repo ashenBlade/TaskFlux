@@ -4,15 +4,15 @@ using Raft.Core.Commands.RequestVote;
 using Raft.Core.Commands.Submit;
 using Serilog;
 
-namespace Raft.Core.Node;
+namespace Raft.Core.State;
 
-internal class FollowerState: BaseNodeState
+internal class FollowerState: BaseConsensusModuleState
 {
     public override NodeRole Role => NodeRole.Follower;
     private readonly ILogger _logger;
 
-    private FollowerState(INode node, ILogger logger)
-        : base(node)
+    private FollowerState(IConsensusModule consensusModule, ILogger logger)
+        : base(consensusModule)
     {
         _logger = logger;
         ElectionTimer.Timeout += OnElectionTimerTimeout;
@@ -32,7 +32,7 @@ internal class FollowerState: BaseNodeState
         if (CurrentTerm < request.CandidateTerm)
         {
             _logger.Debug("Получен RequestVote с большим термом {MyTerm} < {NewTerm}. Перехожу в Follower", CurrentTerm, request.CandidateTerm);
-            Node.UpdateState(request.CandidateTerm, request.CandidateId);
+            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -50,7 +50,7 @@ internal class FollowerState: BaseNodeState
         {
             // CurrentTerm = request.CandidateTerm;
             // VotedFor = request.CandidateId;
-            Node.UpdateState(request.CandidateTerm, request.CandidateId);
+            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -70,7 +70,7 @@ internal class FollowerState: BaseNodeState
 
         if (CurrentTerm < request.Term)
         {
-            Node.UpdateState(request.Term, null);
+            ConsensusModule.UpdateState(request.Term, null);
         }
         
         if (Log.Contains(request.PrevLogEntryInfo) is false)
@@ -97,15 +97,15 @@ internal class FollowerState: BaseNodeState
         return SubmitResponse.NotALeader;
     }
 
-    internal static FollowerState Create(INode node)
+    internal static FollowerState Create(IConsensusModule consensusModule)
     {
-        return new FollowerState(node, node.Logger.ForContext("SourceContext", "Follower"));
+        return new FollowerState(consensusModule, consensusModule.Logger.ForContext("SourceContext", "Follower"));
     }
 
     private void OnElectionTimerTimeout()
     {
         _logger.Debug("Сработал Election Timeout. Перехожу в состояние Candidate");
-        CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, Node));
+        CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, ConsensusModule));
     }
     
     public override void Dispose()

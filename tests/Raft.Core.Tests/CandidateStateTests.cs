@@ -2,16 +2,16 @@ using Moq;
 using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
-using Raft.Core.Node;
+using Raft.Core.State;
 
 namespace Raft.Core.Tests;
 
 public class CandidateStateTests
 {
-    private static RaftNode CreateCandidateNode(Term term, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
+    private static RaftConsensusModule CreateCandidateNode(Term term, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
         var raftStateMachine = Helpers.CreateNode(term, votedFor, peers: peers, electionTimer: electionTimer, heartbeatTimer: null, jobQueue: jobQueue, log: log);
-        ( ( INode ) raftStateMachine ).CurrentState = new CandidateState(raftStateMachine, Helpers.NullLogger);
+        ( ( IConsensusModule ) raftStateMachine ).CurrentState = new CandidateState(raftStateMachine, Helpers.NullLogger);
         return raftStateMachine;
     }
 

@@ -1,4 +1,4 @@
-namespace Raft.Core.Node.LeaderState;
+namespace Raft.Core.State.LeaderState;
 
 /// <summary>
 /// Информация об узле, необходимая для взаимодействия с ним в состоянии <see cref="NodeRole.Leader"/>

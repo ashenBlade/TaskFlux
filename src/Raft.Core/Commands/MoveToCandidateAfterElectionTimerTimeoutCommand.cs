@@ -1,18 +1,18 @@
-using Raft.Core.Node;
+using Raft.Core.State;
 
 namespace Raft.Core.Commands;
 
 internal class MoveToCandidateAfterElectionTimerTimeoutCommand: UpdateCommand
 {
-    public MoveToCandidateAfterElectionTimerTimeoutCommand(INodeState previousState, INode node) 
-        : base(previousState, node)
+    public MoveToCandidateAfterElectionTimerTimeoutCommand(IConsensusModuleState previousState, IConsensusModule consensusModule) 
+        : base(previousState, consensusModule)
     { }
 
     protected override void ExecuteUpdate()
     {
-        Node.ElectionTimer.Stop();
-        Node.CurrentState = CandidateState.Create(Node);
-        Node.UpdateState(Node.CurrentTerm.Increment(), Node.Id);
-        Node.ElectionTimer.Start();
+        ConsensusModule.ElectionTimer.Stop();
+        ConsensusModule.CurrentState = CandidateState.Create(ConsensusModule);
+        ConsensusModule.UpdateState(ConsensusModule.CurrentTerm.Increment(), ConsensusModule.Id);
+        ConsensusModule.ElectionTimer.Start();
     }
 }

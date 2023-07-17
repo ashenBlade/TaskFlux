@@ -1,18 +1,18 @@
-using Raft.Core.Node;
-using Raft.Core.Node.LeaderState;
+using Raft.Core.State;
+using Raft.Core.State.LeaderState;
 
 namespace Raft.Core.Commands;
 
 internal class MoveToLeaderStateCommand: UpdateCommand
 {
-    public MoveToLeaderStateCommand(INodeState previousState, INode node)
-        : base(previousState, node)
+    public MoveToLeaderStateCommand(IConsensusModuleState previousState, IConsensusModule consensusModule)
+        : base(previousState, consensusModule)
     { }
 
     protected override void ExecuteUpdate()
     {
-        Node.CurrentState = LeaderState.Create(Node);
-        Node.HeartbeatTimer.Start();
-        Node.ElectionTimer.Stop();
+        ConsensusModule.CurrentState = LeaderState.Create(ConsensusModule);
+        ConsensusModule.HeartbeatTimer.Start();
+        ConsensusModule.ElectionTimer.Stop();
     }
 }

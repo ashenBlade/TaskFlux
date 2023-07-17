@@ -1,7 +1,6 @@
 using Moq;
 using Raft.CommandQueue;
 using Raft.Core.Log;
-using Raft.Core.Node;
 using Raft.StateMachine;
 using Serilog;
 
@@ -53,9 +52,9 @@ public static class Helpers
                                   x.Contains(It.IsAny<LogEntryInfo>()) == true);
     }
 
-    public static RaftNode CreateNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
+    public static RaftConsensusModule CreateNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
     {
-        return RaftNode.Create(NodeId, 
+        return RaftConsensusModule.Create(NodeId, 
             new PeerGroup(peers?.ToArray() ?? Array.Empty<IPeer>()),
             NullLogger, 
             electionTimer ?? Mock.Of<ITimer>(),

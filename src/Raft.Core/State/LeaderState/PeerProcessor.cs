@@ -1,12 +1,12 @@
 using Raft.Core.Commands;
 using Raft.Core.Commands.AppendEntries;
 
-namespace Raft.Core.Node.LeaderState;
+namespace Raft.Core.State.LeaderState;
 
 
 internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue)
 {
-    private PeerInfo Info { get; } = new(State.Node.Log.LastEntry.Index + 1);
+    private PeerInfo Info { get; } = new(State.ConsensusModule.Log.LastEntry.Index + 1);
 
     /// <summary>
     /// Метод для обработки узла
@@ -44,11 +44,11 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
         {
             // 1. Отправить запрос
             var request = new AppendEntriesRequest(
-                Term: Node.CurrentTerm,
-                LeaderCommit: Node.Log.CommitIndex,
-                LeaderId: Node.Id,
-                PrevLogEntryInfo: Node.Log.GetPrecedingEntryInfo(Info.NextIndex), 
-                Entries: Node.Log.GetFrom(Info.NextIndex));
+                Term: ConsensusModule.CurrentTerm,
+                LeaderCommit: ConsensusModule.Log.CommitIndex,
+                LeaderId: ConsensusModule.Id,
+                PrevLogEntryInfo: ConsensusModule.Log.GetPrecedingEntryInfo(Info.NextIndex), 
+                Entries: ConsensusModule.Log.GetFrom(Info.NextIndex));
             AppendEntriesResponse? response;
             try
             {
@@ -86,10 +86,10 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
             
             // Дальше узел отказался принимать наш запрос (Success = false)
             // 4. Если вернувшийся терм больше нашего
-            if (Node.CurrentTerm < response.Term)
+            if (ConsensusModule.CurrentTerm < response.Term)
             {
                 // 4.1. Перейти в состояние Follower
-                Node.CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.Term, null, State, Node));
+                ConsensusModule.CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.Term, null, State, ConsensusModule));
                 // 4.2. Закончить работу
                 return false;
             }
@@ -106,7 +106,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
         return false;
     }
 
-    private INode Node => State.Node;
+    private IConsensusModule ConsensusModule => State.ConsensusModule;
 
     public void NotifyHeartbeatTimeout()
     {

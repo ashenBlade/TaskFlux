@@ -1,7 +1,7 @@
 using System.Threading.Channels;
 using Raft.Core.Log;
 
-namespace Raft.Core.Node.LeaderState;
+namespace Raft.Core.State.LeaderState;
 
 internal record ChannelRequestQueue(ILog Log): IRequestQueue
 {

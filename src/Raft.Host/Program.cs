@@ -8,7 +8,6 @@ using Microsoft.Extensions.Options;
 using Raft.CommandQueue;
 using Raft.Core;
 using Raft.Core.Log;
-using Raft.Core.Node;
 using Raft.Host;
 using Raft.Host.Infrastructure;
 using Raft.Host.Modules.BinaryRequest;
@@ -151,7 +150,7 @@ finally
 }
 
 
-BinaryRequestModule CreateBinaryRequestModule(INode node, IConfiguration config)
+BinaryRequestModule CreateBinaryRequestModule(IConsensusModule node, IConfiguration config)
 {
     var options = config.GetRequiredSection("BINARY_REQUEST")
                         .Get<BinaryRequestModuleOptions>() 
@@ -282,10 +281,10 @@ IStateMachine CreateJobQueueStateMachine()
     return new ProxyJobQueueStateMachine(unboundedJobQueue, new JobQueueCommandDeserializer(JobQueueRequestDeserializer.Instance, JobQueueResponseSerializer.Instance));
 }
 
-RaftNode CreateRaftNode(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine stateMachine, IMetadataStorage metadataStorage)
+RaftConsensusModule CreateRaftNode(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine stateMachine, IMetadataStorage metadataStorage)
 {
     var jobQueue = new TaskJobQueue(Log.ForContext<TaskJobQueue>());
-    return RaftNode.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftNode>(), randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage);
+    return RaftConsensusModule.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftConsensusModule>(), randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage);
 }
 
 void RestoreStateMachineState(StorageLog storageLog, FileLogStorage fileLogStorage, IStateMachine stateMachine)

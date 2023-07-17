@@ -2,7 +2,7 @@ using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Commands.Submit;
 
-namespace Raft.Core.Node;
+namespace Raft.Core.State;
 
 /// <summary>
 /// Интерфейс, представляющий конкретное состояние узла
@@ -10,7 +10,7 @@ namespace Raft.Core.Node;
 /// <remarks>
 /// IDisposable нужно вызывать для сброса таймеров и очистки ресурсов предыдущего состояния (отписка от таймеров и т.д.)
 /// </remarks>
-internal interface INodeState: IDisposable
+internal interface IConsensusModuleState: IDisposable
 {
     /// <summary>
     /// Текущая роль этого состояния

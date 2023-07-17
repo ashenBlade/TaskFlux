@@ -1,18 +1,16 @@
-using Raft.Core.Node;
-
 namespace Raft.Core.Commands.AppendEntries;
 
 public class AppendEntriesCommand : Command<AppendEntriesResponse>
 {
     private readonly AppendEntriesRequest _request;
 
-    public AppendEntriesCommand(AppendEntriesRequest request, INode node) : base(node)
+    public AppendEntriesCommand(AppendEntriesRequest request, IConsensusModule consensusModule) : base(consensusModule)
     {
         _request = request;
     }
 
     public override AppendEntriesResponse Execute()
     {
-        return Node.CurrentState.Apply(_request);
+        return ConsensusModule.CurrentState.Apply(_request);
     }
 }

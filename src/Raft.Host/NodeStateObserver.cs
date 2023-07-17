@@ -1,4 +1,4 @@
-using Raft.Core.Node;
+using Raft.Core;
 using Serilog;
 
 // ReSharper disable ContextualLoggerProblem
@@ -7,12 +7,12 @@ namespace Raft.Host;
 
 public class NodeStateObserver
 {
-    private readonly RaftNode _node;
+    private readonly RaftConsensusModule _consensusModule;
     private readonly ILogger _logger;
 
-    public NodeStateObserver(RaftNode node, ILogger logger)
+    public NodeStateObserver(RaftConsensusModule consensusModule, ILogger logger)
     {
-        _node = node;
+        _consensusModule = consensusModule;
         _logger = logger;
     }
 
@@ -22,7 +22,7 @@ public class NodeStateObserver
         {
             while (token.IsCancellationRequested is false)
             {
-                _logger.Information("Состояние: {State}; Терм {Term}; Последняя запись лога: {@LastEntry}; Голос За: {VotedFor}", _node.CurrentRole, _node.CurrentTerm, _node.Log.LastEntry, _node.VotedFor);
+                _logger.Information("Состояние: {State}; Терм {Term}; Последняя запись лога: {@LastEntry}; Голос За: {VotedFor}", _consensusModule.CurrentRole, _consensusModule.CurrentTerm, _consensusModule.Log.LastEntry, _consensusModule.VotedFor);
                 await Task.Delay(TimeSpan.FromSeconds(2.5), token);
             }
         }

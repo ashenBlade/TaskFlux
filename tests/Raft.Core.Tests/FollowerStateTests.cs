@@ -2,7 +2,6 @@ using Moq;
 using Raft.Core.Commands.AppendEntries;
 using Raft.Core.Commands.RequestVote;
 using Raft.Core.Log;
-using Raft.Core.Node;
 
 namespace Raft.Core.Tests;
 
@@ -16,7 +15,7 @@ public class FollowerStateTests
         return Helpers.CreateLog(logEntryInfo, commitIndex, lastApplied);
     }
 
-    private static RaftNode CreateNode(Term currentTerm, NodeId? votedFor, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
+    private static RaftConsensusModule CreateNode(Term currentTerm, NodeId? votedFor, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
         return Helpers.CreateNode(currentTerm, 
             votedFor,
@@ -28,7 +27,7 @@ public class FollowerStateTests
     [Fact]
     public void ПриСоздании__ПервоеСостояниеДолжноБыть__Follower()
     {
-        var machine = RaftNode.Create(new(1), new PeerGroup(Array.Empty<IPeer>()), Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullJobQueue, Mock.Of<ILog>(x => x.LastEntry == LastLogEntryInfo && x.CommitIndex == 0 && x.LastApplied == 0), Helpers.DefaultCommandQueue, Helpers.NullStateMachine, Helpers.NullMetadataStorage);
+        var machine = RaftConsensusModule.Create(new(1), new PeerGroup(Array.Empty<IPeer>()), Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullJobQueue, Mock.Of<ILog>(x => x.LastEntry == LastLogEntryInfo && x.CommitIndex == 0 && x.LastApplied == 0), Helpers.DefaultCommandQueue, Helpers.NullStateMachine, Helpers.NullMetadataStorage);
         Assert.Equal(NodeRole.Follower, machine.CurrentRole);
     }
     

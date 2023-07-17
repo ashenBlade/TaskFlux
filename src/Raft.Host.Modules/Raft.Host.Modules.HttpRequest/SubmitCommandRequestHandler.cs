@@ -5,7 +5,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Raft.Core;
 using Raft.Core.Commands.Submit;
-using Raft.Core.Node;
 using Raft.StateMachine.JobQueue.Commands;
 using Raft.StateMachine.JobQueue.Commands.Batch;
 using Raft.StateMachine.JobQueue.Commands.Dequeue;
@@ -20,13 +19,13 @@ namespace Raft.Host.Modules.HttpRequest;
 public class SubmitCommandRequestHandler: IRequestHandler
 {
     private static readonly Encoding Encoding = Encoding.UTF8;
-    private readonly INode _node;
+    private readonly IConsensusModule _consensusModule;
     private readonly IJobQueueRequestSerializer _requestSerializer;
     private readonly ILogger _logger;
 
-    public SubmitCommandRequestHandler(INode node, IJobQueueRequestSerializer requestSerializer, ILogger logger)
+    public SubmitCommandRequestHandler(IConsensusModule consensusModule, IJobQueueRequestSerializer requestSerializer, ILogger logger)
     {
-        _node = node;
+        _consensusModule = consensusModule;
         _requestSerializer = requestSerializer;
         _logger = logger;
     }
@@ -36,7 +35,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         response.KeepAlive = false;
         response.ContentType = "application/json";
 
-        if (_node.CurrentRole != NodeRole.Leader)
+        if (_consensusModule.CurrentRole != NodeRole.Leader)
         {
             _logger.Debug("Пришел запрос, но текущий узел не лидер");
             await RespondNotLeaderAsync(response);
@@ -62,7 +61,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
 
         if (TrySerializeRequestPayload(requestString, out var payload))
         {
-            var submitResponse = _node.Handle(new SubmitRequest(payload));
+            var submitResponse = _consensusModule.Handle(new SubmitRequest(payload));
             if (submitResponse.WasLeader)
             {
                 RespondSuccessAsync(response, submitResponse);

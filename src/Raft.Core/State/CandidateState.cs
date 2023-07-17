@@ -4,15 +4,15 @@ using Raft.Core.Commands.RequestVote;
 using Raft.Core.Commands.Submit;
 using Serilog;
 
-namespace Raft.Core.Node;
+namespace Raft.Core.State;
 
-internal class CandidateState: BaseNodeState
+internal class CandidateState: BaseConsensusModuleState
 {
     public override NodeRole Role => NodeRole.Candidate;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;
-    internal CandidateState(INode node, ILogger logger)
-        :base(node)
+    internal CandidateState(IConsensusModule consensusModule, ILogger logger)
+        :base(consensusModule)
     {
         _logger = logger;
         _cts = new();
@@ -96,7 +96,7 @@ internal class CandidateState: BaseNodeState
                     _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", leftPeers[i].Id);
                     _cts.Cancel();
 
-                    CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.CurrentTerm, null, this, Node));
+                    CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.CurrentTerm, null, this, ConsensusModule));
                     return;
                 }
                 else
@@ -123,7 +123,7 @@ internal class CandidateState: BaseNodeState
             return;
         }
 
-        CommandQueue.Enqueue(new MoveToLeaderStateCommand(this, Node));
+        CommandQueue.Enqueue(new MoveToLeaderStateCommand(this, ConsensusModule));
         
         bool QuorumReached()
         {
@@ -137,7 +137,7 @@ internal class CandidateState: BaseNodeState
 
         _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
 
-        CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, Node));
+        CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, ConsensusModule));
     }
 
 
@@ -150,9 +150,9 @@ internal class CandidateState: BaseNodeState
 
         if (CurrentTerm < request.Term)
         {
-            CurrentState = FollowerState.Create(Node);
+            CurrentState = FollowerState.Create(ConsensusModule);
             ElectionTimer.Start();
-            Node.UpdateState(request.Term, null);
+            ConsensusModule.UpdateState(request.Term, null);
         }
         
         if (Log.Contains(request.PrevLogEntryInfo) is false)
@@ -189,8 +189,8 @@ internal class CandidateState: BaseNodeState
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            Node.UpdateState(request.CandidateTerm, request.CandidateId);
-            CurrentState = FollowerState.Create(Node);
+            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
+            CurrentState = FollowerState.Create(ConsensusModule);
             ElectionTimer.Start();
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -207,9 +207,9 @@ internal class CandidateState: BaseNodeState
             // У которого лог в консистентном с нашим состоянием
             !Log.Conflicts(request.LastLogEntryInfo))
         {
-            CurrentState = FollowerState.Create(Node);
+            CurrentState = FollowerState.Create(ConsensusModule);
             ElectionTimer.Start();
-            Node.UpdateState(request.CandidateTerm, request.CandidateId);
+            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -232,8 +232,8 @@ internal class CandidateState: BaseNodeState
         ElectionTimer.Timeout -= OnElectionTimerTimeout;
     }
 
-    internal static CandidateState Create(INode node)
+    internal static CandidateState Create(IConsensusModule consensusModule)
     {
-        return new CandidateState(node, node.Logger.ForContext("SourceContext", "Candidate"));
+        return new CandidateState(consensusModule, consensusModule.Logger.ForContext("SourceContext", "Candidate"));
     }
 }

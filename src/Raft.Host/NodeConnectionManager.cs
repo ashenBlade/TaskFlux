@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using Raft.Core;
-using Raft.Core.Node;
 using Raft.Network;
 using Raft.Network.Packets;
 using Raft.Peer;
@@ -14,11 +13,11 @@ public class NodeConnectionManager
 {
     private readonly string _host;
     private readonly int _port;
-    private readonly RaftNode _raft;
+    private readonly RaftConsensusModule _raft;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<NodeId, NodeConnectionProcessor> _nodes = new();
 
-    public NodeConnectionManager(string host, int port, RaftNode raft, ILogger logger)
+    public NodeConnectionManager(string host, int port, RaftConsensusModule raft, ILogger logger)
     {
         _host = host;
         _port = port;

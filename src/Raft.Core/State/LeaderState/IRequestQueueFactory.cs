@@ -1,4 +1,4 @@
-namespace Raft.Core.Node.LeaderState;
+namespace Raft.Core.State.LeaderState;
 
 internal interface IRequestQueueFactory
 {

@@ -1,24 +1,23 @@
 using System.Windows.Input;
-using Raft.Core.Node;
 
 namespace Raft.Core.Commands;
 
 public abstract class Command<T>: ICommand<T>
 {
-    protected INode Node { get; }
-    protected Command(INode node)
+    protected IConsensusModule ConsensusModule { get; }
+    protected Command(IConsensusModule consensusModule)
     {
-        Node = node;
+        ConsensusModule = consensusModule;
     }
     public abstract T Execute();
 }
 
 public abstract class Command : ICommand
 {
-    protected INode Node { get; }
-    protected Command(INode node)
+    protected IConsensusModule ConsensusModule { get; }
+    protected Command(IConsensusModule consensusModule)
     {
-        Node = node;
+        ConsensusModule = consensusModule;
     }
     public abstract void Execute();
 }

@@ -1,6 +1,5 @@
 using System.Net.Sockets;
 using Raft.Core;
-using Raft.Core.Node;
 using Raft.Network;
 using Raft.Network.Packets;
 using Raft.Peer;
@@ -10,11 +9,11 @@ namespace Raft.Host;
 
 public class NodeConnectionProcessor : IDisposable
 {
-    public NodeConnectionProcessor(NodeId id, PacketClient client, RaftNode node, ILogger logger)
+    public NodeConnectionProcessor(NodeId id, PacketClient client, RaftConsensusModule consensusModule, ILogger logger)
     {
         Id = id;
         Client = client;
-        Node = node;
+        ConsensusModule = consensusModule;
         Logger = logger;
     }
 
@@ -22,7 +21,7 @@ public class NodeConnectionProcessor : IDisposable
     private NodeId Id { get; }
     private Socket Socket => Client.Socket;
     private PacketClient Client { get; }
-    private RaftNode Node { get; }
+    private RaftConsensusModule ConsensusModule { get; }
     private ILogger Logger { get; }
 
     public async Task ProcessClientBackground()
@@ -78,14 +77,14 @@ public class NodeConnectionProcessor : IDisposable
         async Task ProcessAppendEntriesAsync()
         {
             var request = ( ( AppendEntriesRequestPacket ) packet ).Request;
-            var result = Node.Handle(request);
+            var result = ConsensusModule.Handle(request);
             await Client.SendAsync(new AppendEntriesResponsePacket(result), token);
         }
 
         async Task ProcessRequestVoteAsync()
         {
             var request = ((RequestVoteRequestPacket ) packet ).Request;
-            var result = Node.Handle(request);
+            var result = ConsensusModule.Handle(request);
             await Client.SendAsync(new RequestVoteResponsePacket(result), token);
         }
     }

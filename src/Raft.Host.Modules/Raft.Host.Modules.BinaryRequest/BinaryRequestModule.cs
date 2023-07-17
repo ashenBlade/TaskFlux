@@ -1,20 +1,20 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Options;
-using Raft.Core.Node;
+using Raft.Core;
 using Serilog;
 
 namespace Raft.Host.Modules.BinaryRequest;
 
 public class BinaryRequestModule
 {
-    private readonly INode _node;
+    private readonly IConsensusModule _consensusModule;
     private readonly IOptionsMonitor<BinaryRequestModuleOptions> _options;
     private readonly ILogger _logger;
 
-    public BinaryRequestModule(INode node, IOptionsMonitor<BinaryRequestModuleOptions> options, ILogger logger)
+    public BinaryRequestModule(IConsensusModule consensusModule, IOptionsMonitor<BinaryRequestModuleOptions> options, ILogger logger)
     {
-        _node = node;
+        _consensusModule = consensusModule;
         _options = options;
         _logger = logger;
     }
@@ -33,11 +33,12 @@ public class BinaryRequestModule
             while (token.IsCancellationRequested is false)
             {
                 var client = await listener.AcceptTcpClientAsync(token);
-                var processor = new RequestProcessor(client, _node, Log.ForContext<RequestProcessor>());
+                var processor = new RequestProcessor(client, _consensusModule, Log.ForContext<RequestProcessor>());
                 _ = processor.ProcessAsync(token);
             }
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested) 
+        catch (OperationCanceledException) 
+            when (token.IsCancellationRequested) 
         { }
         catch (Exception e)
         {

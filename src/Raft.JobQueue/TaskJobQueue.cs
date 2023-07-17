@@ -11,6 +11,7 @@ public class TaskJobQueue: IJobQueue
     {
         _logger = logger;
     }
+    
     public void EnqueueInfinite(Func<Task> job, CancellationToken token)
     {
         _ = Task.Run(async () =>

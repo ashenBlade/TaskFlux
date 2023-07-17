@@ -4,17 +4,17 @@ using Raft.Core.Commands.Submit;
 using Raft.Core.Log;
 using Serilog;
 
-namespace Raft.Core.Node.LeaderState;
+namespace Raft.Core.State.LeaderState;
 
-internal class LeaderState: BaseNodeState
+internal class LeaderState: BaseConsensusModuleState
 {
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
     private readonly PeerProcessor[] _processors;
 
-    internal LeaderState(INode node, ILogger logger, IRequestQueueFactory queueFactory)
-        : base(node)
+    internal LeaderState(IConsensusModule consensusModule, ILogger logger, IRequestQueueFactory queueFactory)
+        : base(consensusModule)
     {
         _logger = logger;
         _processors = CreatePeerProcessors(this, queueFactory);
@@ -63,9 +63,9 @@ internal class LeaderState: BaseNodeState
 
         if (CurrentTerm < request.Term)
         {
-            CurrentState = FollowerState.Create(Node);
+            CurrentState = FollowerState.Create(ConsensusModule);
             ElectionTimer.Start();
-            Node.UpdateState(request.Term, null);
+            ConsensusModule.UpdateState(request.Term, null);
         }
         
         if (Log.Contains(request.PrevLogEntryInfo) is false)
@@ -96,8 +96,8 @@ internal class LeaderState: BaseNodeState
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            Node.UpdateState(request.CandidateTerm, request.CandidateId);
-            CurrentState = FollowerState.Create(Node);
+            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
+            CurrentState = FollowerState.Create(ConsensusModule);
             ElectionTimer.Start();
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -113,8 +113,8 @@ internal class LeaderState: BaseNodeState
         if (canVote &&                              // За которого можем проголосовать и
             !Log.Conflicts(request.LastLogEntryInfo)) // У которого лог не хуже нашего
         {
-            Node.UpdateState(request.CandidateTerm, request.CandidateId);
-            CurrentState = FollowerState.Create(Node);
+            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
+            CurrentState = FollowerState.Create(ConsensusModule);
             ElectionTimer.Start();
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -132,9 +132,9 @@ internal class LeaderState: BaseNodeState
         HeartbeatTimer.Timeout -= OnHeartbeatTimer;
     }
 
-    public static LeaderState Create(INode node)
+    public static LeaderState Create(IConsensusModule consensusModule)
     {
-        return new LeaderState(node, node.Logger.ForContext("SourceContext", "Leader"), new ChannelRequestQueueFactory(node.Log));
+        return new LeaderState(consensusModule, consensusModule.Logger.ForContext("SourceContext", "Leader"), new ChannelRequestQueueFactory(consensusModule.Log));
     }
 
     public override SubmitResponse Apply(SubmitRequest request)
