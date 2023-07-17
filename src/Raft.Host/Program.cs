@@ -4,12 +4,14 @@ using System.Net.Sockets;
 using JobQueue.InMemory;
 using JobQueue.SortedQueue;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Raft.CommandQueue;
 using Raft.Core;
 using Raft.Core.Log;
 using Raft.Core.Node;
 using Raft.Host;
 using Raft.Host.Infrastructure;
+using Raft.Host.Modules.BinaryRequest;
 using Raft.Host.Modules.HttpRequest;
 using Raft.Host.Options;
 using Raft.JobQueue;
@@ -96,6 +98,8 @@ try
 
     var httpModule = CreateHttpRequestModule(configuration);
     httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(node, JobQueueRequestSerializer.Instance, Log.ForContext<SubmitCommandRequestHandler>()));
+    
+    var binaryRequestModule = CreateBinaryRequestModule(node, configuration);
 
     var nodeConnectionThread = new Thread(o =>
         {
@@ -128,7 +132,8 @@ try
         await Task.WhenAll(
             stateObserver.RunAsync(cts.Token),
             commandQueue.RunAsync(cts.Token),
-            httpModule.RunAsync(cts.Token));
+            httpModule.RunAsync(cts.Token),
+            binaryRequestModule.RunAsync(cts.Token));
     }
     catch (Exception e)
     {
@@ -146,6 +151,25 @@ finally
 }
 
 
+BinaryRequestModule CreateBinaryRequestModule(INode node, IConfiguration config)
+{
+    var options = config.GetRequiredSection("BINARY_REQUEST")
+                        .Get<BinaryRequestModuleOptions>() 
+               ?? BinaryRequestModuleOptions.Default;
+
+    try
+    {
+        Validator.ValidateObject(options, new ValidationContext(options), true);
+    }
+    catch (ValidationException ve)
+    {
+        Log.Error(ve, "Ошибка валидации настроек модуля бинарных запросов");
+        throw;
+    }
+
+    return new BinaryRequestModule(node, new StaticOptionsMonitor<BinaryRequestModuleOptions>(options),
+        Log.ForContext<BinaryRequestModule>());
+}
 
 void ValidateOptions(RaftServerOptions peersOptions)
 {

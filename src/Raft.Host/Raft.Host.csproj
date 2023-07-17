@@ -13,6 +13,7 @@
       <ProjectReference Include="..\JobQueue\JobQueue.InMemory\JobQueue.InMemory.csproj" />
       <ProjectReference Include="..\Raft.CommandQueue\Raft.CommandQueue.Channel\Raft.CommandQueue.Channel.csproj" />
       <ProjectReference Include="..\Raft.Core\Raft.Core.csproj" />
+      <ProjectReference Include="..\Raft.Host.Modules\Raft.Host.Modules.BinaryRequest\Raft.Host.Modules.BinaryRequest.csproj" />
       <ProjectReference Include="..\Raft.Host.Modules\Raft.Host.Modules.HttpRequest\Raft.Host.Modules.HttpRequest.csproj" />
       <ProjectReference Include="..\Raft.JobQueue\Raft.JobQueue.csproj" />
       <ProjectReference Include="..\Raft.Log\Raft.Storage.File\Raft.Storage.File.csproj" />

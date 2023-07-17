@@ -8,5 +8,5 @@ public class HttpModuleOptions
     /// Порт для биндинга
     /// </summary>
     [ConfigurationKeyName("PORT")]
-    public int Port { get; set; } = 2602;
+    public int Port { get; set; } = 1606;
 }

@@ -134,7 +134,7 @@ public class FollowerStateTests
 
         Assert.Equal(stateMachine.Id, stateMachine.VotedFor);
     }
-
+    
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
