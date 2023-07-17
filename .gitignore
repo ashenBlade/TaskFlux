@@ -399,5 +399,6 @@ FodyWeavers.xsd
 .idea
 
 # Файлы с ILog
-!src/Raft.Core/Log
-!src/Raft.Storage/Raft.Storage.File/Log
+!src/Consensus/Consensus.Core/Log
+!src/Consensus.Log/Consensus.Storage.File/Log
+!src/Consensus/**/Log
