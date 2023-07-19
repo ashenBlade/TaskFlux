@@ -2,20 +2,20 @@ using Consensus.CommandQueue;
 
 namespace Consensus.Core.Commands;
 
-public abstract class Command<T>: ICommand<T>
+public abstract class Command<T, TCommand, TResponse>: ICommand<T>
 {
-    protected IConsensusModule ConsensusModule { get; }
-    protected Command(IConsensusModule consensusModule)
+    protected IConsensusModule<TCommand, TResponse> ConsensusModule { get; }
+    protected Command(IConsensusModule<TCommand, TResponse> consensusModule)
     {
         ConsensusModule = consensusModule;
     }
     public abstract T Execute();
 }
 
-public abstract class Command : ICommand
+public abstract class Command<TCommand, TResponse> : ICommand
 {
-    protected IConsensusModule ConsensusModule { get; }
-    protected Command(IConsensusModule consensusModule)
+    protected IConsensusModule<TCommand, TResponse> ConsensusModule { get; }
+    protected Command(IConsensusModule<TCommand, TResponse> consensusModule)
     {
         ConsensusModule = consensusModule;
     }

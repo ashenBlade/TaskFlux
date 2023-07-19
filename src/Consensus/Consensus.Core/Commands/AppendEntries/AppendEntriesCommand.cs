@@ -1,10 +1,10 @@
 namespace Consensus.Core.Commands.AppendEntries;
 
-public class AppendEntriesCommand : Command<AppendEntriesResponse>
+public class AppendEntriesCommand<TCommand, TResponse>: Command<AppendEntriesResponse, TCommand, TResponse>
 {
     private readonly AppendEntriesRequest _request;
 
-    public AppendEntriesCommand(AppendEntriesRequest request, IConsensusModule consensusModule) : base(consensusModule)
+    public AppendEntriesCommand(AppendEntriesRequest request, IConsensusModule<TCommand, TResponse> consensusModule) : base(consensusModule)
     {
         _request = request;
     }

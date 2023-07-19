@@ -9,7 +9,7 @@ using Serilog;
 
 namespace Consensus.Core;
 
-public interface IConsensusModule
+public interface IConsensusModule<TCommand, TResponse>
 {
     /// <summary>
     /// ID текущего узла
@@ -34,7 +34,7 @@ public interface IConsensusModule
     /// <summary>
     /// Текущее состояние узла в зависимости от роли: Follower, Candidate, Leader
     /// </summary>
-    internal IConsensusModuleState CurrentState { get; set; }
+    internal IConsensusModuleState<TCommand, TResponse> CurrentState { get; set; }
 
     /// <summary>
     /// Логгер для удобства
@@ -74,11 +74,12 @@ public interface IConsensusModule
     public PeerGroup PeerGroup { get; }
     
     /// <summary>
-    /// Машина состояний, которую мы реплицируем
+    /// Объект, представляющий текущий узел
     /// </summary>
-    public IStateMachine StateMachine { get; }
+    public IStateMachine<TCommand, TResponse> StateMachine { get; }
 
     public IMetadataStorage MetadataStorage { get; }
+    public ISerializer<TCommand> Serializer { get; }
 
     /// <summary>
     /// Обновить состояние узла
@@ -88,5 +89,5 @@ public interface IConsensusModule
     public void UpdateState(Term newTerm, NodeId? votedFor);
     public RequestVoteResponse Handle(RequestVoteRequest request);
     public AppendEntriesResponse Handle(AppendEntriesRequest request);
-    public SubmitResponse Handle(SubmitRequest request);
+    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request);
 }

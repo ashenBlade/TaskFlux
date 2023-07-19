@@ -76,12 +76,12 @@ public interface ILog
     /// <returns>Информацию о следующей записи в логе</returns>
     /// <remarks>Если указанный индекс 0, то вернется <see cref="LogEntryInfo.Tomb"/></remarks>
     public LogEntryInfo GetPrecedingEntryInfo(int nextIndex);
-    
+
     /// <summary>
-    /// Применить непримененные записи к указанной машине состояний
+    /// Получить закомиченные, но еще не примененные записи из лога
     /// </summary>
-    /// <param name="stateMachine">Машина состояний, для которой нужно применить команды</param>
-    public void ApplyCommitted(IStateMachine stateMachine);
+    /// <returns>Записи, которые были закомичены, но еще не применены</returns>
+    public IReadOnlyList<LogEntry> GetNotApplied();
 
     /// <summary>
     /// Указать новый индекс последней примененной записи

@@ -1,7 +1,9 @@
+using System.Buffers;
 using System.Net.Sockets;
 using Consensus.Core;
 using Consensus.Core.Commands.Submit;
 using Serilog;
+using TaskFlux.Requests;
 
 namespace TaskFlux.Host.Modules.BinaryRequest;
 
@@ -9,13 +11,21 @@ internal class RequestProcessor
 {
     private const int DefaultBufferSize = 256;
     private readonly TcpClient _client;
-    private readonly IConsensusModule _consensusModule;
+    private readonly IConsensusModule<IRequest, IResponse> _consensusModule;
+    private readonly ISerializer<IRequest> _requestSerializer;
+    private readonly ISerializer<IResponse> _responseSerializer;
     private readonly ILogger _logger;
 
-    public RequestProcessor(TcpClient client, IConsensusModule consensusModule, ILogger logger)
+    public RequestProcessor(TcpClient client, 
+                            IConsensusModule<IRequest, IResponse> consensusModule,
+                            ISerializer<IRequest> requestSerializer,
+                            ISerializer<IResponse> responseSerializer,
+                            ILogger logger)
     {
         _client = client;
         _consensusModule = consensusModule;
+        _requestSerializer = requestSerializer;
+        _responseSerializer = responseSerializer;
         _logger = logger;
     }
 
@@ -24,6 +34,7 @@ internal class RequestProcessor
         _logger.Debug("Начинаю обработку полученного запроса");
         var requestBuffer = new List<byte>();
         var buffer = new byte[DefaultBufferSize];
+        
         await using var stream = _client.GetStream();
         try
         {
@@ -45,14 +56,14 @@ internal class RequestProcessor
                     break;
                 }
 
-                var response = _consensusModule.Handle(new SubmitRequest(requestBuffer.ToArray()));
+                var response = _consensusModule.Handle(new SubmitRequest<IRequest>(_requestSerializer.Deserialize(requestBuffer.ToArray())));
                 if (!response.WasLeader)
                 {
                     // TODO: добавить ответ не лидер
                     break;
                 }
 
-                response.Response.WriteTo(stream);
+                await stream.WriteAsync(_responseSerializer.Serialize(response.Response), token);
             }
         }
         finally

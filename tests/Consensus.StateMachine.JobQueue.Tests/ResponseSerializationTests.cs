@@ -1,26 +1,24 @@
-using System.ComponentModel;
-using Consensus.StateMachine.JobQueue.Commands;
-using Consensus.StateMachine.JobQueue.Commands.Batch;
-using Consensus.StateMachine.JobQueue.Commands.Dequeue;
-using Consensus.StateMachine.JobQueue.Commands.Enqueue;
-using Consensus.StateMachine.JobQueue.Commands.Error;
-using Consensus.StateMachine.JobQueue.Commands.GetCount;
-using Consensus.StateMachine.JobQueue.Serialization;
+using TaskFlux.Requests;
+using TaskFlux.Requests.Batch;
+using TaskFlux.Requests.Commands.JobQueue.GetCount;
+using TaskFlux.Requests.Dequeue;
+using TaskFlux.Requests.Enqueue;
+using TaskFlux.Requests.Error;
+using TaskFlux.Requests.Serialization;
 
 namespace Consensus.StateMachine.JobQueue.Tests;
 
 public class ResponseSerializationTests
 {
-    public static readonly JobQueueResponseSerializer Serializer = new();
-    public static readonly JobQueueResponseDeserializer Deserializer = new();
+    public static readonly ResponseSerializer Serializer = new();
     
-    private static void AssertBase(IJobQueueResponse expected)
+    private static void AssertBase(IResponse expected)
     {
         using var memory = new MemoryStream();
         using var writer = new BinaryWriter(memory);
-        Serializer.Serialize(expected, writer);
-        var actual = Deserializer.Deserialize(memory.ToArray());
-        Assert.Equal(expected, actual, JobQueueResponseEqualityComparer.Instance);
+        var data = Serializer.Serialize(expected);
+        var actual = Serializer.Deserialize(data);
+        Assert.Equal(expected, actual, ResponseEqualityComparer.Instance);
     }
 
     [Theory(DisplayName = nameof(EnqueueResponse))]
@@ -101,9 +99,9 @@ public class ResponseSerializationTests
     {
         AssertBase(new BatchResponse(CreateResponses()));
         
-        IJobQueueResponse[] CreateResponses()
+        IResponse[] CreateResponses()
         {
-            return new IJobQueueResponse[]
+            return new IResponse[]
             {
                 CreateDequeueResponse(),
                 CreateEnqueueResponse(),
@@ -118,7 +116,7 @@ public class ResponseSerializationTests
             ErrorResponse CreateErrorResponse() => new("Custom error message");
             GetCountResponse CreateGetCountResponse() => new(10);
             BatchResponse CreateBatchResponse() =>
-                new(new IJobQueueResponse[]
+                new(new IResponse[]
                 {
                     CreateEnqueueResponse(),
                     CreateDequeueResponse(),

@@ -1,10 +1,10 @@
 namespace Consensus.Core.Commands.RequestVote;
 
-internal class RequestVoteCommand: Command<RequestVoteResponse>
+internal class RequestVoteCommand<TCommand, TResponse>: Command<RequestVoteResponse, TCommand, TResponse>
 {
     private readonly RequestVoteRequest _request;
 
-    public RequestVoteCommand(RequestVoteRequest request, IConsensusModule consensusModule) : base(consensusModule)
+    public RequestVoteCommand(RequestVoteRequest request, IConsensusModule<TCommand, TResponse> consensusModule) : base(consensusModule)
     {
         _request = request;
     }

@@ -1,27 +1,25 @@
-using System.Security.Cryptography;
-using Consensus.StateMachine.JobQueue.Commands;
-using Consensus.StateMachine.JobQueue.Commands.Batch;
-using Consensus.StateMachine.JobQueue.Commands.Dequeue;
-using Consensus.StateMachine.JobQueue.Commands.Enqueue;
-using Consensus.StateMachine.JobQueue.Commands.GetCount;
-using Consensus.StateMachine.JobQueue.Serialization;
+using TaskFlux.Requests;
+using TaskFlux.Requests.Batch;
+using TaskFlux.Requests.Dequeue;
+using TaskFlux.Requests.GetCount;
+using TaskFlux.Requests.Requests.JobQueue.Enqueue;
+using TaskFlux.Requests.Serialization;
 
 namespace Consensus.StateMachine.JobQueue.Tests;
 
 public class RequestSerializationTests
 {
-    public static readonly JobQueueRequestSerializer Serializer = new();
-    public static readonly JobQueueRequestDeserializer Deserializer = new();
+    public static readonly RequestSerializer Serializer = new();
 
-    private static void AssertBase(IJobQueueRequest expected)
+    private static void AssertBase(IRequest expected)
     {
         using var memory = new MemoryStream();
         using var writer = new BinaryWriter(memory);
         
-        Serializer.Serialize(expected, writer);
-        var actual = Deserializer.Deserialize(memory.ToArray());
+        var payload = Serializer.Serialize(expected);
+        var actual = Serializer.Deserialize(payload);
         
-        Assert.Equal(expected, actual, JobQueueRequestEqualityComparer.Instance);
+        Assert.Equal(expected, actual, RequestEqualityComparer.Instance);
     }
     
     [Fact(DisplayName = nameof(DequeueRequest))]
@@ -70,7 +68,7 @@ public class RequestSerializationTests
         RequestType.BatchRequest
     };
     
-    private IJobQueueRequest CreateRandomRequest()
+    private IRequest CreateRandomRequest()
     {
         var requestType = RequestTypes[Random.Shared.Next(0, RequestTypes.Length)];
         return requestType switch

@@ -10,7 +10,7 @@ namespace Consensus.Core.State;
 /// <remarks>
 /// IDisposable нужно вызывать для сброса таймеров и очистки ресурсов предыдущего состояния (отписка от таймеров и т.д.)
 /// </remarks>
-internal interface IConsensusModuleState: IDisposable
+internal interface IConsensusModuleState<TRequest, TResponse>: IDisposable
 {
     /// <summary>
     /// Текущая роль этого состояния
@@ -35,5 +35,5 @@ internal interface IConsensusModuleState: IDisposable
     /// </summary>
     /// <param name="request">Объект запроса</param>
     /// <returns>Результат операции</returns>
-    public SubmitResponse Apply(SubmitRequest request);
+    public SubmitResponse<TResponse> Apply(SubmitRequest<TRequest> request);
 }

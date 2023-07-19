@@ -6,6 +6,7 @@ using Consensus.Network;
 using Consensus.Network.Packets;
 using Consensus.Peer;
 using Serilog;
+using TaskFlux.Requests;
 
 namespace TaskFlux.Host;
 
@@ -13,11 +14,11 @@ public class NodeConnectionManager
 {
     private readonly string _host;
     private readonly int _port;
-    private readonly RaftConsensusModule _raft;
+    private readonly RaftConsensusModule<IRequest, IResponse> _raft;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<NodeId, NodeConnectionProcessor> _nodes = new();
 
-    public NodeConnectionManager(string host, int port, RaftConsensusModule raft, ILogger logger)
+    public NodeConnectionManager(string host, int port, RaftConsensusModule<IRequest, IResponse> raft, ILogger logger)
     {
         _host = host;
         _port = port;

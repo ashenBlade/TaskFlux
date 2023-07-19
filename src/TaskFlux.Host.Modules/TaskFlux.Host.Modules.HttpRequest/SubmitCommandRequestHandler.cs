@@ -5,28 +5,27 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Consensus.Core;
 using Consensus.Core.Commands.Submit;
-using Consensus.StateMachine.JobQueue.Commands;
-using Consensus.StateMachine.JobQueue.Commands.Batch;
-using Consensus.StateMachine.JobQueue.Commands.Dequeue;
-using Consensus.StateMachine.JobQueue.Commands.Enqueue;
-using Consensus.StateMachine.JobQueue.Commands.Error;
-using Consensus.StateMachine.JobQueue.Commands.GetCount;
-using Consensus.StateMachine.JobQueue.Serialization;
 using Serilog;
+using TaskFlux.Requests;
+using TaskFlux.Requests.Batch;
+using TaskFlux.Requests.Commands.JobQueue.GetCount;
+using TaskFlux.Requests.Dequeue;
+using TaskFlux.Requests.Enqueue;
+using TaskFlux.Requests.Error;
+using TaskFlux.Requests.GetCount;
+using TaskFlux.Requests.Requests.JobQueue.Enqueue;
 
 namespace TaskFlux.Host.Modules.HttpRequest;
 
 public class SubmitCommandRequestHandler: IRequestHandler
 {
     private static readonly Encoding Encoding = Encoding.UTF8;
-    private readonly IConsensusModule _consensusModule;
-    private readonly IJobQueueRequestSerializer _requestSerializer;
+    private readonly IConsensusModule<IRequest, IResponse> _consensusModule;
     private readonly ILogger _logger;
 
-    public SubmitCommandRequestHandler(IConsensusModule consensusModule, IJobQueueRequestSerializer requestSerializer, ILogger logger)
+    public SubmitCommandRequestHandler(IConsensusModule<IRequest, IResponse> consensusModule,  ILogger logger)
     {
         _consensusModule = consensusModule;
-        _requestSerializer = requestSerializer;
         _logger = logger;
     }
     
@@ -34,7 +33,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
     {
         response.KeepAlive = false;
         response.ContentType = "application/json";
-
+        
         if (_consensusModule.CurrentRole != NodeRole.Leader)
         {
             _logger.Debug("Пришел запрос, но текущий узел не лидер");
@@ -61,7 +60,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
 
         if (TrySerializeRequestPayload(requestString, out var payload))
         {
-            var submitResponse = _consensusModule.Handle(new SubmitRequest(payload));
+            var submitResponse = _consensusModule.Handle(new SubmitRequest<IRequest>(payload));
             if (submitResponse.WasLeader)
             {
                 RespondSuccessAsync(response, submitResponse);
@@ -83,21 +82,21 @@ public class SubmitCommandRequestHandler: IRequestHandler
         await writer.FlushAsync();
     }
     
-    private bool TrySerializeRequestPayload(string requestString, out byte[] payload)
+    private bool TrySerializeRequestPayload(string requestString, out IRequest request)
     {
         var linesArray = SplitLines().ToArray();
         if (linesArray.Length == 0)
         {
-            payload = Array.Empty<byte>();
+            request = null!;
             return false;
         }
 
         if (linesArray.Length == 1)
         {
-            return TryDeserializeSingleRequest(linesArray[0], out payload);
+            return TryDeserializeSingleRequest(linesArray[0], out request);
         }
 
-        return TryDeserializeBatchRequest(linesArray, out payload);
+        return TryDeserializeBatchRequest(linesArray, out request);
 
         IEnumerable<string> SplitLines()
         {
@@ -109,29 +108,25 @@ public class SubmitCommandRequestHandler: IRequestHandler
         }
     }
 
-    private bool TryDeserializeBatchRequest(string[] requestLines, out byte[] payload)
+    private bool TryDeserializeBatchRequest(string[] requestLines, out IRequest request)
     {
-        var requests = new IJobQueueRequest[requestLines.Length];
+        var requests = new IRequest[requestLines.Length];
         for (var i = 0; i < requests.Length; i++)
         {
-            if (!TryDeserializeRequest(requestLines[i], out var request))
+            if (!TryDeserializeRequest(requestLines[i], out var innerRequest))
             {
-                payload = Array.Empty<byte>();
+                request = null!;
                 return false;
             }
 
-            requests[i] = request;
+            requests[i] = innerRequest;
         }
 
-        var batchRequest = new BatchRequest(requests);
-        using var memory = new MemoryStream();
-        using var writer = new BinaryWriter(memory);
-        _requestSerializer.Serialize(batchRequest, writer);
-        payload = memory.ToArray();
+        request = new BatchRequest(requests);
         return true;
     }
 
-    private static bool TryDeserializeRequest(string requestString, out IJobQueueRequest request)
+    private static bool TryDeserializeRequest(string requestString, out IRequest request)
     {
         if (string.IsNullOrWhiteSpace(requestString))
         {
@@ -144,7 +139,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         try
         {
             var command = tokens[0];
-            IJobQueueRequest? parsedRequest = null;
+            IRequest? parsedRequest = null;
             if (command.Equals("enqueue", StringComparison.InvariantCultureIgnoreCase) 
              && tokens.Length == 3)
             {
@@ -173,7 +168,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         }
     }
 
-    private bool TryDeserializeSingleRequest(string requestString, out byte[] payload)
+    private bool TryDeserializeSingleRequest(string requestString, out IRequest request)
     {
         try
         {
@@ -181,7 +176,6 @@ public class SubmitCommandRequestHandler: IRequestHandler
             
             // Точно будет хотя бы 1 элемент, т.к. проверяли выше, что строка не пуста
             var command = tokens[0];
-            IJobQueueRequest? request = null;
             if (command.Equals("enqueue", StringComparison.InvariantCultureIgnoreCase) 
              && tokens.Length == 3)
             {
@@ -200,30 +194,23 @@ public class SubmitCommandRequestHandler: IRequestHandler
                 request = GetCountRequest.Instance;
             }
 
-            if (request is null)
-            {
-                payload = Array.Empty<byte>();
-                return false;
-            }
-
-            using var memory = new MemoryStream();
-            using var writer = new BinaryWriter(memory);
-            _requestSerializer.Serialize(request, writer);
-            payload = memory.ToArray();
-            return true;
+            request = null!;
+            return false;
         }
         catch (Exception)
         {
-            payload = Array.Empty<byte>();
+            request = null!;
             return false;
         }
     }
 
     private void RespondSuccessAsync(HttpListenerResponse response,
-                                     SubmitResponse submitResponse)
+                                     SubmitResponse<IResponse> submitResponse)
     {
-        var visitor = VisitResponse();
-
+        var visitor = new HttpResponseJobQueueResponseVisitor();
+        
+        submitResponse.Response.Accept(visitor);
+        
         response.StatusCode = ( int ) ( visitor.Ok
                                             ? HttpStatusCode.OK
                                             : HttpStatusCode.BadRequest );
@@ -231,19 +218,9 @@ public class SubmitCommandRequestHandler: IRequestHandler
         using var writer = new StreamWriter(response.OutputStream, leaveOpen: true);
 
         writer.WriteAsync(SerializeResponse(visitor.Ok, visitor.Payload));
-
-        HttpResponseJobQueueResponseVisitor VisitResponse()
-        {
-            using var memory = new MemoryStream();
-            submitResponse.Response.WriteTo(memory);
-            var defaultResponse = JobQueueResponseDeserializer.Instance.Deserialize(memory.ToArray());
-            var v = new HttpResponseJobQueueResponseVisitor();
-            defaultResponse.Accept(v);
-            return v;
-        }
     }
 
-    private class HttpResponseJobQueueResponseVisitor : IJobQueueResponseVisitor
+    private class HttpResponseJobQueueResponseVisitor : IResponseVisitor
     {
         public Dictionary<string, object?> Payload { get; private set; } = new();
         public bool Ok { get; private set; } = true;

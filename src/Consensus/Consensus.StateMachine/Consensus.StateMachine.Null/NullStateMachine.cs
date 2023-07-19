@@ -1,12 +1,12 @@
 ﻿namespace Consensus.StateMachine.Null;
 
-public class NullStateMachine: IStateMachine
+public class NullStateMachine<T, R>: IStateMachine<T, R>
 {
-    public IResponse Apply(byte[] rawCommand)
+    public R Apply(T request)
     {
-        return NullResponse.Instance;
+        return default!;
     }
 
-    public void ApplyNoResponse(byte[] rawCommand)
+    public void ApplyNoResponse(T rawCommand)
     { }
 }

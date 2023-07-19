@@ -6,12 +6,12 @@ using Serilog;
 
 namespace Consensus.Core.State;
 
-internal class CandidateState: BaseConsensusModuleState
+internal class CandidateState<TCommand, TResponse>: BaseConsensusModuleState<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Candidate;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;
-    internal CandidateState(IConsensusModule consensusModule, ILogger logger)
+    internal CandidateState(IConsensusModule<TCommand, TResponse> consensusModule, ILogger logger)
         :base(consensusModule)
     {
         _logger = logger;
@@ -96,7 +96,7 @@ internal class CandidateState: BaseConsensusModuleState
                     _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", leftPeers[i].Id);
                     _cts.Cancel();
 
-                    CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.CurrentTerm, null, this, ConsensusModule));
+                    CommandQueue.Enqueue(new MoveToFollowerStateCommand<TCommand, TResponse>(response.CurrentTerm, null, this, ConsensusModule));
                     return;
                 }
                 else
@@ -123,7 +123,7 @@ internal class CandidateState: BaseConsensusModuleState
             return;
         }
 
-        CommandQueue.Enqueue(new MoveToLeaderStateCommand(this, ConsensusModule));
+        CommandQueue.Enqueue(new MoveToLeaderStateCommand<TCommand, TResponse>(this, ConsensusModule));
         
         bool QuorumReached()
         {
@@ -137,7 +137,7 @@ internal class CandidateState: BaseConsensusModuleState
 
         _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
 
-        CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, ConsensusModule));
+        CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand<TCommand, TResponse>(this, ConsensusModule));
     }
 
 
@@ -167,16 +167,27 @@ internal class CandidateState: BaseConsensusModuleState
 
         if (Log.CommitIndex < request.LeaderCommit)
         {
-            Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
-            Log.ApplyCommitted(StateMachine);
+            var lastCommitIndex = Math.Min(request.LeaderCommit, Log.LastEntry.Index);
+            Log.Commit(lastCommitIndex);
+            var notApplied = Log.GetNotApplied();
+            if (0 < notApplied.Count)
+            {
+                foreach (var entry in notApplied)
+                {
+                    var command = Serializer.Deserialize(entry.Data);
+                    StateMachine.ApplyNoResponse(command);
+                }
+            }
+            
+            Log.SetLastApplied(lastCommitIndex);
         }
         
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
 
-    public override SubmitResponse Apply(SubmitRequest request)
+    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
     {
-        return SubmitResponse.NotALeader;
+        return SubmitResponse<TResponse>.NotALeader;
     }
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)
@@ -231,9 +242,13 @@ internal class CandidateState: BaseConsensusModuleState
         
         ElectionTimer.Timeout -= OnElectionTimerTimeout;
     }
+}
 
-    internal static CandidateState Create(IConsensusModule consensusModule)
+internal static class CandidateState
+{
+    // TODO: заменить фабрикой внутри RaftConsensusModule (потом вынести в отдельный пакет)
+    public static CandidateState<TCommand, TResponse> Create<TCommand, TResponse>(IConsensusModule<TCommand, TResponse> module)
     {
-        return new CandidateState(consensusModule, consensusModule.Logger.ForContext("SourceContext", "Candidate"));
+        return new CandidateState<TCommand, TResponse>(module, module.Logger.ForContext("SourceContext", "Candidate"));
     }
 }

@@ -1,9 +1,10 @@
-using JobQueue.Core;
+using TaskFlux.Requests;
+using TaskFlux.Core;
 
 namespace Consensus.StateMachine.JobQueue;
 
 public interface ICommand
 {
-    public ICommandResponse Apply(IJobQueue jobQueue);
-    public void ApplyNoResponse(IJobQueue jobQueue);
+    public IResponse Apply(INode node);
+    public void ApplyNoResponse(INode node);
 }

@@ -1,6 +1,6 @@
 namespace Consensus.StateMachine.Null;
 
-public class NullResponse: IResponse
+public class NullResponse
 {
     public static readonly NullResponse Instance = new();
     

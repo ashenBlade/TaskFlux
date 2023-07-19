@@ -1,29 +1,30 @@
 using JobQueue.Core;
+using TaskFlux.Requests;
+using TaskFlux.Core;
 
 namespace Consensus.StateMachine.JobQueue;
 
-public class ProxyJobQueueStateMachine: IStateMachine
+public class ProxyJobQueueStateMachine: IStateMachine<IRequest, IResponse>
 {
-    private readonly IJobQueue _jobQueue;
-    private readonly ICommandDeserializer _deserializer;
+    private readonly INode _node;
+    private readonly ICommandBuilder _builder;
 
-    public ProxyJobQueueStateMachine(IJobQueue jobQueue,
-                                     ICommandDeserializer deserializer)
+    public ProxyJobQueueStateMachine(INode node, ICommandBuilder builder)
     {
-        _jobQueue = jobQueue;
-        _deserializer = deserializer;
+        _node = node;
+        _builder = builder;
     }
     
-    public IResponse Apply(byte[] rawCommand)
+    public IResponse Apply(IRequest request)
     {
-        var command = _deserializer.Deserialize(rawCommand);
-        var response = command.Apply(_jobQueue);
-        return new JobQueueResponse(response);
+        var command = _builder.BuildCommand(request);
+        var response = command.Apply(_node);
+        return response;
     }
 
-    public void ApplyNoResponse(byte[] rawCommand)
+    public void ApplyNoResponse(IRequest rawCommand)
     {
-        var command = _deserializer.Deserialize(rawCommand);
-        command.ApplyNoResponse(_jobQueue);
+        var command = _builder.BuildCommand(rawCommand);
+        command.ApplyNoResponse(_node);
     }
 }

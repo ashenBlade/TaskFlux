@@ -1,8 +1,8 @@
 ﻿namespace Consensus.StateMachine;
 
-public interface IStateMachine
+public interface IStateMachine<in TCommand, out TResponse>
 {
-    public IResponse Apply(byte[] rawCommand);
-    public void ApplyNoResponse(byte[] rawCommand);
+    public TResponse Apply(TCommand request);
+    public void ApplyNoResponse(TCommand rawCommand);
 }
 

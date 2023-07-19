@@ -6,12 +6,12 @@ using Serilog;
 
 namespace Consensus.Core.State;
 
-internal class FollowerState: BaseConsensusModuleState
+internal class FollowerState<TCommand, TResponse>: BaseConsensusModuleState<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Follower;
     private readonly ILogger _logger;
-
-    private FollowerState(IConsensusModule consensusModule, ILogger logger)
+    
+    internal FollowerState(IConsensusModule<TCommand, TResponse> consensusModule, ILogger logger)
         : base(consensusModule)
     {
         _logger = logger;
@@ -48,8 +48,6 @@ internal class FollowerState: BaseConsensusModuleState
             // У которого лог в консистентном с нашим состоянием
             !Log.Conflicts(request.LastLogEntryInfo))
         {
-            // CurrentTerm = request.CandidateTerm;
-            // VotedFor = request.CandidateId;
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -85,31 +83,45 @@ internal class FollowerState: BaseConsensusModuleState
         
         if (Log.CommitIndex < request.LeaderCommit)
         {
-            Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
-            Log.ApplyCommitted(StateMachine);
+            var lastCommitIndex = Math.Min(request.LeaderCommit, Log.LastEntry.Index);
+            Log.Commit(lastCommitIndex);
+            var notApplied = Log.GetNotApplied();
+            if (0 < notApplied.Count)
+            {
+                foreach (var entry in notApplied)
+                {
+                    var command = Serializer.Deserialize(entry.Data);
+                    StateMachine.ApplyNoResponse(command);
+                }
+            }
+            
+            Log.SetLastApplied(lastCommitIndex);
         }
 
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
 
-    public override SubmitResponse Apply(SubmitRequest request)
+    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
     {
-        return SubmitResponse.NotALeader;
-    }
-
-    internal static FollowerState Create(IConsensusModule consensusModule)
-    {
-        return new FollowerState(consensusModule, consensusModule.Logger.ForContext("SourceContext", "Follower"));
+        return SubmitResponse<TResponse>.NotALeader;
     }
 
     private void OnElectionTimerTimeout()
     {
         _logger.Debug("Сработал Election Timeout. Перехожу в состояние Candidate");
-        CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand(this, ConsensusModule));
+        CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand<TCommand, TResponse>(this, ConsensusModule));
     }
     
     public override void Dispose()
     {
         ElectionTimer.Timeout -= OnElectionTimerTimeout;
+    }
+}
+
+internal static class FollowerState
+{
+    public static FollowerState<TCommand, TResponse> Create<TCommand, TResponse>(IConsensusModule<TCommand, TResponse> consensusModule)
+    {
+        return new FollowerState<TCommand, TResponse>(consensusModule, consensusModule.Logger.ForContext("SourceContext", "Follower"));
     }
 }

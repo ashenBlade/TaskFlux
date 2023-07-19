@@ -4,12 +4,13 @@ using Consensus.Network;
 using Consensus.Network.Packets;
 using Consensus.Peer;
 using Serilog;
+using TaskFlux.Requests;
 
 namespace TaskFlux.Host;
 
 public class NodeConnectionProcessor : IDisposable
 {
-    public NodeConnectionProcessor(NodeId id, PacketClient client, RaftConsensusModule consensusModule, ILogger logger)
+    public NodeConnectionProcessor(NodeId id, PacketClient client, RaftConsensusModule<IRequest, IResponse> consensusModule, ILogger logger)
     {
         Id = id;
         Client = client;
@@ -21,7 +22,7 @@ public class NodeConnectionProcessor : IDisposable
     private NodeId Id { get; }
     private Socket Socket => Client.Socket;
     private PacketClient Client { get; }
-    private RaftConsensusModule ConsensusModule { get; }
+    private RaftConsensusModule<IRequest, IResponse> ConsensusModule { get; }
     private ILogger Logger { get; }
 
     public async Task ProcessClientBackground()

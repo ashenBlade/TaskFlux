@@ -3,9 +3,9 @@ using Consensus.Core.State.LeaderState;
 
 namespace Consensus.Core.Commands;
 
-internal class MoveToLeaderStateCommand: UpdateCommand
+internal class MoveToLeaderStateCommand<TCommand, TResponse>: UpdateCommand<TCommand, TResponse>
 {
-    public MoveToLeaderStateCommand(IConsensusModuleState previousState, IConsensusModule consensusModule)
+    public MoveToLeaderStateCommand(IConsensusModuleState<TCommand, TResponse> previousState, IConsensusModule<TCommand, TResponse> consensusModule)
         : base(previousState, consensusModule)
     { }
 

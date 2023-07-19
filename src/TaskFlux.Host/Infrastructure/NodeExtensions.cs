@@ -4,5 +4,5 @@ namespace TaskFlux.Host.Infrastructure;
 
 public static class NodeExtensions
 {
-    public static bool IsLeader(this IConsensusModule consensusModule) => consensusModule.CurrentRole == NodeRole.Leader;
+    public static bool IsLeader<TCommand, TResponse>(this IConsensusModule<TCommand, TResponse> consensusModule) => consensusModule.CurrentRole == NodeRole.Leader;
 }

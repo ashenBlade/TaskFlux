@@ -4,7 +4,7 @@ using Consensus.Core.Commands.AppendEntries;
 namespace Consensus.Core.State.LeaderState;
 
 
-internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue)
+internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TResponse> State, IPeer Peer, IRequestQueue Queue)
 {
     private PeerInfo Info { get; } = new(State.ConsensusModule.Log.LastEntry.Index + 1);
 
@@ -89,7 +89,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
             if (ConsensusModule.CurrentTerm < response.Term)
             {
                 // 4.1. Перейти в состояние Follower
-                ConsensusModule.CommandQueue.Enqueue(new MoveToFollowerStateCommand(response.Term, null, State, ConsensusModule));
+                ConsensusModule.CommandQueue.Enqueue(new MoveToFollowerStateCommand<TCommand, TResponse>(response.Term, null, State, ConsensusModule));
                 // 4.2. Закончить работу
                 return false;
             }
@@ -106,7 +106,7 @@ internal record PeerProcessor(LeaderState State, IPeer Peer, IRequestQueue Queue
         return false;
     }
 
-    private IConsensusModule ConsensusModule => State.ConsensusModule;
+    private IConsensusModule<TCommand, TResponse> ConsensusModule => State.ConsensusModule;
 
     public void NotifyHeartbeatTimeout()
     {

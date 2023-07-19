@@ -11,34 +11,37 @@ using Serilog;
 namespace Consensus.Core;
 
 [DebuggerDisplay("Роль: {CurrentRole}; Терм: {CurrentTerm}; Id: {Id}")]
-public class RaftConsensusModule: IDisposable, IConsensusModule
+public class RaftConsensusModule<TCommand, TResponse>
+    : IConsensusModule<TCommand, TResponse>, 
+      IDisposable
 {
     public NodeRole CurrentRole =>
-        ( ( IConsensusModule ) this ).CurrentState.Role;
+        ( ( IConsensusModule<TCommand, TResponse> ) this ).CurrentState.Role;
     public ILogger Logger { get; }
     public NodeId Id { get; }
     public Term CurrentTerm => MetadataStorage.ReadTerm();
     public NodeId? VotedFor => MetadataStorage.ReadVotedFor();
     public PeerGroup PeerGroup { get; }
-    public IStateMachine StateMachine { get; }
+    public IStateMachine<TCommand, TResponse> StateMachine { get; }
     public IMetadataStorage MetadataStorage { get; }
+    public ISerializer<TCommand> Serializer { get; }
 
     // Выставляем вручную в .Create
-    private IConsensusModuleState? _currentState;
+    internal IConsensusModuleState<TCommand, TResponse>? CurrentState;
 
-    IConsensusModuleState IConsensusModule.CurrentState
+    IConsensusModuleState<TCommand, TResponse> IConsensusModule<TCommand, TResponse>.CurrentState
     {
         get => GetCurrentStateCheck();
         set
         {
-            _currentState?.Dispose();
-            _currentState = value;
+            CurrentState?.Dispose();
+            CurrentState = value;
         }
     }
 
-    private IConsensusModuleState GetCurrentStateCheck()
+    private IConsensusModuleState<TCommand, TResponse> GetCurrentStateCheck()
     {
-        return _currentState ?? throw new ArgumentNullException(nameof(_currentState), "Текущее состояние еще не проставлено");
+        return CurrentState ?? throw new ArgumentNullException(nameof(CurrentState), "Текущее состояние еще не проставлено");
     }
 
     public ITimer ElectionTimer { get; }
@@ -47,7 +50,18 @@ public class RaftConsensusModule: IDisposable, IConsensusModule
     public ICommandQueue CommandQueue { get; } 
     public ILog Log { get; }
 
-    private RaftConsensusModule(NodeId id, PeerGroup peerGroup, ILogger logger, ITimer electionTimer, ITimer heartbeatTimer, IJobQueue jobQueue, ILog log, ICommandQueue commandQueue, IStateMachine stateMachine, IMetadataStorage metadataStorage)
+    internal RaftConsensusModule(
+        NodeId id,
+        PeerGroup peerGroup,
+        ILogger logger,
+        ITimer electionTimer,
+        ITimer heartbeatTimer,
+        IJobQueue jobQueue,
+        ILog log,
+        ICommandQueue commandQueue,
+        IStateMachine<TCommand, TResponse> stateMachine,
+        IMetadataStorage metadataStorage,
+        ISerializer<TCommand> serializer)
     {
         Id = id;
         Logger = logger;
@@ -59,6 +73,7 @@ public class RaftConsensusModule: IDisposable, IConsensusModule
         CommandQueue = commandQueue;
         StateMachine = stateMachine;
         MetadataStorage = metadataStorage;
+        Serializer = serializer;
     }
 
     public void UpdateState(Term newTerm, NodeId? votedFor)
@@ -68,33 +83,17 @@ public class RaftConsensusModule: IDisposable, IConsensusModule
 
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {
-        return CommandQueue.Enqueue(new RequestVoteCommand(request, this));
+        return CommandQueue.Enqueue(new RequestVoteCommand<TCommand, TResponse>(request, this));
     }
     
     public AppendEntriesResponse Handle(AppendEntriesRequest request)
     {
-        return CommandQueue.Enqueue(new AppendEntriesCommand(request, this));
+        return CommandQueue.Enqueue(new AppendEntriesCommand<TCommand, TResponse>(request, this));
     }
 
-    public SubmitResponse Handle(SubmitRequest request)
+    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request)
     {
         return GetCurrentStateCheck().Apply(request);
-    }
-    
-    public static RaftConsensusModule Create(NodeId id,
-                                  PeerGroup peerGroup,
-                                  ILogger logger,
-                                  ITimer electionTimer,
-                                  ITimer heartbeatTimer,
-                                  IJobQueue jobQueue,
-                                  ILog log,
-                                  ICommandQueue commandQueue,
-                                  IStateMachine stateMachine,
-                                  IMetadataStorage metadataStorage)
-    {
-        var raft = new RaftConsensusModule(id, peerGroup, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine, metadataStorage);
-        raft._currentState = FollowerState.Create(raft);
-        return raft;
     }
 
     public override string ToString()
@@ -104,6 +103,26 @@ public class RaftConsensusModule: IDisposable, IConsensusModule
 
     public void Dispose()
     {
-        _currentState?.Dispose();
+        CurrentState?.Dispose();
+    }
+}
+
+public static class RaftConsensusModule
+{
+    public static RaftConsensusModule<TCommand, TResponse> Create<TCommand, TResponse>(NodeId id,
+                                                                                       PeerGroup peerGroup,
+                                                                                       ILogger logger,
+                                                                                       ITimer electionTimer,
+                                                                                       ITimer heartbeatTimer,
+                                                                                       IJobQueue jobQueue,
+                                                                                       ILog log,
+                                                                                       ICommandQueue commandQueue,
+                                                                                       IStateMachine<TCommand, TResponse> stateMachine,
+                                                                                       IMetadataStorage metadataStorage,
+                                                                                       ISerializer<TCommand> serializer)
+    {
+        var raft = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, electionTimer, heartbeatTimer, jobQueue, log, commandQueue, stateMachine, metadataStorage, serializer);
+        raft.CurrentState = FollowerState.Create(raft);
+        return raft;
     }
 }

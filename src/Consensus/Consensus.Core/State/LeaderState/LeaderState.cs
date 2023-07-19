@@ -6,14 +6,14 @@ using Serilog;
 
 namespace Consensus.Core.State.LeaderState;
 
-internal class LeaderState: BaseConsensusModuleState
+internal class LeaderState<TCommand, TResponse>: BaseConsensusModuleState<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
-    private readonly PeerProcessor[] _processors;
+    private readonly PeerProcessor<TCommand, TResponse>[] _processors;
 
-    internal LeaderState(IConsensusModule consensusModule, ILogger logger, IRequestQueueFactory queueFactory)
+    internal LeaderState(IConsensusModule<TCommand, TResponse> consensusModule, ILogger logger, IRequestQueueFactory queueFactory)
         : base(consensusModule)
     {
         _logger = logger;
@@ -22,13 +22,13 @@ internal class LeaderState: BaseConsensusModuleState
         HeartbeatTimer.Timeout += OnHeartbeatTimer;
     }
 
-    private static PeerProcessor[] CreatePeerProcessors(LeaderState state, IRequestQueueFactory queueFactory)
+    private static PeerProcessor<TCommand, TResponse>[] CreatePeerProcessors(LeaderState<TCommand, TResponse> state, IRequestQueueFactory queueFactory)
     {
         var peers = state.PeerGroup.Peers;
-        var processors = new PeerProcessor[peers.Count];
+        var processors = new PeerProcessor<TCommand, TResponse>[peers.Count];
         for (var i = 0; i < peers.Count; i++)
         {
-            processors[i] = new PeerProcessor(state, peers[i], queueFactory.CreateQueue());
+            processors[i] = new PeerProcessor<TCommand, TResponse>(state, peers[i], queueFactory.CreateQueue());
         }
 
         return processors;
@@ -80,8 +80,19 @@ internal class LeaderState: BaseConsensusModuleState
 
         if (Log.CommitIndex < request.LeaderCommit)
         {
-            Log.Commit(Math.Min(request.LeaderCommit, Log.LastEntry.Index));
-            Log.ApplyCommitted(StateMachine);
+            var lastCommitIndex = Math.Min(request.LeaderCommit, Log.LastEntry.Index);
+            Log.Commit(lastCommitIndex);
+            var notApplied = Log.GetNotApplied();
+            if (0 < notApplied.Count)
+            {
+                foreach (var entry in notApplied)
+                {
+                    var command = Serializer.Deserialize(entry.Data);
+                    StateMachine.ApplyNoResponse(command);
+                }
+            }
+            
+            Log.SetLastApplied(lastCommitIndex);
         }
 
         return AppendEntriesResponse.Ok(CurrentTerm);
@@ -132,15 +143,10 @@ internal class LeaderState: BaseConsensusModuleState
         HeartbeatTimer.Timeout -= OnHeartbeatTimer;
     }
 
-    public static LeaderState Create(IConsensusModule consensusModule)
-    {
-        return new LeaderState(consensusModule, consensusModule.Logger.ForContext("SourceContext", "Leader"), new ChannelRequestQueueFactory(consensusModule.Log));
-    }
-
-    public override SubmitResponse Apply(SubmitRequest request)
+    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
     {
         // Добавляем команду в лог
-        var entry = new LogEntry( CurrentTerm, request.Command );
+        var entry = new LogEntry( CurrentTerm, Serializer.Serialize(request.Request) );
         var appended = Log.Append(entry);
         
         // Сигнализируем узлам, чтобы принялись реплицировать
@@ -151,13 +157,21 @@ internal class LeaderState: BaseConsensusModuleState
         synchronizer.LogReplicated.Wait(_cts.Token);
         
         // Применяем команду к машине состояний
-        var response = StateMachine.Apply(request.Command);
+        var response = StateMachine.Apply(request.Request);
         
         // Обновляем индекс последней закоммиченной записи
         Log.Commit(appended.Index);
         Log.SetLastApplied(appended.Index);
         
         // Возвращаем результат
-        return SubmitResponse.Success(response);
+        return SubmitResponse<TResponse>.Success(response);
+    }
+}
+
+internal static class LeaderState
+{
+    public static LeaderState<TCommand, TResponse> Create<TCommand, TResponse>(IConsensusModule<TCommand, TResponse> consensusModule)
+    {
+        return new LeaderState<TCommand, TResponse>(consensusModule, consensusModule.Logger.ForContext("SourceContext", "Leader"), new ChannelRequestQueueFactory(consensusModule.Log));
     }
 }

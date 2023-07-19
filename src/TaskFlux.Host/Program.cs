@@ -14,7 +14,7 @@ using Consensus.Peer;
 using Consensus.Peer.Decorators;
 using Consensus.StateMachine;
 using Consensus.StateMachine.JobQueue;
-using Consensus.StateMachine.JobQueue.Serialization;
+using Consensus.StateMachine.JobQueue.Serializer;
 using Consensus.Storage.File;
 using Consensus.Storage.File.Decorators;
 using Consensus.Storage.File.Log;
@@ -24,8 +24,12 @@ using JobQueue.InMemory;
 using JobQueue.SortedQueue;
 using Microsoft.Extensions.Configuration;
 using Serilog;
+using TaskFlux.Core;
 using TaskFlux.Host.Modules.BinaryRequest;
 using TaskFlux.Host.Modules.HttpRequest;
+using TaskFlux.Node;
+using TaskFlux.Requests;
+using TaskFlux.Requests.Serialization;
 
 // TODO: TaskFlux
 
@@ -81,26 +85,28 @@ try
     Log.Information("Инициализирую хранилище лога предзаписи");
     var (storage, fileStorage) = CreateLogStorage(fileStream);
     var log = new StorageLog(storage);
-
+    
     Log.Information("Создаю очередь машины состояний");
+    var node = CreateNode();
+
+
     var jobQueueStateMachine = CreateJobQueueStateMachine();
 
-    RestoreStateMachineState(log, fileStorage, jobQueueStateMachine);
-
+    RestoreStateMachineState(log, fileStorage, node);
 
     using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
     using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
     using var commandQueue = new ChannelCommandQueue();
 
-    using var node = CreateRaftNode(nodeId, peers, electionTimer, heartbeatTimer, log, commandQueue, jobQueueStateMachine, metadataStorage);
+    using var consensusModule = CreateRaftConsensusModule(nodeId, peers, electionTimer, heartbeatTimer, log, commandQueue, jobQueueStateMachine, metadataStorage);
 
-    var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, node, Log.Logger.ForContext<NodeConnectionManager>());
-    var stateObserver = new NodeStateObserver(node, Log.Logger.ForContext<NodeStateObserver>());
+    var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, consensusModule, Log.Logger.ForContext<NodeConnectionManager>());
+    var stateObserver = new NodeStateObserver(consensusModule, Log.Logger.ForContext<NodeStateObserver>());
 
     var httpModule = CreateHttpRequestModule(configuration);
-    httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(node, JobQueueRequestSerializer.Instance, Log.ForContext<SubmitCommandRequestHandler>()));
+    httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(consensusModule, Log.ForContext<SubmitCommandRequestHandler>()));
     
-    var binaryRequestModule = CreateBinaryRequestModule(node, configuration);
+    var binaryRequestModule = CreateBinaryRequestModule(consensusModule, configuration);
 
     var nodeConnectionThread = new Thread(o =>
         {
@@ -152,7 +158,7 @@ finally
 }
 
 
-BinaryRequestModule CreateBinaryRequestModule(IConsensusModule node, IConfiguration config)
+BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<IRequest, IResponse> consensusModule, IConfiguration config)
 {
     var options = config.GetRequiredSection("BINARY_REQUEST")
                         .Get<BinaryRequestModuleOptions>() 
@@ -168,7 +174,10 @@ BinaryRequestModule CreateBinaryRequestModule(IConsensusModule node, IConfigurat
         throw;
     }
 
-    return new BinaryRequestModule(node, new StaticOptionsMonitor<BinaryRequestModuleOptions>(options),
+    return new BinaryRequestModule(consensusModule, 
+        RequestSerializer.Instance,
+        ResponseSerializer.Instance,
+        new StaticOptionsMonitor<BinaryRequestModuleOptions>(options),
         Log.ForContext<BinaryRequestModule>());
 }
 
@@ -184,7 +193,7 @@ void ValidateOptions(RaftServerOptions peersOptions)
 HttpRequestModule CreateHttpRequestModule(IConfiguration config)
 {
     var httpModuleOptions = config.GetRequiredSection("HTTP")
-                                  .Get<HttpModuleOptions>()
+                                  .Get<HttpRequestModuleOptions>()
                          ?? throw new ApplicationException("Настройки для HTTP модуля не найдены");
 
     return new HttpRequestModule(httpModuleOptions.Port, Log.ForContext<HttpRequestModule>());
@@ -275,21 +284,28 @@ FileStream OpenMetadataFile(RaftServerOptions options)
     return ( storage, fileStorage );
 }
 
-IStateMachine CreateJobQueueStateMachine()
+IStateMachine<IRequest, IResponse> CreateJobQueueStateMachine()
 {
     Log.Information("Создаю пустую очередь задач в памяти");
     var unboundedJobQueue = new UnboundedJobQueue(new PriorityQueueSortedQueue<int, byte[]>());
     Log.Information("Использую строковый десериализатор команд с кодировкой UTF-8");
-    return new ProxyJobQueueStateMachine(unboundedJobQueue, new JobQueueCommandDeserializer(JobQueueRequestDeserializer.Instance, JobQueueResponseSerializer.Instance));
+    var node = new ProxyConsensusNode(unboundedJobQueue);
+    return new ProxyJobQueueStateMachine(node, new DefaultCommandBuilder());
 }
 
-RaftConsensusModule CreateRaftNode(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine stateMachine, IMetadataStorage metadataStorage)
+INode CreateNode()
+{
+    var jobQueue = new UnboundedJobQueue(new PriorityQueueSortedQueue<int, byte[]>());
+    return new ProxyConsensusNode(jobQueue);
+}
+
+RaftConsensusModule<IRequest, IResponse> CreateRaftConsensusModule(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine<IRequest, IResponse> stateMachine, IMetadataStorage metadataStorage)
 {
     var jobQueue = new TaskJobQueue(Log.ForContext<TaskJobQueue>());
-    return RaftConsensusModule.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftConsensusModule>(), randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage);
+    return RaftConsensusModule.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftConsensusModule<IRequest, IResponse>>(), randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage, RequestSerializer.Instance);
 }
 
-void RestoreStateMachineState(StorageLog storageLog, FileLogStorage fileLogStorage, IStateMachine stateMachine)
+void RestoreStateMachineState(StorageLog storageLog, FileLogStorage fileLogStorage, INode node)
 {
     if (fileLogStorage.Count == 0)
     {
@@ -300,7 +316,18 @@ void RestoreStateMachineState(StorageLog storageLog, FileLogStorage fileLogStora
     try
     {
         Log.Information("Восстанавливаю предыдущее состояние из лога");
-        storageLog.ApplyCommitted(stateMachine);
+        
+        var notApplied = storageLog.GetNotApplied();
+        
+        var deserializer = RequestSerializer.Instance;
+        var commandBuilder = DefaultCommandBuilder.Instance;
+        
+        foreach (var (_, payload) in notApplied)
+        {
+            var command = commandBuilder.BuildCommand(deserializer.Deserialize(payload));
+            command.Apply(node);
+        }
+        
         Log.Debug("Состояние восстановлено. Применено {Count} записей", fileLogStorage.Count);
     }
     catch (Exception e)

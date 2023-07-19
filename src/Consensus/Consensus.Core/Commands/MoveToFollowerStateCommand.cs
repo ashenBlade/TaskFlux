@@ -2,12 +2,12 @@ using Consensus.Core.State;
 
 namespace Consensus.Core.Commands;
 
-internal class MoveToFollowerStateCommand: UpdateCommand
+internal class MoveToFollowerStateCommand<TCommand, TResponse>: UpdateCommand<TCommand, TResponse>
 {
     private readonly Term _term;
     private readonly NodeId? _votedFor;
 
-    public MoveToFollowerStateCommand(Term term, NodeId? votedFor, IConsensusModuleState previousState, IConsensusModule consensusModule) 
+    public MoveToFollowerStateCommand(Term term, NodeId? votedFor, IConsensusModuleState<TCommand, TResponse> previousState, IConsensusModule<TCommand, TResponse> consensusModule) 
         : base(previousState, consensusModule)
     {
         _term = term;

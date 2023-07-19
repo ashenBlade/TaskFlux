@@ -1,5 +1,6 @@
 using Consensus.Core;
 using Serilog;
+using TaskFlux.Requests;
 
 // ReSharper disable ContextualLoggerProblem
 
@@ -7,10 +8,10 @@ namespace TaskFlux.Host;
 
 public class NodeStateObserver
 {
-    private readonly RaftConsensusModule _consensusModule;
+    private readonly RaftConsensusModule<IRequest, IResponse> _consensusModule;
     private readonly ILogger _logger;
 
-    public NodeStateObserver(RaftConsensusModule consensusModule, ILogger logger)
+    public NodeStateObserver(RaftConsensusModule<IRequest, IResponse> consensusModule, ILogger logger)
     {
         _consensusModule = consensusModule;
         _logger = logger;

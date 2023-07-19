@@ -1,13 +1,12 @@
 using Consensus.Core.State;
-using Serilog;
 
 namespace Consensus.Core.Commands;
 
-internal abstract class UpdateCommand : Command
+internal abstract class UpdateCommand<TCommand, TResponse> : Command<TCommand, TResponse>
 {
-    private readonly IConsensusModuleState _previousState;
+    private readonly IConsensusModuleState<TCommand, TResponse> _previousState;
 
-    protected UpdateCommand(IConsensusModuleState previousState, IConsensusModule consensusModule)
+    protected UpdateCommand(IConsensusModuleState<TCommand, TResponse> previousState, IConsensusModule<TCommand, TResponse> consensusModule)
     :base(consensusModule)
     {
         _previousState = previousState;

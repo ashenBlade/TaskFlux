@@ -3,18 +3,27 @@ using System.Net.Sockets;
 using Microsoft.Extensions.Options;
 using Consensus.Core;
 using Serilog;
+using TaskFlux.Requests;
 
 namespace TaskFlux.Host.Modules.BinaryRequest;
 
 public class BinaryRequestModule
 {
-    private readonly IConsensusModule _consensusModule;
+    private readonly IConsensusModule<IRequest, IResponse> _consensusModule;
+    private readonly ISerializer<IRequest> _requestSerializer;
+    private readonly ISerializer<IResponse> _responseSerializer;
     private readonly IOptionsMonitor<BinaryRequestModuleOptions> _options;
     private readonly ILogger _logger;
 
-    public BinaryRequestModule(IConsensusModule consensusModule, IOptionsMonitor<BinaryRequestModuleOptions> options, ILogger logger)
+    public BinaryRequestModule(IConsensusModule<IRequest, IResponse> consensusModule, 
+                               ISerializer<IRequest> requestSerializer,
+                               ISerializer<IResponse> responseSerializer,
+                               IOptionsMonitor<BinaryRequestModuleOptions> options,
+                               ILogger logger)
     {
         _consensusModule = consensusModule;
+        _requestSerializer = requestSerializer;
+        _responseSerializer = responseSerializer;
         _options = options;
         _logger = logger;
     }
@@ -33,7 +42,7 @@ public class BinaryRequestModule
             while (token.IsCancellationRequested is false)
             {
                 var client = await listener.AcceptTcpClientAsync(token);
-                var processor = new RequestProcessor(client, _consensusModule, Log.ForContext<RequestProcessor>());
+                var processor = new RequestProcessor(client, _consensusModule, _requestSerializer, _responseSerializer, Log.ForContext<RequestProcessor>());
                 _ = processor.ProcessAsync(token);
             }
         }

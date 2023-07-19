@@ -23,7 +23,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\Consensus\Consensus.StateMachine\Raft.StateMachine.JobQueue\Consensus.StateMachine.JobQueue.Commands\Consensus.StateMachine.JobQueue.Commands.csproj" />
-      <ProjectReference Include="..\..\src\Consensus\Consensus.StateMachine\Raft.StateMachine.JobQueue\Consensus.StateMachine.JobQueue.Serialization\Consensus.StateMachine.JobQueue.Serialization.csproj" />
+      <ProjectReference Include="..\..\src\TaskFlux.Requests.Serialization\TaskFlux.Requests.Serialization.csproj" />
     </ItemGroup>
 
 </Project>

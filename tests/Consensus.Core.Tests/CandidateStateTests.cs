@@ -8,10 +8,10 @@ namespace Consensus.Core.Tests;
 
 public class CandidateStateTests
 {
-    private static RaftConsensusModule CreateCandidateNode(Term term, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
+    private static RaftConsensusModule<int, int> CreateCandidateNode(Term term, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
     {
         var raftStateMachine = Helpers.CreateNode(term, votedFor, peers: peers, electionTimer: electionTimer, heartbeatTimer: null, jobQueue: jobQueue, log: log);
-        ( ( IConsensusModule ) raftStateMachine ).CurrentState = new CandidateState(raftStateMachine, Helpers.NullLogger);
+        ( ( IConsensusModule<int, int> ) raftStateMachine ).CurrentState = new CandidateState<int, int>(raftStateMachine, Helpers.NullLogger);
         return raftStateMachine;
     }
 

@@ -9,7 +9,7 @@ namespace Consensus.Core.Tests;
 
 public class LeaderStateTests
 {
-    private static RaftConsensusModule CreateLeaderNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, IRequestQueueFactory? requestQueueFactory = null)
+    private static RaftConsensusModule<int, int> CreateLeaderNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, IRequestQueueFactory? requestQueueFactory = null)
     {
         var node = Helpers.CreateNode(
             currentTerm,
@@ -19,7 +19,7 @@ public class LeaderStateTests
             heartbeatTimer: heartbeatTimer,
             jobQueue: jobQueue,
             log: log);
-        ( ( IConsensusModule ) node ).CurrentState = new LeaderState(
+        ( ( IConsensusModule<int, int> ) node ).CurrentState = new LeaderState<int, int>(
             node,
             Helpers.NullLogger, 
             requestQueueFactory ?? new SingleHeartbeatRequestQueueFactory(0));

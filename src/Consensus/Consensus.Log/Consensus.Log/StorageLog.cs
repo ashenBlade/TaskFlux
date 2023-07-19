@@ -191,20 +191,14 @@ public class StorageLog: ILog
         return _storage.GetAt(index);
     }
 
-    public void ApplyCommitted(IStateMachine stateMachine)
+    public IReadOnlyList<LogEntry> GetNotApplied()
     {
-        if (CommitIndex <= LastApplied || 
-            CommitIndex == LogEntryInfo.TombIndex)
+        if (CommitIndex <= LastApplied || CommitIndex == LogEntryInfo.TombIndex)
         {
-            return;
+            return Array.Empty<LogEntry>();
         }
 
-        foreach (var (_, data) in _storage.ReadFrom(LastApplied + 1))
-        {
-            stateMachine.ApplyNoResponse(data);
-        }
-
-        LastApplied = CommitIndex;
+        return _storage.ReadFrom(LastApplied + 1);
     }
 
     public void SetLastApplied(int index)

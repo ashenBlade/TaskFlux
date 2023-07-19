@@ -8,6 +8,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\Consensus\Consensus.Core\Consensus.Core.csproj" />
+      <ProjectReference Include="..\..\TaskFlux.Requests\TaskFlux.Requests.csproj" />
       <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.csproj" />
     </ItemGroup>
 

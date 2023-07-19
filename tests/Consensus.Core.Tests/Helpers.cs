@@ -6,7 +6,7 @@ using Serilog;
 
 namespace Consensus.Core.Tests;
 
-public static class Helpers
+public static partial class Helpers
 {
     public static readonly NodeId NodeId = new(1);
     public static readonly LogEntryInfo LastLogEntryInfo = new(new Term(1), 0);
@@ -25,7 +25,7 @@ public static class Helpers
     {
         return new Mock<IStateMachine>().Apply(m =>
         {
-            m.Setup(x => x.Apply(It.IsAny<byte[]>())).Returns(NullResponse.Instance);
+            m.Setup(x => x.Apply(It.IsAny<int>())).Returns(1);
         }).Object;
     }
 
@@ -52,7 +52,7 @@ public static class Helpers
                                   x.Contains(It.IsAny<LogEntryInfo>()) == true);
     }
 
-    public static RaftConsensusModule CreateNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
+    public static RaftConsensusModule<int, int> CreateNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
     {
         return RaftConsensusModule.Create(NodeId, 
             new PeerGroup(peers?.ToArray() ?? Array.Empty<IPeer>()),
@@ -63,6 +63,11 @@ public static class Helpers
             log ?? CreateLog(),
             commandQueue ?? DefaultCommandQueue,
             NullStateMachine,
-            new StubMetadataStorage(currentTerm, votedFor));
+            new StubMetadataStorage(currentTerm, votedFor),
+            new StubSerializer<int>()
+            {
+                Deserialized = 1,
+                Serialized = Array.Empty<byte>()
+            });
     }
 }
