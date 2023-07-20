@@ -65,7 +65,7 @@ try
                                   var endpoint = GetEndpoint(p.Host, p.Port);
                                   var id = new NodeId(p.Id);
                                   var client = new PacketClient(new Socket(AddressFamily.InterNetwork, SocketType.Stream,
-                                      ProtocolType.Tcp));
+                                      ProtocolType.Tcp), BinaryPacketSerializer.Instance);
                                   IPeer peer = new TcpPeer(client, endpoint, id, nodeId, networkOptions.ConnectionTimeout, networkOptions.RequestTimeout, Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
                                   peer = new ExclusiveAccessPeerDecorator(peer);
                                   peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));

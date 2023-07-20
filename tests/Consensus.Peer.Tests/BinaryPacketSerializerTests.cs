@@ -3,12 +3,23 @@ using Consensus.Core;
 using Consensus.Core.Commands.AppendEntries;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Log;
+using Consensus.Network;
+using Consensus.Network.Packets;
 
 namespace Consensus.Peer.Tests;
 
-public class RaftRequestSerializationTests
+public class BinaryPacketSerializerTests
 {
+    private static BinaryPacketSerializer Serializer { get; } = new(); 
     private static LogEntry Entry(int term, string data) => new LogEntry(new Term(term), Encoding.UTF8.GetBytes(data));
+
+    private static void AssertBase(IPacket expected)
+    {
+        var buffer = new byte[expected.EstimatePacketSize()];
+        Serializer.Serialize(expected, new BinaryWriter(new MemoryStream(buffer)));
+        var actual = Serializer.Deserialize(new BinaryReader(new MemoryStream(buffer)));
+        Assert.Equal(expected, actual, PacketEqualityComparer.Instance);
+    }
     
     [Theory]
     [InlineData(1, 1, 1, 1)]
@@ -23,8 +34,7 @@ public class RaftRequestSerializationTests
     {
         var requestVote = new RequestVoteRequest(CandidateId: new NodeId(peerId), CandidateTerm: new Term(term),
             LastLogEntryInfo: new LogEntryInfo(new Term(logTerm), index));
-        var actual = Serializers.RequestVoteRequest.Deserialize(Serializers.RequestVoteRequest.Serialize(requestVote));
-        Assert.Equal(requestVote, actual);
+        AssertBase(new RequestVoteRequestPacket(requestVote));
     }
     
     [Theory]
@@ -38,9 +48,8 @@ public class RaftRequestSerializationTests
     [InlineData(98765, 1234, 45, 90, 124)]
     public void ПриСериализацииAppendEntriesRequest__СПустымМассивомКоманд__ДолженДесериализоватьИдентичныйОбъект(int term, int leaderId, int leaderCommit, int logTerm, int logIndex)
     {
-        var heartbeat = AppendEntriesRequest.Heartbeat(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex));
-        var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(heartbeat));
-        Assert.Equal(heartbeat, actual);
+        var appendEntries = AppendEntriesRequest.Heartbeat(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex));
+        AssertBase(new AppendEntriesRequestPacket(appendEntries));
     }
 
     public static IEnumerable<object[]> IntWithBoolPairwise => new[]
@@ -53,8 +62,7 @@ public class RaftRequestSerializationTests
     public void ПриСериализацииRequestVoteResponse__ДолженДесериализоватьИдентичныйОбъект(int term, bool voteGranted)
     {
         var response = new RequestVoteResponse(CurrentTerm: new Term(term), VoteGranted: voteGranted);
-        var actual = Serializers.RequestVoteResponse.Deserialize(Serializers.RequestVoteResponse.Serialize(response));
-        Assert.Equal(response, actual);
+        AssertBase(new RequestVoteResponsePacket(response));
     }
 
 
@@ -63,8 +71,7 @@ public class RaftRequestSerializationTests
     public void ПриСериализацииAppendEntriesResponse__ДолженДесериализоватьИдентичныйОбъект(int term, bool success)
     {
         var response = new AppendEntriesResponse(new Term(term), success);
-        var actual = Serializers.AppendEntriesResponse.Deserialize(Serializers.AppendEntriesResponse.Serialize(response));
-        Assert.Equal(response, actual);
+        AssertBase(new AppendEntriesResponsePacket(response));
     }
     
     [Theory]
@@ -75,12 +82,11 @@ public class RaftRequestSerializationTests
     public void ПриСериализацииAppendEntriesRequest__СОднойКомандой__ДолженДесериализоватьОбъектСОднимLogEntry(
         int term, int leaderId, int leaderCommit, int logTerm, int logIndex, int logEntryTerm, string command)
     {
-        var heartbeat = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), new[]
+        var appendEntries = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), new[]
         {
             Entry(logEntryTerm, command),
         });
-        var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(heartbeat));
-        Assert.Single(actual.Entries.ToArray());
+        AssertBase(new AppendEntriesRequestPacket(appendEntries));
     }
     
     [Theory]
@@ -97,8 +103,7 @@ public class RaftRequestSerializationTests
         {
             expected
         });
-        var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(request)).Entries.Single();
-        Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
+        AssertBase(new AppendEntriesRequestPacket(request));
     }
 
     public static IEnumerable<object[]> СериализацияAppendEntriesСНесколькимиКомандами = new[]
@@ -126,8 +131,7 @@ public class RaftRequestSerializationTests
         int term, int leaderId, int leaderCommit, int logTerm, int logIndex, LogEntry[] entries)
     {
         var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), entries);
-        var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(request)).Entries;
-        Assert.Equal(entries.Length, actual.Count);
+        AssertBase(new AppendEntriesRequestPacket(request));
     }
     
     [Theory]
@@ -136,7 +140,30 @@ public class RaftRequestSerializationTests
         int term, int leaderId, int leaderCommit, int logTerm, int logIndex, LogEntry[] entries)
     {
         var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId), new LogEntryInfo(new Term(logTerm), logIndex), entries);
-        var actual = Serializers.AppendEntriesRequest.Deserialize(Serializers.AppendEntriesRequest.Serialize(request)).Entries;
-        Assert.Equal(entries, actual, LogEntryEqualityComparer.Instance);
+        AssertBase(new AppendEntriesRequestPacket(request));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(-1)]
+    [InlineData(1000)]
+    [InlineData(int.MaxValue)]
+    [InlineData(int.MinValue)]
+    [InlineData(87654)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(10)]
+    public void ConnectRequest__ДолженДесериализоватьТакуюЖеКоманду(int nodeId)
+    {
+        AssertBase(new ConnectRequestPacket(new NodeId(nodeId)));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ConnectResponse__ДолженДесериализоватьТакуюЖеКоманду(bool success)
+    {
+        AssertBase(new ConnectResponsePacket(success));
     }
 }

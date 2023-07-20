@@ -1,56 +1,45 @@
-using System.ComponentModel;
+using System.Buffers;
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using Consensus.Network;
-using Consensus.Network.Packets;
 
 namespace Consensus.Peer;
 
-public class PacketClient
+public class PacketClient: IDisposable
 {
-    private const int DefaultBufferSize = 128;
+    private readonly IPacketSerializer _serializer;
     public Socket Socket { get; }
+    private NetworkStream Stream { get; }
 
-    public PacketClient(Socket socket)
+    public PacketClient(Socket socket, IPacketSerializer serializer)
     {
+        _serializer = serializer;
         Socket = socket;
+        Stream = new(socket, false);
     }
 
-    private NetworkStream CreateStream() => new(Socket, false);
 
-    public bool Send(IPacket packet, CancellationToken token = default)
+    public ValueTask<bool> SendAsync(IPacket requestPacket, CancellationToken token = default)
     {
-#pragma warning disable CA2012
-        return SendCore(false, packet, token).GetAwaiter().GetResult();
-#pragma warning restore CA2012
-    }
-    public ValueTask<bool> SendAsync(IPacket packet, CancellationToken token = default)
-    {
-        return SendCore(true, packet, token);
+        token.ThrowIfCancellationRequested();
+        return SendCore(requestPacket, token);
     }
 
-    private async ValueTask<bool> SendCore(bool useAsync, IPacket packet, CancellationToken token)
+    private async ValueTask<bool> SendCore(IPacket packet, CancellationToken token)
     {
         if (!Socket.Connected)
         {
             return false;
         }
+
         
-        var buffer = Serialize(packet);
+        var requiredSize = packet.EstimatePacketSize();
+        var buffer = ArrayPool<byte>.Shared.Rent(requiredSize);
         try
         {
-            if (useAsync)
-            {
-                await using var stream = CreateStream();
-                await stream.WriteAsync(buffer.AsMemory(), token);
-            }
-            else
-            {
-                // ReSharper disable once UseAwaitUsing
-                using var stream = CreateStream();
-                stream.Write(buffer.AsSpan());
-            }
-
+            _serializer.Serialize(packet, new BinaryWriter(new MemoryStream(buffer)));
+            await Stream.WriteAsync(buffer.AsMemory(), token);
             return true;
         }
         catch (SocketException se)
@@ -62,114 +51,106 @@ public class PacketClient
         {
             return false;
         }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
-    
+
     public ValueTask<IPacket?> ReceiveAsync(CancellationToken token = default)
     {
-        return ReceiveCoreAsync(true, token);
-    }
-
-    public IPacket? Receive(CancellationToken token = default)
-    {
-#pragma warning disable CA2012
-        return ReceiveCoreAsync(false, token).GetAwaiter().GetResult();
-#pragma warning restore CA2012
-    }
-
-    private async ValueTask<IPacket?> ReceiveCoreAsync(bool useAsync, CancellationToken token)
-    {
+        token.ThrowIfCancellationRequested();
         if (!Socket.Connected)
         {
-            return null;
+            return new ValueTask<IPacket?>((IPacket?) null);
         }
-        
-        using var memory = new MemoryStream();
-        // ReSharper disable once UseAwaitUsing
-        using var stream = CreateStream();
+
         try
         {
-            var buffer = new byte[DefaultBufferSize];
-            var received = useAsync 
-                               ? await stream.ReadAsync(buffer, token)
-                               : stream.Read(buffer);
-            if (received == 0 || !Socket.Connected)
-            {
-                if (useAsync)
-                {
-                    await Socket.DisconnectAsync(true, token);
-                }
-                else
-                {
-                    // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-                    Socket.Disconnect(true);
-                }
-                return null;
-            }
-
-            memory.Write(buffer, 0, received);
-
-            while (0 < Socket.Available)
-            {
-                received = useAsync 
-                               ? await stream.ReadAsync(buffer, token)
-                               : stream.Read(buffer);
-                if (received == 0)
-                {
-                    if (useAsync)
-                    {
-                        await Socket.DisconnectAsync(true, token);
-                    }
-                    else
-                    {
-                        // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-                        Socket.Disconnect(true);
-                    }
-                    return null;
-                }
-
-                memory.Write(buffer, 0, received);
-            }
+            return ReceiveCoreAsync(token);
         }
         catch (SocketException se)
             when (IsNetworkError(se.SocketErrorCode))
         {
-            return null;
+            return new ValueTask<IPacket?>((IPacket?) null);
         }
         catch (IOException)
         {
-            return null;
+            return new ValueTask<IPacket?>((IPacket?) null);
         }
-
-        var array = memory.ToArray();
-
-        return array is {Length: > 0}
-                   ? Deserialize(array)
-                   : null;
     }
 
-    private static byte[] Serialize(IPacket packet)
+    private async ValueTask<IPacket?> ReceiveCoreAsync(CancellationToken token)
     {
-        return packet.PacketType switch
-               {
-                   PacketType.ConnectRequest =>
-                       Serializers.ConnectRequest.Serialize( packet.As<ConnectRequestPacket>() ),
-                   PacketType.ConnectResponse => 
-                       Serializers.ConnectResponse.Serialize(packet.As<ConnectResponsePacket>()),
-                   
-                   PacketType.AppendEntriesRequest => Serializers.AppendEntriesRequest.Serialize(
-                       packet.As<AppendEntriesRequestPacket>().Request),
-                   PacketType.AppendEntriesResponse => Serializers.AppendEntriesResponse.Serialize(
-                       packet.As<AppendEntriesResponsePacket>().Response),
-                   
-                   PacketType.RequestVoteRequest => Serializers.RequestVoteRequest.Serialize(
-                       packet.As<RequestVoteRequestPacket>().Request),
-                   PacketType.RequestVoteResponse => Serializers.RequestVoteResponse.Serialize(
-                       packet.As<RequestVoteResponsePacket>().Response),
-                   
-                   _ => throw new InvalidEnumArgumentException(nameof(packet.PacketType), (byte) packet.PacketType, typeof(PacketType))
-               };
+        // Требуемый размер буфера для десериализации пакета
+        const int workHeaderSize = sizeof(byte) + sizeof(int);
+        byte[]? resultBuffer = null;
+        try
+        {
+            // Вначале, получаем рабочий заголовок: маркер + размер
+            int totalPacketSize;
+            var workHeaderBuffer = ArrayPool<byte>.Shared.Rent(workHeaderSize);
+            try
+            {
+                var received = await Stream.ReadAsync(workHeaderBuffer.AsMemory(0, workHeaderSize), token);
+                if (received != workHeaderSize || !Socket.Connected)
+                {
+                    await Socket.DisconnectAsync(true, token);
+                    return null;
+                }
+
+                totalPacketSize = ReadTotalPacketSize(workHeaderBuffer);
+                resultBuffer = ArrayPool<byte>.Shared.Rent(totalPacketSize);
+                workHeaderBuffer.CopyTo(resultBuffer, 0);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(workHeaderBuffer);
+            }
+            
+            // После читаем рабочую нагрузку
+            var left = totalPacketSize - workHeaderSize;
+            var startIndex = workHeaderSize;
+                
+            while (0 < left)
+            {
+                var received = await Stream.ReadAsync(resultBuffer.AsMemory(startIndex, left), token);
+                if (received == 0)
+                {
+                    await Socket.DisconnectAsync(true, token);
+                    return null;
+                }
+
+                startIndex += received;
+                left -= received;
+            }
+            
+            return resultBuffer is {Length: > 0}
+                       ? _serializer.Deserialize(new BinaryReader(new MemoryStream(resultBuffer)))
+                       : null;
+
+        }
+        finally
+        {
+            if (resultBuffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(resultBuffer);
+            }
+        }
+        
+        static int ReadTotalPacketSize(byte[] initialBuffer)
+        {
+            var sizePart = initialBuffer.AsSpan(1, 4);
+            var size = BinaryPrimitives.ReadInt32LittleEndian(sizePart);
+            if (size < 1)
+            {
+                throw new InvalidDataException(
+                    $"Ошибка десериализации размера буфера. Размер должен быть положительным. Десериализовано: {size}");
+            }
+            return size;
+        }
     }
-    
+
     private static bool IsNetworkError(SocketError error)
     {
         return error is 
@@ -188,28 +169,6 @@ public class PacketClient
                    SocketError.HostDown or 
                    SocketError.HostUnreachable or 
                    SocketError.HostNotFound;
-    }
-
-    private static IPacket Deserialize(byte[] buffer)
-    {
-        var marker = (PacketType) buffer[0];
-        switch (marker)
-        {
-            case PacketType.ConnectResponse:
-                return Serializers.ConnectResponse.Deserialize(buffer);
-            case PacketType.ConnectRequest:
-                return Serializers.ConnectRequest.Deserialize(buffer);
-            case PacketType.RequestVoteRequest:
-                return new RequestVoteRequestPacket(Serializers.RequestVoteRequest.Deserialize(buffer));
-            case PacketType.RequestVoteResponse:
-                return new RequestVoteResponsePacket(Serializers.RequestVoteResponse.Deserialize(buffer));
-            case PacketType.AppendEntriesRequest:
-                return new AppendEntriesRequestPacket(Serializers.AppendEntriesRequest.Deserialize(buffer));
-            case PacketType.AppendEntriesResponse:
-                return new AppendEntriesResponsePacket(Serializers.AppendEntriesResponse.Deserialize(buffer));
-            default:
-                throw new InvalidEnumArgumentException(nameof(marker), (int) marker, typeof(PacketType));
-        }
     }
 
     public async ValueTask<bool> ConnectAsync(EndPoint endPoint, TimeSpan timeout, CancellationToken token = default)
@@ -248,5 +207,10 @@ public class PacketClient
         {
             await Socket.DisconnectAsync(true, token);
         }
+    }
+
+    public void Dispose()
+    {
+        Stream.Flush();
     }
 }

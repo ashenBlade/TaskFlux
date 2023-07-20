@@ -4,8 +4,8 @@ namespace Consensus.Peer;
 
 internal static class PacketExtensions
 {
-    public static T As<T>(this IPacket packet) where T : IPacket
+    public static T As<T>(this IPacket requestPacket) where T : IPacket
     {
-        return ( T ) packet;
+        return ( T ) requestPacket;
     }
 }

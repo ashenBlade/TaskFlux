@@ -79,7 +79,7 @@ public class NodeConnectionManager
     {
         try
         {
-            var packetClient = new PacketClient(client);
+            var packetClient = new PacketClient(client, BinaryPacketSerializer.Instance);
             if (await TryAuthenticateAsync(packetClient, token) is { } nodeId)
             {
                 var success = await packetClient.SendAsync(new ConnectResponsePacket(true), token);
