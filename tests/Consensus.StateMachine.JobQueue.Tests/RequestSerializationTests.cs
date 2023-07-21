@@ -9,7 +9,7 @@ namespace Consensus.StateMachine.JobQueue.Tests;
 
 public class RequestSerializationTests
 {
-    public static readonly RequestSerializer Serializer = new();
+    private static readonly RequestSerializer Serializer = new();
 
     private static void AssertBase(IRequest expected)
     {
@@ -56,7 +56,7 @@ public class RequestSerializationTests
     public void BatchRequest__Serialization(int requestsCount)
     {
         var requests = Enumerable.Range(0, requestsCount)
-                                 .Select(x => CreateRandomRequest())
+                                 .Select(_ => CreateRandomRequest())
                                  .ToArray();
         AssertBase(new BatchRequest(requests));
     }
@@ -68,7 +68,7 @@ public class RequestSerializationTests
         RequestType.BatchRequest
     };
     
-    private IRequest CreateRandomRequest()
+    private static IRequest CreateRandomRequest()
     {
         var requestType = RequestTypes[Random.Shared.Next(0, RequestTypes.Length)];
         return requestType switch
@@ -79,5 +79,26 @@ public class RequestSerializationTests
                    RequestType.BatchRequest => new BatchRequest(Enumerable.Range(0, 3).Select(_ => CreateRandomRequest()).ToArray()),
                    _ => throw new ArgumentOutOfRangeException()
                };
+    }
+
+    [Fact(DisplayName = $"{nameof(BatchRequest)} (Вложенный)")]
+    public void NestedBatchRequest__ДолженДесериализоватьИсходныйЗапрос()
+    {
+        var request = new BatchRequest(new List<IRequest>()
+        {
+            new BatchRequest(new List<IRequest>()
+            {
+                new EnqueueRequest(123, new byte[] {1, 2, 3, 4, 5, byte.MaxValue, byte.MinValue}),
+                new BatchRequest(new List<IRequest>() {new GetCountRequest()}),
+            }),
+            new BatchRequest(new List<IRequest>()
+            {
+                new DequeueRequest(),
+                new DequeueRequest(),
+                new GetCountRequest(),
+            }),
+            new EnqueueRequest(5465, new byte[] {8, 34, 23, 76, 55, 99, 100})
+        });
+        AssertBase(request);
     }
 }

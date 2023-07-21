@@ -1,10 +1,13 @@
+using System.Buffers;
 using System.ComponentModel;
+using System.Diagnostics;
+using System.Text;
 using Consensus.Core;
 using TaskFlux.Requests.Batch;
-using TaskFlux.Requests.Commands.JobQueue.GetCount;
 using TaskFlux.Requests.Dequeue;
 using TaskFlux.Requests.Enqueue;
 using TaskFlux.Requests.Error;
+using TaskFlux.Requests.Requests.JobQueue.GetCount;
 
 namespace TaskFlux.Requests.Serialization;
 
@@ -13,65 +16,166 @@ public class ResponseSerializer: ISerializer<IResponse>
     public static readonly ResponseSerializer Instance = new();
     public byte[] Serialize(IResponse command)
     {
-        var memory = new MemoryStream();
-        var writer = new BinaryWriter(memory);
-        var visitor = new ResponseSerializerVisitor(writer);
+        var estimator = new ResponseSizeEstimatorVisitor();
+        command.Accept(estimator);
+        var totalPacketSize = estimator.EstimatedSize;
+        var buffer = new byte[totalPacketSize];
+        var memoryStream = new MemoryStream(buffer);
+        var visitor = new ResponseSerializerVisitor(new BinaryWriter(memoryStream), estimator);
         command.Accept(visitor);
-        return memory.ToArray();
+        
+        Debug.Assert(memoryStream.Position == totalPacketSize, 
+            "memoryStream.Position == totalPacketSize",
+            "Размер выделенной памяти под массив должен быть равен количеству записанных данных");
+        
+        return buffer;
+    }
+
+    private class ResponseSizeEstimatorVisitor : IResponseVisitor
+    {
+        private const int BaseEstimatedSize = sizeof(ResponseType) // Marker 
+                                            + sizeof(int);         // Size
+        public int EstimatedSize { get; set; } = BaseEstimatedSize;
+        public void Visit(GetCountResponse response)
+        {
+            EstimatedSize += sizeof(int);
+        }
+
+        public void Visit(EnqueueResponse response)
+        {
+            EstimatedSize += sizeof(byte);
+        }
+
+        public void Visit(DequeueResponse response)
+        {
+            int additional;
+            if (response.Success)
+            {
+                additional = sizeof(byte) // Success
+                            +sizeof(int)  // Key 
+                           + sizeof(int)  // Payload Length
+                           + response.Payload.Length;
+            }
+            else
+            {
+                additional = sizeof(byte); // Success
+            }
+            
+            EstimatedSize += additional;
+        }
+
+        // https://stackoverflow.com/a/49780224
+        private static int Get7BitEncodedIntResultLength(int value)
+        {
+            return value switch
+                   {
+                       < 0         => 5,
+                       < 128       => 1,
+                       < 16384     => 2,
+                       < 2097152   => 3,
+                       < 268435456 => 4,
+                       _           => 5
+                   };
+        }
+        
+        public void Visit(ErrorResponse response)
+        {
+            var messageSizeBytes = Encoding.UTF8.GetByteCount(response.Message);
+            EstimatedSize += Get7BitEncodedIntResultLength(messageSizeBytes)
+                           + messageSizeBytes;
+        }
+
+        public void Visit(BatchResponse batchResponse)
+        {
+            if (batchResponse.Responses.Count == 0)
+            {
+                EstimatedSize += sizeof(int);
+                return;
+            }
+
+            var resultSize = EstimatedSize + sizeof(int);
+            
+            foreach (var response in batchResponse.Responses)
+            {
+                EstimatedSize = BaseEstimatedSize;
+                response.Accept(this);
+                resultSize += EstimatedSize;
+            }
+
+            EstimatedSize = resultSize;
+        }
+
+        public void Reset()
+        {
+            EstimatedSize = BaseEstimatedSize;
+        }
     }
 
     private class ResponseSerializerVisitor : IResponseVisitor
     {
         private readonly BinaryWriter _writer;
+        private readonly ResponseSizeEstimatorVisitor _estimator;
 
-        public ResponseSerializerVisitor(BinaryWriter writer)
+        public ResponseSerializerVisitor(BinaryWriter writer, ResponseSizeEstimatorVisitor estimator)
         {
             _writer = writer;
+            _estimator = estimator;
         }
 
-        private void WriteMarker(ResponseType type)
+        private void WriteHeader(ResponseType type, IResponse response)
         {
             _writer.Write((int)type);
+            _estimator.Reset();
+            response.Accept(_estimator);
+            _writer.Write(_estimator.EstimatedSize);
         }
         
-        public void Visit(GetCountResponse getCountResponse)
+        public void Visit(GetCountResponse response)
         {
-            WriteMarker(ResponseType.GetCountResponse);
-            _writer.Write(getCountResponse.Count);
+            WriteHeader(ResponseType.GetCountResponse, response);
+            _writer.Write(response.Count);
         }
 
-        public void Visit(EnqueueResponse enqueueResponse)
+        public void Visit(EnqueueResponse response)
         {
-            WriteMarker(ResponseType.EnqueueResponse);
-            _writer.Write(enqueueResponse.Success);
+            WriteHeader(ResponseType.EnqueueResponse, response);
+            _writer.Write(response.Success);
         }
 
-        public void Visit(DequeueResponse dequeueResponse)
+        public void Visit(DequeueResponse response)
         {
-            WriteMarker(ResponseType.DequeueResponse);
-            var success = dequeueResponse.Success;
+            WriteHeader(ResponseType.DequeueResponse, response);
+            var success = response.Success;
             _writer.Write(success);
             if (success)
             {
-                _writer.Write(dequeueResponse.Key);
-                _writer.Write(dequeueResponse.Payload.Length);
-                _writer.Write(dequeueResponse.Payload);
+                _writer.Write(response.Key);
+                _writer.Write(response.Payload.Length);
+                _writer.Write(response.Payload);
             }
         }
 
-        public void Visit(ErrorResponse errorResponse)
+        public void Visit(ErrorResponse response)
         {
-            WriteMarker(ResponseType.ErrorResponse);
-            _writer.Write(errorResponse.Message);
+            WriteHeader(ResponseType.ErrorResponse, response);
+            _writer.Write(response.Message);
         }
 
         public void Visit(BatchResponse batchResponse)
         {
-            WriteMarker(ResponseType.BatchResponse);
-            _writer.Write(batchResponse.Responses.Count);
-            foreach (var response in batchResponse.Responses)
+            _writer.Write((int)ResponseType.BatchResponse);
+            _estimator.Reset();
+            batchResponse.Accept(_estimator);
+            _writer.Write(_estimator.EstimatedSize);
+
+            var responses = batchResponse.Responses;
+            _writer.Write(responses.Count);
+            if (responses.Count > 0)
             {
-                response.Accept(this);
+                foreach (var response in responses)
+                {
+                    response.Accept(this);
+                }
             }
         }
     }
@@ -86,6 +190,7 @@ public class ResponseSerializer: ISerializer<IResponse>
     private IResponse Deserialize(BinaryReader reader)
     {
         var marker = ( ResponseType ) reader.ReadInt32();
+        _ = reader.ReadInt32(); // Length
         return marker switch
                {
                    ResponseType.EnqueueResponse  => DeserializeEnqueueResponse(reader),

@@ -1,8 +1,8 @@
 ﻿using System.ComponentModel;
+using System.Diagnostics;
 using Consensus.Core;
 using TaskFlux.Requests.Batch;
 using TaskFlux.Requests.Dequeue;
-using TaskFlux.Requests.Enqueue;
 using TaskFlux.Requests.GetCount;
 using TaskFlux.Requests.Requests.JobQueue.Enqueue;
 
@@ -13,31 +13,95 @@ public class RequestSerializer: ISerializer<IRequest>
     public static readonly RequestSerializer Instance = new();
     public byte[] Serialize(IRequest command)
     {
-        var memory = new MemoryStream();
+        var estimator = new RequestSizeEstimatorVisitor();
+        command.Accept(estimator);
+        var estimatedSize = estimator.EstimatedSize;
+        var buffer = new byte[estimatedSize];
+        var memory = new MemoryStream(buffer);
         var writer = new BinaryWriter(memory);
-        var visitor = new RequestSerializerVisitor(writer);
+        var visitor = new RequestSerializerVisitor(writer, estimator);
         command.Accept(visitor);
-        return memory.ToArray();
+        
+        Debug.Assert(estimatedSize == memory.Position, 
+            "estimatedSize == memory.Position", 
+            "Размер аллоцированного буфера должен быть равен количеству записанных байтов");
+        
+        return buffer;
+    }
+
+    private class RequestSizeEstimatorVisitor : IRequestVisitor
+    {
+        private const int HeaderSize = sizeof(RequestType) + sizeof(int);
+        
+        public int EstimatedSize { get; private set; } = HeaderSize;
+
+        public void Visit(GetCountRequest getCountRequest)
+        { }
+
+        public void Visit(EnqueueRequest enqueueRequest)
+        {
+            EstimatedSize += sizeof(int) // Key
+                           + sizeof(int) // Payload Length
+                           + enqueueRequest.Payload.Length;
+        }
+
+        public void Visit(DequeueRequest dequeueRequest)
+        { }
+
+        public void Visit(BatchRequest batchRequest)
+        {
+            if (batchRequest.Requests.Count > 0)
+            {
+                var resultSize = EstimatedSize + sizeof(int);
+                foreach (var request in batchRequest.Requests)
+                {
+                    EstimatedSize = HeaderSize;
+                    request.Accept(this);
+                    resultSize += EstimatedSize;
+                }
+                EstimatedSize = resultSize;
+            }
+            else
+            {
+                EstimatedSize += sizeof(int);
+            }
+
+        }
+
+        public void Reset()
+        {
+            EstimatedSize = HeaderSize;
+        }
     }
     
     // Лучше будет добавить указание размера изначально
     private class RequestSerializerVisitor : IRequestVisitor
     {
         private readonly BinaryWriter _writer;
+        private readonly RequestSizeEstimatorVisitor _estimator;
 
-        public RequestSerializerVisitor(BinaryWriter writer)
+        public RequestSerializerVisitor(BinaryWriter writer, RequestSizeEstimatorVisitor estimator)
         {
             _writer = writer;
+            _estimator = estimator;
+        }
+
+        private void WriteHeader(RequestType type, IRequest request)
+        {
+            _writer.Write((int)type);
+            _estimator.Reset();
+            request.Accept(_estimator);
+            _writer.Write(_estimator.EstimatedSize);
         }
         
         public void Visit(GetCountRequest getCountRequest)
         {
-            _writer.Write((int)RequestType.GetCountRequest);
+            WriteHeader(RequestType.GetCountRequest, getCountRequest);
         }
 
         public void Visit(EnqueueRequest enqueueRequest)
         {
-            _writer.Write((int)RequestType.EnqueueRequest);
+            WriteHeader(RequestType.EnqueueRequest, enqueueRequest);
             _writer.Write(enqueueRequest.Key);
             _writer.Write(enqueueRequest.Payload.Length);
             _writer.Write(enqueueRequest.Payload);
@@ -45,12 +109,13 @@ public class RequestSerializer: ISerializer<IRequest>
 
         public void Visit(DequeueRequest dequeueRequest)
         {
-            _writer.Write((int)RequestType.DequeueRequest);
+            WriteHeader(RequestType.DequeueRequest, dequeueRequest);
         }
 
         public void Visit(BatchRequest batchRequest)
         {
-            _writer.Write((int)RequestType.BatchRequest);
+            WriteHeader(RequestType.BatchRequest, batchRequest);
+            
             _writer.Write(batchRequest.Requests.Count);
             foreach (var request in batchRequest.Requests)
             {
@@ -69,6 +134,7 @@ public class RequestSerializer: ISerializer<IRequest>
     private static IRequest Deserialize(BinaryReader reader)
     {
         var marker = ( RequestType ) reader.ReadInt32();
+        _ = reader.ReadInt32();
         return marker switch
                {
                    RequestType.EnqueueRequest => DeserializeEnqueueRequest(reader),

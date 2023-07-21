@@ -1,7 +1,7 @@
 using JobQueue.Core;
 using TaskFlux.Requests;
-using TaskFlux.Requests.Commands.JobQueue.GetCount;
 using TaskFlux.Requests.GetCount;
+using TaskFlux.Requests.Requests.JobQueue.GetCount;
 
 namespace Consensus.StateMachine.JobQueue.Serializer.Commands;
 

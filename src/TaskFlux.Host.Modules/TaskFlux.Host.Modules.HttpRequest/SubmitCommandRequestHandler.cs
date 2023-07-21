@@ -8,12 +8,12 @@ using Consensus.Core.Commands.Submit;
 using Serilog;
 using TaskFlux.Requests;
 using TaskFlux.Requests.Batch;
-using TaskFlux.Requests.Commands.JobQueue.GetCount;
 using TaskFlux.Requests.Dequeue;
 using TaskFlux.Requests.Enqueue;
 using TaskFlux.Requests.Error;
 using TaskFlux.Requests.GetCount;
 using TaskFlux.Requests.Requests.JobQueue.Enqueue;
+using TaskFlux.Requests.Requests.JobQueue.GetCount;
 
 namespace TaskFlux.Host.Modules.HttpRequest;
 
