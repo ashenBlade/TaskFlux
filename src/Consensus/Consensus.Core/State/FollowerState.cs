@@ -104,12 +104,14 @@ internal class FollowerState<TCommand, TResponse>: ConsensusModuleState<TCommand
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
     {
-        if (request.Descriptor.IsReadonly)
+        if (!request.Descriptor.IsReadonly)
         {
-            return SubmitResponse<TResponse>.Success( StateMachine.Apply(request.Descriptor.Command), false );
+            return SubmitResponse<TResponse>.NotLeader;
         }
 
-        return SubmitResponse<TResponse>.NotLeader;
+        var response = StateMachine.Apply(request.Descriptor.Command);
+        return SubmitResponse<TResponse>.Success(response, false);
+
     }
 
     private void OnElectionTimerTimeout()

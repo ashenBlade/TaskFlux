@@ -33,13 +33,6 @@ public class SubmitCommandRequestHandler: IRequestHandler
         response.KeepAlive = false;
         response.ContentType = "application/json";
         
-        if (_consensusModule.CurrentRole != NodeRole.Leader)
-        {
-            _logger.Debug("Пришел запрос, но текущий узел не лидер");
-            await RespondNotLeaderAsync(response);
-            return;
-        }
-        
         if (!request.HasEntityBody)
         {
             _logger.Debug("В теле запроса не было данных");
@@ -60,17 +53,12 @@ public class SubmitCommandRequestHandler: IRequestHandler
         if (TrySerializeCommandPayload(requestString, out var payload))
         {
             var submitResponse = _consensusModule.Handle(new SubmitRequest<Command>(payload));
-            if (submitResponse.WasLeader)
-            {
-                RespondSuccessAsync(response, submitResponse);
-                return;
-            }
-            
-            await RespondNotLeaderAsync(response);
-            return;
+            await RespondAsync(response, submitResponse);
         }
-
-        await RespondInvalidRequestStringAsync(response);
+        else
+        {
+            await RespondInvalidRequestStringAsync(response);
+        }
     }
 
     private async Task RespondInvalidRequestStringAsync(HttpListenerResponse response)
@@ -118,14 +106,14 @@ public class SubmitCommandRequestHandler: IRequestHandler
         return false;
     }
 
-    private void RespondSuccessAsync(HttpListenerResponse httpResponse,
-                                     SubmitResponse<Result> submitResponse)
+    private async Task RespondAsync(HttpListenerResponse httpResponse,
+                                    SubmitResponse<Result> submitResponse)
     {
 
         Dictionary<string, object?> resultData;
         HttpStatusCode responseStatus;
         bool success;
-
+        
         if (submitResponse.TryGetResponse(out var result))
         {
             var visitor = new HttpResponseJobQueueResponseVisitor();
@@ -149,14 +137,15 @@ public class SubmitCommandRequestHandler: IRequestHandler
             responseStatus = HttpStatusCode.TemporaryRedirect;
             resultData = new Dictionary<string, object?>()
             {
-                {"message", "Узел не лидер"}
+                {"message", "Узел не лидер"},
+                {"leaderId", ClusterInfo.LeaderId.Value}
             };
             success = false;
         }
         
         httpResponse.StatusCode = ( int ) responseStatus;
-        using var writer = new StreamWriter(httpResponse.OutputStream, leaveOpen: true);
-        writer.Write(SerializeResponse(success, resultData));
+        await using var writer = new StreamWriter(httpResponse.OutputStream, leaveOpen: true);
+        await writer.WriteAsync(SerializeResponse(success, resultData));
     }
 
     private class HttpResponseJobQueueResponseVisitor : IResultVisitor
@@ -189,18 +178,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
             Payload["count"] = response.Count;
         }
     }
-    
-    private async Task RespondNotLeaderAsync(HttpListenerResponse response)
-    {
-        response.StatusCode = ( int ) HttpStatusCode.MisdirectedRequest;
-        await using var writer = new StreamWriter(response.OutputStream, Encoding);
-        await writer.WriteAsync(SerializeResponse(false, new Dictionary<string, object?>()
-        {
-            {"message", "Текущий узел не лидер"},
-            {"leaderId", ClusterInfo.LeaderId.Value}
-        }));
-    }
-    
+
 
     private async Task RespondEmptyBodyNotAcceptedAsync(HttpListenerResponse response)
     {

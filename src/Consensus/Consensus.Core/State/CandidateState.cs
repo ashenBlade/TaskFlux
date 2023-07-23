@@ -190,7 +190,8 @@ internal class CandidateState<TCommand, TResponse>: ConsensusModuleState<TComman
     {
         if (request.Descriptor.IsReadonly)
         {
-            return SubmitResponse<TResponse>.Success( StateMachine.Apply(request.Descriptor.Command), false );
+            var response = StateMachine.Apply(request.Descriptor.Command);
+            return SubmitResponse<TResponse>.Success(response, false);
         }
 
         return SubmitResponse<TResponse>.NotLeader;
