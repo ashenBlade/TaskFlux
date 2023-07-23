@@ -56,7 +56,7 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
+                State.ConsensusModule.Logger.Error(e, "Необработанное исключение во время отправки запроса AppendEntries");
                 throw;
             }
             

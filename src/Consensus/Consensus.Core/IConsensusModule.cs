@@ -55,7 +55,7 @@ public interface IConsensusModule<TCommand, TResponse>
     /// <summary>
     /// Очередь задач для выполнения в на заднем фоне
     /// </summary>
-    IJobQueue JobQueue { get; }
+    IBackgroundJobQueue BackgroundJobQueue { get; }
     
     /// <summary>
     /// Очередь команд для применения к узлу.
@@ -79,7 +79,7 @@ public interface IConsensusModule<TCommand, TResponse>
     public IStateMachine<TCommand, TResponse> StateMachine { get; }
 
     public IMetadataStorage MetadataStorage { get; }
-    public ISerializer<TCommand> Serializer { get; }
+    public ISerializer<TCommand> CommandSerializer { get; }
 
     /// <summary>
     /// Обновить состояние узла

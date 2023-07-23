@@ -17,14 +17,14 @@
       <ProjectReference Include="..\Consensus\Consensus.Log\Consensus.Storage.File\Consensus.Storage.File.csproj" />
       <ProjectReference Include="..\Consensus\Consensus.Network\Consensus.Network.csproj" />
       <ProjectReference Include="..\Consensus\Consensus.Peer\Consensus.Peer.csproj" />
-      <ProjectReference Include="..\Consensus\Consensus.StateMachine\Raft.StateMachine.JobQueue\Consensus.StateMachine.JobQueue.Commands\Consensus.StateMachine.JobQueue.Commands.csproj" />
       <ProjectReference Include="..\Consensus\Consensus.StateMachine\Raft.StateMachine.JobQueue\Consensus.StateMachine.JobQueue\Consensus.StateMachine.JobQueue.csproj" />
       <ProjectReference Include="..\Consensus\Consensus.Timers\Consensus.Timers.csproj" />
       <ProjectReference Include="..\JobQueue\JobQueue.InMemory\JobQueue.InMemory.csproj" />
+      <ProjectReference Include="..\TaskFlux.Commands.Serialization\TaskFlux.Commands.Serialization.csproj" />
       <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.BinaryRequest\TaskFlux.Host.Modules.BinaryRequest.csproj" />
       <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.HttpRequest\TaskFlux.Host.Modules.HttpRequest.csproj" />
       <ProjectReference Include="..\TaskFlux.Node\TaskFlux.Node.csproj" />
-      <ProjectReference Include="..\TaskFlux.Requests.Serialization\TaskFlux.Requests.Serialization.csproj" />
+      <ProjectReference Include="..\TaskFlux.Network.Requests.Serialization\TaskFlux.Network.Requests.Serialization.csproj" />
     </ItemGroup>
 
     <ItemGroup>

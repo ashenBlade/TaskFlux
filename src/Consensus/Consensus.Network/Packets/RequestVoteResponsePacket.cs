@@ -1,8 +1,9 @@
 using Consensus.Core.Commands.RequestVote;
+using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Network.Packets;
 
-public class RequestVoteResponsePacket: IPacket
+public class RequestVoteResponsePacket: RaftPacket
 {
     public RequestVoteResponse Response { get; }
     public RequestVoteResponsePacket(RequestVoteResponse response)
@@ -10,12 +11,19 @@ public class RequestVoteResponsePacket: IPacket
         Response = response;
     }
 
-    public PacketType PacketType => PacketType.RequestVoteResponse;
-    public int EstimatePacketSize()
+    public override RaftPacketType PacketType => RaftPacketType.RequestVoteResponse;
+    protected override int EstimatePacketSize()
     {
         return 1  // Маркер
-             + 4  // Размер
              + 1  // Vote Granted
              + 4; // Current Term
+    }
+
+    protected override void SerializeBuffer(Span<byte> buffer)
+    {
+        var writer = new SpanBinaryWriter(buffer);
+        writer.Write((byte)RaftPacketType.RequestVoteResponse);
+        writer.Write(Response.VoteGranted);
+        writer.Write(Response.CurrentTerm.Value);
     }
 }

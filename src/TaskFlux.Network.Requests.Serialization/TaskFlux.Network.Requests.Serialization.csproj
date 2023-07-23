@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net6.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Consensus\Consensus.Core\Consensus.Core.csproj" />
+      <ProjectReference Include="..\TaskFlux.Network.Requests\TaskFlux.Network.Requests.csproj" />
+      <ProjectReference Include="..\TaskFlux.Serialization.Helpers\TaskFlux.Serialization.Helpers.csproj" />
+    </ItemGroup>
+    
+    <PropertyGroup>
+        <WarningsAsErrors>CS8509</WarningsAsErrors>
+        <NoWarn>1701;1702;CS8524</NoWarn>
+    </PropertyGroup>
+</Project>

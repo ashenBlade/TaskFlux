@@ -37,105 +37,117 @@ public class TcpPeer: IPeer
         _client = client;
     }
 
+    private async Task<AppendEntriesResponse?> SendAppendEntriesCoreAsync(
+        AppendEntriesRequest request,
+        CancellationToken token)
+    {
+        using var cts = CreateTimeoutCts(token, _requestTimeout);
+        
+        await _client.SendAsync(new AppendEntriesRequestPacket(request), cts.Token);
+        
+        var packet = await _client.ReceiveAsync(cts.Token);
+        
+        return packet.PacketType switch
+               {
+                   RaftPacketType.AppendEntriesResponse => ( ( AppendEntriesResponsePacket ) packet ).Response,
+                   _ => throw new ArgumentException(
+                            $"От узла пришел неожиданный ответ. Ожидался AppendEntriesResponse. Пришел: {packet.PacketType}")
+               };
+    }
+
     public async Task<AppendEntriesResponse?> SendAppendEntries(AppendEntriesRequest request, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(request);
+        Console.WriteLine($"SendAppendEntries");
 
-        if (!await CheckConnectionAsync(token))
+        if (_client.Socket.Connected)
         {
-            return null;
-        }
-        
-        using var cts = CreateTimeoutCts(token, _requestTimeout);
-        try
-        {
-            var success = await _client.SendAsync(new AppendEntriesRequestPacket(request), cts.Token);
-            if (!success)
+            try
             {
-                _logger.Debug("SendAsync вернул false. Соединение было закрыто");
-                return null;
+                return await SendAppendEntriesCoreAsync(request, token);
             }
-        
-            var packet = await _client.ReceiveAsync(cts.Token);
-            if (packet is null)
-            {
-                _logger.Debug("Узел вернул null. Соединение было закрыто");
-                return null;
-            }
-            
-            return packet.PacketType switch
-                   {
-                       PacketType.AppendEntriesResponse => ( ( AppendEntriesResponsePacket ) packet ).Response,
-                       _ => throw new ArgumentException(
-                                $"От узла пришел неожиданный ответ. Ожидался AppendEntriesResponse. Пришел: {packet.PacketType}")
-                   };
+            catch (SocketException)
+            { }
+            catch (IOException)
+            { }
         }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested || token.IsCancellationRequested)
+
+        if (await TryEstablishConnectionAsync(token))
         {
-            return null;
+            try
+            {
+                return await SendAppendEntriesCoreAsync(request, token);
+            }
+            catch (SocketException)
+            { }
+            catch (IOException)
+            { }
         }
+
+        return null;
     }
 
+    private async Task<RequestVoteResponse?> SendRequestVoteCoreAsync
+        (RequestVoteRequest request, CancellationToken token)
+    {
+        using var cts = CreateTimeoutCts(token, _requestTimeout);
+
+        _logger.Debug("Делаю запрос RequestVote");
+        await _client.SendAsync(new RequestVoteRequestPacket(request), cts.Token);
+            
+        _logger.Debug("Запрос отослан. Получаю ответ");
+        var response = await _client.ReceiveAsync(cts.Token);
+            
+        _logger.Debug("Ответ получен: {@Response}", response);
+        return response.PacketType switch
+               {
+                   RaftPacketType.RequestVoteResponse => ( ( RequestVoteResponsePacket ) response ).Response,
+                   RaftPacketType.ConnectResponse     => null,
+                   _ => throw new ArgumentException(
+                            $"От узла пришел неожиданный ответ. Ожидался AppendEntriesResponse. Пришел: {response.PacketType}")
+               };
+        
+    }
     public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(request);
-        
-        if (!await CheckConnectionAsync(token))
-        {
-            return null;
-        }
-        
-        using var cts = CreateTimeoutCts(token, _requestTimeout);
+        Console.WriteLine($"SendRequestVote");
 
-        try
-        {
-            _logger.Debug("Делаю запрос RequestVote");
-            var success = await _client.SendAsync(new RequestVoteRequestPacket(request), cts.Token);
-            if (!success)
-            {
-                _logger.Verbose("Ошибка во время отправки запроса. Соединение было разорвано");
-                return null;
-            }
-            
-            _logger.Debug("Запрос отослан. Получаю ответ");
-            var response = await _client.ReceiveAsync(cts.Token);
-            if (response is null)
-            {
-                _logger.Verbose("Ошибка во время получения ответа от узла. Соединение было разорвано");
-                return null;
-            }
-            
-            _logger.Debug("Ответ получен: {Response}", response);
-            return response.PacketType switch
-                   {
-                       PacketType.RequestVoteResponse => ( ( RequestVoteResponsePacket ) response ).Response,
-                       PacketType.ConnectResponse     => null,
-                       _ => throw new ArgumentException(
-                                $"От узла пришел неожиданный ответ. Ожидался AppendEntriesResponse. Пришел: {response.PacketType}")
-                   };
-        }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested || token.IsCancellationRequested)
-        {
-            return null;
-        }
-    }
-
-    private async ValueTask<bool> CheckConnectionAsync(CancellationToken token = default)
-    {
         if (_client.Socket.Connected)
         {
-            return true;
+            try
+            {
+                return await SendRequestVoteCoreAsync(request, token);
+            }
+            catch (SocketException)
+            { }
+            catch (IOException)
+            { }
         }
 
-        return await TryEstablishConnectionAsync(token);
+        if (await TryEstablishConnectionAsync(token))
+        {
+            try
+            {
+                return await SendRequestVoteCoreAsync(request, token);
+            }
+            catch (SocketException)
+            { }
+            catch (IOException)
+            { }
+        }
+
+        return null;
     }
 
     private async ValueTask<bool> TryEstablishConnectionAsync(CancellationToken token = default)
     {
         _logger.Debug("Начинаю устанавливать соединение");
+        Console.WriteLine("TryEstablishConnectionAsync");
         var connected = await _client.ConnectAsync(_endPoint, _connectionTimeout, token);
         if (!connected)
         {
+            Console.WriteLine($"!connected");
             return false;
         }
 
@@ -143,26 +155,14 @@ public class TcpPeer: IPeer
         try
         {
             _logger.Debug("Отправляю пакет авторизации");
-            var success = await _client.SendAsync(new ConnectRequestPacket(_currentNodeId), cts.Token);
-            if (!success)
-            {
-                _logger.Debug("Не удалось отправить пакет авторизации. Делаю повторную попытку");
-                await _client.DisconnectAsync(token);
-                return false;
-            }
+            await _client.SendAsync(new ConnectRequestPacket(_currentNodeId), cts.Token);
 
             _logger.Debug("Начинаю получать ответ от узла");
             var packet = await _client.ReceiveAsync(cts.Token);
-            if (packet is null)
-            {
-                _logger.Debug("От узла вернулся null. Делаю повторную попытку");
-                await _client.DisconnectAsync(cts.Token);
-                return false;
-            }
 
             switch (packet.PacketType)
             {
-                case PacketType.ConnectResponse:
+                case RaftPacketType.ConnectResponse:
 
                     var response = ( ConnectResponsePacket ) packet;
                     if (response.Success)
@@ -173,26 +173,29 @@ public class TcpPeer: IPeer
 
                     throw new AuthenticationException("Ошибка при попытке авторизации на узле");
 
-                case PacketType.ConnectRequest:
-                case PacketType.RequestVoteRequest:
-                case PacketType.RequestVoteResponse:
-                case PacketType.AppendEntriesRequest:
-                case PacketType.AppendEntriesResponse:
+                case RaftPacketType.ConnectRequest:
+                case RaftPacketType.RequestVoteRequest:
+                case RaftPacketType.RequestVoteResponse:
+                case RaftPacketType.AppendEntriesRequest:
+                case RaftPacketType.AppendEntriesResponse:
                     throw new InvalidOperationException(
                         $"От узла пришел неожиданный ответ: PacketType: {packet.PacketType}");
                 default:
                     throw new ArgumentOutOfRangeException();
             }
         }
-        catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
-        {
-            token.ThrowIfCancellationRequested();
-        }
         catch (SocketException)
         {
             await _client.DisconnectAsync(token);
         }
-        
+        catch (IOException)
+        {
+            await _client.DisconnectAsync(token);
+        }
+        catch (OperationCanceledException)
+        {
+            await _client.DisconnectAsync(CancellationToken.None);
+        }
 
         return false;
     }

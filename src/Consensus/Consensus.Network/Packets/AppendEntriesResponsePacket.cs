@@ -1,17 +1,27 @@
+using System.Buffers;
 using Consensus.Core.Commands.AppendEntries;
+using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Network.Packets;
 
-public class AppendEntriesResponsePacket: IPacket
+public class AppendEntriesResponsePacket: RaftPacket
 {
-    public PacketType PacketType => PacketType.AppendEntriesResponse;
-    public int EstimatePacketSize()
+    public override RaftPacketType PacketType => RaftPacketType.AppendEntriesResponse;
+    protected override int EstimatePacketSize()
     {
         return 1  // Маркер
-             + 4  // Длина
              + 1  // Success
              + 4; // Term
     }
+
+    protected override void SerializeBuffer(Span<byte> buffer)
+    {
+        var writer = new SpanBinaryWriter(buffer);
+        writer.Write((byte)RaftPacketType.AppendEntriesResponse);
+        writer.Write(Response.Success);
+        writer.Write(Response.Term.Value);
+    }
+
 
     public AppendEntriesResponse Response { get; }
     public AppendEntriesResponsePacket(AppendEntriesResponse response)

@@ -24,7 +24,7 @@
   tflux.2:
     build:
       context: src
-      dockerfile: tflux.Host/Dockerfile
+      dockerfile: TaskFlux.Host/Dockerfile
     ports:
       - '9001:1606'
     environment:

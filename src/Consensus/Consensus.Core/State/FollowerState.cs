@@ -90,7 +90,7 @@ internal class FollowerState<TCommand, TResponse>: BaseConsensusModuleState<TCom
             {
                 foreach (var entry in notApplied)
                 {
-                    var command = Serializer.Deserialize(entry.Data);
+                    var command = CommandSerializer.Deserialize(entry.Data);
                     StateMachine.ApplyNoResponse(command);
                 }
             }
@@ -103,7 +103,12 @@ internal class FollowerState<TCommand, TResponse>: BaseConsensusModuleState<TCom
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
     {
-        return SubmitResponse<TResponse>.NotALeader;
+        if (request.Descriptor.IsReadonly)
+        {
+            return SubmitResponse<TResponse>.Success( StateMachine.Apply(request.Descriptor.Command), false );
+        }
+
+        return SubmitResponse<TResponse>.NotLeader;
     }
 
     private void OnElectionTimerTimeout()

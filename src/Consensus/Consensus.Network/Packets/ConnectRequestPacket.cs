@@ -1,17 +1,25 @@
 using System.Buffers;
 using Consensus.Core;
+using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Network.Packets;
 
-public class ConnectRequestPacket: IPacket
+public class ConnectRequestPacket: RaftPacket
 {
-    public PacketType PacketType => PacketType.ConnectRequest;
-    public int EstimatePacketSize()
+    public override RaftPacketType PacketType => RaftPacketType.ConnectRequest;
+    protected override int EstimatePacketSize()
     {
         return 1  // Маркер
-             + 4  // Длина
              + 4; // NodeId
     }
+
+    protected override void SerializeBuffer(Span<byte> buffer)
+    {
+        var writer = new SpanBinaryWriter(buffer);
+        writer.Write((byte)RaftPacketType.ConnectRequest);
+        writer.Write(Id.Value);
+    }
+
     public NodeId Id { get; }
 
     public ConnectRequestPacket(NodeId id)

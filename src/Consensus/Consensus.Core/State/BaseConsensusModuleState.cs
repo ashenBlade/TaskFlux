@@ -19,9 +19,9 @@ internal abstract class BaseConsensusModuleState<TCommand, TResponse>: IConsensu
     protected NodeId Id => ConsensusModule.Id;
     protected ITimer ElectionTimer => ConsensusModule.ElectionTimer;
     protected ITimer HeartbeatTimer => ConsensusModule.HeartbeatTimer;
-    protected IJobQueue JobQueue => ConsensusModule.JobQueue;
+    protected IBackgroundJobQueue BackgroundJobQueue => ConsensusModule.BackgroundJobQueue;
     protected PeerGroup PeerGroup => ConsensusModule.PeerGroup;
-    protected ISerializer<TCommand> Serializer => ConsensusModule.Serializer;
+    protected ISerializer<TCommand> CommandSerializer => ConsensusModule.CommandSerializer;
 
     protected IConsensusModuleState<TCommand, TResponse> CurrentState
     {

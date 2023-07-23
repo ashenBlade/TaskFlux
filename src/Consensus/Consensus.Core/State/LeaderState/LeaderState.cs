@@ -18,7 +18,7 @@ internal class LeaderState<TCommand, TResponse>: BaseConsensusModuleState<TComma
     {
         _logger = logger;
         _processors = CreatePeerProcessors(this, queueFactory);
-        JobQueue.EnqueueInfinite(ProcessPeersAsync, _cts.Token);
+        BackgroundJobQueue.EnqueueInfinite(ProcessPeersAsync, _cts.Token);
         HeartbeatTimer.Timeout += OnHeartbeatTimer;
     }
 
@@ -87,7 +87,7 @@ internal class LeaderState<TCommand, TResponse>: BaseConsensusModuleState<TComma
             {
                 foreach (var entry in notApplied)
                 {
-                    var command = Serializer.Deserialize(entry.Data);
+                    var command = CommandSerializer.Deserialize(entry.Data);
                     StateMachine.ApplyNoResponse(command);
                 }
             }
@@ -121,7 +121,7 @@ internal class LeaderState<TCommand, TResponse>: BaseConsensusModuleState<TComma
             VotedFor == request.CandidateId;
         
         // Отдать свободный голос можем только за кандидата 
-        if (canVote &&                              // За которого можем проголосовать и
+        if (canVote &&                                // За которого можем проголосовать и
             !Log.Conflicts(request.LastLogEntryInfo)) // У которого лог не хуже нашего
         {
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
@@ -145,8 +145,14 @@ internal class LeaderState<TCommand, TResponse>: BaseConsensusModuleState<TComma
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
     {
+        if (request.Descriptor.IsReadonly)
+        {
+            // Короткий путь для readonly команд
+            return SubmitResponse<TResponse>.Success( StateMachine.Apply(request.Descriptor.Command), true );
+        }
+        
         // Добавляем команду в лог
-        var entry = new LogEntry( CurrentTerm, Serializer.Serialize(request.Request) );
+        var entry = new LogEntry( CurrentTerm, CommandSerializer.Serialize(request.Descriptor.Command) );
         var appended = Log.Append(entry);
         
         // Сигнализируем узлам, чтобы принялись реплицировать
@@ -157,14 +163,14 @@ internal class LeaderState<TCommand, TResponse>: BaseConsensusModuleState<TComma
         synchronizer.LogReplicated.Wait(_cts.Token);
         
         // Применяем команду к машине состояний
-        var response = StateMachine.Apply(request.Request);
+        var response = StateMachine.Apply(request.Descriptor.Command);
         
         // Обновляем индекс последней закоммиченной записи
         Log.Commit(appended.Index);
         Log.SetLastApplied(appended.Index);
         
         // Возвращаем результат
-        return SubmitResponse<TResponse>.Success(response);
+        return SubmitResponse<TResponse>.Success(response, true);
     }
 }
 

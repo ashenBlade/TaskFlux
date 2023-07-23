@@ -11,7 +11,7 @@ public static partial class Helpers
     public static readonly NodeId NodeId = new(1);
     public static readonly LogEntryInfo LastLogEntryInfo = new(new Term(1), 0);
     public static readonly ILogger NullLogger = new LoggerConfiguration().CreateLogger();
-    public static readonly IJobQueue NullJobQueue = CreateNullJobQueue();
+    public static readonly IBackgroundJobQueue NullBackgroundJobQueue = CreateNullJobQueue();
     public static readonly ITimer NullTimer = CreateNullTimer();
     public static readonly IStateMachine NullStateMachine = CreateNullStateMachine();
     public static readonly IMetadataStorage NullMetadataStorage = CreateNullStorage();
@@ -36,9 +36,9 @@ public static partial class Helpers
         return mock.Object;
     }
 
-    public static IJobQueue CreateNullJobQueue()
+    public static IBackgroundJobQueue CreateNullJobQueue()
     {
-        var mock = new Mock<IJobQueue>();
+        var mock = new Mock<IBackgroundJobQueue>();
         mock.Setup(x => x.EnqueueInfinite(It.IsAny<Func<Task>>(), It.IsAny<CancellationToken>()));
         return mock.Object;
     }
@@ -52,14 +52,14 @@ public static partial class Helpers
                                   x.Contains(It.IsAny<LogEntryInfo>()) == true);
     }
 
-    public static RaftConsensusModule<int, int> CreateNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
+    public static RaftConsensusModule<int, int> CreateNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IBackgroundJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
     {
         return RaftConsensusModule.Create(NodeId, 
             new PeerGroup(peers?.ToArray() ?? Array.Empty<IPeer>()),
             NullLogger, 
             electionTimer ?? Mock.Of<ITimer>(),
             heartbeatTimer ?? Mock.Of<ITimer>(), 
-            jobQueue ?? NullJobQueue,
+            jobQueue ?? NullBackgroundJobQueue,
             log ?? CreateLog(),
             commandQueue ?? DefaultCommandQueue,
             NullStateMachine,

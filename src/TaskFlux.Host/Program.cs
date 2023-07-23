@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Sockets;
 using Consensus.CommandQueue;
@@ -14,7 +15,6 @@ using Consensus.Peer;
 using Consensus.Peer.Decorators;
 using Consensus.StateMachine;
 using Consensus.StateMachine.JobQueue;
-using Consensus.StateMachine.JobQueue.Serializer;
 using Consensus.Storage.File;
 using Consensus.Storage.File.Decorators;
 using Consensus.Storage.File.Log;
@@ -24,16 +24,12 @@ using JobQueue.InMemory;
 using JobQueue.SortedQueue;
 using Microsoft.Extensions.Configuration;
 using Serilog;
+using TaskFlux.Commands;
+using TaskFlux.Commands.Serialization;
 using TaskFlux.Core;
 using TaskFlux.Host.Modules.BinaryRequest;
 using TaskFlux.Host.Modules.HttpRequest;
 using TaskFlux.Node;
-using TaskFlux.Requests;
-using TaskFlux.Requests.Serialization;
-
-// TODO: TaskFlux
-
-// ReSharper disable CoVariantArrayConversion
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()
@@ -65,7 +61,7 @@ try
                                   var endpoint = GetEndpoint(p.Host, p.Port);
                                   var id = new NodeId(p.Id);
                                   var client = new PacketClient(new Socket(AddressFamily.InterNetwork, SocketType.Stream,
-                                      ProtocolType.Tcp), BinaryPacketSerializer.Instance);
+                                      ProtocolType.Tcp));
                                   IPeer peer = new TcpPeer(client, endpoint, id, nodeId, networkOptions.ConnectionTimeout, networkOptions.RequestTimeout, Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
                                   peer = new ExclusiveAccessPeerDecorator(peer);
                                   peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
@@ -158,11 +154,9 @@ finally
 }
 
 
-BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<IRequest, IResponse> consensusModule, IConfiguration config)
+BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<Command, Result> consensusModule, IConfiguration config)
 {
-    var options = config.GetRequiredSection("BINARY_REQUEST")
-                        .Get<BinaryRequestModuleOptions>() 
-               ?? BinaryRequestModuleOptions.Default;
+    var options = GetOptions();
 
     try
     {
@@ -174,11 +168,21 @@ BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<IRequest, IRespon
         throw;
     }
 
-    return new BinaryRequestModule(consensusModule, 
-        RequestSerializer.Instance,
-        ResponseSerializer.Instance,
+    return new BinaryRequestModule(consensusModule,
         new StaticOptionsMonitor<BinaryRequestModuleOptions>(options),
         Log.ForContext<BinaryRequestModule>());
+
+    BinaryRequestModuleOptions GetOptions()
+    {
+        var section = config.GetSection("BINARY_REQUEST");
+        if (!section.Exists())
+        {
+            return BinaryRequestModuleOptions.Default;
+        }
+    
+        return section.Get<BinaryRequestModuleOptions>() 
+            ?? BinaryRequestModuleOptions.Default;
+    }
 }
 
 void ValidateOptions(RaftServerOptions peersOptions)
@@ -284,13 +288,13 @@ FileStream OpenMetadataFile(RaftServerOptions options)
     return ( storage, fileStorage );
 }
 
-IStateMachine<IRequest, IResponse> CreateJobQueueStateMachine()
+IStateMachine<Command, Result> CreateJobQueueStateMachine()
 {
     Log.Information("Создаю пустую очередь задач в памяти");
     var unboundedJobQueue = new UnboundedJobQueue(new PriorityQueueSortedQueue<int, byte[]>());
     Log.Information("Использую строковый десериализатор команд с кодировкой UTF-8");
     var node = new ProxyConsensusNode(unboundedJobQueue);
-    return new ProxyJobQueueStateMachine(node, new DefaultCommandBuilder());
+    return new ProxyJobQueueStateMachine(node);
 }
 
 INode CreateNode()
@@ -299,10 +303,10 @@ INode CreateNode()
     return new ProxyConsensusNode(jobQueue);
 }
 
-RaftConsensusModule<IRequest, IResponse> CreateRaftConsensusModule(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine<IRequest, IResponse> stateMachine, IMetadataStorage metadataStorage)
+RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine<Command, Result> stateMachine, IMetadataStorage metadataStorage)
 {
-    var jobQueue = new TaskJobQueue(Log.ForContext<TaskJobQueue>());
-    return RaftConsensusModule.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftConsensusModule<IRequest, IResponse>>(), randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage, RequestSerializer.Instance);
+    var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
+    return RaftConsensusModule.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftConsensusModule<Command, Result>>(), randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage, new ProxyCommandSerializer());
 }
 
 void RestoreStateMachineState(StorageLog storageLog, FileLogStorage fileLogStorage, INode node)
@@ -319,12 +323,9 @@ void RestoreStateMachineState(StorageLog storageLog, FileLogStorage fileLogStora
         
         var notApplied = storageLog.GetNotApplied();
         
-        var deserializer = RequestSerializer.Instance;
-        var commandBuilder = DefaultCommandBuilder.Instance;
-        
         foreach (var (_, payload) in notApplied)
         {
-            var command = commandBuilder.BuildCommand(deserializer.Deserialize(payload));
+            var command = CommandSerializer.Instance.Deserialize(payload);
             command.Apply(node);
         }
         

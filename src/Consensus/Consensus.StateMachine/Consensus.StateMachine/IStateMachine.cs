@@ -2,7 +2,7 @@
 
 public interface IStateMachine<in TCommand, out TResponse>
 {
-    public TResponse Apply(TCommand request);
-    public void ApplyNoResponse(TCommand rawCommand);
+    public TResponse Apply(TCommand command);
+    public void ApplyNoResponse(TCommand command);
 }
 

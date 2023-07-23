@@ -6,7 +6,7 @@ using Consensus.Network;
 using Consensus.Network.Packets;
 using Consensus.Peer;
 using Serilog;
-using TaskFlux.Requests;
+using TaskFlux.Commands;
 
 namespace TaskFlux.Host;
 
@@ -14,11 +14,11 @@ public class NodeConnectionManager
 {
     private readonly string _host;
     private readonly int _port;
-    private readonly RaftConsensusModule<IRequest, IResponse> _raft;
+    private readonly RaftConsensusModule<Command, Result> _raft;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<NodeId, NodeConnectionProcessor> _nodes = new();
 
-    public NodeConnectionManager(string host, int port, RaftConsensusModule<IRequest, IResponse> raft, ILogger logger)
+    public NodeConnectionManager(string host, int port, RaftConsensusModule<Command, Result> raft, ILogger logger)
     {
         _host = host;
         _port = port;
@@ -79,13 +79,16 @@ public class NodeConnectionManager
     {
         try
         {
-            var packetClient = new PacketClient(client, BinaryPacketSerializer.Instance);
+            var packetClient = new PacketClient(client);
             if (await TryAuthenticateAsync(packetClient, token) is { } nodeId)
             {
-                var success = await packetClient.SendAsync(new ConnectResponsePacket(true), token);
-                if (!success)
+                try
                 {
-                    _logger.Information("Узел {Node} отключился во время ответа на пакет успешной авторизации", nodeId);
+                    await packetClient.SendAsync(new ConnectResponsePacket(true), token);
+                }
+                catch (Exception e)
+                {
+                    _logger.Warning(e, "Ошибка во время установления соединения с узлом");
                     await client.DisconnectAsync(false, token);
                     client.Close();
                     client.Dispose();
@@ -134,7 +137,7 @@ public class NodeConnectionManager
     private static async Task<NodeId?> TryAuthenticateAsync(PacketClient client, CancellationToken token)
     {
         var packet = await client.ReceiveAsync(token);
-        if (packet is {PacketType: PacketType.ConnectRequest})
+        if (packet is {PacketType: RaftPacketType.ConnectRequest})
         {
             var request = ( ConnectRequestPacket ) packet;
             return request.Id;

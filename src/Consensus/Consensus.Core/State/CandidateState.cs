@@ -17,7 +17,7 @@ internal class CandidateState<TCommand, TResponse>: BaseConsensusModuleState<TCo
         _logger = logger;
         _cts = new();
         ElectionTimer.Timeout += OnElectionTimerTimeout;
-        JobQueue.EnqueueInfinite(RunQuorum, _cts.Token);
+        BackgroundJobQueue.EnqueueInfinite(RunQuorum, _cts.Token);
     }
 
     private async Task<RequestVoteResponse?[]> SendRequestVotes(List<IPeer> peers, CancellationToken token)
@@ -174,7 +174,7 @@ internal class CandidateState<TCommand, TResponse>: BaseConsensusModuleState<TCo
             {
                 foreach (var entry in notApplied)
                 {
-                    var command = Serializer.Deserialize(entry.Data);
+                    var command = CommandSerializer.Deserialize(entry.Data);
                     StateMachine.ApplyNoResponse(command);
                 }
             }
@@ -187,7 +187,12 @@ internal class CandidateState<TCommand, TResponse>: BaseConsensusModuleState<TCo
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
     {
-        return SubmitResponse<TResponse>.NotALeader;
+        if (request.Descriptor.IsReadonly)
+        {
+            return SubmitResponse<TResponse>.Success( StateMachine.Apply(request.Descriptor.Command), false );
+        }
+
+        return SubmitResponse<TResponse>.NotLeader;
     }
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)

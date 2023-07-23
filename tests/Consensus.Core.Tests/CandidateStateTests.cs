@@ -8,7 +8,7 @@ namespace Consensus.Core.Tests;
 
 public class CandidateStateTests
 {
-    private static RaftConsensusModule<int, int> CreateCandidateNode(Term term, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IJobQueue? jobQueue = null, ILog? log = null)
+    private static RaftConsensusModule<int, int> CreateCandidateNode(Term term, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IBackgroundJobQueue? jobQueue = null, ILog? log = null)
     {
         var raftStateMachine = Helpers.CreateNode(term, votedFor, peers: peers, electionTimer: electionTimer, heartbeatTimer: null, jobQueue: jobQueue, log: log);
         ( ( IConsensusModule<int, int> ) raftStateMachine ).CurrentState = new CandidateState<int, int>(raftStateMachine, Helpers.NullLogger);
@@ -44,7 +44,7 @@ public class CandidateStateTests
     public async Task КогдаВКластереНетДругихУзлов__ПослеЗапускаКворума__ДолженПерейтиВСостояниеЛидера()
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         using var raft = CreateCandidateNode(oldTerm, null, jobQueue: jobQueue);
 
         await jobQueue.Run();
@@ -56,7 +56,7 @@ public class CandidateStateTests
     public async Task ПослеЗапускаКворумаИПереходаВСостояниеЛидера__ДолженОстановитьElectionTimeout()
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var timer = new Mock<ITimer>();
         timer.Setup(x => x.Stop()).Verifiable();
         using var raft = CreateCandidateNode(oldTerm, null, jobQueue: jobQueue, electionTimer: timer.Object);
@@ -73,7 +73,7 @@ public class CandidateStateTests
     public async Task ПриЗапускеКворума__СЕдинственнымДругимУзлом__ДолженСтатьЛидеромТолькоКогдаДругойУзелОтдалСвойГолос(bool voteGranted)
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var timer = new Mock<ITimer>();
         timer.Setup(x => x.Stop()).Verifiable();
         
@@ -101,7 +101,7 @@ public class CandidateStateTests
     public async Task ПриЗапускеКворума__СЕдинственнымДругимУзлом__ДолженПрекратитьОтправлятьЗапросыПослеПолученияОтвета(bool voteGranted)
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var timer = new Mock<ITimer>();
         timer.Setup(x => x.Stop()).Verifiable();
         
@@ -129,7 +129,7 @@ public class CandidateStateTests
     public async Task ПриЗапускеКворума__СНесколькимиУзлами__ДолженСтатьЛидеромКогдаСобралКворум(int grantedVotesCount, int nonGrantedVotesCount)
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var timer = new Mock<ITimer>();
         timer.Setup(x => x.Stop()).Verifiable();
 
@@ -169,7 +169,7 @@ public class CandidateStateTests
         int nonGrantedVotesCount)
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var timer = new Mock<ITimer>();
         timer.Setup(x => x.Stop()).Verifiable();
 
@@ -197,7 +197,7 @@ public class CandidateStateTests
     public async Task ПриЗапускеКворума__СЕдинственнымУзломКоторыйНеОтветил__ДолженСделатьПовторнуюПопытку()
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var timer = new Mock<ITimer>();
         timer.Setup(x => x.Stop()).Verifiable();
 
@@ -227,7 +227,7 @@ public class CandidateStateTests
     public async Task ПриЗапускеКворума__СЕдинственнымУзломКоторыйОтветилТолькоНаВторойПопытке__ДолженСтатьЛидеромТолькоЕслиОтдалГолос(bool voteGranted)
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var timer = new Mock<ITimer>();
         timer.Setup(x => x.Stop()).Verifiable();
 
@@ -321,7 +321,7 @@ public class CandidateStateTests
     public async Task ПриОбработкеHeartbeat__СБолееВысокимТермомИСобраннымКворумом__ДолженСтатьFollower()
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var peer = new Mock<IPeer>();
         peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true));
@@ -340,7 +340,7 @@ public class CandidateStateTests
     public async Task ПриОбработкеRequestVote__СБолееВысокимТермомИСобраннымКворумом__ДолженСтатьFollower()
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var peer = new Mock<IPeer>();
         peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true));
@@ -360,7 +360,7 @@ public class CandidateStateTests
     public async Task ПриОбработкеRequestVote__СБолееВысокимТермомИСобраннымКворумом__ДолженОбновитьСвойТерм()
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var peer = new Mock<IPeer>();
         var leaderTerm = oldTerm.Increment();
         peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
@@ -384,7 +384,7 @@ public class CandidateStateTests
     public async Task ПослеПереходаВLeader__КогдаКворумСобран__ДолженОстановитьElectionТаймер(int votes)
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         
         var peer = new Mock<IPeer>();
         peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
@@ -424,7 +424,7 @@ public class CandidateStateTests
     public async Task ПослеОтправкиЗапросов__КворумДостигнутНоНекоторыеУзлыНеОтветили__ДолженПерейтиВСостояниеLeader(int successResponses, int notResponded)
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var timer = new Mock<ITimer>();
         timer.Setup(x => x.Stop()).Verifiable();
 
@@ -456,7 +456,7 @@ public class CandidateStateTests
     public void ПриОбработкеRequestVote__СТакимЖеТермом__ДолженСтатьFollower(int term)
     {
         var currentTerm = new Term(term);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         using var raft = CreateCandidateNode(currentTerm, null, jobQueue: jobQueue);
 
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: currentTerm,
@@ -475,7 +475,7 @@ public class CandidateStateTests
     public void ПриОбработкеRequestVote__СТакимЖеТермом__ДолженОставитьПрежднийТерм(int term)
     {
         var currentTerm = new Term(term);
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         using var node = CreateCandidateNode(currentTerm, null, jobQueue: jobQueue);
 
         var request = new RequestVoteRequest(

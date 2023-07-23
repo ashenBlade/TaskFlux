@@ -3,67 +3,50 @@ using System.Net.Sockets;
 using Consensus.Core;
 using Consensus.Core.Commands.Submit;
 using Serilog;
-using TaskFlux.Requests;
+using TaskFlux.Commands;
+using TaskFlux.Commands.Serialization;
+using TaskFlux.Network.Requests;
+using TaskFlux.Network.Requests.Packets;
+using TaskFlux.Network.Requests.Serialization;
 
 namespace TaskFlux.Host.Modules.BinaryRequest;
 
 internal class RequestProcessor
 {
-    private const int DefaultBufferSize = 256;
     private readonly TcpClient _client;
-    private readonly IConsensusModule<IRequest, IResponse> _consensusModule;
-    private readonly ISerializer<IRequest> _requestSerializer;
-    private readonly ISerializer<IResponse> _responseSerializer;
-    private readonly ILogger _logger;
+    public IConsensusModule<Command, Result> Module { get; }
+    public ILogger Logger { get; }
+    private readonly PoolingNetworkPacketSerializer _packetSerializer = new(ArrayPool<byte>.Shared);
+    public CommandSerializer CommandSerializer { get; } = new();
+    public ResultSerializer ResultSerializer { get; } = new();
 
     public RequestProcessor(TcpClient client, 
-                            IConsensusModule<IRequest, IResponse> consensusModule,
-                            ISerializer<IRequest> requestSerializer,
-                            ISerializer<IResponse> responseSerializer,
+                            IConsensusModule<Command, Result> consensusModule,
                             ILogger logger)
     {
         _client = client;
-        _consensusModule = consensusModule;
-        _requestSerializer = requestSerializer;
-        _responseSerializer = responseSerializer;
-        _logger = logger;
+        Module = consensusModule;
+        Logger = logger;
     }
 
     public async Task ProcessAsync(CancellationToken token)
     {
-        _logger.Debug("Начинаю обработку полученного запроса");
-        var requestBuffer = new List<byte>();
-        var buffer = new byte[DefaultBufferSize];
-        
+        Logger.Debug("Открываю сетевой поток для коммуницирования к клиентом");
         await using var stream = _client.GetStream();
+        var clientRequestPacketVisitor = new ClientRequestPacketVisitor(this, stream);
         try
         {
-            while (token.IsCancellationRequested is false)
+            Logger.Debug("Начинаю обработку полученного запроса");
+            while (token.IsCancellationRequested is false && 
+                   stream.Socket.Connected)
             {
-                try
-                {
-                    await ReadNextRequestAsync(stream, requestBuffer, buffer, token);
-                }
-                catch (Exception e)
-                    when (e.GetBaseException() is SocketException {SocketErrorCode: SocketError.Shutdown})
-                {
-                    _logger.Debug("Клиентский сокет закрылся. Закрываю соединение");
-                    break;
-                }
-
+                var packet = await _packetSerializer.DeserializeAsync(stream, token);
                 if (token.IsCancellationRequested)
                 {
                     break;
                 }
 
-                var response = _consensusModule.Handle(new SubmitRequest<IRequest>(_requestSerializer.Deserialize(requestBuffer.ToArray())));
-                if (!response.WasLeader)
-                {
-                    // TODO: добавить ответ не лидер
-                    break;
-                }
-
-                await stream.WriteAsync(_responseSerializer.Serialize(response.Response), token);
+                await packet.AcceptAsync(clientRequestPacketVisitor, token);
             }
         }
         finally
@@ -72,29 +55,68 @@ internal class RequestProcessor
             _client.Dispose();
         }
     }
-
-    private async Task ReadNextRequestAsync(NetworkStream networkStream,
-                                            List<byte> requestBuffer,
-                                            byte[] socketBuffer,
-                                            CancellationToken token)
+    private class ClientRequestPacketVisitor : IAsyncPacketVisitor
     {
-        requestBuffer.Clear();
-        var read = await networkStream.ReadAsync(socketBuffer, token);
-        if (read < socketBuffer.Length)
+        private readonly RequestProcessor _processor;
+        private readonly NetworkStream _stream;
+
+        public ClientRequestPacketVisitor(RequestProcessor processor, NetworkStream stream)
         {
-            requestBuffer.AddRange(socketBuffer.Take(read));
-            return;
+            _processor = processor;
+            _stream = stream;
         }
-        
-        requestBuffer.AddRange(socketBuffer);
-        while (read == socketBuffer.Length)
+
+        public async ValueTask VisitAsync(DataRequestPacket packet, CancellationToken token = default)
         {
-            read = await networkStream.ReadAsync(socketBuffer, token);
-            if (read == 0)
+            Command command;
+            try
             {
-                break;
+                command = _processor.CommandSerializer.Deserialize(packet.Payload);
             }
-            requestBuffer.AddRange(socketBuffer.Take(read));
+            catch (Exception e)
+            {
+                _processor.Logger.Warning(e, "Ошибка при десерилазации команды от клиента");
+                var errorPacket = new ErrorResponsePacket("Ошибка десерализации команды");
+                using var p = _processor._packetSerializer.Serialize(errorPacket);
+                await _stream.WriteAsync(p.ToMemory(), token);
+                return;
+            }
+
+            var result = _processor.Module.Handle( 
+                new SubmitRequest<Command>(command.Accept(CommandDescriptorBuilderCommandVisitor.Instance)));
+
+            Packet responsePacket;
+            if (result.TryGetResponse(out var response))
+            {
+                responsePacket = new DataResponsePacket(_processor.ResultSerializer.Serialize(response));
+            }
+            else if (result.WasLeader)
+            {
+                responsePacket = new DataResponsePacket(Array.Empty<byte>());
+            }
+            else
+            {
+                responsePacket = new NotLeaderPacket(0);
+            }
+
+            // TODO: указывать узел с лидером
+            using var pooledResponseArray = _processor._packetSerializer.Serialize(responsePacket);
+            await _stream.WriteAsync(pooledResponseArray.ToMemory(), token);
+        }
+
+        public async ValueTask VisitAsync(DataResponsePacket packet, CancellationToken token = default)
+        {
+            throw new NotImplementedException();
+        }
+
+        public async ValueTask VisitAsync(ErrorResponsePacket packet, CancellationToken token = default)
+        {
+            throw new NotImplementedException();
+        }
+
+        public async ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default)
+        {
+            throw new NotImplementedException();
         }
     }
 }

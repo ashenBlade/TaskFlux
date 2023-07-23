@@ -6,24 +6,20 @@ using System.Text.Json.Serialization;
 using Consensus.Core;
 using Consensus.Core.Commands.Submit;
 using Serilog;
-using TaskFlux.Requests;
-using TaskFlux.Requests.Batch;
-using TaskFlux.Requests.Dequeue;
-using TaskFlux.Requests.Enqueue;
-using TaskFlux.Requests.Error;
-using TaskFlux.Requests.GetCount;
-using TaskFlux.Requests.Requests.JobQueue.Enqueue;
-using TaskFlux.Requests.Requests.JobQueue.GetCount;
+using TaskFlux.Commands;
+using TaskFlux.Commands.Count;
+using TaskFlux.Commands.Dequeue;
+using TaskFlux.Commands.Enqueue;
 
 namespace TaskFlux.Host.Modules.HttpRequest;
 
 public class SubmitCommandRequestHandler: IRequestHandler
 {
     private static readonly Encoding Encoding = Encoding.UTF8;
-    private readonly IConsensusModule<IRequest, IResponse> _consensusModule;
+    private readonly IConsensusModule<Command, Result> _consensusModule;
     private readonly ILogger _logger;
 
-    public SubmitCommandRequestHandler(IConsensusModule<IRequest, IResponse> consensusModule,  ILogger logger)
+    public SubmitCommandRequestHandler(IConsensusModule<Command, Result> consensusModule,  ILogger logger)
     {
         _consensusModule = consensusModule;
         _logger = logger;
@@ -58,9 +54,9 @@ public class SubmitCommandRequestHandler: IRequestHandler
             return;
         }
 
-        if (TrySerializeRequestPayload(requestString, out var payload))
+        if (TrySerializeCommandPayload(requestString, out var payload))
         {
-            var submitResponse = _consensusModule.Handle(new SubmitRequest<IRequest>(payload));
+            var submitResponse = _consensusModule.Handle(new SubmitRequest<Command>(payload));
             if (submitResponse.WasLeader)
             {
                 RespondSuccessAsync(response, submitResponse);
@@ -82,155 +78,89 @@ public class SubmitCommandRequestHandler: IRequestHandler
         await writer.FlushAsync();
     }
     
-    private bool TrySerializeRequestPayload(string requestString, out IRequest request)
-    {
-        var linesArray = SplitLines().ToArray();
-        if (linesArray.Length == 0)
-        {
-            request = null!;
-            return false;
-        }
-
-        if (linesArray.Length == 1)
-        {
-            return TryDeserializeSingleRequest(linesArray[0], out request);
-        }
-
-        return TryDeserializeBatchRequest(linesArray, out request);
-
-        IEnumerable<string> SplitLines()
-        {
-            var reader = new StringReader(requestString);
-            while (reader.ReadLine() is {} line)
-            {
-                yield return line;
-            }
-        }
-    }
-
-    private bool TryDeserializeBatchRequest(string[] requestLines, out IRequest request)
-    {
-        var requests = new IRequest[requestLines.Length];
-        for (var i = 0; i < requests.Length; i++)
-        {
-            if (!TryDeserializeRequest(requestLines[i], out var innerRequest))
-            {
-                request = null!;
-                return false;
-            }
-
-            requests[i] = innerRequest;
-        }
-
-        request = new BatchRequest(requests);
-        return true;
-    }
-
-    private static bool TryDeserializeRequest(string requestString, out IRequest request)
+    private bool TrySerializeCommandPayload(string requestString, out CommandDescriptor<Command> command)
     {
         if (string.IsNullOrWhiteSpace(requestString))
         {
-            request = null!;
+            command = default;
             return false;
         }
-        
         var tokens = requestString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        
-        try
+        // Точно будет хотя бы 1 элемент, т.к. проверяли выше, что строка не пуста
+        var commandString = tokens[0];
+        if (commandString.Equals("enqueue", StringComparison.InvariantCultureIgnoreCase) 
+         && tokens.Length == 3)
         {
-            var command = tokens[0];
-            IRequest? parsedRequest = null;
-            if (command.Equals("enqueue", StringComparison.InvariantCultureIgnoreCase) 
-             && tokens.Length == 3)
-            {
-                var key = int.Parse(tokens[1]);
-                var data = Encoding.GetBytes( tokens[2] );
-                parsedRequest = new EnqueueRequest(key, data);
-            }
-            else if (command.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase) 
-                  && tokens.Length == 1)
-            {
-                parsedRequest = DequeueRequest.Instance;
-            }
-            else if (command.Equals("count", StringComparison.InvariantCultureIgnoreCase) 
-                  && tokens.Length == 1)
-            {
-                parsedRequest = GetCountRequest.Instance;
-            }
+            var key = int.Parse(tokens[1]);
+            var data = Encoding.GetBytes( tokens[2] );
+            command = new CommandDescriptor<Command>( new EnqueueCommand(key, data), false );
+            return true;
+        }
 
-            request = parsedRequest!;
-            return parsedRequest is not null;
-        }
-        catch (Exception)
+        if (commandString.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase) 
+         && tokens.Length == 1)
         {
-            request = null!;
-            return false;
+            command = new CommandDescriptor<Command>( DequeueCommand.Instance, false );
+            return true;
         }
+
+        if (commandString.Equals("count", StringComparison.InvariantCultureIgnoreCase) 
+         && tokens.Length == 1)
+        {
+            command = new CommandDescriptor<Command>( CountCommand.Instance, true );
+            return true;
+        }
+
+        command = default;
+        return false;
     }
 
-    private bool TryDeserializeSingleRequest(string requestString, out IRequest request)
+    private void RespondSuccessAsync(HttpListenerResponse httpResponse,
+                                     SubmitResponse<Result> submitResponse)
     {
-        try
+
+        Dictionary<string, object?> resultData;
+        HttpStatusCode responseStatus;
+        bool success;
+
+        if (submitResponse.TryGetResponse(out var result))
         {
-            var tokens = requestString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var visitor = new HttpResponseJobQueueResponseVisitor();
+            result.Accept(visitor);
             
-            // Точно будет хотя бы 1 элемент, т.к. проверяли выше, что строка не пуста
-            var command = tokens[0];
-            if (command.Equals("enqueue", StringComparison.InvariantCultureIgnoreCase) 
-             && tokens.Length == 3)
-            {
-                var key = int.Parse(tokens[1]);
-                var data = Encoding.GetBytes( tokens[2] );
-                request = new EnqueueRequest(key, data);
-            }
-            else if (command.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase) 
-                  && tokens.Length == 1)
-            {
-                request = DequeueRequest.Instance;
-            }
-            else if (command.Equals("count", StringComparison.InvariantCultureIgnoreCase) 
-                  && tokens.Length == 1)
-            {
-                request = GetCountRequest.Instance;
-            }
-
-            request = null!;
-            return false;
+            success = true;
+            resultData = visitor.Payload;
+            responseStatus = HttpStatusCode.OK;
         }
-        catch (Exception)
+        else if (submitResponse.WasLeader)
         {
-            request = null!;
-            return false;
+            responseStatus = HttpStatusCode.InternalServerError;
+            resultData = new Dictionary<string, object?>()
+            {
+                {"message", "Операция не вернула результат"}
+            };
+            success = false;
         }
+        else
+        {
+            responseStatus = HttpStatusCode.TemporaryRedirect;
+            resultData = new Dictionary<string, object?>()
+            {
+                {"message", "Узел не лидер"}
+            };
+            success = false;
+        }
+        
+        httpResponse.StatusCode = ( int ) responseStatus;
+        using var writer = new StreamWriter(httpResponse.OutputStream, leaveOpen: true);
+        writer.Write(SerializeResponse(success, resultData));
     }
 
-    private void RespondSuccessAsync(HttpListenerResponse response,
-                                     SubmitResponse<IResponse> submitResponse)
-    {
-        var visitor = new HttpResponseJobQueueResponseVisitor();
-        
-        submitResponse.Response.Accept(visitor);
-        
-        response.StatusCode = ( int ) ( visitor.Ok
-                                            ? HttpStatusCode.OK
-                                            : HttpStatusCode.BadRequest );
-
-        using var writer = new StreamWriter(response.OutputStream, leaveOpen: true);
-
-        writer.WriteAsync(SerializeResponse(visitor.Ok, visitor.Payload));
-    }
-
-    private class HttpResponseJobQueueResponseVisitor : IResponseVisitor
+    private class HttpResponseJobQueueResponseVisitor : IResultVisitor
     {
         public Dictionary<string, object?> Payload { get; private set; } = new();
-        public bool Ok { get; private set; } = true;
-        
-        private void SetError()
-        {
-            Ok = false;
-        }
-        
-        public void Visit(DequeueResponse response)
+
+        public void Visit(DequeueResult response)
         {
             Payload["type"] = "dequeue";
             if (response.Success)
@@ -245,45 +175,15 @@ public class SubmitCommandRequestHandler: IRequestHandler
             }
         }
 
-        public void Visit(EnqueueResponse response)
+        public void Visit(EnqueueResult response)
         {
             Payload["type"] = "enqueue";
             Payload["ok"] = response.Success;
         }
 
-        public void Visit(GetCountResponse response)
+        public void Visit(CountResult response)
         {
             Payload["count"] = response.Count;
-        }
-
-        public void Visit(ErrorResponse response)
-        {
-            SetError();
-
-            if (!string.IsNullOrWhiteSpace(response.Message))
-            {
-                Payload["message"] = response.Message;
-            }
-        }
-
-        public void Visit(BatchResponse response)
-        {
-            Payload["type"] = "batch";
-            Payload["count"] = response.Responses.Count;
-            var data = new List<(Dictionary<string, object?> Payload, bool Ok)>();
-            var oldPayload = Payload;
-            var oldOk = Ok;
-            foreach (var innerResponse in response.Responses)
-            {
-                Payload = new Dictionary<string, object?>();
-                Ok = true;
-                innerResponse.Accept(this);
-                data.Add((Payload, Ok));
-            }
-
-            Payload = oldPayload;
-            Ok = oldOk;
-            Payload["data"] = data.Select(tuple => tuple.Payload);
         }
     }
     

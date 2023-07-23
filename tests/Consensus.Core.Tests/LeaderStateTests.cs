@@ -9,7 +9,7 @@ namespace Consensus.Core.Tests;
 
 public class LeaderStateTests
 {
-    private static RaftConsensusModule<int, int> CreateLeaderNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IJobQueue? jobQueue = null, ILog? log = null, IRequestQueueFactory? requestQueueFactory = null)
+    private static RaftConsensusModule<int, int> CreateLeaderNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IBackgroundJobQueue? jobQueue = null, ILog? log = null, IRequestQueueFactory? requestQueueFactory = null)
     {
         var node = Helpers.CreateNode(
             currentTerm,
@@ -41,7 +41,7 @@ public class LeaderStateTests
             t.Setup(x => x.Start());
         });
 
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
 
         var peers = Enumerable.Range(0, peersCount)
                               .Select(_ => new Mock<IPeer>()
@@ -256,7 +256,7 @@ public class LeaderStateTests
             t.Setup(x => x.Stop()).Verifiable();
             t.Setup(x => x.Start());
         });
-        var jobQueue = new SingleRunJobQueue();
+        var jobQueue = new SingleRunBackgroundJobQueue();
         var peerTerm = term.Increment();
         var peer = new Mock<IPeer>()
            .Apply(p => p.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(),

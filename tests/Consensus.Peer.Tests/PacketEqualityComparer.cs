@@ -4,11 +4,11 @@ using Consensus.Network.Packets;
 
 namespace Consensus.Peer.Tests;
 
-public class PacketEqualityComparer: IEqualityComparer<IPacket>
+public class PacketEqualityComparer: IEqualityComparer<RaftPacket>
 {
     public static readonly PacketEqualityComparer Instance = new();
     
-    public bool Equals(IPacket x, IPacket y)
+    public bool Equals(RaftPacket x, RaftPacket y)
     {
         return Check(( dynamic ) x, ( dynamic ) y);
     }
@@ -52,7 +52,7 @@ public class PacketEqualityComparer: IEqualityComparer<IPacket>
         return first.Success == second.Success;
     }
     
-    public int GetHashCode(IPacket obj)
+    public int GetHashCode(RaftPacket obj)
     {
         return ( int ) obj.PacketType;
     }
