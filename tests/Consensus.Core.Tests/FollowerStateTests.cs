@@ -2,6 +2,7 @@ using Moq;
 using Consensus.Core.Commands.AppendEntries;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Log;
+using TaskFlux.Core;
 
 namespace Consensus.Core.Tests;
 

@@ -10,17 +10,20 @@ using TaskFlux.Commands;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
+using TaskFlux.Core;
 
 namespace TaskFlux.Host.Modules.HttpRequest;
 
 public class SubmitCommandRequestHandler: IRequestHandler
 {
+    public IClusterInfo ClusterInfo { get; }
     private static readonly Encoding Encoding = Encoding.UTF8;
     private readonly IConsensusModule<Command, Result> _consensusModule;
     private readonly ILogger _logger;
 
-    public SubmitCommandRequestHandler(IConsensusModule<Command, Result> consensusModule,  ILogger logger)
+    public SubmitCommandRequestHandler(IConsensusModule<Command, Result> consensusModule, IClusterInfo clusterInfo, ILogger logger)
     {
+        ClusterInfo = clusterInfo;
         _consensusModule = consensusModule;
         _logger = logger;
     }
@@ -191,7 +194,11 @@ public class SubmitCommandRequestHandler: IRequestHandler
     {
         response.StatusCode = ( int ) HttpStatusCode.MisdirectedRequest;
         await using var writer = new StreamWriter(response.OutputStream, Encoding);
-        await writer.WriteAsync(SerializeResponse(false, "Текущий узел не лидер"));
+        await writer.WriteAsync(SerializeResponse(false, new Dictionary<string, object?>()
+        {
+            {"message", "Текущий узел не лидер"},
+            {"leaderId", ClusterInfo.LeaderId.Value}
+        }));
     }
     
 

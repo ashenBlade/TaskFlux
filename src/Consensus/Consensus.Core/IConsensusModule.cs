@@ -6,6 +6,7 @@ using Consensus.Core.State;
 using Consensus.CommandQueue;
 using Consensus.StateMachine;
 using Serilog;
+using TaskFlux.Core;
 
 namespace Consensus.Core;
 
@@ -34,7 +35,7 @@ public interface IConsensusModule<TCommand, TResponse>
     /// <summary>
     /// Текущее состояние узла в зависимости от роли: Follower, Candidate, Leader
     /// </summary>
-    internal IConsensusModuleState<TCommand, TResponse> CurrentState { get; set; }
+    public ConsensusModuleState<TCommand, TResponse> CurrentState { get; set; }
 
     /// <summary>
     /// Логгер для удобства
@@ -90,4 +91,9 @@ public interface IConsensusModule<TCommand, TResponse>
     public RequestVoteResponse Handle(RequestVoteRequest request);
     public AppendEntriesResponse Handle(AppendEntriesRequest request);
     public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request);
+    
+    /// <summary>
+    /// Событие, вызывающееся при обновлении роли узла
+    /// </summary>
+    public event RoleChangedEventHandler RoleChanged;
 }

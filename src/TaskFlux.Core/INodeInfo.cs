@@ -2,5 +2,6 @@ namespace TaskFlux.Core;
 
 public interface INodeInfo
 {
-    public int Version { get; }
+    public NodeId NodeId { get; }
+    public NodeRole CurrentRole { get; }
 }

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Consensus.Core;
 using Serilog;
 using TaskFlux.Commands;
+using TaskFlux.Core;
 
 namespace TaskFlux.Host.Modules.BinaryRequest;
 
@@ -11,14 +12,17 @@ public class BinaryRequestModule
 {
     private readonly IConsensusModule<Command, Result> _consensusModule;
     private readonly IOptionsMonitor<BinaryRequestModuleOptions> _options;
+    private readonly IClusterInfo _clusterInfo;
     private readonly ILogger _logger;
 
     public BinaryRequestModule(IConsensusModule<Command, Result> consensusModule,
                                IOptionsMonitor<BinaryRequestModuleOptions> options,
+                               IClusterInfo clusterInfo,
                                ILogger logger)
     {
         _consensusModule = consensusModule;
         _options = options;
+        _clusterInfo = clusterInfo;
         _logger = logger;
     }
 
@@ -36,7 +40,7 @@ public class BinaryRequestModule
             while (token.IsCancellationRequested is false)
             {
                 var client = await listener.AcceptTcpClientAsync(token);
-                var processor = new RequestProcessor(client, _consensusModule, Log.ForContext<RequestProcessor>());
+                var processor = new RequestProcessor(client, _consensusModule, _clusterInfo, Log.ForContext<RequestProcessor>());
                 _ = processor.ProcessAsync(token);
             }
         }

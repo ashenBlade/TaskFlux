@@ -5,6 +5,7 @@ using Consensus.Core.Commands.Submit;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Serialization;
+using TaskFlux.Core;
 using TaskFlux.Network.Requests;
 using TaskFlux.Network.Requests.Packets;
 using TaskFlux.Network.Requests.Serialization;
@@ -14,18 +15,21 @@ namespace TaskFlux.Host.Modules.BinaryRequest;
 internal class RequestProcessor
 {
     private readonly TcpClient _client;
-    public IConsensusModule<Command, Result> Module { get; }
-    public ILogger Logger { get; }
+    private IConsensusModule<Command, Result> Module { get; }
+    public IClusterInfo ClusterInfo { get; }
+    private ILogger Logger { get; }
     private readonly PoolingNetworkPacketSerializer _packetSerializer = new(ArrayPool<byte>.Shared);
-    public CommandSerializer CommandSerializer { get; } = new();
-    public ResultSerializer ResultSerializer { get; } = new();
+    private CommandSerializer CommandSerializer { get; } = CommandSerializer.Instance;
+    private ResultSerializer ResultSerializer { get; } = ResultSerializer.Instance;
 
     public RequestProcessor(TcpClient client, 
                             IConsensusModule<Command, Result> consensusModule,
+                            IClusterInfo clusterInfo,
                             ILogger logger)
     {
         _client = client;
         Module = consensusModule;
+        ClusterInfo = clusterInfo;
         Logger = logger;
     }
 
@@ -37,8 +41,7 @@ internal class RequestProcessor
         try
         {
             Logger.Debug("Начинаю обработку полученного запроса");
-            while (token.IsCancellationRequested is false && 
-                   stream.Socket.Connected)
+            while (token.IsCancellationRequested is false && stream.Socket.Connected)
             {
                 var packet = await _packetSerializer.DeserializeAsync(stream, token);
                 if (token.IsCancellationRequested)
@@ -47,7 +50,16 @@ internal class RequestProcessor
                 }
 
                 await packet.AcceptAsync(clientRequestPacketVisitor, token);
+
+                if (clientRequestPacketVisitor.ShouldClose)
+                {
+                    break;
+                }
             }
+        }
+        catch (Exception e)
+        {
+            Logger.Error(e, "Во время обработки клиента возникло необработанное исключение");
         }
         finally
         {
@@ -59,7 +71,9 @@ internal class RequestProcessor
     {
         private readonly RequestProcessor _processor;
         private readonly NetworkStream _stream;
-
+        private ILogger Logger => _processor.Logger;
+        public bool ShouldClose { get; private set; }
+        
         public ClientRequestPacketVisitor(RequestProcessor processor, NetworkStream stream)
         {
             _processor = processor;
@@ -96,27 +110,31 @@ internal class RequestProcessor
             }
             else
             {
-                responsePacket = new NotLeaderPacket(0);
+                responsePacket = new NotLeaderPacket(_processor.ClusterInfo.LeaderId.Value);
             }
 
-            // TODO: указывать узел с лидером
             using var pooledResponseArray = _processor._packetSerializer.Serialize(responsePacket);
             await _stream.WriteAsync(pooledResponseArray.ToMemory(), token);
         }
 
-        public async ValueTask VisitAsync(DataResponsePacket packet, CancellationToken token = default)
+        public ValueTask VisitAsync(DataResponsePacket packet, CancellationToken token = default)
         {
-            throw new NotImplementedException();
+            Logger.Warning("От клиента пришел неожиданный пакет: DataResponsePacket");
+            ShouldClose = true;
+            return ValueTask.CompletedTask;
         }
 
-        public async ValueTask VisitAsync(ErrorResponsePacket packet, CancellationToken token = default)
+        public ValueTask VisitAsync(ErrorResponsePacket packet, CancellationToken token = default)
         {
-            throw new NotImplementedException();
-        }
+            Logger.Warning("От клиента пришел неожиданный пакет: DataResponsePacket");
+            ShouldClose = true;
+            return ValueTask.CompletedTask;        }
 
-        public async ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default)
+        public ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default)
         {
-            throw new NotImplementedException();
+            Logger.Warning("От клиента пришел неожиданный пакет: DataResponsePacket");
+            ShouldClose = true;
+            return ValueTask.CompletedTask;
         }
     }
 }

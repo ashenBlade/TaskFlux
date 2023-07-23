@@ -1,4 +1,5 @@
 using Consensus.Core.Log;
+using TaskFlux.Core;
 
 namespace Consensus.Core.Commands.AppendEntries;
 

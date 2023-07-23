@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel.DataAnnotations;
-using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Sockets;
 using Consensus.CommandQueue;
@@ -38,7 +37,6 @@ Log.Logger = new LoggerConfiguration()
             .CreateLogger();
 try
 {
-
     var configuration = new ConfigurationBuilder()
                        .AddEnvironmentVariables()
                        .Build();
@@ -84,25 +82,30 @@ try
     
     Log.Information("Создаю очередь машины состояний");
     var node = CreateNode();
-
-
-    var jobQueueStateMachine = CreateJobQueueStateMachine();
-
-    RestoreStateMachineState(log, fileStorage, node);
+    var appInfo = CreateApplicationInfo();
+    var clusterInfo = CreateClusterInfo(serverOptions);
+    var nodeInfo = CreateNodeInfo(serverOptions);
+    var commandContext = new CommandContext(node, nodeInfo, appInfo, clusterInfo);
+    
+    RestoreState(log, fileStorage, commandContext);
+    
+    var jobQueueStateMachine = CreateJobQueueStateMachine(commandContext);
 
     using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
     using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
     using var commandQueue = new ChannelCommandQueue();
 
-    using var consensusModule = CreateRaftConsensusModule(nodeId, peers, electionTimer, heartbeatTimer, log, commandQueue, jobQueueStateMachine, metadataStorage);
-
+    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, electionTimer, heartbeatTimer, log, commandQueue, jobQueueStateMachine, metadataStorage);
+    var consensusModule =
+        new InfoUpdaterConsensusModuleDecorator<Command, Result>(raftConsensusModule, clusterInfo, nodeInfo);
+    
     var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, consensusModule, Log.Logger.ForContext<NodeConnectionManager>());
     var stateObserver = new NodeStateObserver(consensusModule, Log.Logger.ForContext<NodeStateObserver>());
 
     var httpModule = CreateHttpRequestModule(configuration);
-    httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(consensusModule, Log.ForContext<SubmitCommandRequestHandler>()));
+    httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(consensusModule, clusterInfo, Log.ForContext<SubmitCommandRequestHandler>()));
     
-    var binaryRequestModule = CreateBinaryRequestModule(consensusModule, configuration);
+    var binaryRequestModule = CreateBinaryRequestModule(consensusModule, clusterInfo, configuration);
 
     var nodeConnectionThread = new Thread(o =>
         {
@@ -154,7 +157,7 @@ finally
 }
 
 
-BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<Command, Result> consensusModule, IConfiguration config)
+BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<Command, Result> consensusModule, IClusterInfo clusterInfo, IConfiguration config)
 {
     var options = GetOptions();
 
@@ -170,6 +173,7 @@ BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<Command, Result> 
 
     return new BinaryRequestModule(consensusModule,
         new StaticOptionsMonitor<BinaryRequestModuleOptions>(options),
+        clusterInfo,
         Log.ForContext<BinaryRequestModule>());
 
     BinaryRequestModuleOptions GetOptions()
@@ -288,28 +292,27 @@ FileStream OpenMetadataFile(RaftServerOptions options)
     return ( storage, fileStorage );
 }
 
-IStateMachine<Command, Result> CreateJobQueueStateMachine()
+IStateMachine<Command, Result> CreateJobQueueStateMachine(ICommandContext context)
 {
     Log.Information("Создаю пустую очередь задач в памяти");
-    var unboundedJobQueue = new UnboundedJobQueue(new PriorityQueueSortedQueue<int, byte[]>());
-    Log.Information("Использую строковый десериализатор команд с кодировкой UTF-8");
-    var node = new ProxyConsensusNode(unboundedJobQueue);
-    return new ProxyJobQueueStateMachine(node);
+    return new ProxyJobQueueStateMachine(context);
 }
 
 INode CreateNode()
 {
     var jobQueue = new UnboundedJobQueue(new PriorityQueueSortedQueue<int, byte[]>());
-    return new ProxyConsensusNode(jobQueue);
+    return new SingleJobQueueNode(jobQueue);
 }
 
 RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine<Command, Result> stateMachine, IMetadataStorage metadataStorage)
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
-    return RaftConsensusModule.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftConsensusModule<Command, Result>>(), randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage, new ProxyCommandSerializer());
+
+    var module = RaftConsensusModule.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftConsensusModule<Command, Result>>(), randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage, new ProxyCommandSerializer());
+    return module;
 }
 
-void RestoreStateMachineState(StorageLog storageLog, FileLogStorage fileLogStorage, INode node)
+void RestoreState(StorageLog storageLog, FileLogStorage fileLogStorage, ICommandContext context)
 {
     if (fileLogStorage.Count == 0)
     {
@@ -326,7 +329,7 @@ void RestoreStateMachineState(StorageLog storageLog, FileLogStorage fileLogStora
         foreach (var (_, payload) in notApplied)
         {
             var command = CommandSerializer.Instance.Deserialize(payload);
-            command.Apply(node);
+            command.Apply(context);
         }
         
         Log.Debug("Состояние восстановлено. Применено {Count} записей", fileLogStorage.Count);
@@ -337,4 +340,19 @@ void RestoreStateMachineState(StorageLog storageLog, FileLogStorage fileLogStora
         Log.CloseAndFlush();
         throw;
     }
+}
+
+ApplicationInfo CreateApplicationInfo()
+{
+    return new ApplicationInfo();
+}
+
+ClusterInfo CreateClusterInfo(RaftServerOptions options)
+{
+    return new ClusterInfo(new NodeId( options.NodeId ), options.Peers.Length);
+}
+
+NodeInfo CreateNodeInfo(RaftServerOptions options)
+{
+    return new NodeInfo(new NodeId(options.NodeId), NodeRole.Follower);
 }

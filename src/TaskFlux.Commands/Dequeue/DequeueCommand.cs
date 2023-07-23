@@ -6,9 +6,9 @@ public class DequeueCommand: Command
 {
     public static readonly DequeueCommand Instance = new();
     public override CommandType Type => CommandType.Dequeue;
-    public override Result Apply(INode node)
+    public override Result Apply(ICommandContext context)
     {
-        var queue = node.GetJobQueue();
+        var queue = context.Node.GetJobQueue();
         if (queue.TryDequeue(out var key, out var payload))
         {
             return DequeueResult.Create(key, payload);
@@ -17,10 +17,11 @@ public class DequeueCommand: Command
         return DequeueResult.Empty;
     }
 
-    public override void ApplyNoResult(INode node)
+    public override void ApplyNoResult(ICommandContext context)
     {
-        node.GetJobQueue()
-            .TryDequeue(out _, out _);
+        context.Node
+               .GetJobQueue()
+               .TryDequeue(out _, out _);
     }
 
     public override void Accept(ICommandVisitor visitor)

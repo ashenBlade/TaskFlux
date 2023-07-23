@@ -1,3 +1,5 @@
+using TaskFlux.Core;
+
 namespace Consensus.Core.State.LeaderState;
 
 /// <summary>

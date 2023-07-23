@@ -5,20 +5,20 @@ namespace Consensus.StateMachine.JobQueue;
 
 public class ProxyJobQueueStateMachine: IStateMachine<Command, Result>
 {
-    private readonly INode _node;
+    private readonly ICommandContext _context;
 
-    public ProxyJobQueueStateMachine(INode node)
+    public ProxyJobQueueStateMachine(ICommandContext context)
     {
-        _node = node;
+        _context = context;
     }
     
     public Result Apply(Command command)
     {
-        return command.Apply(_node);
+        return command.Apply(_context);
     }
 
     public void ApplyNoResponse(Command command)
     {
-        command.ApplyNoResult(_node);
+        command.ApplyNoResult(_context);
     }
 }

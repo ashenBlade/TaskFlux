@@ -3,10 +3,11 @@ using Consensus.Core.Commands.AppendEntries;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Commands.Submit;
 using Serilog;
+using TaskFlux.Core;
 
 namespace Consensus.Core.State;
 
-internal class CandidateState<TCommand, TResponse>: BaseConsensusModuleState<TCommand, TResponse>
+internal class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Candidate;
     private readonly ILogger _logger;

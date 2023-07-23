@@ -7,6 +7,7 @@ using Consensus.Core.State;
 using Consensus.CommandQueue;
 using Consensus.StateMachine;
 using Serilog;
+using TaskFlux.Core;
 
 namespace Consensus.Core;
 
@@ -27,19 +28,23 @@ public class RaftConsensusModule<TCommand, TResponse>
     public ISerializer<TCommand> CommandSerializer { get; }
 
     // Выставляем вручную в .Create
-    internal IConsensusModuleState<TCommand, TResponse>? CurrentState;
+    public ConsensusModuleState<TCommand, TResponse>? CurrentState;
 
-    IConsensusModuleState<TCommand, TResponse> IConsensusModule<TCommand, TResponse>.CurrentState
+    ConsensusModuleState<TCommand, TResponse> IConsensusModule<TCommand, TResponse>.CurrentState
     {
         get => GetCurrentStateCheck();
         set
         {
-            CurrentState?.Dispose();
-            CurrentState = value;
+            var oldState = CurrentState;
+            oldState?.Dispose();
+            var newState = value;
+            CurrentState = newState;
+            
+            RoleChanged?.Invoke(oldState?.Role ?? NodeRole.Follower, newState.Role);
         }
     }
 
-    private IConsensusModuleState<TCommand, TResponse> GetCurrentStateCheck()
+    private ConsensusModuleState<TCommand, TResponse> GetCurrentStateCheck()
     {
         return CurrentState 
             ?? throw new ArgumentNullException(nameof(CurrentState), "Текущее состояние еще не проставлено");
@@ -96,6 +101,8 @@ public class RaftConsensusModule<TCommand, TResponse>
     {
         return GetCurrentStateCheck().Apply(request);
     }
+
+    public event RoleChangedEventHandler? RoleChanged;
 
     public override string ToString()
     {

@@ -5,7 +5,7 @@ namespace Consensus.Core.Commands;
 
 internal class MoveToLeaderStateCommand<TCommand, TResponse>: UpdateCommand<TCommand, TResponse>
 {
-    public MoveToLeaderStateCommand(IConsensusModuleState<TCommand, TResponse> previousState, IConsensusModule<TCommand, TResponse> consensusModule)
+    public MoveToLeaderStateCommand(ConsensusModuleState<TCommand, TResponse> previousState, IConsensusModule<TCommand, TResponse> consensusModule)
         : base(previousState, consensusModule)
     { }
 

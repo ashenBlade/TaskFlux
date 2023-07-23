@@ -1,4 +1,5 @@
 using Consensus.Core.State;
+using TaskFlux.Core;
 
 namespace Consensus.Core.Commands;
 
@@ -7,7 +8,7 @@ internal class MoveToFollowerStateCommand<TCommand, TResponse>: UpdateCommand<TC
     private readonly Term _term;
     private readonly NodeId? _votedFor;
 
-    public MoveToFollowerStateCommand(Term term, NodeId? votedFor, IConsensusModuleState<TCommand, TResponse> previousState, IConsensusModule<TCommand, TResponse> consensusModule) 
+    public MoveToFollowerStateCommand(Term term, NodeId? votedFor, ConsensusModuleState<TCommand, TResponse> previousState, IConsensusModule<TCommand, TResponse> consensusModule) 
         : base(previousState, consensusModule)
     {
         _term = term;

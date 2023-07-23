@@ -6,9 +6,9 @@ public class CountCommand: Command
 {
     public static readonly CountCommand Instance = new();
     public override CommandType Type => CommandType.Count;
-    public override Result Apply(INode node)
+    public override Result Apply(ICommandContext context)
     {
-        var count = node.GetJobQueue().Count;
+        var count = context.Node.GetJobQueue().Count;
         if (count == 0)
         {
             return CountResult.Empty;
@@ -17,7 +17,7 @@ public class CountCommand: Command
         return new CountResult(count);
     }
 
-    public override void ApplyNoResult(INode node)
+    public override void ApplyNoResult(ICommandContext context)
     { }
 
     public override void Accept(ICommandVisitor visitor)

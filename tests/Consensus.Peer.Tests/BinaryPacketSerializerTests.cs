@@ -5,6 +5,7 @@ using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Log;
 using Consensus.Network;
 using Consensus.Network.Packets;
+using TaskFlux.Core;
 
 namespace Consensus.Peer.Tests;
 

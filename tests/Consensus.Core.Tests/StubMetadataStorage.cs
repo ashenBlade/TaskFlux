@@ -1,3 +1,5 @@
+using TaskFlux.Core;
+
 namespace Consensus.Core.Tests;
 
 public class StubMetadataStorage: IMetadataStorage

@@ -3,6 +3,7 @@ using Moq;
 using Consensus.Core.Log;
 using Consensus.StateMachine;
 using Serilog;
+using TaskFlux.Core;
 
 namespace Consensus.Core.Tests;
 

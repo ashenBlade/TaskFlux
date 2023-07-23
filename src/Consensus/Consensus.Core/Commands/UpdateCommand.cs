@@ -4,9 +4,9 @@ namespace Consensus.Core.Commands;
 
 internal abstract class UpdateCommand<TCommand, TResponse> : Command<TCommand, TResponse>
 {
-    private readonly IConsensusModuleState<TCommand, TResponse> _previousState;
+    private readonly ConsensusModuleState<TCommand, TResponse> _previousState;
 
-    protected UpdateCommand(IConsensusModuleState<TCommand, TResponse> previousState, IConsensusModule<TCommand, TResponse> consensusModule)
+    protected UpdateCommand(ConsensusModuleState<TCommand, TResponse> previousState, IConsensusModule<TCommand, TResponse> consensusModule)
     :base(consensusModule)
     {
         _previousState = previousState;

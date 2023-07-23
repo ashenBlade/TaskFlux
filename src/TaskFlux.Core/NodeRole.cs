@@ -1,4 +1,4 @@
-namespace Consensus.Core;
+namespace TaskFlux.Core;
 
 public enum NodeRole
 {

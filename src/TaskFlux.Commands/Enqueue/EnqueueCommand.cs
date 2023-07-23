@@ -14,9 +14,9 @@ public class EnqueueCommand: Command
         Payload = payload;
     }
     public override CommandType Type => CommandType.Enqueue;
-    public override Result Apply(INode node)
+    public override Result Apply(ICommandContext context)
     {
-        var queue = node.GetJobQueue();
+        var queue = context.Node.GetJobQueue();
         if (queue.TryEnqueue(Key, Payload))
         {
             return EnqueueResult.Ok;
@@ -25,10 +25,11 @@ public class EnqueueCommand: Command
         return EnqueueResult.Fail;
     }
 
-    public override void ApplyNoResult(INode node)
+    public override void ApplyNoResult(ICommandContext context)
     {
-        node.GetJobQueue()
-            .TryEnqueue(Key, Payload);
+        context.Node
+               .GetJobQueue()
+               .TryEnqueue(Key, Payload);
     }
 
     public override void Accept(ICommandVisitor visitor)

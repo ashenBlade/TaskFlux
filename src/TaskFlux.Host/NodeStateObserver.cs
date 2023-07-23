@@ -8,10 +8,10 @@ namespace TaskFlux.Host;
 
 public class NodeStateObserver
 {
-    private readonly RaftConsensusModule<Command, Result> _consensusModule;
+    private readonly IConsensusModule<Command, Result> _consensusModule;
     private readonly ILogger _logger;
 
-    public NodeStateObserver(RaftConsensusModule<Command, Result> consensusModule, ILogger logger)
+    public NodeStateObserver(IConsensusModule<Command, Result> consensusModule, ILogger logger)
     {
         _consensusModule = consensusModule;
         _logger = logger;

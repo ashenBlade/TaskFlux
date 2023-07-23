@@ -4,6 +4,7 @@ using Consensus.Core.Commands.AppendEntries;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Log;
 using Consensus.Core.State.LeaderState;
+using TaskFlux.Core;
 
 namespace Consensus.Core.Tests;
 

@@ -1,3 +1,5 @@
+using TaskFlux.Core;
+
 namespace Consensus.Core;
 
 public interface IMetadataStorage
