@@ -4,14 +4,14 @@ namespace Consensus.Core.State.LeaderState;
 /// Очередь команд на отправку AppendEntries.
 /// Используется для передачи запросов обработчикам узлов в линейном порядке
 /// </summary>
-internal interface IRequestQueue
+public interface IRequestQueue
 {
     /// <summary>
     /// Получать все приходящие команды в потоке
     /// </summary>
     /// <param name="token">Токен отмены</param>
     /// <returns>Асинхронный поток команд</returns>
-    /// <remarks>Вызывается читателем - <see cref="PeerProcessor"/></remarks>
+    /// <remarks>Вызывается читателем - <see cref="PeerProcessor{TCommand,TResponse}"/></remarks>
     public IAsyncEnumerable<AppendEntriesRequestSynchronizer> ReadAllRequestsAsync(CancellationToken token);
     
     /// <summary>

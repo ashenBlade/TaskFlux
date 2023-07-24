@@ -5,6 +5,7 @@ using Consensus.CommandQueue;
 using Consensus.CommandQueue.Channel;
 using Consensus.Core;
 using Consensus.Core.Log;
+using Consensus.Core.State.LeaderState;
 using Consensus.JobQueue;
 using Consensus.Log;
 using TaskFlux.Host;
@@ -307,9 +308,12 @@ INode CreateNode()
 RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine<Command, Result> stateMachine, IMetadataStorage metadataStorage)
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
-
-    var module = RaftConsensusModule.Create(nodeId, new PeerGroup(peers), Log.ForContext<RaftConsensusModule<Command, Result>>(), randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage, new ProxyCommandSerializer());
-    return module;
+    var logger = Log.ForContext("SourceContext", "Raft");
+    var commandSerializer = new ProxyCommandSerializer();
+    var requestQueueFactory = new ChannelRequestQueueFactory(storageLog);
+    var peerGroup = new PeerGroup(peers);
+    
+    return RaftConsensusModule.Create(nodeId, peerGroup, logger, randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage, commandSerializer, requestQueueFactory);
 }
 
 void RestoreState(StorageLog storageLog, FileLogStorage fileLogStorage, ICommandContext context)

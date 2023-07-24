@@ -11,7 +11,7 @@ internal class MoveToLeaderStateCommand<TCommand, TResponse>: UpdateCommand<TCom
 
     protected override void ExecuteUpdate()
     {
-        ConsensusModule.CurrentState = LeaderState.Create(ConsensusModule);
+        ConsensusModule.CurrentState = ConsensusModule.CreateLeaderState();
         ConsensusModule.HeartbeatTimer.Start();
         ConsensusModule.ElectionTimer.Stop();
     }

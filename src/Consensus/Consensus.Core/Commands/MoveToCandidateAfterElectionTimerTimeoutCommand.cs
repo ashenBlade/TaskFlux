@@ -13,7 +13,7 @@ internal class MoveToCandidateAfterElectionTimerTimeoutCommand<TCommand, TRespon
     protected override void ExecuteUpdate()
     {
         ConsensusModule.ElectionTimer.Stop();
-        ConsensusModule.CurrentState = CandidateState.Create(ConsensusModule);
+        ConsensusModule.CurrentState = ConsensusModule.CreateCandidateState();
         ConsensusModule.UpdateState(ConsensusModule.CurrentTerm.Increment(), ConsensusModule.Id);
         ConsensusModule.ElectionTimer.Start();
     }

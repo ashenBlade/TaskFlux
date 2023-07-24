@@ -1,6 +1,8 @@
+using System.Runtime.CompilerServices;
 using Consensus.CommandQueue;
 using Moq;
 using Consensus.Core.Log;
+using Consensus.Core.State.LeaderState;
 using Consensus.StateMachine;
 using Serilog;
 using TaskFlux.Core;
@@ -16,6 +18,26 @@ public static partial class Helpers
     public static readonly ITimer NullTimer = CreateNullTimer();
     public static readonly IStateMachine NullStateMachine = CreateNullStateMachine();
     public static readonly IMetadataStorage NullMetadataStorage = CreateNullStorage();
+    public static readonly IRequestQueueFactory NullRequestQueueFactory = CreateNullRequestQueueFactory();
+    
+    private static IRequestQueueFactory CreateNullRequestQueueFactory()
+    {
+        var mockQueueFactory = new Mock<IRequestQueueFactory>();
+        var mockQueue = new Mock<IRequestQueue>();
+        mockQueue.Setup(x => x.AddAppendEntries(It.IsAny<AppendEntriesRequestSynchronizer>()));
+        mockQueue.Setup(x => x.AddHeartbeatIfEmpty());
+        mockQueue.Setup(x => x.ReadAllRequestsAsync(It.IsAny<CancellationToken>()))
+                 .Returns(CreateNullEnumerable);
+
+        mockQueueFactory.Setup(x => x.CreateQueue()).Returns(mockQueue.Object);
+        return mockQueueFactory.Object;
+
+        async IAsyncEnumerable<AppendEntriesRequestSynchronizer> CreateNullEnumerable([EnumeratorCancellation] CancellationToken token)
+        {
+            yield break;
+        }
+
+    }
 
     private static IMetadataStorage CreateNullStorage()
     {
@@ -69,6 +91,6 @@ public static partial class Helpers
             {
                 Deserialized = 1,
                 Serialized = Array.Empty<byte>()
-            });
+            }, NullRequestQueueFactory);
     }
 }

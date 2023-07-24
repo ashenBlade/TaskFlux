@@ -4,6 +4,7 @@ using Consensus.Core.Commands.Submit;
 using Consensus.Core.Log;
 using Consensus.Core.State;
 using Consensus.CommandQueue;
+using Consensus.Core.State.LeaderState;
 using Consensus.StateMachine;
 using Serilog;
 using TaskFlux.Core;
@@ -37,11 +38,6 @@ public interface IConsensusModule<TCommand, TResponse>
     /// </summary>
     public ConsensusModuleState<TCommand, TResponse> CurrentState { get; set; }
 
-    /// <summary>
-    /// Логгер для удобства
-    /// </summary>
-    ILogger Logger { get; }
-    
     /// <summary>
     /// Таймер выборов.
     /// Используется в Follower и Candidate состояниях
@@ -96,4 +92,8 @@ public interface IConsensusModule<TCommand, TResponse>
     /// Событие, вызывающееся при обновлении роли узла
     /// </summary>
     public event RoleChangedEventHandler RoleChanged;
+
+    public FollowerState<TCommand, TResponse> CreateFollowerState();
+    public LeaderState<TCommand, TResponse> CreateLeaderState();
+    public CandidateState<TCommand, TResponse> CreateCandidateState();
 }

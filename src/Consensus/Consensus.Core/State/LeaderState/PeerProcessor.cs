@@ -49,17 +49,9 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
                 LeaderId: ConsensusModule.Id,
                 PrevLogEntryInfo: ConsensusModule.Log.GetPrecedingEntryInfo(Info.NextIndex), 
                 Entries: ConsensusModule.Log.GetFrom(Info.NextIndex));
-            AppendEntriesResponse? response;
-            try
-            {
-                response = await Peer.SendAppendEntries(request, token);
-            }
-            catch (Exception e)
-            {
-                State.ConsensusModule.Logger.Error(e, "Необработанное исключение во время отправки запроса AppendEntries");
-                throw;
-            }
             
+            var response = await Peer.SendAppendEntries(request, token);
+
             // 2. Если ответ не вернулся (null) - соединение было разорвано. Прекратить обработку
             if (response is null)
             {

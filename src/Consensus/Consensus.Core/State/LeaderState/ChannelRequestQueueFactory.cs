@@ -2,7 +2,7 @@ using Consensus.Core.Log;
 
 namespace Consensus.Core.State.LeaderState;
 
-internal class ChannelRequestQueueFactory: IRequestQueueFactory
+public class ChannelRequestQueueFactory: IRequestQueueFactory
 {
     private readonly ILog _log;
 

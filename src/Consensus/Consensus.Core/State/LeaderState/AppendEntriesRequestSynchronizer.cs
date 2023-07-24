@@ -10,7 +10,7 @@ namespace Consensus.Core.State.LeaderState;
 /// Как только кворум собран (высчитывается в <see cref="_quorumChecker"/>) то <see cref="_tcs"/> завершается,
 /// а вызывающая сторона сигнализируется о завершении обработки (таска завершена) 
 /// </summary>
-internal class AppendEntriesRequestSynchronizer
+public class AppendEntriesRequestSynchronizer
 {
     /// <summary>
     /// Индекс записи в логе, которая вызвала событие.

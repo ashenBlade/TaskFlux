@@ -7,7 +7,7 @@ using TaskFlux.Core;
 
 namespace Consensus.Core.State;
 
-internal class FollowerState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
+public class FollowerState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Follower;
     private readonly ILogger _logger;
@@ -123,13 +123,5 @@ internal class FollowerState<TCommand, TResponse>: ConsensusModuleState<TCommand
     public override void Dispose()
     {
         ElectionTimer.Timeout -= OnElectionTimerTimeout;
-    }
-}
-
-internal static class FollowerState
-{
-    public static FollowerState<TCommand, TResponse> Create<TCommand, TResponse>(IConsensusModule<TCommand, TResponse> consensusModule)
-    {
-        return new FollowerState<TCommand, TResponse>(consensusModule, consensusModule.Logger.ForContext("SourceContext", "Follower"));
     }
 }

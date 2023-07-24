@@ -7,7 +7,7 @@ using TaskFlux.Core;
 
 namespace Consensus.Core.State.LeaderState;
 
-internal class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
+public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
@@ -64,7 +64,7 @@ internal class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, 
 
         if (CurrentTerm < request.Term)
         {
-            CurrentState = FollowerState.Create(ConsensusModule);
+            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
             ConsensusModule.UpdateState(request.Term, null);
         }
@@ -109,7 +109,7 @@ internal class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, 
         if (CurrentTerm < request.CandidateTerm)
         {
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
-            CurrentState = FollowerState.Create(ConsensusModule);
+            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -126,7 +126,7 @@ internal class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, 
             !Log.Conflicts(request.LastLogEntryInfo)) // У которого лог не хуже нашего
         {
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
-            CurrentState = FollowerState.Create(ConsensusModule);
+            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -172,13 +172,5 @@ internal class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, 
         
         // Возвращаем результат
         return SubmitResponse<TResponse>.Success(response, true);
-    }
-}
-
-internal static class LeaderState
-{
-    public static LeaderState<TCommand, TResponse> Create<TCommand, TResponse>(IConsensusModule<TCommand, TResponse> consensusModule)
-    {
-        return new LeaderState<TCommand, TResponse>(consensusModule, consensusModule.Logger.ForContext("SourceContext", "Leader"), new ChannelRequestQueueFactory(consensusModule.Log));
     }
 }

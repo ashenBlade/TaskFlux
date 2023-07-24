@@ -5,6 +5,7 @@ using Consensus.Core.Commands.Submit;
 using Consensus.Core.Log;
 using Consensus.Core.State;
 using Consensus.CommandQueue;
+using Consensus.Core.State.LeaderState;
 using Consensus.StateMachine;
 using Serilog;
 using TaskFlux.Core;
@@ -16,9 +17,11 @@ public class RaftConsensusModule<TCommand, TResponse>
     : IConsensusModule<TCommand, TResponse>, 
       IDisposable
 {
+    private readonly IRequestQueueFactory _requestQueueFactory;
+
     public NodeRole CurrentRole =>
         ( ( IConsensusModule<TCommand, TResponse> ) this ).CurrentState.Role;
-    public ILogger Logger { get; }
+    private ILogger Logger { get; }
     public NodeId Id { get; }
     public Term CurrentTerm => MetadataStorage.ReadTerm();
     public NodeId? VotedFor => MetadataStorage.ReadVotedFor();
@@ -67,8 +70,10 @@ public class RaftConsensusModule<TCommand, TResponse>
         ICommandQueue commandQueue,
         IStateMachine<TCommand, TResponse> stateMachine,
         IMetadataStorage metadataStorage,
-        ISerializer<TCommand> commandSerializer)
+        ISerializer<TCommand> commandSerializer,
+        IRequestQueueFactory requestQueueFactory)
     {
+        _requestQueueFactory = requestQueueFactory;
         Id = id;
         Logger = logger;
         PeerGroup = peerGroup;
@@ -103,6 +108,20 @@ public class RaftConsensusModule<TCommand, TResponse>
     }
 
     public event RoleChangedEventHandler? RoleChanged;
+    public FollowerState<TCommand, TResponse> CreateFollowerState()
+    {
+        return new FollowerState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Follower)"));
+    }
+
+    public LeaderState<TCommand, TResponse> CreateLeaderState()
+    {
+        return new LeaderState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Leader)"), _requestQueueFactory);
+    }
+
+    public CandidateState<TCommand, TResponse> CreateCandidateState()
+    {
+        return new CandidateState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Candidate)"));
+    }
 
     public override string ToString()
     {
@@ -127,10 +146,11 @@ public static class RaftConsensusModule
                                                                                        ICommandQueue commandQueue,
                                                                                        IStateMachine<TCommand, TResponse> stateMachine,
                                                                                        IMetadataStorage metadataStorage,
-                                                                                       ISerializer<TCommand> serializer)
+                                                                                       ISerializer<TCommand> serializer,
+                                                                                       IRequestQueueFactory requestQueueFactory)
     {
-        var raft = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, electionTimer, heartbeatTimer, backgroundJobQueue, log, commandQueue, stateMachine, metadataStorage, serializer);
-        raft.CurrentState = FollowerState.Create(raft);
+        var raft = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, electionTimer, heartbeatTimer, backgroundJobQueue, log, commandQueue, stateMachine, metadataStorage, serializer, requestQueueFactory);
+        raft.CurrentState = raft.CreateFollowerState();
         return raft;
     }
 }

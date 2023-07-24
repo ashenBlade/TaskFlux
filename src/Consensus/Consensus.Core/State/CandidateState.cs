@@ -7,7 +7,7 @@ using TaskFlux.Core;
 
 namespace Consensus.Core.State;
 
-internal class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
+public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Candidate;
     private readonly ILogger _logger;
@@ -151,7 +151,7 @@ internal class CandidateState<TCommand, TResponse>: ConsensusModuleState<TComman
 
         if (CurrentTerm < request.Term)
         {
-            CurrentState = FollowerState.Create(ConsensusModule);
+            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
             ConsensusModule.UpdateState(request.Term, null);
         }
@@ -208,7 +208,7 @@ internal class CandidateState<TCommand, TResponse>: ConsensusModuleState<TComman
         if (CurrentTerm < request.CandidateTerm)
         {
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
-            CurrentState = FollowerState.Create(ConsensusModule);
+            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -225,7 +225,7 @@ internal class CandidateState<TCommand, TResponse>: ConsensusModuleState<TComman
             // У которого лог в консистентном с нашим состоянием
             !Log.Conflicts(request.LastLogEntryInfo))
         {
-            CurrentState = FollowerState.Create(ConsensusModule);
+            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
             
@@ -248,14 +248,5 @@ internal class CandidateState<TCommand, TResponse>: ConsensusModuleState<TComman
         { }
         
         ElectionTimer.Timeout -= OnElectionTimerTimeout;
-    }
-}
-
-internal static class CandidateState
-{
-    // TODO: заменить фабрикой внутри RaftConsensusModule (потом вынести в отдельный пакет)
-    public static CandidateState<TCommand, TResponse> Create<TCommand, TResponse>(IConsensusModule<TCommand, TResponse> module)
-    {
-        return new CandidateState<TCommand, TResponse>(module, module.Logger.ForContext("SourceContext", "Candidate"));
     }
 }

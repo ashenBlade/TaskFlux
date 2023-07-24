@@ -1,6 +1,6 @@
 namespace Consensus.Core.State.LeaderState;
 
-internal interface IRequestQueueFactory
+public interface IRequestQueueFactory
 {
     public IRequestQueue CreateQueue();
 }

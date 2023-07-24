@@ -5,6 +5,7 @@ using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Commands.Submit;
 using Consensus.Core.Log;
 using Consensus.Core.State;
+using Consensus.Core.State.LeaderState;
 using Consensus.StateMachine;
 using Serilog;
 using TaskFlux.Core;
@@ -51,9 +52,6 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult>: IConsensusM
         set => _module.CurrentState = value;
     }
     
-    public ILogger Logger =>
-        _module.Logger;
-
     public ITimer ElectionTimer =>
         _module.ElectionTimer;
 
@@ -111,5 +109,20 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult>: IConsensusM
     {
         add => _module.RoleChanged += value;
         remove => _module.RoleChanged -= value;
+    }
+
+    public FollowerState<TCommand, TResult> CreateFollowerState()
+    {
+        return _module.CreateFollowerState();
+    }
+
+    public LeaderState<TCommand, TResult> CreateLeaderState()
+    {
+        return _module.CreateLeaderState();
+    }
+
+    public CandidateState<TCommand, TResult> CreateCandidateState()
+    {
+        return _module.CreateCandidateState();
     }
 }
