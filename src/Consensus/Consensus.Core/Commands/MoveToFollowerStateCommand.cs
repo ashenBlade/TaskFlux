@@ -17,8 +17,8 @@ internal class MoveToFollowerStateCommand<TCommand, TResponse>: UpdateCommand<TC
 
     protected override void ExecuteUpdate()
     {
-        ConsensusModule.CurrentState = ConsensusModule.CreateFollowerState();
         ConsensusModule.ElectionTimer.Start();
         ConsensusModule.UpdateState(_term, _votedFor);
+        ConsensusModule.CurrentState = ConsensusModule.CreateFollowerState();
     }
 }

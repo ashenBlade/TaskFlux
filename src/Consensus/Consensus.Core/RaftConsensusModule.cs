@@ -42,6 +42,7 @@ public class RaftConsensusModule<TCommand, TResponse>
             oldState?.Dispose();
             var newState = value;
             CurrentState = newState;
+            newState.Initialize();
             
             RoleChanged?.Invoke(oldState?.Role ?? NodeRole.Follower, newState.Role);
         }

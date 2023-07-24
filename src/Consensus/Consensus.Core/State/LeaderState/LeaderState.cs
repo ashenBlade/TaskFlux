@@ -9,16 +9,21 @@ namespace Consensus.Core.State.LeaderState;
 
 public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
 {
+
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
-    private readonly PeerProcessor<TCommand, TResponse>[] _processors;
+    private PeerProcessor<TCommand, TResponse>[] _processors;
 
     internal LeaderState(IConsensusModule<TCommand, TResponse> consensusModule, ILogger logger, IRequestQueueFactory queueFactory)
         : base(consensusModule)
     {
         _logger = logger;
         _processors = CreatePeerProcessors(this, queueFactory);
+    }
+    
+    public override void Initialize()
+    {
         BackgroundJobQueue.EnqueueInfinite(ProcessPeersAsync, _cts.Token);
         HeartbeatTimer.Timeout += OnHeartbeatTimer;
     }
@@ -64,9 +69,9 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
 
         if (CurrentTerm < request.Term)
         {
-            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
             ConsensusModule.UpdateState(request.Term, null);
+            CurrentState = ConsensusModule.CreateFollowerState();
         }
         
         if (Log.Contains(request.PrevLogEntryInfo) is false)
@@ -109,8 +114,8 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         if (CurrentTerm < request.CandidateTerm)
         {
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
-            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
+            CurrentState = ConsensusModule.CreateFollowerState();
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -126,8 +131,8 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
             !Log.Conflicts(request.LastLogEntryInfo)) // У которого лог не хуже нашего
         {
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
-            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
+            CurrentState = ConsensusModule.CreateFollowerState();
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }

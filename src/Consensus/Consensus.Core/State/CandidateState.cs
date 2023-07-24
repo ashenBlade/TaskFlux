@@ -9,6 +9,7 @@ namespace Consensus.Core.State;
 
 public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
 {
+
     public override NodeRole Role => NodeRole.Candidate;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;
@@ -17,6 +18,10 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
     {
         _logger = logger;
         _cts = new();
+    }
+    
+    public override void Initialize()
+    {
         ElectionTimer.Timeout += OnElectionTimerTimeout;
         BackgroundJobQueue.EnqueueInfinite(RunQuorum, _cts.Token);
     }
@@ -151,9 +156,9 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
 
         if (CurrentTerm < request.Term)
         {
-            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
             ConsensusModule.UpdateState(request.Term, null);
+            CurrentState = ConsensusModule.CreateFollowerState();
         }
         
         if (Log.Contains(request.PrevLogEntryInfo) is false)
@@ -208,9 +213,8 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
         if (CurrentTerm < request.CandidateTerm)
         {
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
-            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
-
+            CurrentState = ConsensusModule.CreateFollowerState();
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
         
@@ -225,9 +229,9 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
             // У которого лог в консистентном с нашим состоянием
             !Log.Conflicts(request.LastLogEntryInfo))
         {
-            CurrentState = ConsensusModule.CreateFollowerState();
             ElectionTimer.Start();
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
+            CurrentState = ConsensusModule.CreateFollowerState();
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }

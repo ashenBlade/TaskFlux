@@ -9,6 +9,7 @@ namespace Consensus.Core.State;
 
 public class FollowerState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
 {
+
     public override NodeRole Role => NodeRole.Follower;
     private readonly ILogger _logger;
     
@@ -16,6 +17,9 @@ public class FollowerState<TCommand, TResponse>: ConsensusModuleState<TCommand, 
         : base(consensusModule)
     {
         _logger = logger;
+    }
+    public override void Initialize()
+    {
         ElectionTimer.Timeout += OnElectionTimerTimeout;
     }
 
@@ -34,7 +38,6 @@ public class FollowerState<TCommand, TResponse>: ConsensusModuleState<TCommand, 
         {
             _logger.Debug("Получен RequestVote с большим термом {MyTerm} < {NewTerm}. Перехожу в Follower", CurrentTerm, request.CandidateTerm);
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
-
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
         
@@ -49,6 +52,7 @@ public class FollowerState<TCommand, TResponse>: ConsensusModuleState<TCommand, 
             // У которого лог в консистентном с нашим состоянием
             !Log.Conflicts(request.LastLogEntryInfo))
         {
+            _logger.Debug("Получен RequestVote от узла за которого можем проголосовать. Id узла {NodeId}, Терм узла {Term}. Обновляю состояние", request.CandidateId.Value, request.CandidateTerm.Value);
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
             
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -111,7 +115,6 @@ public class FollowerState<TCommand, TResponse>: ConsensusModuleState<TCommand, 
 
         var response = StateMachine.Apply(request.Descriptor.Command);
         return SubmitResponse<TResponse>.Success(response, false);
-
     }
 
     private void OnElectionTimerTimeout()

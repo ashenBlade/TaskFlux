@@ -41,6 +41,11 @@ public abstract class ConsensusModuleState<TCommand, TResponse>
     }
 
     /// <summary>
+    /// Метод для инициализации состояния: регистрация обработчиков, запуск фоновых процессов
+    /// </summary>
+    public abstract void Initialize();
+
+    /// <summary>
     /// Текущая роль этого состояния
     /// </summary>
     public abstract NodeRole Role { get; }
