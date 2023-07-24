@@ -9,7 +9,6 @@ namespace Consensus.Core.State;
 
 public class FollowerState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
 {
-
     public override NodeRole Role => NodeRole.Follower;
     private readonly ILogger _logger;
     
@@ -18,6 +17,7 @@ public class FollowerState<TCommand, TResponse>: ConsensusModuleState<TCommand, 
     {
         _logger = logger;
     }
+    
     public override void Initialize()
     {
         ElectionTimer.Timeout += OnElectionTimerTimeout;

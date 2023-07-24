@@ -313,7 +313,7 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId, IP
     var requestQueueFactory = new ChannelRequestQueueFactory(storageLog);
     var peerGroup = new PeerGroup(peers);
     
-    return RaftConsensusModule.Create(nodeId, peerGroup, logger, randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage, commandSerializer, requestQueueFactory);
+    return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage, commandSerializer, requestQueueFactory);
 }
 
 void RestoreState(StorageLog storageLog, FileLogStorage fileLogStorage, ICommandContext context)

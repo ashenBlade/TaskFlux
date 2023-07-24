@@ -3,13 +3,12 @@ using Consensus.CommandQueue;
 using Moq;
 using Consensus.Core.Log;
 using Consensus.Core.State.LeaderState;
-using Consensus.StateMachine;
 using Serilog;
 using TaskFlux.Core;
 
 namespace Consensus.Core.Tests;
 
-public static partial class Helpers
+public static class Helpers
 {
     public static readonly NodeId NodeId = new(1);
     public static readonly LogEntryInfo LastLogEntryInfo = new(new Term(1), 0);
@@ -77,7 +76,8 @@ public static partial class Helpers
 
     public static RaftConsensusModule<int, int> CreateNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IBackgroundJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
     {
-        return RaftConsensusModule.Create(NodeId, 
+        return RaftConsensusModule<int, int>.Create(
+            NodeId, 
             new PeerGroup(peers?.ToArray() ?? Array.Empty<IPeer>()),
             NullLogger, 
             electionTimer ?? Mock.Of<ITimer>(),
