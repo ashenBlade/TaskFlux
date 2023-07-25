@@ -1,3 +1,5 @@
+using System.IO.Pipes;
+
 namespace TaskFlux.Network.Requests.Serialization.Exceptions;
 
 /// <summary>
