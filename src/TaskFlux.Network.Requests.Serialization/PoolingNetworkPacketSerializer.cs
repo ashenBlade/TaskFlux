@@ -2,124 +2,40 @@ using System.Buffers;
 using System.Text;
 using TaskFlux.Network.Requests.Packets;
 using System.Buffers.Binary;
+using TaskFlux.Network.Requests.Serialization.Exceptions;
 using TaskFlux.Serialization.Helpers;
 
 namespace TaskFlux.Network.Requests.Serialization;
 
-public class PoolingNetworkPacketSerializer
+public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
 {
+    public Stream Stream { get; }
     public ArrayPool<byte> Pool { get; }
 
-    public PoolingNetworkPacketSerializer(ArrayPool<byte> pool)
+    public PoolingNetworkPacketSerializer(ArrayPool<byte> pool, Stream stream)
     {
+        Stream = stream;
         Pool = pool;
     }
-    
-    public PooledBuffer Serialize(Packet packet)
+
+    /// <summary>
+    /// Прочитать следующий пакет из потока
+    /// </summary>
+    /// <param name="token">Токен отмены</param>
+    /// <returns>Десериализованный пакет</returns>
+    /// <exception cref="OperationCanceledException"> <paramref name="token"/> был отменен</exception>
+    /// <exception cref="EndOfStreamException"> - был достигнут конец потока</exception>
+    /// <exception cref="PacketDeserializationException"> ошибка при десериализации конкретного пакета</exception>
+    public async ValueTask<Packet> DeserializeAsync(CancellationToken token = default)
     {
-        var size = EstimateSize(packet);
-        var buffer = Pool.Rent(size);
-        try
-        {
-            var serializerVisitor = new SerializerPacketVisitor(buffer);
-            packet.Accept(serializerVisitor);
-            return new PooledBuffer(buffer, size, Pool);
-        }
-        catch (Exception)
-        {
-            Pool.Return(buffer);
-            throw;
-        }
-    }
-
-    private class SerializerPacketVisitor : IPacketVisitor
-    {
-        private MemoryBinaryWriter _writer;
-        
-        public SerializerPacketVisitor(byte[] buffer)
-        {
-            _writer = new MemoryBinaryWriter(buffer);
-        }
-
-        private void WriteMarker(PacketType packetType)
-        {
-            _writer.Write((byte)packetType);
-        }
-        
-        public void Visit(DataRequestPacket packet)
-        {
-            WriteMarker(PacketType.DataRequest);
-            _writer.WriteBuffer(packet.Payload);
-        }
-
-        public void Visit(DataResponsePacket packet)
-        {
-            WriteMarker(PacketType.DataResponse);
-            _writer.WriteBuffer(packet.Payload);
-        }
-
-        public void Visit(ErrorResponsePacket packet)
-        {
-            WriteMarker(PacketType.ErrorResponse);
-            _writer.Write(packet.Message);
-        }
-
-        public void Visit(NotLeaderPacket packet)
-        {
-            WriteMarker(PacketType.NotLeader);
-            _writer.Write(packet.LeaderId);
-        }
-    }
-
-    private static int EstimateSize(Packet packet)
-    {
-        var estimator = new SizeEstimatorVisitor();
-        packet.Accept(estimator);
-        return estimator.EstimatedSize;
-    }
-
-    private class SizeEstimatorVisitor : IPacketVisitor
-    {
-        public const int DefaultSize = sizeof(PacketType); // Только маркер
-        
-        public int EstimatedSize { get; set; }
-        public void Visit(DataRequestPacket packet)
-        {
-            EstimatedSize = DefaultSize            // Маркер
-                          + sizeof(int)            // Длина
-                          + packet.Payload.Length; // Тело
-        }
-
-        public void Visit(DataResponsePacket packet)
-        {
-            EstimatedSize = DefaultSize            // Маркер
-                          + sizeof(int)            // Длина
-                          + packet.Payload.Length; // Тело
-        }
-
-        public void Visit(ErrorResponsePacket packet)
-        {
-            EstimatedSize = DefaultSize                                 // Маркер
-                          + sizeof(int)                                 // Длина
-                          + Encoding.UTF8.GetByteCount(packet.Message); // Само сообщение
-        }
-
-        public void Visit(NotLeaderPacket packet)
-        {
-            EstimatedSize = DefaultSize  // Маркер
-                          + sizeof(int); // LeaderId
-        }
-    }
-
-    public async ValueTask<Packet> DeserializeAsync(Stream stream, CancellationToken token = default)
-    {
-        var marker = await GetPacketTypeAsync(stream, token);
+        token.ThrowIfCancellationRequested();
+        var marker = await GetPacketTypeAsync(token);
         return marker switch
                {
-                   PacketType.DataRequest   => await DeserializeDataRequest(stream, token),
-                   PacketType.DataResponse  => await DeserializeDataResponse(stream, token),
-                   PacketType.ErrorResponse => await DeserializeErrorResponse(stream, token),
-                   PacketType.NotLeader     => await DeserializeNotLeaderResponse(stream, token),
+                   PacketType.DataRequest   => await DeserializeDataRequest(Stream, token),
+                   PacketType.DataResponse  => await DeserializeDataResponse(Stream, token),
+                   PacketType.ErrorResponse => await DeserializeErrorResponse(Stream, token),
+                   PacketType.NotLeader     => await DeserializeNotLeaderResponse(Stream, token),
                };
     }
 
@@ -140,11 +56,24 @@ public class PoolingNetworkPacketSerializer
             while (0 < left)
             {
                 var read = await stream.ReadAsync(buffer.AsMemory(index, left), token);
+                if (read == 0)
+                {
+                    ThrowEndOfStream();
+                }
                 left -= read;
                 index += read;
             }
+            
+            string message;
+            try
+            {
+                message = Encoding.UTF8.GetString(buffer.AsSpan(0, length));
+            }
+            catch (DecoderFallbackException fallback)
+            {
+                throw new PacketDeserializationException(PacketType.ErrorResponse, $"Ошибка десериализации строки сообщения ошибки из пакета {nameof(PacketType.ErrorResponse)}", fallback);
+            }
 
-            var message = Encoding.UTF8.GetString(buffer.AsSpan(0, length));
             return new ErrorResponsePacket(message);
         }
         finally
@@ -152,6 +81,8 @@ public class PoolingNetworkPacketSerializer
             Pool.Return(buffer);
         }
     }
+    
+    private static void ThrowEndOfStream() => throw new EndOfStreamException("Был достигнут конец потока");
 
     private async ValueTask<DataResponsePacket> DeserializeDataResponse(Stream stream, CancellationToken token)
     {
@@ -179,6 +110,10 @@ public class PoolingNetworkPacketSerializer
         while (0 < left)
         {
             var read = await stream.ReadAsync(buffer.AsMemory(index, left), token);
+            if (read == 0)
+            {
+                ThrowEndOfStream();
+            }
             index += read;
             left -= read;
         }
@@ -196,6 +131,10 @@ public class PoolingNetworkPacketSerializer
             while (0 < left)
             {
                 var read = await stream.ReadAsync(buffer.AsMemory(index, left), token);
+                if (read == 0)
+                {
+                    ThrowEndOfStream();
+                }
                 index += read;
                 left -= read;
             }
@@ -208,15 +147,15 @@ public class PoolingNetworkPacketSerializer
         }
     }
 
-    public async ValueTask<PacketType> GetPacketTypeAsync(Stream stream, CancellationToken token = default)
+    private async ValueTask<PacketType> GetPacketTypeAsync(CancellationToken token = default)
     {
         var markerBuffer = Pool.Rent(1);
         try
         {
-            var read = await stream.ReadAsync(markerBuffer.AsMemory(0, 1), token);
+            var read = await Stream.ReadAsync(markerBuffer.AsMemory(0, 1), token);
             if (read == 0)
             {
-                throw new EndOfStreamException("Не удалось прочитать маркер пакета. Достигнут конец потока");
+                ThrowEndOfStream();            
             }
 
             return ( PacketType ) markerBuffer[0];
@@ -224,6 +163,89 @@ public class PoolingNetworkPacketSerializer
         finally
         {
             Pool.Return(markerBuffer);
+        }
+    }
+
+    public async ValueTask VisitAsync(DataRequestPacket packet, CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        var estimatedSize = sizeof(PacketType)
+                          + sizeof(int)
+                          + packet.Payload.Length;
+        var array = Pool.Rent(estimatedSize);
+        try
+        {
+            var buffer = array.AsMemory(0, estimatedSize);
+            var writer = new MemoryBinaryWriter(buffer);
+            writer.Write((byte)PacketType.DataRequest);
+            writer.WriteBuffer(packet.Payload);
+            await Stream.WriteAsync(buffer, token);
+        }
+        finally
+        {
+            Pool.Return(array);
+        }
+    }
+
+    public async ValueTask VisitAsync(DataResponsePacket packet, CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        var estimatedSize = sizeof(PacketType)
+                          + sizeof(int)
+                          + packet.Payload.Length;
+        var array = Pool.Rent(estimatedSize);
+        try
+        {
+            var buffer = array.AsMemory(0, estimatedSize);
+            var writer = new MemoryBinaryWriter(buffer);
+            writer.Write((byte)PacketType.DataResponse);
+            writer.WriteBuffer(packet.Payload);
+            await Stream.WriteAsync(buffer, token);
+        }
+        finally
+        {
+            Pool.Return(array);
+        }
+    }
+
+    public async ValueTask VisitAsync(ErrorResponsePacket packet, CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        var estimatedSize = sizeof(PacketType)
+                          + sizeof(int)
+                          + Encoding.UTF8.GetByteCount(packet.Message);
+        var array = Pool.Rent(estimatedSize);
+        try
+        {
+            var buffer = array.AsMemory(0, estimatedSize);
+            var writer = new MemoryBinaryWriter(buffer);
+            writer.Write((byte)PacketType.ErrorResponse);
+            writer.Write(packet.Message);
+            await Stream.WriteAsync(buffer, token);
+        }
+        finally
+        {
+            Pool.Return(array);
+        }
+    }
+
+    public async ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        const int estimatedSize = sizeof(PacketType)
+                                + sizeof(int);
+        var array = Pool.Rent(estimatedSize);
+        try
+        {
+            var buffer = array.AsMemory(0, estimatedSize);
+            var writer = new MemoryBinaryWriter(buffer);
+            writer.Write((byte)PacketType.NotLeader);
+            writer.Write(packet.LeaderId);
+            await Stream.WriteAsync(buffer, token);
+        }
+        finally
+        {
+            Pool.Return(array);
         }
     }
 }

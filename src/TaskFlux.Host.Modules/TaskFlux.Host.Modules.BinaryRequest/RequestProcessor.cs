@@ -18,7 +18,6 @@ internal class RequestProcessor
     private IConsensusModule<Command, Result> Module { get; }
     public IClusterInfo ClusterInfo { get; }
     private ILogger Logger { get; }
-    private readonly PoolingNetworkPacketSerializer _packetSerializer = new(ArrayPool<byte>.Shared);
     private CommandSerializer CommandSerializer { get; } = CommandSerializer.Instance;
     private ResultSerializer ResultSerializer { get; } = ResultSerializer.Instance;
 
@@ -37,13 +36,14 @@ internal class RequestProcessor
     {
         Logger.Debug("Открываю сетевой поток для коммуницирования к клиентом");
         await using var stream = _client.GetStream();
-        var clientRequestPacketVisitor = new ClientRequestPacketVisitor(this, stream);
+        var serializer = new PoolingNetworkPacketSerializer(ArrayPool<byte>.Shared, stream);
+        var clientRequestPacketVisitor = new ClientRequestPacketVisitor(this, serializer);
         try
         {
             Logger.Debug("Начинаю обработку полученного запроса");
             while (token.IsCancellationRequested is false && stream.Socket.Connected)
             {
-                var packet = await _packetSerializer.DeserializeAsync(stream, token);
+                var packet = await serializer.DeserializeAsync(token);
                 if (token.IsCancellationRequested)
                 {
                     break;
@@ -70,14 +70,15 @@ internal class RequestProcessor
     private class ClientRequestPacketVisitor : IAsyncPacketVisitor
     {
         private readonly RequestProcessor _processor;
-        private readonly NetworkStream _stream;
+        private readonly PoolingNetworkPacketSerializer _serializer;
         private ILogger Logger => _processor.Logger;
         public bool ShouldClose { get; private set; }
         
-        public ClientRequestPacketVisitor(RequestProcessor processor, NetworkStream stream)
+        public ClientRequestPacketVisitor(RequestProcessor processor,
+                                          PoolingNetworkPacketSerializer serializer)
         {
             _processor = processor;
-            _stream = stream;
+            _serializer = serializer;
         }
 
         public async ValueTask VisitAsync(DataRequestPacket packet, CancellationToken token = default)
@@ -91,8 +92,7 @@ internal class RequestProcessor
             {
                 _processor.Logger.Warning(e, "Ошибка при десерилазации команды от клиента");
                 var errorPacket = new ErrorResponsePacket("Ошибка десерализации команды");
-                using var p = _processor._packetSerializer.Serialize(errorPacket);
-                await _stream.WriteAsync(p.ToMemory(), token);
+                await _serializer.VisitAsync(errorPacket, token);
                 return;
             }
 
@@ -113,8 +113,7 @@ internal class RequestProcessor
                 responsePacket = new NotLeaderPacket(_processor.ClusterInfo.LeaderId.Value);
             }
 
-            using var pooledResponseArray = _processor._packetSerializer.Serialize(responsePacket);
-            await _stream.WriteAsync(pooledResponseArray.ToMemory(), token);
+            await responsePacket.AcceptAsync(_serializer, token);
         }
 
         public ValueTask VisitAsync(DataResponsePacket packet, CancellationToken token = default)
@@ -128,7 +127,8 @@ internal class RequestProcessor
         {
             Logger.Warning("От клиента пришел неожиданный пакет: DataResponsePacket");
             ShouldClose = true;
-            return ValueTask.CompletedTask;        }
+            return ValueTask.CompletedTask;        
+        }
 
         public ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default)
         {

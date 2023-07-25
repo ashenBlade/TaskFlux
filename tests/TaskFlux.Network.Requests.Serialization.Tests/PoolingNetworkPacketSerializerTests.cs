@@ -5,27 +5,13 @@ namespace TaskFlux.Network.Requests.Serialization.Tests;
 
 public class PoolingNetworkPacketSerializerTests
 {
-    private class StubArrayPool : ArrayPool<byte>
-    {
-        public static readonly StubArrayPool Instance = new();
-        public override byte[] Rent(int minimumLength)
-        {
-            return new byte[minimumLength];
-        }
-
-        public override void Return(byte[] array, bool clearArray = false)
-        { }
-    }
-
-    private static readonly PoolingNetworkPacketSerializer Serializer =
-        new (StubArrayPool.Instance);
-
     private static async Task AssertBase(Packet expected)
     {
-        var (buffer, length, _) = Serializer.Serialize(expected);
-        var serialized = new byte[length];
-        buffer.AsSpan(0, length).CopyTo(serialized);
-        var actual = await Serializer.DeserializeAsync(new MemoryStream(serialized));
+        var stream = new MemoryStream();
+        var serializerVisitor = new PoolingNetworkPacketSerializer(ArrayPool<byte>.Shared, stream);
+        await expected.AcceptAsync(serializerVisitor);
+        stream.Position = 0;
+        var actual = await serializerVisitor.DeserializeAsync();
         Assert.Equal(expected, actual, PacketEqualityComparer.Instance);
     }
     
