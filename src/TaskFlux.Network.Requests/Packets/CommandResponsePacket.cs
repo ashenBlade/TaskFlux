@@ -1,11 +1,11 @@
 namespace TaskFlux.Network.Requests.Packets;
 
-public class DataResponsePacket: Packet
+public class CommandResponsePacket: Packet
 {
     public byte[] Payload { get; }
-    public override PacketType Type => PacketType.DataResponse;
+    public override PacketType Type => PacketType.CommandResponse;
 
-    public DataResponsePacket(byte[] payload)
+    public CommandResponsePacket(byte[] payload)
     {
         Payload = payload;
     }

@@ -81,7 +81,7 @@ internal class RequestProcessor
             _serializer = serializer;
         }
 
-        public async ValueTask VisitAsync(DataRequestPacket packet, CancellationToken token = default)
+        public async ValueTask VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
         {
             Command command;
             try
@@ -102,11 +102,11 @@ internal class RequestProcessor
             Packet responsePacket;
             if (result.TryGetResponse(out var response))
             {
-                responsePacket = new DataResponsePacket(_processor.ResultSerializer.Serialize(response));
+                responsePacket = new CommandResponsePacket(_processor.ResultSerializer.Serialize(response));
             }
             else if (result.WasLeader)
             {
-                responsePacket = new DataResponsePacket(Array.Empty<byte>());
+                responsePacket = new CommandResponsePacket(Array.Empty<byte>());
             }
             else
             {
@@ -116,7 +116,7 @@ internal class RequestProcessor
             await responsePacket.AcceptAsync(_serializer, token);
         }
 
-        public ValueTask VisitAsync(DataResponsePacket packet, CancellationToken token = default)
+        public ValueTask VisitAsync(CommandResponsePacket packet, CancellationToken token = default)
         {
             Logger.Warning("От клиента пришел неожиданный пакет: DataResponsePacket");
             ShouldClose = true;

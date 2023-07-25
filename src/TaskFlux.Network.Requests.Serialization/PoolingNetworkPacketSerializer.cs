@@ -32,8 +32,8 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         var marker = await GetPacketTypeAsync(token);
         return marker switch
                {
-                   PacketType.DataRequest   => await DeserializeDataRequest(Stream, token),
-                   PacketType.DataResponse  => await DeserializeDataResponse(Stream, token),
+                   PacketType.CommandRequest   => await DeserializeDataRequest(Stream, token),
+                   PacketType.CommandResponse  => await DeserializeDataResponse(Stream, token),
                    PacketType.ErrorResponse => await DeserializeErrorResponse(Stream, token),
                    PacketType.NotLeader     => await DeserializeNotLeaderResponse(Stream, token),
                };
@@ -84,16 +84,16 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
     
     private static void ThrowEndOfStream() => throw new EndOfStreamException("Был достигнут конец потока");
 
-    private async ValueTask<DataResponsePacket> DeserializeDataResponse(Stream stream, CancellationToken token)
+    private async ValueTask<CommandResponsePacket> DeserializeDataResponse(Stream stream, CancellationToken token)
     {
         var buffer = await ReadBuffer(stream, token);
-        return new DataResponsePacket(buffer);
+        return new CommandResponsePacket(buffer);
     }
 
-    private async ValueTask<DataRequestPacket> DeserializeDataRequest(Stream stream, CancellationToken token)
+    private async ValueTask<CommandRequestPacket> DeserializeDataRequest(Stream stream, CancellationToken token)
     {
         var buffer = await ReadBuffer(stream, token);
-        return new DataRequestPacket(buffer);
+        return new CommandRequestPacket(buffer);
     }
 
     private async ValueTask<byte[]> ReadBuffer(Stream stream, CancellationToken token)
@@ -166,7 +166,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         }
     }
 
-    public async ValueTask VisitAsync(DataRequestPacket packet, CancellationToken token = default)
+    public async ValueTask VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
         var estimatedSize = sizeof(PacketType)
@@ -177,7 +177,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         {
             var buffer = array.AsMemory(0, estimatedSize);
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)PacketType.DataRequest);
+            writer.Write((byte)PacketType.CommandRequest);
             writer.WriteBuffer(packet.Payload);
             await Stream.WriteAsync(buffer, token);
         }
@@ -187,7 +187,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         }
     }
 
-    public async ValueTask VisitAsync(DataResponsePacket packet, CancellationToken token = default)
+    public async ValueTask VisitAsync(CommandResponsePacket packet, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
         var estimatedSize = sizeof(PacketType)
@@ -198,7 +198,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         {
             var buffer = array.AsMemory(0, estimatedSize);
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)PacketType.DataResponse);
+            writer.Write((byte)PacketType.CommandResponse);
             writer.WriteBuffer(packet.Payload);
             await Stream.WriteAsync(buffer, token);
         }

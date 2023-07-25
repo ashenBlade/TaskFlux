@@ -10,10 +10,10 @@ public class PacketEqualityComparer: IEqualityComparer<Packet>
         return Check(( dynamic ) x, ( dynamic ) y);
     }
 
-    private bool Check(DataRequestPacket first, DataRequestPacket second) =>
+    private bool Check(CommandRequestPacket first, CommandRequestPacket second) =>
         first.Payload.SequenceEqual(second.Payload);
 
-    private bool Check(DataResponsePacket first, DataResponsePacket second) =>
+    private bool Check(CommandResponsePacket first, CommandResponsePacket second) =>
         first.Payload.SequenceEqual(second.Payload);
 
     private bool Check(ErrorResponsePacket first, ErrorResponsePacket second) => 

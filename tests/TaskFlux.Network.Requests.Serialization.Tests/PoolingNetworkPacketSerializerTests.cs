@@ -30,7 +30,7 @@ public class PoolingNetworkPacketSerializerTests
     public async Task DataRequest__Serialization(int bufferSize)
     {
         var buffer = CreateRandomBuffer(bufferSize);
-        await AssertBase(new DataRequestPacket(buffer));
+        await AssertBase(new CommandRequestPacket(buffer));
     }
 
     private static byte[] CreateRandomBuffer(int bufferSize)
@@ -63,7 +63,7 @@ public class PoolingNetworkPacketSerializerTests
     public async Task DataResponse__Serialization(int bufferSize)
     {
         var buffer = CreateRandomBuffer(bufferSize);
-        await AssertBase(new DataResponsePacket(buffer));
+        await AssertBase(new CommandResponsePacket(buffer));
     }
 
     [Theory]

@@ -2,12 +2,12 @@ using System.Runtime.CompilerServices;
 
 namespace TaskFlux.Network.Requests.Packets;
 
-public class DataRequestPacket: Packet
+public class CommandRequestPacket: Packet
 {
     public byte[] Payload { get; }
-    public override PacketType Type => PacketType.DataRequest;
+    public override PacketType Type => PacketType.CommandRequest;
 
-    public DataRequestPacket(byte[] payload)
+    public CommandRequestPacket(byte[] payload)
     {
         Payload = payload;
     }
