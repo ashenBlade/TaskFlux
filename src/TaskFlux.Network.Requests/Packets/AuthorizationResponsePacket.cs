@@ -15,13 +15,7 @@ public class AuthorizationResponsePacket: Packet
     public static readonly AuthorizationResponsePacket Ok = new AuthorizationResponsePacket(true, null);
 
     public static AuthorizationResponsePacket Error(string reason) =>
-        new AuthorizationResponsePacket(false, CheckReturn(reason));
-
-    private static string CheckReturn(string? str)
-    {
-        ArgumentNullException.ThrowIfNull(str);
-        return str;
-    }
+        new AuthorizationResponsePacket(false, Helpers.CheckReturn(reason));
 
     public bool TryGetError(out string reason)
     {

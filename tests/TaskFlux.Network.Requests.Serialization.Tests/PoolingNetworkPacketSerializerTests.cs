@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Reflection;
 using TaskFlux.Network.Requests.Authorization;
 using TaskFlux.Network.Requests.Packets;
 
@@ -138,5 +139,41 @@ public class PoolingNetworkPacketSerializerTests
     public async Task AuthorizationResponse__Error__Serialization(string errorReason)
     {
         await AssertBase(AuthorizationResponsePacket.Error(errorReason));
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0)]
+    [InlineData(0, 0, 1)]
+    [InlineData(1, 0, 0)]
+    [InlineData(1, 1, 1)]
+    [InlineData(1, 2, 3)]
+    [InlineData(10, 2, 32)]
+    [InlineData(0, 5, 0)]
+    [InlineData(2, 2, 5)]
+    public async Task BootstrapRequest__Serialization(int major, int minor, int patch)
+    {
+        await AssertBase(new BootstrapRequestPacket(major, minor, patch));
+    }
+
+    [Fact]
+    public async Task BootstrapResponse__Success__Serialization()
+    {
+        await AssertBase(BootstrapResponsePacket.Ok);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("\0")]
+    [InlineData("\n")]
+    [InlineData("    ")]
+    [InlineData("Something went wrong")]
+    [InlineData(@"Unhandled exception. System.Exception: Ошибка доступа к файлу
+    at Program.<Main>$(String[] args) in /home/user/projects/sample/Program.cs:line 9")]
+    [InlineData("hello, world!")]
+    [InlineData("\n\rфыва\0а\nфаasdfdsf   213223 $!@ &щ&& ))(HVDm,,.Sfdфыва")]
+    [InlineData("Версия сервера не согласуется с версией клиента. Версия сервера: 2.0.1. Версия клиента: 1.9.2")]
+    public async Task BootstrapResponse__Error__Serialization(string message)
+    {
+        await AssertBase(BootstrapResponsePacket.Error(message));
     }
 }

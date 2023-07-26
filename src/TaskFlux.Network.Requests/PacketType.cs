@@ -8,7 +8,9 @@ public enum PacketType: byte
     ErrorResponse = (byte)'e',
     NotLeader = (byte) 'l',
     
-    // TODO: добавить объекты пакетов с такими типами + алгоритм установления соединения
     AuthorizationRequest = (byte)'A',
     AuthorizationResponse = (byte)'a',
+    
+    BootstrapRequest = (byte)'B',
+    BootstrapResponse = (byte)'b',
 }

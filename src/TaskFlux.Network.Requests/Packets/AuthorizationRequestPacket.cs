@@ -9,6 +9,7 @@ public class AuthorizationRequestPacket: Packet
 
     public AuthorizationRequestPacket(AuthorizationMethod authorizationMethod)
     {
+        ArgumentNullException.ThrowIfNull(authorizationMethod);
         AuthorizationMethod = authorizationMethod;
     }
     

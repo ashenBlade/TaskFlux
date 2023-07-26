@@ -106,7 +106,7 @@ try
     var httpModule = CreateHttpRequestModule(configuration);
     httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(consensusModule, clusterInfo, Log.ForContext<SubmitCommandRequestHandler>()));
     
-    var binaryRequestModule = CreateBinaryRequestModule(consensusModule, clusterInfo, configuration);
+    var binaryRequestModule = CreateBinaryRequestModule(consensusModule, appInfo, clusterInfo, configuration);
 
     var nodeConnectionThread = new Thread(o =>
         {
@@ -158,7 +158,7 @@ finally
 }
 
 
-BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<Command, Result> consensusModule, IClusterInfo clusterInfo, IConfiguration config)
+BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<Command, Result> consensusModule, IApplicationInfo applicationInfo, IClusterInfo clusterInfo, IConfiguration config)
 {
     var options = GetOptions();
 
@@ -175,6 +175,7 @@ BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<Command, Result> 
     return new BinaryRequestModule(consensusModule,
         new StaticOptionsMonitor<BinaryRequestModuleOptions>(options),
         clusterInfo,
+        applicationInfo,
         Log.ForContext<BinaryRequestModule>());
 
     BinaryRequestModuleOptions GetOptions()

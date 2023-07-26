@@ -8,6 +8,7 @@ public class ErrorResponsePacket: Packet
 
     public ErrorResponsePacket(string message)
     {
+        ArgumentNullException.ThrowIfNull(message);
         Message = message;
     }
     

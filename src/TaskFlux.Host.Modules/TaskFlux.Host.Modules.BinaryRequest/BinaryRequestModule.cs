@@ -13,16 +13,19 @@ public class BinaryRequestModule
     private readonly IConsensusModule<Command, Result> _consensusModule;
     private readonly IOptionsMonitor<BinaryRequestModuleOptions> _options;
     private readonly IClusterInfo _clusterInfo;
+    private readonly IApplicationInfo _applicationInfo;
     private readonly ILogger _logger;
 
     public BinaryRequestModule(IConsensusModule<Command, Result> consensusModule,
                                IOptionsMonitor<BinaryRequestModuleOptions> options,
                                IClusterInfo clusterInfo,
+                               IApplicationInfo applicationInfo,
                                ILogger logger)
     {
         _consensusModule = consensusModule;
         _options = options;
         _clusterInfo = clusterInfo;
+        _applicationInfo = applicationInfo;
         _logger = logger;
     }
 
@@ -40,7 +43,7 @@ public class BinaryRequestModule
             while (token.IsCancellationRequested is false)
             {
                 var client = await listener.AcceptTcpClientAsync(token);
-                var processor = new RequestProcessor(client, _consensusModule, _clusterInfo, Log.ForContext<RequestProcessor>());
+                var processor = new RequestProcessor(client, _consensusModule, _applicationInfo, _clusterInfo, Log.ForContext<RequestProcessor>());
                 _ = processor.ProcessAsync(token);
             }
         }

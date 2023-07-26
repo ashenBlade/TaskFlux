@@ -12,8 +12,8 @@ namespace TaskFlux.Network.Requests.Serialization;
 public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
 {
     private const int ByteFalse = 0;
-    public Stream Stream { get; }
-    public ArrayPool<byte> Pool { get; }
+    private Stream Stream { get; }
+    private ArrayPool<byte> Pool { get; }
 
     public PoolingNetworkPacketSerializer(ArrayPool<byte> pool, Stream stream)
     {
@@ -41,7 +41,29 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
                    PacketType.NotLeader             => await DeserializeNotLeaderResponse(token),
                    PacketType.AuthorizationRequest  => await DeserializeAuthorizationRequest(token),
                    PacketType.AuthorizationResponse => await DeserializeAuthorizationResponse(token),
+                   PacketType.BootstrapRequest      => await DeserializeBootstrapRequest(token),
+                   PacketType.BootstrapResponse     => await DeserializeBootstrapResponse(token),
                };
+    }
+
+    private async ValueTask<BootstrapResponsePacket> DeserializeBootstrapResponse(CancellationToken token)
+    {
+        var success = await ReadBool(token);
+        if (success)
+        {
+            return BootstrapResponsePacket.Ok;
+        }
+
+        var message = await ReadString(PacketType.BootstrapResponse, token);
+        return BootstrapResponsePacket.Error(message);
+    }
+
+    private async ValueTask<BootstrapRequestPacket> DeserializeBootstrapRequest(CancellationToken token)
+    {
+        var major = await ReadInt32(token);
+        var minor = await ReadInt32(token);
+        var patch = await ReadInt32(token);
+        return new BootstrapRequestPacket(major, minor, patch);
     }
 
     public ValueTask SerializeAsync(Packet packet, CancellationToken token = default)
@@ -103,8 +125,6 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
     {
         var authMethod = await DeserializeAuthorizationMethod(token);
         return new AuthorizationRequestPacket(authMethod);
-
-        
     }
     private async ValueTask<AuthorizationMethod> DeserializeAuthorizationMethod(CancellationToken token)
     {
@@ -469,6 +489,72 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
             {
                 Pool.Return(buffer);
             }
+        }
+    }
+
+    public async ValueTask VisitAsync(BootstrapResponsePacket packet, CancellationToken token = default)
+    {
+        if (packet.TryGetError(out var message))
+        {
+            var length = sizeof(PacketType)
+                       + sizeof(byte)
+                       + sizeof(int)
+                       + Encoding.UTF8.GetByteCount(message);
+            var buffer = Pool.Rent(length);
+            try
+            {
+                var memory = buffer.AsMemory(0, length);
+                var writer = new MemoryBinaryWriter(memory);
+                writer.Write((byte)PacketType.BootstrapResponse);
+                writer.Write(false);
+                writer.Write(message);
+                await Stream.WriteAsync(memory, token);
+            }
+            finally
+            {
+                Pool.Return(buffer);   
+            }
+        }
+        else
+        {
+            const int length = sizeof(PacketType)
+                             + sizeof(byte);
+            var buffer = Pool.Rent(length);
+            try
+            {
+                var memory = buffer.AsMemory(0, length);
+                var writer = new MemoryBinaryWriter(memory);
+                writer.Write((byte)PacketType.BootstrapResponse);
+                writer.Write(true);
+                await Stream.WriteAsync(memory, token);
+            }
+            finally
+            {
+                Pool.Return(buffer);
+            }
+        }
+    }
+
+    public async ValueTask VisitAsync(BootstrapRequestPacket packet, CancellationToken token = default)
+    {
+        const int length = sizeof(PacketType)
+                         + sizeof(int)
+                         + sizeof(int)
+                         + sizeof(int);
+        var buffer = Pool.Rent(length);
+        try
+        {
+            var memory = buffer.AsMemory(0, length);
+            var writer = new MemoryBinaryWriter(memory);
+            writer.Write((byte)PacketType.BootstrapRequest);
+            writer.Write(packet.Major);
+            writer.Write(packet.Minor);
+            writer.Write(packet.Patch);
+            await Stream.WriteAsync(memory, token);
+        }
+        finally
+        {
+            Pool.Return(buffer);
         }
     }
 }

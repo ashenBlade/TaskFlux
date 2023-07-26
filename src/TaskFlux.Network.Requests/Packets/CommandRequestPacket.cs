@@ -9,6 +9,7 @@ public class CommandRequestPacket: Packet
 
     public CommandRequestPacket(byte[] payload)
     {
+        ArgumentNullException.ThrowIfNull(payload);
         Payload = payload;
     }
     

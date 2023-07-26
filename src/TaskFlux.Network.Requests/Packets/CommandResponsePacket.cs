@@ -7,6 +7,7 @@ public class CommandResponsePacket: Packet
 
     public CommandResponsePacket(byte[] payload)
     {
+        ArgumentNullException.ThrowIfNull(payload);
         Payload = payload;
     }
     

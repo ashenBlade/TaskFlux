@@ -31,6 +31,17 @@ public class PacketEqualityComparer: IEqualityComparer<Packet>
             _              => false
         };
 
+    private bool Check(BootstrapRequestPacket first, BootstrapRequestPacket second) =>
+        ( first.Major, first.Minor, first.Patch ) == ( second.Major, second.Minor, second.Patch );
+
+    private bool Check(BootstrapResponsePacket first, BootstrapResponsePacket second)
+        => ( first.Success, second.Success ) switch
+           {
+               (true, true)   => true,
+               (false, false) => first.Reason == second.Reason,
+               _              => false
+           };
+
     private bool Check(AuthorizationRequestPacket first, AuthorizationRequestPacket second)
     {
         return CheckAuth((dynamic) first.AuthorizationMethod, (dynamic) second.AuthorizationMethod);
