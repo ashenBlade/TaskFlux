@@ -6,7 +6,9 @@ using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Serialization;
 using TaskFlux.Core;
+using TaskFlux.Host.Modules.BinaryRequest.Exceptions;
 using TaskFlux.Network.Requests;
+using TaskFlux.Network.Requests.Authorization;
 using TaskFlux.Network.Requests.Packets;
 using TaskFlux.Network.Requests.Serialization;
 
@@ -37,11 +39,22 @@ internal class RequestProcessor
         Logger.Debug("Открываю сетевой поток для коммуницирования к клиентом");
         await using var stream = _client.GetStream();
         var serializer = new PoolingNetworkPacketSerializer(ArrayPool<byte>.Shared, stream);
-        var clientRequestPacketVisitor = new ClientRequestPacketVisitor(this, serializer);
         try
         {
-            Logger.Debug("Начинаю обработку полученного запроса");
-            while (token.IsCancellationRequested is false && stream.Socket.Connected)
+            try
+            {
+                await AuthorizeClientAsync(serializer, token);
+            }
+            catch (UnexpectedPacketException unexpected)
+            {
+                Logger.Warning(unexpected, "От клиента пришел неожиданный пакет");
+                return;
+            }
+        
+            var clientRequestPacketVisitor = new ClientRequestPacketVisitor(this, serializer);
+            Logger.Debug("Начинаю обрабатывать клиентские запросы");
+            while (token.IsCancellationRequested is false && 
+                   stream.Socket.Connected)
             {
                 var packet = await serializer.DeserializeAsync(token);
                 if (token.IsCancellationRequested)
@@ -67,6 +80,73 @@ internal class RequestProcessor
             _client.Dispose();
         }
     }
+
+    private async Task AuthorizeClientAsync(PoolingNetworkPacketSerializer serializer,
+                                            CancellationToken token)
+    {
+        Logger.Debug("Начинаю процесс авторизации клиента");
+        var packet = await serializer.DeserializeAsync(token);
+        var authorizerVisitor = new AuthorizerClientPacketAsyncVisitor(serializer);
+        await packet.AcceptAsync(authorizerVisitor, token);
+        Logger.Debug("Клиент авторизовался успешно");
+    }
+
+    private class AuthorizerClientPacketAsyncVisitor : IAsyncPacketVisitor
+    {
+        private readonly PoolingNetworkPacketSerializer _serializer;
+
+        public AuthorizerClientPacketAsyncVisitor(PoolingNetworkPacketSerializer serializer)
+        {
+            _serializer = serializer;
+        }
+        
+        public ValueTask VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
+        {
+            return ValueTask.FromException(new UnexpectedPacketException(PacketType.CommandRequest));
+        }
+
+        public ValueTask VisitAsync(CommandResponsePacket packet, CancellationToken token = default)
+        {
+            return ValueTask.FromException(new UnexpectedPacketException(PacketType.CommandResponse));
+        }
+
+        public ValueTask VisitAsync(ErrorResponsePacket packet, CancellationToken token = default)
+        {
+            return ValueTask.FromException(new UnexpectedPacketException(PacketType.ErrorResponse));
+        }
+
+        public ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default)
+        {
+            return ValueTask.FromException(new UnexpectedPacketException(PacketType.ErrorResponse));
+        }
+
+        public async ValueTask VisitAsync(AuthorizationRequestPacket packet, CancellationToken token = default)
+        {
+            var authVisitor = new AuthorizationFlowMethodVisitor(_serializer);
+            await packet.AuthorizationMethod.AcceptAsync(authVisitor, token);
+        }
+
+        public ValueTask VisitAsync(AuthorizationResponsePacket packet, CancellationToken token = default)
+        {
+            return ValueTask.FromException(new UnexpectedPacketException(PacketType.AuthorizationResponse));
+        }
+
+        private class AuthorizationFlowMethodVisitor : IAsyncAuthorizationMethodVisitor
+        {
+            private readonly PoolingNetworkPacketSerializer _serializer;
+
+            public AuthorizationFlowMethodVisitor(PoolingNetworkPacketSerializer serializer)
+            {
+                _serializer = serializer;
+            }
+            
+            public ValueTask VisitAsync(NoneAuthorizationMethod noneAuthorizationMethod, CancellationToken token)
+            {
+                return _serializer.SerializeAsync(AuthorizationResponsePacket.Ok, token);
+            }
+        }
+    }
+
     private class ClientRequestPacketVisitor : IAsyncPacketVisitor
     {
         private readonly RequestProcessor _processor;
@@ -135,6 +215,16 @@ internal class RequestProcessor
             Logger.Warning("От клиента пришел неожиданный пакет: DataResponsePacket");
             ShouldClose = true;
             return ValueTask.CompletedTask;
+        }
+
+        public async ValueTask VisitAsync(AuthorizationRequestPacket packet, CancellationToken token = default)
+        {
+            throw new NotImplementedException();
+        }
+
+        public async ValueTask VisitAsync(AuthorizationResponsePacket packet, CancellationToken token = default)
+        {
+            throw new NotImplementedException();
         }
     }
 }

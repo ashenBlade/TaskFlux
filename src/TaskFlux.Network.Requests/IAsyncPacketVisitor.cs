@@ -8,4 +8,6 @@ public interface IAsyncPacketVisitor
     public ValueTask VisitAsync(CommandResponsePacket packet, CancellationToken token = default);
     public ValueTask VisitAsync(ErrorResponsePacket packet, CancellationToken token = default);
     public ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default);
+    public ValueTask VisitAsync(AuthorizationRequestPacket packet, CancellationToken token = default);
+    public ValueTask VisitAsync(AuthorizationResponsePacket packet, CancellationToken token = default);
 }

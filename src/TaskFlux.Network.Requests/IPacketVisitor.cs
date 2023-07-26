@@ -8,5 +8,6 @@ public interface IPacketVisitor
     public void Visit(CommandResponsePacket packet);
     public void Visit(ErrorResponsePacket packet);
     public void Visit(NotLeaderPacket packet);
-
+    public void Visit(AuthorizationRequestPacket packet);
+    public void Visit(AuthorizationResponsePacket packet);
 }

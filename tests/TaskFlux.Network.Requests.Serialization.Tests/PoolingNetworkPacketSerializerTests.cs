@@ -1,4 +1,5 @@
 using System.Buffers;
+using TaskFlux.Network.Requests.Authorization;
 using TaskFlux.Network.Requests.Packets;
 
 namespace TaskFlux.Network.Requests.Serialization.Tests;
@@ -27,7 +28,7 @@ public class PoolingNetworkPacketSerializerTests
     [InlineData(byte.MaxValue)]
     [InlineData(byte.MaxValue + 1)]
     [InlineData(short.MaxValue)]
-    public async Task DataRequest__Serialization(int bufferSize)
+    public async Task CommandRequest__Serialization(int bufferSize)
     {
         var buffer = CreateRandomBuffer(bufferSize);
         await AssertBase(new CommandRequestPacket(buffer));
@@ -60,7 +61,7 @@ public class PoolingNetworkPacketSerializerTests
     [InlineData(short.MaxValue)]
     [InlineData(short.MaxValue + 1)]
     [InlineData(short.MaxValue - 1)]
-    public async Task DataResponse__Serialization(int bufferSize)
+    public async Task CommandResponse__Serialization(int bufferSize)
     {
         var buffer = CreateRandomBuffer(bufferSize);
         await AssertBase(new CommandResponsePacket(buffer));
@@ -101,5 +102,41 @@ public class PoolingNetworkPacketSerializerTests
     public async Task NotLeaderResponse__Serialization(int id)
     {
         await AssertBase(new NotLeaderPacket(id));
+    }
+
+    public static IEnumerable<object[]> AuthorizationMethods = new[]
+    {
+        new object[]
+        {
+            new NoneAuthorizationMethod()
+        }
+    };
+
+    [Theory]
+    [MemberData(nameof(AuthorizationMethods))]
+    public async Task AuthorizationRequest__Serialization(AuthorizationMethod method)
+    {
+        await AssertBase(new AuthorizationRequestPacket(method));
+    }
+
+    [Fact]
+    public async Task AuthorizationResponse__Success__Serialization()
+    {
+        await AssertBase(AuthorizationResponsePacket.Ok);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("\0")]
+    [InlineData("\n")]
+    [InlineData("    ")]
+    [InlineData("Something went wrong")]
+    [InlineData(@"Unhandled exception. System.Exception: Ошибка доступа к файлу
+    at Program.<Main>$(String[] args) in /home/user/projects/sample/Program.cs:line 9")]
+    [InlineData("hello, world!")]
+    [InlineData("\n\rфыва\0а\nфаasdfdsf   213223 $!@ &щ&& ))(HVDm,,.Sfdфыва")]
+    public async Task AuthorizationResponse__Error__Serialization(string errorReason)
+    {
+        await AssertBase(AuthorizationResponsePacket.Error(errorReason));
     }
 }
