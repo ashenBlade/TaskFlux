@@ -94,6 +94,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Serialization.Help
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Commands.Serialization.Tests", "tests\TaskFlux.Commands.Serialization.Tests\TaskFlux.Commands.Serialization.Tests.csproj", "{5673D018-4282-41C0-991F-0B64AFA6AD38}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Network.Client.Frontend", "src\TaskFlux.Network.Client.Frontend\TaskFlux.Network.Client.Frontend.csproj", "{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -524,6 +526,18 @@ Global
 		{5673D018-4282-41C0-991F-0B64AFA6AD38}.Release|x64.Build.0 = Release|Any CPU
 		{5673D018-4282-41C0-991F-0B64AFA6AD38}.Release|x86.ActiveCfg = Release|Any CPU
 		{5673D018-4282-41C0-991F-0B64AFA6AD38}.Release|x86.Build.0 = Release|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|x64.Build.0 = Debug|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|x86.Build.0 = Debug|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|x64.ActiveCfg = Release|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|x64.Build.0 = Release|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|x86.ActiveCfg = Release|Any CPU
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{0963B434-4266-4337-A3B9-0FA78CECDD66} = {956F79F9-E3EA-4896-9465-D0A066810939}
@@ -568,5 +582,6 @@ Global
 		{C67A08FC-0A70-404B-96EA-2CFFDA8BCAB4} = {956F79F9-E3EA-4896-9465-D0A066810939}
 		{DF354CDA-04AA-4EC0-9FE6-46D548CE7F36} = {956F79F9-E3EA-4896-9465-D0A066810939}
 		{5673D018-4282-41C0-991F-0B64AFA6AD38} = {750A408B-D4A3-45F8-8D6D-C172679EFF32}
+		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9} = {956F79F9-E3EA-4896-9465-D0A066810939}
 	EndGlobalSection
 EndGlobal

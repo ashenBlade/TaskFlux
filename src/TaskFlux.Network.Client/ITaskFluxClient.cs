@@ -39,7 +39,7 @@ public interface ITaskFluxClient
     /// </summary>
     /// <param name="token">Токен отмены</param>
     /// <returns><see cref="ValueTask{Packet}"/> который возвращает <see cref="Packet"/> при завершении операции</returns>
-    /// <exception cref="OperationCanceledException"> токен был отменен</exception>
+    /// <exception cref="OperationCanceledException">Токен был отменен</exception>
     /// <exception cref="IOException">Во время чтения возникла ошибка сети</exception>
     /// <exception cref="EndOfStreamException">Соединение было разорвано во время чтения из потока</exception>
     /// <exception cref="PacketDeserializationException">Произошла ошибка десериализации конкретного пакета</exception>
