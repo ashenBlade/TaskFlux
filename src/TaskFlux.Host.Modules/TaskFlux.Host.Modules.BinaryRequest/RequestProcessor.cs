@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using Consensus.Core;
 using Consensus.Core.Commands.Submit;
+using Microsoft.Extensions.Options;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Serialization;
@@ -18,6 +19,7 @@ namespace TaskFlux.Host.Modules.BinaryRequest;
 internal class RequestProcessor
 {
     private readonly TcpClient _client;
+    private readonly BinaryRequestModuleOptions _options;
     private readonly IApplicationInfo _applicationInfo;
     private IConsensusModule<Command, Result> Module { get; }
     public IClusterInfo ClusterInfo { get; }
@@ -27,11 +29,13 @@ internal class RequestProcessor
 
     public RequestProcessor(TcpClient client, 
                             IConsensusModule<Command, Result> consensusModule,
+                            BinaryRequestModuleOptions options,
                             IApplicationInfo applicationInfo,
                             IClusterInfo clusterInfo,
                             ILogger logger)
     {
         _client = client;
+        _options = options;
         _applicationInfo = applicationInfo;
         Module = consensusModule;
         ClusterInfo = clusterInfo;
@@ -45,8 +49,15 @@ internal class RequestProcessor
         var serializer = new PoolingNetworkPacketSerializer(ArrayPool<byte>.Shared, stream);
         try
         {
-            await ProcessClientMain(stream, serializer, token)
-               .ConfigureAwait(false);
+            var success = await AcceptClientAsync(serializer, token)
+                             .ConfigureAwait(false);
+            
+            if (!success)
+            {
+                return;
+            }
+            
+            await ProcessClientMain(serializer, token);
         }
         catch (Exception e)
         {
@@ -59,9 +70,50 @@ internal class RequestProcessor
         }
     }
 
-    private async Task ProcessClientMain(NetworkStream stream,
-                                         PoolingNetworkPacketSerializer serializer,
-                                         CancellationToken token)
+    private async Task ProcessClientMain(PoolingNetworkPacketSerializer serializer, CancellationToken token)
+    {
+        var clientRequestPacketVisitor = new ClientCommandRequestPacketVisitor(this, serializer);
+        Logger.Debug("Начинаю обрабатывать клиентские запросы");
+        while (token.IsCancellationRequested is false)
+        {
+            Packet packet;
+            try
+            {
+                packet = await ReceiveNextPacketAsync(serializer, token);
+            }
+            catch (OperationCanceledException canceled)
+                when (token.IsCancellationRequested)
+            {
+                Logger.Information(canceled, "Запрошено завершение работы во время обработки клиента");
+                return;
+            }
+            catch (OperationCanceledException canceled)
+            {
+                Logger.Information(canceled, "Превышен таймаут ожидания пакета от клиента. Завершаю обработку");
+                return;
+            }
+        
+            await packet.AcceptAsync(clientRequestPacketVisitor, token);
+        
+            if (clientRequestPacketVisitor.ShouldClose)
+            {
+                break;
+            }
+        }
+    }
+
+    private async Task<Packet> ReceiveNextPacketAsync(PoolingNetworkPacketSerializer serializer,
+                                                      CancellationToken token)
+    {
+        using var idleTimeoutCts = new CancellationTokenSource(_options.IdleTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        linkedCts.CancelAfter(_options.IdleTimeout);
+        Logger.Debug("Начинаю принятие пакета от клиента");
+        return await serializer.DeserializeAsync(token);
+    }
+
+    private async Task<bool> AcceptClientAsync(PoolingNetworkPacketSerializer serializer,
+                                               CancellationToken token)
     {
         try
         {
@@ -70,53 +122,42 @@ internal class RequestProcessor
         catch (UnexpectedPacketException unexpected)
         {
             Logger.Warning(unexpected, "От клиента пришел неожиданный пакет");
-            return;
+            return false;
         }
         catch (Exception e)
         {
             Logger.Warning(e, "Неизвестная ошибка во время авторизации клиента");
-            return;
+            return false;
         }
-
+        
         try
         {
             var success = await BootstrapClientAsync(serializer, token);
             if (!success)
             {
-                return;
+                return false;
             }
         }
         catch (Exception e)
         {
             Logger.Warning(e, "Во время настроки клиента поймано необработанное исключение");
-            return;
+            return false;
         }
         
-        var clientRequestPacketVisitor = new ClientCommandRequestPacketVisitor(this, serializer);
-        Logger.Debug("Начинаю обрабатывать клиентские запросы");
-        while (token.IsCancellationRequested is false && 
-               stream.Socket.Connected)
-        {
-            var packet = await serializer.DeserializeAsync(token);
-            if (token.IsCancellationRequested)
-            {
-                break;
-            }
-
-            await packet.AcceptAsync(clientRequestPacketVisitor, token);
-
-            if (clientRequestPacketVisitor.ShouldClose)
-            {
-                break;
-            }
-        }
+        return true;
     }
     
+    /// <summary>
+    /// Метод для запуска процесса настройки клиента и сервера
+    /// </summary>
+    /// <returns><c>true</c> - клиент успешно настроен<br/> <c>false</c> - во время настройки возникла ошибка</returns>
     private async ValueTask<bool> BootstrapClientAsync(PoolingNetworkPacketSerializer serializer, CancellationToken token)
     {
+        Logger.Debug("Начинаю процесс настройки клиента");
         var packet = await serializer.DeserializeAsync(token);
         var bootstrapVisitor = new BootstrapPacketAsyncVisitor(serializer, _applicationInfo);
         await packet.AcceptAsync(bootstrapVisitor, token);
+        Logger.Debug("Клиент настроен");
         return !bootstrapVisitor.ShouldClose;
     }
 
@@ -124,7 +165,7 @@ internal class RequestProcessor
     {
         private readonly PoolingNetworkPacketSerializer _serializer;
         private readonly IApplicationInfo _applicationInfo;
-        public bool ShouldClose { get; private set; } = false;
+        public bool ShouldClose { get; private set; }
 
         public BootstrapPacketAsyncVisitor(PoolingNetworkPacketSerializer serializer, IApplicationInfo applicationInfo)
         {
@@ -261,9 +302,9 @@ internal class RequestProcessor
                 _serializer = serializer;
             }
             
-            public ValueTask VisitAsync(NoneAuthorizationMethod noneAuthorizationMethod, CancellationToken token)
+            public async ValueTask VisitAsync(NoneAuthorizationMethod noneAuthorizationMethod, CancellationToken token)
             {
-                return _serializer.SerializeAsync(AuthorizationResponsePacket.Ok, token);
+                await _serializer.SerializeAsync(AuthorizationResponsePacket.Ok, token);
             }
         }
     }

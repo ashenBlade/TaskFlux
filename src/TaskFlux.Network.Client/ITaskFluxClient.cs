@@ -14,14 +14,14 @@ public interface ITaskFluxClient
     /// <returns><see cref="ValueTask"/></returns>
     /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
     /// <exception cref="ArgumentNullException"><paramref name="endPoint"/> - <c>null</c></exception>
-    public ValueTask ConnectAsync(EndPoint endPoint, CancellationToken token = default);
+    public Task ConnectAsync(EndPoint endPoint, CancellationToken token = default);
     
     /// <summary>
     /// Отключиться от удаленного узла
     /// </summary>
     /// <param name="token">Токен отмены</param>
     /// <returns><see cref="ValueTask"/>, завершающийся при окончании закрытия соединения</returns>
-    public ValueTask DisconnectAsync(CancellationToken token = default);
+    public Task DisconnectAsync(CancellationToken token = default);
     
     /// <summary>
     /// Отправить на удаленный узел указанный пакет
@@ -32,7 +32,7 @@ public interface ITaskFluxClient
     /// <exception cref="ArgumentNullException"> - <paramref name="packet"/> <c>null</c></exception>
     /// <exception cref="OperationCanceledException"> - токен был отменен</exception>
     /// <exception cref="IOException">Ошибка сети во время отправки сообщения</exception>
-    public ValueTask SendAsync(Packet packet, CancellationToken token = default);
+    public Task SendAsync(Packet packet, CancellationToken token = default);
     
     /// <summary>
     /// Получить от удаленного узла пакет
@@ -43,5 +43,5 @@ public interface ITaskFluxClient
     /// <exception cref="IOException">Во время чтения возникла ошибка сети</exception>
     /// <exception cref="EndOfStreamException">Соединение было разорвано во время чтения из потока</exception>
     /// <exception cref="PacketDeserializationException">Произошла ошибка десериализации конкретного пакета</exception>
-    public ValueTask<Packet> ReceiveAsync(CancellationToken token = default);
+    public Task<Packet> ReceiveAsync(CancellationToken token = default);
 }

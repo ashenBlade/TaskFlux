@@ -29,7 +29,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
     /// <exception cref="OperationCanceledException"> <paramref name="token"/> был отменен</exception>
     /// <exception cref="EndOfStreamException"> - был достигнут конец потока</exception>
     /// <exception cref="PacketDeserializationException"> ошибка при десериализации конкретного пакета</exception>
-    public async ValueTask<Packet> DeserializeAsync(CancellationToken token = default)
+    public async Task<Packet> DeserializeAsync(CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
         var marker = await GetPacketTypeAsync(token);
@@ -46,7 +46,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
                };
     }
 
-    private async ValueTask<BootstrapResponsePacket> DeserializeBootstrapResponse(CancellationToken token)
+    private async Task<BootstrapResponsePacket> DeserializeBootstrapResponse(CancellationToken token)
     {
         var success = await ReadBool(token);
         if (success)
@@ -58,7 +58,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         return BootstrapResponsePacket.Error(message);
     }
 
-    private async ValueTask<BootstrapRequestPacket> DeserializeBootstrapRequest(CancellationToken token)
+    private async Task<BootstrapRequestPacket> DeserializeBootstrapRequest(CancellationToken token)
     {
         var major = await ReadInt32(token);
         var minor = await ReadInt32(token);
@@ -66,12 +66,12 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         return new BootstrapRequestPacket(major, minor, patch);
     }
 
-    public ValueTask SerializeAsync(Packet packet, CancellationToken token = default)
+    public Task SerializeAsync(Packet packet, CancellationToken token = default)
     {
-        return packet.AcceptAsync(this, token);
+        return packet.AcceptAsync(this, token).AsTask();
     }
 
-    private async ValueTask<AuthorizationResponsePacket> DeserializeAuthorizationResponse(CancellationToken token)
+    private async Task<AuthorizationResponsePacket> DeserializeAuthorizationResponse(CancellationToken token)
     {
         var success = await ReadBool(token);
         if (success)
@@ -83,7 +83,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         return AuthorizationResponsePacket.Error(reason);
     }
 
-    private async ValueTask<string> ReadString(PacketType packetType, CancellationToken token)
+    private async Task<string> ReadString(PacketType packetType, CancellationToken token)
     {
         var length = await ReadInt32(token);
         var buffer = Pool.Rent(length);
@@ -115,18 +115,18 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         }
     }
 
-    private async ValueTask<bool> ReadBool(CancellationToken token)
+    private async Task<bool> ReadBool(CancellationToken token)
     {
         var b = await ReadByte(token);
         return b != ByteFalse;
     }
 
-    private async ValueTask<Packet> DeserializeAuthorizationRequest(CancellationToken token)
+    private async Task<Packet> DeserializeAuthorizationRequest(CancellationToken token)
     {
         var authMethod = await DeserializeAuthorizationMethod(token);
         return new AuthorizationRequestPacket(authMethod);
     }
-    private async ValueTask<AuthorizationMethod> DeserializeAuthorizationMethod(CancellationToken token)
+    private async Task<AuthorizationMethod> DeserializeAuthorizationMethod(CancellationToken token)
     {
         var authType = await ReadByte(token);
         try
@@ -143,12 +143,12 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         }
     }
     
-    private ValueTask<NoneAuthorizationMethod> DeserializeNoneAuthorization(CancellationToken token)
+    private Task<NoneAuthorizationMethod> DeserializeNoneAuthorization(CancellationToken token)
     {
-        return new ValueTask<NoneAuthorizationMethod>(NoneAuthorizationMethod.Instance);
+        return Task.FromResult(NoneAuthorizationMethod.Instance);
     }
 
-    private async ValueTask<byte> ReadByte(CancellationToken token)
+    private async Task<byte> ReadByte(CancellationToken token)
     {
         var buffer = Pool.Rent(sizeof(byte));
         try
@@ -167,13 +167,13 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         }
     }
 
-    private async ValueTask<NotLeaderPacket> DeserializeNotLeaderResponse(CancellationToken token)
+    private async Task<NotLeaderPacket> DeserializeNotLeaderResponse(CancellationToken token)
     {
         var id = await ReadInt32(token);
         return new NotLeaderPacket(id);
     }
 
-    private async ValueTask<ErrorResponsePacket> DeserializeErrorResponse(CancellationToken token)
+    private async Task<ErrorResponsePacket> DeserializeErrorResponse(CancellationToken token)
     {
         var length = await ReadInt32(token);
         var buffer = Pool.Rent(length);
@@ -212,19 +212,19 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
     
     private static void ThrowEndOfStream() => throw new EndOfStreamException("Был достигнут конец потока");
 
-    private async ValueTask<CommandResponsePacket> DeserializeDataResponse(CancellationToken token)
+    private async Task<CommandResponsePacket> DeserializeDataResponse(CancellationToken token)
     {
         var buffer = await ReadBuffer(token);
         return new CommandResponsePacket(buffer);
     }
 
-    private async ValueTask<CommandRequestPacket> DeserializeDataRequest(CancellationToken token)
+    private async Task<CommandRequestPacket> DeserializeDataRequest(CancellationToken token)
     {
         var buffer = await ReadBuffer(token);
         return new CommandRequestPacket(buffer);
     }
 
-    private async ValueTask<byte[]> ReadBuffer(CancellationToken token)
+    private async Task<byte[]> ReadBuffer(CancellationToken token)
     {
         var length = await ReadInt32(token);
         if (length == 0)
@@ -258,7 +258,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         }
     }
 
-    private async ValueTask<int> ReadInt32(CancellationToken token)
+    private async Task<int> ReadInt32(CancellationToken token)
     {
         var buffer = Pool.Rent(sizeof(int));
         try
@@ -284,7 +284,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         }
     }
 
-    private async ValueTask<PacketType> GetPacketTypeAsync(CancellationToken token = default)
+    private async Task<PacketType> GetPacketTypeAsync(CancellationToken token = default)
     {
         var markerBuffer = Pool.Rent(1);
         try

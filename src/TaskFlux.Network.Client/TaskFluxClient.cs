@@ -36,42 +36,42 @@ public class TaskFluxClient: ITaskFluxClient, IDisposable
         return socket;
     }
 
-    public ValueTask ConnectAsync(EndPoint endPoint, CancellationToken token = default)
+    public Task ConnectAsync(EndPoint endPoint, CancellationToken token = default)
     {
         ArgumentNullException.ThrowIfNull(endPoint);
         if (token.IsCancellationRequested)
         {
-            return ValueTask.FromCanceled(token);
+            return Task.FromCanceled(token);
         }
 
         return ConnectAsyncCore(endPoint, token);
     }
 
-    public ValueTask DisconnectAsync(CancellationToken token = default)
+    public Task DisconnectAsync(CancellationToken token = default)
     {
-        return _socket.DisconnectAsync(true, token);
+        return _socket.DisconnectAsync(true, token).AsTask();
     }
 
-    private async ValueTask ConnectAsyncCore(EndPoint endPoint, CancellationToken token)
+    private async Task ConnectAsyncCore(EndPoint endPoint, CancellationToken token)
     {
         await _socket.ConnectAsync(endPoint, token);
     }
 
-    public ValueTask SendAsync(Packet packet, CancellationToken token = default)
+    public Task SendAsync(Packet packet, CancellationToken token = default)
     {
         ArgumentNullException.ThrowIfNull(packet);
         if (token.IsCancellationRequested)
         {
-            return ValueTask.FromCanceled(token);
+            return Task.FromCanceled(token);
         }
-        return packet.AcceptAsync(Serializer, token);
+        return packet.AcceptAsync(Serializer, token).AsTask();
     }
 
-    public ValueTask<Packet> ReceiveAsync(CancellationToken token = default)
+    public Task<Packet> ReceiveAsync(CancellationToken token = default)
     {
         if (token.IsCancellationRequested)
         {
-            return ValueTask.FromCanceled<Packet>(token);
+            return Task.FromCanceled<Packet>(token);
         }
         return Serializer.DeserializeAsync(token);
     }
