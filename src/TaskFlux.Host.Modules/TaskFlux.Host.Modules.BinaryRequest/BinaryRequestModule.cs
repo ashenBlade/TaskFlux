@@ -43,7 +43,7 @@ public class BinaryRequestModule
             while (token.IsCancellationRequested is false)
             {
                 var client = await listener.AcceptTcpClientAsync(token);
-                var processor = new RequestProcessor(client, _consensusModule, _applicationInfo, _clusterInfo, Log.ForContext<RequestProcessor>());
+                var processor = new RequestProcessor(client, _consensusModule, _options, _applicationInfo, _clusterInfo, Log.ForContext<RequestProcessor>());
                 _ = processor.ProcessAsync(token);
             }
         }

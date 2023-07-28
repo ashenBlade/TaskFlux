@@ -19,7 +19,7 @@ namespace TaskFlux.Host.Modules.BinaryRequest;
 internal class RequestProcessor
 {
     private readonly TcpClient _client;
-    private readonly BinaryRequestModuleOptions _options;
+    private readonly IOptionsMonitor<BinaryRequestModuleOptions> _options;
     private readonly IApplicationInfo _applicationInfo;
     private IConsensusModule<Command, Result> Module { get; }
     public IClusterInfo ClusterInfo { get; }
@@ -29,7 +29,7 @@ internal class RequestProcessor
 
     public RequestProcessor(TcpClient client, 
                             IConsensusModule<Command, Result> consensusModule,
-                            BinaryRequestModuleOptions options,
+                            IOptionsMonitor<BinaryRequestModuleOptions> options,
                             IApplicationInfo applicationInfo,
                             IClusterInfo clusterInfo,
                             ILogger logger)
@@ -105,9 +105,8 @@ internal class RequestProcessor
     private async Task<Packet> ReceiveNextPacketAsync(PoolingNetworkPacketSerializer serializer,
                                                       CancellationToken token)
     {
-        using var idleTimeoutCts = new CancellationTokenSource(_options.IdleTimeout);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-        linkedCts.CancelAfter(_options.IdleTimeout);
+        linkedCts.CancelAfter(_options.CurrentValue.IdleTimeout);
         Logger.Debug("Начинаю принятие пакета от клиента");
         return await serializer.DeserializeAsync(token);
     }
