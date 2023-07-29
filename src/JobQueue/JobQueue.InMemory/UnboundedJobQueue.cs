@@ -1,13 +1,13 @@
 ﻿using JobQueue.Core;
-using JobQueue.SortedQueue;
+using JobQueue.PriorityQueue;
 
 namespace JobQueue.InMemory;
 
 public class UnboundedJobQueue: IJobQueue
 {
-    private readonly ISortedQueue<int, byte[]> _queue;
+    private readonly IPriorityQueue<int, byte[]> _queue;
 
-    public UnboundedJobQueue(ISortedQueue<int, byte[]> queue)
+    public UnboundedJobQueue(IPriorityQueue<int, byte[]> queue)
     {
         _queue = queue;
     }

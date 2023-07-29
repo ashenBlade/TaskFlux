@@ -1,9 +1,9 @@
 using System.Runtime.CompilerServices;
 
-[assembly: InternalsVisibleTo("JobQueue.SortedQueue.Tests")]
-namespace JobQueue.SortedQueue;
+[assembly: InternalsVisibleTo("JobQueue.PriorityQueue.StandardLibrary.Tests")]
+namespace JobQueue.PriorityQueue.StandardLibrary;
 
-public class PriorityQueueSortedQueue<TKey, TValue> : ISortedQueue<TKey, TValue>
+public class StandardLibraryPriorityQueue<TKey, TValue> : IPriorityQueue<TKey, TValue>
 {
     private readonly PriorityQueue<TValue, TKey> _queue = new();
     public int Count => _queue.Count;

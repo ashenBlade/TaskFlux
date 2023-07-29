@@ -1,8 +1,10 @@
-namespace JobQueue.SortedQueue.Tests;
+using Xunit;
+
+namespace JobQueue.PriorityQueue.StandardLibrary.Tests;
 
 public class PriorityQueueSortedQueueTests
 {
-    private static PriorityQueueSortedQueue<int, int> CreateQueue() => new();
+    private static StandardLibraryPriorityQueue<int, int> CreateQueue() => new();
 
     [Fact]
     public void TryDequeue__СПустойОчередью__ДолженВозвращатьFalse()

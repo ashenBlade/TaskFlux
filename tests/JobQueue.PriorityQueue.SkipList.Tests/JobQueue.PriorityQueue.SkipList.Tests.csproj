@@ -22,7 +22,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\src\JobQueue\JobQueue.SortedQueue\JobQueue.SortedQueue.csproj" />
+      <ProjectReference Include="..\..\src\JobQueue\JobQueue.PriorityQueue\JobQueue.PriorityQueue.SkipList\JobQueue.PriorityQueue.SkipList.csproj" />
     </ItemGroup>
 
 </Project>

@@ -21,7 +21,7 @@ using Consensus.Storage.File.Log;
 using Consensus.Storage.File.Log.Decorators;
 using Consensus.Timers;
 using JobQueue.InMemory;
-using JobQueue.SortedQueue;
+using JobQueue.PriorityQueue.StandardLibrary;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 using TaskFlux.Commands;
@@ -302,7 +302,7 @@ IStateMachine<Command, Result> CreateJobQueueStateMachine(ICommandContext contex
 
 INode CreateNode()
 {
-    var jobQueue = new UnboundedJobQueue(new PriorityQueueSortedQueue<int, byte[]>());
+    var jobQueue = new UnboundedJobQueue(new StandardLibraryPriorityQueue<int,byte[]>());
     return new SingleJobQueueNode(jobQueue);
 }
 
