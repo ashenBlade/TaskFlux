@@ -1,4 +1,5 @@
-﻿using TaskFlux.Commands.Count;
+﻿using JobQueue.Core;
+using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using Xunit;
@@ -26,9 +27,12 @@ public class CommandSerializerTests
     [InlineData("queue.number.uno2")]
     [InlineData("hello-world")]
     [InlineData("hello-world.com")]
+    [InlineData("queue:2:help")]
+    [InlineData("default.1.oops")]
+    [InlineData("main.DEV_OPS")]
     public void CountCommand__Serialization(string queueName)
     {
-        AssertBase(new CountCommand(queueName));
+        AssertBase(new CountCommand(QueueName.Parse(queueName)));
     }
 
     [Theory]
@@ -37,9 +41,10 @@ public class CommandSerializerTests
     [InlineData("sample-queue")]
     [InlineData("xxx")]
     [InlineData("nice.nice.uwu")]
+    [InlineData("hello,world")]
     public void DequeueCommand__Serialization(string queueName)
     {
-        AssertBase(new DequeueCommand(queueName));
+        AssertBase(new DequeueCommand(QueueName.Parse(queueName)));
     }
 
     [Theory]
@@ -66,6 +71,6 @@ public class CommandSerializerTests
     {
         var buffer = new byte[payloadLength];
         Random.Shared.NextBytes(buffer);
-        AssertBase(new EnqueueCommand(key, buffer, queueName));
+        AssertBase(new EnqueueCommand(key, buffer, QueueName.Parse(queueName)));
     }
 }

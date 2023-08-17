@@ -5,14 +5,13 @@ namespace TaskFlux.Commands.Enqueue;
 
 public class EnqueueCommand: Command
 {
-    public string Queue { get; }
+    public QueueName Queue { get; }
     public long Key { get; }
     public byte[] Payload { get; }
 
-    public EnqueueCommand(long key, byte[] payload, string queue)
+    public EnqueueCommand(long key, byte[] payload, QueueName queue)
     {
         ArgumentNullException.ThrowIfNull(payload);
-        ArgumentNullException.ThrowIfNull(queue);
         Key = key;
         Payload = payload;
         Queue = queue;
@@ -21,14 +20,9 @@ public class EnqueueCommand: Command
     public override CommandType Type => CommandType.Enqueue;
     public override Result Apply(ICommandContext context)
     {
-        if (!QueueName.TryParse(Queue, out var queueName))
-        {
-            return DefaultErrors.InvalidQueueName;
-        }
-
         var manager = context.Node.GetJobQueueManager();
 
-        if (!manager.TryGetQueue(queueName, out var queue))
+        if (!manager.TryGetQueue(Queue, out var queue))
         {
             return DefaultErrors.QueueDoesNotExist;
         }

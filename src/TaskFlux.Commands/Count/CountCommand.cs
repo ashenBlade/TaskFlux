@@ -5,24 +5,19 @@ namespace TaskFlux.Commands.Count;
 
 public class CountCommand: Command
 {
-    public string Queue { get; }
+    public QueueName Queue { get; }
     public override CommandType Type => CommandType.Count;
 
-    public CountCommand(string queue)
+    public CountCommand(QueueName queue)
     {
         Queue = queue;
     }
     
     public override Result Apply(ICommandContext context)
     {
-        if (!QueueName.TryParse(Queue, out var queueName))
-        {
-            return DefaultErrors.InvalidQueueName;
-        }
-
         var manager = context.Node.GetJobQueueManager();
 
-        if (!manager.TryGetQueue(queueName, out var queue))
+        if (!manager.TryGetQueue(Queue, out var queue))
         {
             return DefaultErrors.QueueDoesNotExist;
         }

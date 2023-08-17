@@ -7,23 +7,18 @@ namespace TaskFlux.Commands.Dequeue;
 
 public class DequeueCommand: Command
 {
-    public DequeueCommand(string queue)
+    public QueueName Queue { get; }
+    public DequeueCommand(QueueName queue)
     {
         Queue = queue;
     }
 
-    public string Queue { get; }
     public override CommandType Type => CommandType.Dequeue;
     public override Result Apply(ICommandContext context)
     {
-        if (!QueueName.TryParse(Queue, out var queueName))
-        {
-            return DefaultErrors.InvalidQueueName;
-        }
-        
         var manager = context.Node.GetJobQueueManager();
 
-        if (!manager.TryGetQueue(queueName, out var queue))
+        if (!manager.TryGetQueue(Queue, out var queue))
         {
             return DefaultErrors.QueueDoesNotExist;
         }
@@ -57,7 +52,6 @@ public class DequeueCommand: Command
     {
         visitor.Visit(this);
     }
-    
     
     public override ValueTask AcceptAsync(IAsyncCommandVisitor visitor, CancellationToken token = default)
     {

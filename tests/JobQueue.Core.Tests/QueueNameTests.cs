@@ -15,7 +15,6 @@ public class QueueNameTests
         var ex = Record.Exception(() => QueueName.Parse(name));
         Assert.NotNull(ex);
     }
-    
 
     [Fact]
     public void Parse__КогдаСтрокаПуста__ДолженСпарсить()
