@@ -22,8 +22,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\src\Consensus\Consensus.Core\Consensus.Core.csproj" />
-      <ProjectReference Include="..\..\src\Consensus\Consensus.Peer\Consensus.Peer.csproj" />
+      <ProjectReference Include="..\..\src\JobQueue\JobQueue.Core\JobQueue.Core.csproj" />
     </ItemGroup>
 
 </Project>

@@ -1,14 +1,33 @@
-using TaskFlux.Core;
+using JobQueue.Core;
+using TaskFlux.Commands.Error;
 
 namespace TaskFlux.Commands.Count;
 
 public class CountCommand: Command
 {
-    public static readonly CountCommand Instance = new();
+    public string Queue { get; }
     public override CommandType Type => CommandType.Count;
+
+    public CountCommand(string queue)
+    {
+        Queue = queue;
+    }
+    
     public override Result Apply(ICommandContext context)
     {
-        var count = context.Node.GetJobQueue().Count;
+        if (!QueueName.TryParse(Queue, out var queueName))
+        {
+            return DefaultErrors.InvalidQueueName;
+        }
+
+        var manager = context.Node.GetJobQueueManager();
+
+        if (!manager.TryGetQueue(queueName, out var queue))
+        {
+            return DefaultErrors.QueueDoesNotExist;
+        }
+        
+        var count = queue.Count;
         if (count == 0)
         {
             return CountResult.Empty;

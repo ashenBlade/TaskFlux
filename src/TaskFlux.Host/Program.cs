@@ -20,7 +20,9 @@ using Consensus.Storage.File.Decorators;
 using Consensus.Storage.File.Log;
 using Consensus.Storage.File.Log.Decorators;
 using Consensus.Timers;
+using JobQueue.Core;
 using JobQueue.InMemory;
+using JobQueue.PriorityQueue;
 using JobQueue.PriorityQueue.StandardLibrary;
 using Microsoft.Extensions.Configuration;
 using Serilog;
@@ -82,8 +84,8 @@ try
     var log = new StorageLog(storage);
     
     Log.Information("Создаю очередь машины состояний");
-    var node = CreateNode();
     var appInfo = CreateApplicationInfo();
+    var node = CreateNode(appInfo);
     var clusterInfo = CreateClusterInfo(serverOptions);
     var nodeInfo = CreateNodeInfo(serverOptions);
     var commandContext = new CommandContext(node, nodeInfo, appInfo, clusterInfo);
@@ -104,7 +106,7 @@ try
     var stateObserver = new NodeStateObserver(consensusModule, Log.Logger.ForContext<NodeStateObserver>());
 
     var httpModule = CreateHttpRequestModule(configuration);
-    httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(consensusModule, clusterInfo, Log.ForContext<SubmitCommandRequestHandler>()));
+    httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(consensusModule, clusterInfo, appInfo, Log.ForContext<SubmitCommandRequestHandler>()));
     
     var binaryRequestModule = CreateBinaryRequestModule(consensusModule, appInfo, clusterInfo, configuration);
 
@@ -300,10 +302,11 @@ IStateMachine<Command, Result> CreateJobQueueStateMachine(ICommandContext contex
     return new ProxyJobQueueStateMachine(context);
 }
 
-INode CreateNode()
+INode CreateNode(IApplicationInfo applicationInfo)
 {
-    var jobQueue = new UnboundedJobQueue(new StandardLibraryPriorityQueue<int,byte[]>());
-    return new SingleJobQueueNode(jobQueue);
+    var defaultJobQueue = new UnboundedJobQueue(new StandardLibraryPriorityQueue<long, byte[]>());
+    var jobQueueManager = new SimpleJobQueueManager(applicationInfo.DefaultQueueName, defaultJobQueue);
+    return new SingleJobQueueNode(jobQueueManager);
 }
 
 RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine<Command, Result> stateMachine, IMetadataStorage metadataStorage)
@@ -349,7 +352,7 @@ void RestoreState(StorageLog storageLog, FileLogStorage fileLogStorage, ICommand
 
 ApplicationInfo CreateApplicationInfo()
 {
-    return new ApplicationInfo();
+    return new ApplicationInfo(QueueName.Default);
 }
 
 ClusterInfo CreateClusterInfo(RaftServerOptions options)

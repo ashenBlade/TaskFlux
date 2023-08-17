@@ -143,11 +143,9 @@ public class TcpPeer: IPeer
     private async ValueTask<bool> TryEstablishConnectionAsync(CancellationToken token = default)
     {
         _logger.Debug("Начинаю устанавливать соединение");
-        Console.WriteLine("TryEstablishConnectionAsync");
         var connected = await _client.ConnectAsync(_endPoint, _connectionTimeout, token);
         if (!connected)
         {
-            Console.WriteLine($"!connected");
             return false;
         }
 

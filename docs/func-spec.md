@@ -71,7 +71,7 @@ flowchart TD
     enqueue-element[Вставить элемент в очередь]
     enqueue-success{Вставка прошла успешно?}
     return-success([Успех: элемент вставлен])
-    return-full([Ошибка: очередь полна])
+    return-full([Успех: очередь полна])
     
     start ---> check-queue-name
     check-queue-name -- Нет --> use-default-queue ---> enqueue-element
@@ -99,6 +99,8 @@ flowchart TD
     start([Вход: название очереди])
     check-queue-name{Название очереди указано?}
     use-default-queue[Использовать очередь по умолчанию]
+    check-queue-name-valid{Название очереди правильное?}
+    return-invalid-name([Ошибка: название указано в неправильном формате])
     use-specified-queue[Использовать указанную очередь]
     check-queue-exists{Очередь существует?}
     return-queue-not-exists([Ошибка: очередь не существует])
@@ -109,10 +111,14 @@ flowchart TD
     
     start ---> check-queue-name
     check-queue-name -- Нет --> use-default-queue ---> dequeue-element
-    check-queue-name -- Да --> check-queue-exists
+    check-queue-name -- Да --> check-queue-name-valid
+    
+    check-queue-name-valid -- Да --> check-queue-exists
+    check-queue-name-valid -- Нет --> return-invalid-name
     
     check-queue-exists -- Нет --> return-queue-not-exists
     check-queue-exists -- Да --> use-specified-queue --> dequeue-element --> got-element
+    
     got-element -- Нет --> return-empty
     got-element -- Да --> return-element
 ```
@@ -215,20 +221,17 @@ flowchart TD
 
 ## Название очереди
 
-Общее: название очереди должно быть валидным названием DNS поддомена, указанном в [RFC 1035](https://www.ietf.org/rfc/rfc1035.txt).
-В частности:
-- Название состоит из нескольких, разделенных точкой, имен (может быть только 1 имя)
-- В начале имени идет только буква
-- В конце имени идет только буква или цифра
-- Между началом и концом в имени могут использоваться буквы, цифры или знак дефиса
-- Используемые буквы только английского алфавита верхнего и нижнего регистров
-- Максимальная длина названия - 255 символов
-- Максимальная длина имени - 63 символа
+Название очереди представляется строкой из букв, цифр и специальных знаков:
+- Буквы: любые буквы английского алфавита верхнего и нижнего регистров (`A-Z a-z`)
+- Цифры: любые арабские цифры (`0-9`)
+- Специальные знаки: любые знаки из списка - `-_.:`
 
-Примеры правильных названий:
-- default
-- room-407
-- Moscow.Pushkina.Room200
+Остальные символы не допускаются.
+
+Длина названия от 0 до 255.
+
+> Замечание: название очереди длины 0 (пустая строка) - название очереди по умолчанию. 
+Поэтому названия очередей, которые можно создать должны быть длиной больше 0 (от 1 до 255).
 
 ## Размер очереди (на момент создания)
 

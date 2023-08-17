@@ -25,6 +25,13 @@ public struct ArrayBinaryReader
         return value;
     }
 
+    public long ReadInt64()
+    {
+        var value = BinaryPrimitives.ReadInt64BigEndian(_buffer.AsSpan(_index));
+        _index += sizeof(long);
+        return value;
+    }
+
     private void EnsureLength(int shouldHasLength)
     {
         var leftLength = _buffer.Length - _index;

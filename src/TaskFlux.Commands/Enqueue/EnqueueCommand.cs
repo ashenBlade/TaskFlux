@@ -1,35 +1,62 @@
-using System.Text.Json.Serialization;
-using TaskFlux.Core;
+using JobQueue.Core;
+using TaskFlux.Commands.Error;
 
 namespace TaskFlux.Commands.Enqueue;
 
 public class EnqueueCommand: Command
 {
-    public int Key { get; }
+    public string Queue { get; }
+    public long Key { get; }
     public byte[] Payload { get; }
 
-    public EnqueueCommand(int key, byte[] payload)
+    public EnqueueCommand(long key, byte[] payload, string queue)
     {
+        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(queue);
         Key = key;
         Payload = payload;
+        Queue = queue;
     }
+    
     public override CommandType Type => CommandType.Enqueue;
     public override Result Apply(ICommandContext context)
     {
-        var queue = context.Node.GetJobQueue();
+        if (!QueueName.TryParse(Queue, out var queueName))
+        {
+            return DefaultErrors.InvalidQueueName;
+        }
+
+        var manager = context.Node.GetJobQueueManager();
+
+        if (!manager.TryGetQueue(queueName, out var queue))
+        {
+            return DefaultErrors.QueueDoesNotExist;
+        }
+        
         if (queue.TryEnqueue(Key, Payload))
         {
             return EnqueueResult.Ok;
         }
         
-        return EnqueueResult.Fail;
+        return EnqueueResult.Full;
     }
 
     public override void ApplyNoResult(ICommandContext context)
     {
-        context.Node
-               .GetJobQueue()
-               .TryEnqueue(Key, Payload);
+        
+        if (!QueueName.TryParse(Queue, out var queueName))
+        {
+            return;
+        }
+
+        var manager = context.Node.GetJobQueueManager();
+
+        if (!manager.TryGetQueue(queueName, out var queue))
+        {
+            return;
+        }
+
+        queue.TryEnqueue(Key, Payload);
     }
 
     public override void Accept(ICommandVisitor visitor)

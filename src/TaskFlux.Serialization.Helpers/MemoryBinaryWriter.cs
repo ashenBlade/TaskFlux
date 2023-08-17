@@ -24,6 +24,12 @@ public struct MemoryBinaryWriter
         BinaryPrimitives.WriteInt32BigEndian(_buffer[_index..].Span, value);
         _index += sizeof(int);
     }
+    
+    public void Write(long value)
+    {
+        BinaryPrimitives.WriteInt64BigEndian(_buffer[_index..].Span, value);
+        _index += sizeof(long);
+    }
 
     /// <summary>
     /// Сериализовать переданный буфер как самостоятельную единицу.
@@ -58,6 +64,9 @@ public struct MemoryBinaryWriter
         BinaryPrimitives.WriteInt32BigEndian(_buffer.Slice(_index).Span, stringByteLength);
         _index += sizeof(int) + stringByteLength;
     }
+
+    public static int EstimateResultStringSize(string value) => sizeof(int)                        // Размер 
+                                                       + Encoding.UTF8.GetByteCount(value); // Строка
 
     public void Write(bool resultSuccess)
     {

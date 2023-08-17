@@ -1,6 +1,7 @@
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
+using TaskFlux.Commands.Error;
 
 namespace TaskFlux.Commands.Serialization.Tests;
 
@@ -25,6 +26,10 @@ public class ResultEqualityComparer: IEqualityComparer<Result>
                    _              => false
                };
     }
+
+    private static bool Check(ErrorResult first, ErrorResult second) =>
+        first.ErrorType == second.ErrorType && 
+        first.Message == second.Message;
     
     public int GetHashCode(Result obj)
     {

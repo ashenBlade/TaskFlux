@@ -22,13 +22,17 @@ public class CommandSerializer
         
         public void Visit(EnqueueCommand command)
         {
+            var queueNameSize = MemoryBinaryWriter.EstimateResultStringSize(command.Queue);
             var estimatedSize = sizeof(CommandType)     // Маркер
-                              + sizeof(int)             // Ключ
+                              + queueNameSize           // Очередь
+                              + sizeof(long)            // Ключ
                               + sizeof(int)             // Длина тела
                               + command.Payload.Length; // Тело
+            
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)CommandType.Enqueue);
+            writer.Write((byte) CommandType.Enqueue);
+            writer.Write(command.Queue);
             writer.Write(command.Key);
             writer.WriteBuffer(command.Payload);
             _result = buffer;
@@ -36,17 +40,25 @@ public class CommandSerializer
 
         public void Visit(DequeueCommand command)
         {
-            var estimatedSize = sizeof(CommandType);
+            var estimatedQueueNameSize = MemoryBinaryWriter.EstimateResultStringSize(command.Queue);
+            var estimatedSize = sizeof(CommandType)     // Маркер
+                              + estimatedQueueNameSize; // Очередь
             var buffer = new byte[estimatedSize];
-            buffer[0] = ( byte ) CommandType.Dequeue;
+            var writer = new MemoryBinaryWriter(buffer);
+            writer.Write((byte)CommandType.Dequeue);
+            writer.Write(command.Queue);
             _result = buffer;
         }
 
         public void Visit(CountCommand command)
         {
-            var estimatedSize = sizeof(CommandType);
+            var estimatedQueueNameSize = MemoryBinaryWriter.EstimateResultStringSize(command.Queue);
+            var estimatedSize = sizeof(CommandType)     // Маркер
+                              + estimatedQueueNameSize; // Очередь
             var buffer = new byte[estimatedSize];
-            buffer[0] = ( byte ) CommandType.Count;
+            var writer = new MemoryBinaryWriter(buffer);
+            writer.Write((byte)CommandType.Count);
+            writer.Write(command.Queue);
             _result = buffer;
         }
     }
@@ -57,16 +69,29 @@ public class CommandSerializer
         var marker = (CommandType) reader.ReadByte();
         return marker switch
                {
-                   CommandType.Count   => CountCommand.Instance,
-                   CommandType.Dequeue => DequeueCommand.Instance,
+                   CommandType.Count   => DeserializeCountCommand(reader),
+                   CommandType.Dequeue => DeserializeDequeueCommand(reader),
                    CommandType.Enqueue => DeserializeEnqueueCommand(reader),
                };
     }
 
+    private DequeueCommand DeserializeDequeueCommand(ArrayBinaryReader reader)
+    {
+        var name = reader.ReadString();
+        return new DequeueCommand(name);
+    }
+
+    private CountCommand DeserializeCountCommand(ArrayBinaryReader reader)
+    {
+        var queue = reader.ReadString();
+        return new CountCommand(queue);
+    }
+
     private EnqueueCommand DeserializeEnqueueCommand(ArrayBinaryReader reader)
     {
-        var key = reader.ReadInt32();
+        var queue = reader.ReadString();
+        var key = reader.ReadInt64();
         var buffer = reader.ReadBuffer();
-        return new EnqueueCommand(key, buffer);
+        return new EnqueueCommand(key, buffer, queue);
     }
 }

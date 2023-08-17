@@ -2,6 +2,7 @@ using System.Net.Sockets;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
+using TaskFlux.Commands.Error;
 using Xunit;
 
 namespace TaskFlux.Commands.Serialization.Tests;
@@ -64,5 +65,19 @@ public class ResultSerializerTests
         var buffer = new byte[payloadSize];
         Random.Shared.NextBytes(buffer);
         AssertBase(DequeueResult.Create(key, buffer));    
+    }
+
+    [Theory]
+    [InlineData(ErrorType.Unknown, "")]
+    [InlineData(ErrorType.Unknown, "Some message error")]
+    [InlineData(ErrorType.Unknown, "Странный ключ??!.")]
+    [InlineData(ErrorType.InvalidQueueName, "Название очереди слишком длинное")]
+    [InlineData(ErrorType.InvalidQueueName, "В названии очереди недопустимые символы")]
+    [InlineData(ErrorType.QueueDoesNotExist, "")]
+    [InlineData(ErrorType.QueueDoesNotExist, "Queue with specified name does not exist")]
+    [InlineData(ErrorType.QueueDoesNotExist, "Такой очереди не существует")]
+    public void ErrorResult__Serialization(ErrorType errorType, string message)
+    {
+        AssertBase(new ErrorResult(errorType, message));
     }
 }
