@@ -1,5 +1,5 @@
 using System.Runtime.CompilerServices;
-using System.Text;
+using JobQueue.Core.Exceptions;
 
 [assembly: InternalsVisibleTo("JobQueue.Core.Tests")]
 [assembly: InternalsVisibleTo("TaskFlux.Commands.Serialization.Tests")]

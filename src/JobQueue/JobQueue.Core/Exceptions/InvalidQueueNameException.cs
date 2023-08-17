@@ -1,4 +1,4 @@
-namespace JobQueue.Core;
+namespace JobQueue.Core.Exceptions;
 
 public class InvalidQueueNameException: FormatException
 {

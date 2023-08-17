@@ -1,9 +1,13 @@
 using System.Diagnostics;
+using System.Threading.Channels;
 using JobQueue.Core;
 using JobQueue.PriorityQueue;
 
 namespace JobQueue.InMemory;
 
+/// <summary>
+/// Очередь с ограничением на размер
+/// </summary>
 public class BoundedJobQueue: IJobQueue
 {
     private readonly IPriorityQueue<long, byte[]> _queue;

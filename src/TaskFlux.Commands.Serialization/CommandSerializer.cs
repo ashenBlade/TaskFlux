@@ -1,6 +1,7 @@
 ﻿using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using JobQueue.Core;
+using JobQueue.Core.Exceptions;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
@@ -71,8 +72,8 @@ public class CommandSerializer
     /// </summary>
     /// <param name="payload">Сериализованная команда</param>
     /// <returns>Команда, которая была сериализована</returns>
-    /// <exception cref="InvalidQueueNameException">Сериализованное название очереди было в неправильном формате</exception>
     /// <exception cref="ArgumentNullException">Переданный массив - <c>null</c></exception>
+    /// <exception cref="InvalidQueueNameException">Сериализованное название очереди было в неправильном формате</exception>
     /// <exception cref="SerializationException">Во время десериализации произошла ошибка</exception>
     public Command Deserialize(byte[] payload)
     {

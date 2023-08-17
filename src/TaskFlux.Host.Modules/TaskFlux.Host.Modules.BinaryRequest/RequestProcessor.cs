@@ -1,11 +1,14 @@
 using System.Buffers;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Runtime.Serialization;
 using Consensus.Core;
 using Consensus.Core.Commands.Submit;
+using JobQueue.Core.Exceptions;
 using Microsoft.Extensions.Options;
 using Serilog;
 using TaskFlux.Commands;
+using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Serialization;
 using TaskFlux.Core;
 using TaskFlux.Host.Modules.BinaryRequest.Exceptions;
@@ -335,11 +338,21 @@ internal class RequestProcessor
             {
                 command = _processor.CommandSerializer.Deserialize(packet.Payload);
             }
-            catch (Exception e)
+            // 1. Чтобы в бизнес-логике каждый раз не писать проверку - проверим здесь
+            // 2. Зачем клиенту долго ждать, если такую ошибку можно проверить сразу?
+            catch (InvalidQueueNameException invalidName)
             {
-                _processor.Logger.Warning(e, "Ошибка при десерилазации команды от клиента");
-                var errorPacket = new ErrorResponsePacket("Ошибка десерализации команды");
-                await _serializer.VisitAsync(errorPacket, token);
+                // Это ошибка бизнес-логики, поэтому соединение не разрывается
+                // PERF: в статическое поле для оптимизации выделить
+                _processor.Logger.Debug(invalidName, "Ошибка при десериализации команды, включающей название очереди, полученной от клиента");
+                    await _serializer.SerializeAsync(
+                    new CommandResponsePacket(_processor.ResultSerializer.Serialize(DefaultErrors.InvalidQueueName)), token);
+                return;
+            }
+            catch (SerializationException e)
+            {
+                _processor.Logger.Warning(e, "Ошибка при десерилазации команды от клиента. Закрываю соединение");
+                ShouldClose = true;
                 return;
             }
 

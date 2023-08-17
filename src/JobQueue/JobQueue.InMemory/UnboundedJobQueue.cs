@@ -3,6 +3,9 @@ using JobQueue.PriorityQueue;
 
 namespace JobQueue.InMemory;
 
+/// <summary>
+/// Очередь без ограничений на размер
+/// </summary>
 public class UnboundedJobQueue: IJobQueue
 {
     private readonly IPriorityQueue<long, byte[]> _queue;
