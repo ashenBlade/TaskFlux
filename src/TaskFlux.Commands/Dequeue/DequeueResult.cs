@@ -1,3 +1,5 @@
+using TaskFlux.Commands.Visitors;
+
 namespace TaskFlux.Commands.Dequeue;
 
 public class DequeueResult: Result

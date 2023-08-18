@@ -15,7 +15,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		docs\raft.md = docs\raft.md
 		docs\commands.md = docs\commands.md
 		docs\func-spec.md = docs\func-spec.md
-		docs\protocol.md = docs\protocol.md
+		docs\network-protocol.md = docs\network-protocol.md
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.CommandQueue.Channel.Tests", "tests\Consensus.CommandQueue.Channel.Tests\Consensus.CommandQueue.Channel.Tests.csproj", "{18AA4097-F859-4851-A265-E431D69FD6E8}"

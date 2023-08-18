@@ -1,4 +1,6 @@
+using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Text;
 using JobQueue.Core.Exceptions;
 
 [assembly: InternalsVisibleTo("JobQueue.Core.Tests")]
@@ -87,7 +89,7 @@ public struct QueueName
         
         return true;
     }
-
+    
     // В кодировке UTF-8 (+ ASCII и UTF-16) - возврастающий диапазон [33; 126]
     internal const string AllowedCharacters =
         "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
@@ -141,5 +143,11 @@ public struct QueueName
         });
         
         return new QueueName(name);
+    }
+
+    private static readonly Encoding Encoding = Encoding.GetEncoding("ascii", EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+    public static QueueName Parse(ReadOnlySpan<byte> span)
+    {
+        throw new NotImplementedException("Парсинг из сырых байтов названия еще нет");
     }
 }

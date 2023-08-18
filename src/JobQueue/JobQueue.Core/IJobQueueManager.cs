@@ -31,4 +31,22 @@ public interface IJobQueueManager
     /// <returns><c>true</c> - очередь была удалена, <c>false</c> - очередь с указанным названием не найдена</returns>
     /// <remarks>Если </remarks>
     public bool TryDeleteQueue(QueueName name, out IJobQueue deleted);
+
+    /// <summary>
+    /// Проверить, что очередь с указанным названием существует
+    /// </summary>
+    /// <param name="name">Название очереди</param>
+    /// <returns><c>true</c> - очередь существует, <c>false</c> - очередь не существует</returns>
+    public bool HasQueue(QueueName name);
+
+    /// <summary>
+    /// Получить метаданные обо всех очередях, находящихся в системе
+    /// </summary>
+    /// <returns>Список из метаданных очередей</returns>
+    public IReadOnlyCollection<IJobQueueMetadata> GetAllQueuesMetadata();
+    
+    /// <summary>
+    /// Количество очередей, которыми <see cref="IJobQueueManager"/> управляет
+    /// </summary>
+    public int QueuesCount { get; }
 }

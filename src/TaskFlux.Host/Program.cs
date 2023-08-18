@@ -304,8 +304,8 @@ IStateMachine<Command, Result> CreateJobQueueStateMachine(ICommandContext contex
 
 INode CreateNode(IApplicationInfo applicationInfo)
 {
-    var defaultJobQueue = new UnboundedJobQueue(new StandardLibraryPriorityQueue<long, byte[]>());
-    var jobQueueManager = new SimpleJobQueueManager(applicationInfo.DefaultQueueName, defaultJobQueue);
+    var defaultJobQueue = new UnboundedJobQueue(applicationInfo.DefaultQueueName, new StandardLibraryPriorityQueue<long, byte[]>());
+    var jobQueueManager = new SimpleJobQueueManager(defaultJobQueue);
     return new SingleJobQueueNode(jobQueueManager);
 }
 

@@ -65,7 +65,7 @@ public struct MemoryBinaryWriter
         _index += sizeof(int) + stringByteLength;
     }
 
-    public static int EstimateResultStringSize(string value) => sizeof(int)                        // Размер 
+    public static int EstimateResultSize(string value) => sizeof(int)                        // Размер 
                                                        + Encoding.UTF8.GetByteCount(value); // Строка
 
     public void Write(bool resultSuccess)

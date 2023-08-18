@@ -10,14 +10,31 @@ namespace JobQueue.InMemory;
 /// </summary>
 public class BoundedJobQueue: IJobQueue
 {
+    public IJobQueueMetadata Metadata { get; }
     private readonly IPriorityQueue<long, byte[]> _queue;
-    private readonly int _limit;
+    private readonly uint _limit;
 
-    public BoundedJobQueue(IPriorityQueue<long, byte[]> queue, int limit)
+    /// <summary>
+    /// Основной конструктор для ограниченной очереди
+    /// </summary>
+    /// <param name="name">Название очереди</param>
+    /// <param name="queue">Хранилище для данных</param>
+    /// <param name="limit">Максимальный размер очереди</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="limit"/> - <c>0</c></exception>
+    public BoundedJobQueue(QueueName name, IPriorityQueue<long, byte[]> queue, uint limit)
     {
+        if (limit == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), limit,
+                "Максимальный размер очереди не может быть равен 0. Чтобы убрать лимит надо использовать UnboundedJobQueue");
+        }
+        
+        Name = name;
         _queue = queue;
         _limit = limit;
+        Metadata = new BoundedJobQueueMetadata(this);
     }
+
 
     public bool TryEnqueue(long key, byte[] payload)
     {
@@ -37,5 +54,20 @@ public class BoundedJobQueue: IJobQueue
         return _queue.TryDequeue(out key, out payload);
     }
 
+    public QueueName Name { get; }
     public int Count => _queue.Count;
+
+    private class BoundedJobQueueMetadata : IJobQueueMetadata
+    {
+        private readonly BoundedJobQueue _queue;
+        
+        public QueueName QueueName => _queue.Name;
+        public uint Count => (uint) _queue.Count;
+        public uint MaxSize => _queue._limit;
+
+        public BoundedJobQueueMetadata(BoundedJobQueue queue)
+        {
+            _queue = queue;
+        }
+    }
 }

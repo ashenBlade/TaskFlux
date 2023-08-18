@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using JobQueue.Core;
 using TaskFlux.Commands.Error;
+using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 
 namespace TaskFlux.Commands.Dequeue;

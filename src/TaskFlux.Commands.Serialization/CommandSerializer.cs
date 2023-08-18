@@ -3,8 +3,12 @@ using System.Runtime.Serialization;
 using JobQueue.Core;
 using JobQueue.Core.Exceptions;
 using TaskFlux.Commands.Count;
+using TaskFlux.Commands.CreateQueue;
+using TaskFlux.Commands.DeleteQueue;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
+using TaskFlux.Commands.ListQueues;
+using TaskFlux.Commands.Visitors;
 using TaskFlux.Serialization.Helpers;
 
 namespace TaskFlux.Commands.Serialization;
@@ -26,7 +30,7 @@ public class CommandSerializer
         
         public void Visit(EnqueueCommand command)
         {
-            var queueNameSize = MemoryBinaryWriter.EstimateResultStringSize(command.Queue);
+            var queueNameSize = MemoryBinaryWriter.EstimateResultSize(command.Queue);
             var estimatedSize = sizeof(CommandType)     // Маркер
                               + queueNameSize           // Очередь
                               + sizeof(long)            // Ключ
@@ -44,7 +48,7 @@ public class CommandSerializer
 
         public void Visit(DequeueCommand command)
         {
-            var estimatedQueueNameSize = MemoryBinaryWriter.EstimateResultStringSize(command.Queue);
+            var estimatedQueueNameSize = MemoryBinaryWriter.EstimateResultSize(command.Queue);
             var estimatedSize = sizeof(CommandType)     // Маркер
                               + estimatedQueueNameSize; // Очередь
             var buffer = new byte[estimatedSize];
@@ -56,13 +60,50 @@ public class CommandSerializer
 
         public void Visit(CountCommand command)
         {
-            var estimatedQueueNameSize = MemoryBinaryWriter.EstimateResultStringSize(command.Queue);
+            var estimatedQueueNameSize = MemoryBinaryWriter.EstimateResultSize(command.Queue);
             var estimatedSize = sizeof(CommandType)     // Маркер
                               + estimatedQueueNameSize; // Очередь
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
             writer.Write((byte)CommandType.Count);
             writer.Write(command.Queue);
+            _result = buffer;
+        }
+
+        public void Visit(CreateQueueCommand command)
+        {
+            var queueNameSize = MemoryBinaryWriter.EstimateResultSize(command.Name);
+            var estimatedSize = sizeof(CommandType) // Маркер
+                              + queueNameSize       // Название очереди
+                              + sizeof(uint);       // Максимальный размер очереди
+
+            var buffer = new byte[estimatedSize];
+            var writer = new MemoryBinaryWriter(buffer);
+            writer.Write((byte)CommandType.CreateQueue);
+            writer.Write(command.Name);
+            writer.Write(command.Size);
+            _result = buffer;
+        }
+
+        public void Visit(DeleteQueueCommand command)
+        {
+            var queueNameSize = MemoryBinaryWriter.EstimateResultSize(command.QueueName);
+            var estimatedSize = sizeof(CommandType)
+                              + queueNameSize;
+
+            var buffer = new byte[estimatedSize];
+            var writer = new MemoryBinaryWriter(buffer);
+            writer.Write((byte)CommandType.DeleteQueue);
+            writer.Write(command.QueueName);
+            _result = buffer;
+        }
+
+        public void Visit(ListQueuesCommand command)
+        {
+            var estimatedSize = sizeof(CommandType);
+            var buffer = new byte[estimatedSize];
+            var writer = new MemoryBinaryWriter(buffer);
+            writer.Write((byte)CommandType.ListQueues);
             _result = buffer;
         }
     }
@@ -92,6 +133,9 @@ public class CommandSerializer
                        CommandType.Count   => DeserializeCountCommand(reader),
                        CommandType.Dequeue => DeserializeDequeueCommand(reader),
                        CommandType.Enqueue => DeserializeEnqueueCommand(reader),
+                       CommandType.CreateQueue => DeserializeCreateQueueCommand(reader),
+                       CommandType.DeleteQueue => DeserializeDeleteQueueCommand(reader),
+                       CommandType.ListQueues => DeserializeListQueuesCommand(reader),
                    };
         }
         // Ушли за границы буфера - передана не полная информация
@@ -106,6 +150,24 @@ public class CommandSerializer
         {
             throw new SerializationException($"Неизвестный байт маркера команды: {( byte ) marker}");
         }
+    }
+
+    private ListQueuesCommand DeserializeListQueuesCommand(ArrayBinaryReader reader)
+    {
+        return ListQueuesCommand.Instance;
+    }
+
+    private DeleteQueueCommand DeserializeDeleteQueueCommand(ArrayBinaryReader reader)
+    {
+        var name = reader.ReadString();
+        return new DeleteQueueCommand(QueueName.Parse(name));
+    }
+
+    private CreateQueueCommand DeserializeCreateQueueCommand(ArrayBinaryReader reader)
+    {
+        var queueName = reader.ReadString();
+        var limit = reader.ReadUInt32();
+        return new CreateQueueCommand(QueueName.Parse(queueName), limit);
     }
 
     private DequeueCommand DeserializeDequeueCommand(ArrayBinaryReader reader)

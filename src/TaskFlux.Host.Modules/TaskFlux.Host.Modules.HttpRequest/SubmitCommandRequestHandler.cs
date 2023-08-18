@@ -11,6 +11,9 @@ using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
+using TaskFlux.Commands.ListQueues;
+using TaskFlux.Commands.Ok;
+using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 
 namespace TaskFlux.Host.Modules.HttpRequest;
@@ -190,6 +193,23 @@ public class SubmitCommandRequestHandler: IRequestHandler
             Payload["type"] = "error";
             Payload["subtype"] = (byte) result.ErrorType;
             Payload["message"] = result.Message;
+        }
+
+        public void Visit(OkResult result)
+        {
+            Payload["type"] = "ok";
+        }
+
+        public void Visit(ListQueuesResult result)
+        {
+            Payload["type"] = "list-queues";
+            Payload["data"] = result.Metadata.ToDictionary(m => m.QueueName, m => new Dictionary<string, object?>()
+            {
+                {"count", m.Count},
+                {"limit", m.HasMaxSize 
+                              ? m.MaxSize
+                              : null}
+            });
         }
     }
 

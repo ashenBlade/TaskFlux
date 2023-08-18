@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
+using System.ComponentModel;
 using System.Runtime.Serialization;
 using System.Text;
+using JobQueue.Core;
 
 namespace TaskFlux.Serialization.Helpers;
 
@@ -143,6 +145,8 @@ public struct ArrayBinaryReader
     /// <exception cref="SerializationException">В буфере не осталось места для десериализации</exception>
     public bool ReadBoolean()
     {
+        const byte falseByte = 0;   
+        
         if (_buffer.Length <= _index)
         {
             throw new SerializationException("Ошибка десериализации bool: в буфере закончилось место");
@@ -150,6 +154,32 @@ public struct ArrayBinaryReader
         
         var value = _buffer[_index];
         _index++;
-        return value != 0;
+        return value != falseByte;
+    }
+
+    /// <summary>
+    /// Десериализовать <see cref="uint"/> из буфера
+    /// </summary>
+    /// <returns>Десериализованный <see cref="uint"/></returns>
+    /// <exception cref="SerializationException">В буфере нет 4 байт для десериализации числа</exception>
+    public uint ReadUInt32()
+    {
+        try
+        {
+            var value = BinaryPrimitives.ReadUInt32BigEndian(_buffer.AsSpan(_index));
+            _index += sizeof(uint);
+            return value;
+        }
+        catch (ArgumentOutOfRangeException e)
+        {
+            throw new SerializationException("Ошибка во время десериализации uint: в буфере нет места", e);
+        }
+    }
+
+    public QueueName ReadQueueName()
+    {
+        // TODO: сделать оптимальнее - сразу байты чекать
+        var str = ReadString();
+        return QueueName.Parse(str);
     }
 }

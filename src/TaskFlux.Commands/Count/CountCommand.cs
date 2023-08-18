@@ -1,5 +1,6 @@
 using JobQueue.Core;
 using TaskFlux.Commands.Error;
+using TaskFlux.Commands.Visitors;
 
 namespace TaskFlux.Commands.Count;
 

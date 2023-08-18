@@ -8,11 +8,16 @@ namespace JobQueue.InMemory;
 /// </summary>
 public class UnboundedJobQueue: IJobQueue
 {
+    public QueueName Name { get; }
+    public int Count => _queue.Count;
+    public IJobQueueMetadata Metadata { get; }
     private readonly IPriorityQueue<long, byte[]> _queue;
 
-    public UnboundedJobQueue(IPriorityQueue<long, byte[]> queue)
+    public UnboundedJobQueue(QueueName name, IPriorityQueue<long, byte[]> queue)
     {
+        Name = name;
         _queue = queue;
+        Metadata = new UnboundedJobQueueMetadata(this);
     }
     
     public bool TryEnqueue(long key, byte[] payload)
@@ -26,5 +31,16 @@ public class UnboundedJobQueue: IJobQueue
         return _queue.TryDequeue(out key, out payload);
     }
 
-    public int Count => _queue.Count;
+    private class UnboundedJobQueueMetadata : IJobQueueMetadata
+    {
+        private readonly UnboundedJobQueue _queue;
+        public QueueName QueueName => _queue.Name;
+        public uint Count => (uint) _queue.Count;
+        public uint MaxSize => 0;
+
+        public UnboundedJobQueueMetadata(UnboundedJobQueue queue)
+        {
+            _queue = queue;
+        }
+    }
 }

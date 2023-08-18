@@ -1,3 +1,5 @@
+using TaskFlux.Commands.Visitors;
+
 namespace TaskFlux.Commands.Error;
 
 public class ErrorResult: Result
