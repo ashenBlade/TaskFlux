@@ -9,6 +9,7 @@ using TaskFlux.Core;
 
 namespace Consensus.Peer.Tests;
 
+[Trait("Category", "Raft")]
 public class BinaryPacketSerializerTests
 {
     private static BinaryPacketDeserializer Deserializer { get; } = new(); 

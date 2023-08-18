@@ -5,6 +5,7 @@ using Consensus.Storage.File.Log;
 
 namespace Consensus.Storage.File.Tests;
 
+[Trait("Category", "Raft")]
 public class FileLogStorageTests
 {
     public static LogEntry Entry(int term, string data) 

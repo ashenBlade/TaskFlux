@@ -7,6 +7,7 @@ using TaskFlux.Core;
 
 namespace Consensus.Core.Tests;
 
+[Trait("Category", "Raft")]
 public class CandidateStateTests
 {
     private static RaftConsensusModule<int, int> CreateCandidateNode(Term term, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IBackgroundJobQueue? jobQueue = null, ILog? log = null)

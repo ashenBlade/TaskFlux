@@ -2,7 +2,8 @@ using Xunit;
 
 namespace JobQueue.PriorityQueue.StandardLibrary.Tests;
 
-public class PriorityQueueSortedQueueTests
+[Trait("Category", "BusinessLogic")]
+public class StandardLibraryPriorityQueueTests
 {
     private static StandardLibraryPriorityQueue<int, int> CreateQueue() => new();
 

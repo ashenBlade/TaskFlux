@@ -6,6 +6,7 @@ using Xunit;
 
 namespace TaskFlux.Commands.Serialization.Tests;
 
+[Trait("Category", "Serialization")]
 public class CommandSerializerTests
 {
     private static readonly CommandSerializer Serializer = new();

@@ -10,6 +10,7 @@ using Xunit;
 namespace TaskFlux.Commands.Serialization.Tests;
 
 // ReSharper disable StringLiteralTypo
+[Trait("Category", "Serialization")]
 public class ResultSerializerTests
 {
     private static readonly ResultSerializer Serializer = new();

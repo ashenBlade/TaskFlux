@@ -3,6 +3,7 @@ using TaskFlux.Core;
 
 namespace Consensus.Storage.File.Tests;
 
+[Trait("Category", "Raft")]
 public class FileMetadataStorageTests
 {
     private static MemoryStream CreateStream()

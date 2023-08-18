@@ -1,8 +1,9 @@
 using Moq;
 
-// ReSharper disable AccessToDisposedClosure
 namespace Consensus.CommandQueue.Channel.Tests;
 
+// ReSharper disable AccessToDisposedClosure
+[Trait("Category", "Raft")]
 public class ChannelCommandQueueTests
 {
     private static ChannelCommandQueue StartQueue()

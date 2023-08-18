@@ -2,6 +2,7 @@ using System.Text;
 
 namespace JobQueue.Core.Tests;
 
+[Trait("Category", "BusinessLogic")]
 public class QueueNameTests
 {
     private static void AssertBase(string name)

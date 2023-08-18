@@ -6,6 +6,7 @@ using TaskFlux.Core;
 
 namespace Consensus.Core.Tests;
 
+[Trait("Category", "Raft")]
 public class FollowerStateTests
 {
     private static readonly NodeId NodeId = new(1);
