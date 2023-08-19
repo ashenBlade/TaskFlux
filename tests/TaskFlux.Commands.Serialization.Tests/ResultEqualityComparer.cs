@@ -56,7 +56,7 @@ public class ResultEqualityComparer: IEqualityComparer<Result>
 
         public int GetHashCode(IJobQueueMetadata obj)
         {
-            throw new NotImplementedException();
+            return HashCode.Combine(obj.QueueName, obj.Count, obj.MaxSize);
         }
     }
 

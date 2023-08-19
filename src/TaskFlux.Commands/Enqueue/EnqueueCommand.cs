@@ -38,15 +38,9 @@ public class EnqueueCommand: Command
 
     public override void ApplyNoResult(ICommandContext context)
     {
-        
-        if (!QueueName.TryParse(Queue, out var queueName))
-        {
-            return;
-        }
-
         var manager = context.Node.GetJobQueueManager();
 
-        if (!manager.TryGetQueue(queueName, out var queue))
+        if (!manager.TryGetQueue(Queue, out var queue))
         {
             return;
         }

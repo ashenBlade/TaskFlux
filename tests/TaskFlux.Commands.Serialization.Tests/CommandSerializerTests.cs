@@ -6,6 +6,7 @@ using Xunit;
 
 namespace TaskFlux.Commands.Serialization.Tests;
 
+// ReSharper disable StringLiteralTypo
 [Trait("Category", "Serialization")]
 public class CommandSerializerTests
 {
@@ -33,7 +34,7 @@ public class CommandSerializerTests
     [InlineData("main.DEV_OPS")]
     public void CountCommand__Serialization(string queueName)
     {
-        AssertBase(new CountCommand(QueueName.Parse(queueName)));
+        AssertBase(new CountCommand(QueueNameParser.Parse(queueName)));
     }
 
     [Theory]
@@ -45,7 +46,7 @@ public class CommandSerializerTests
     [InlineData("hello,world")]
     public void DequeueCommand__Serialization(string queueName)
     {
-        AssertBase(new DequeueCommand(QueueName.Parse(queueName)));
+        AssertBase(new DequeueCommand(QueueNameParser.Parse(queueName)));
     }
 
     [Theory]
@@ -72,6 +73,6 @@ public class CommandSerializerTests
     {
         var buffer = new byte[payloadLength];
         Random.Shared.NextBytes(buffer);
-        AssertBase(new EnqueueCommand(key, buffer, QueueName.Parse(queueName)));
+        AssertBase(new EnqueueCommand(key, buffer, QueueNameParser.Parse(queueName)));
     }
 }

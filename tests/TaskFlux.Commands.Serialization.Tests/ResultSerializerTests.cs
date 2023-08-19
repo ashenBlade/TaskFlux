@@ -116,7 +116,7 @@ public class ResultSerializerTests
     [InlineData("hello,world!", uint.MaxValue - 2, uint.MaxValue - 1)]
     public void ListQueuesResult__SingleQueue__Serialization(string queueName, uint count, uint maxSize)
     {
-        var metadata = new StubMetadata(QueueName.Parse(queueName), maxSize, count);
+        var metadata = new StubMetadata(QueueNameParser.Parse(queueName), maxSize, count);
         AssertBase(new ListQueuesResult(new []{metadata}));
     }
 
@@ -178,7 +178,7 @@ public class ResultSerializerTests
     [MemberData(nameof(ListQueuesArguments))]
     public void ListQueuesResult__MultipleQueues__Serialization((string Name, uint Count, uint MaxSize)[] values)
     {
-        var metadata = values.Select(v => new StubMetadata(QueueName.Parse(v.Name), v.MaxSize, v.Count))
+        var metadata = values.Select(v => new StubMetadata(QueueNameParser.Parse(v.Name), v.MaxSize, v.Count))
                              .ToList();
         AssertBase(new ListQueuesResult(metadata));
     }

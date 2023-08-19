@@ -1,6 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
-using JobQueue.Core;
 using JobQueue.Core.Exceptions;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.CreateQueue;
@@ -152,6 +151,7 @@ public class CommandSerializer
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ListQueuesCommand DeserializeListQueuesCommand(ArrayBinaryReader reader)
     {
         return ListQueuesCommand.Instance;
@@ -159,34 +159,34 @@ public class CommandSerializer
 
     private DeleteQueueCommand DeserializeDeleteQueueCommand(ArrayBinaryReader reader)
     {
-        var name = reader.ReadString();
-        return new DeleteQueueCommand(QueueName.Parse(name));
+        var name = reader.ReadQueueName();
+        return new DeleteQueueCommand(name);
     }
 
     private CreateQueueCommand DeserializeCreateQueueCommand(ArrayBinaryReader reader)
     {
-        var queueName = reader.ReadString();
+        var queueName = reader.ReadQueueName();
         var limit = reader.ReadUInt32();
-        return new CreateQueueCommand(QueueName.Parse(queueName), limit);
+        return new CreateQueueCommand(queueName, limit);
     }
 
     private DequeueCommand DeserializeDequeueCommand(ArrayBinaryReader reader)
     {
-        var name = reader.ReadString();
-        return new DequeueCommand(QueueName.Parse(name));
+        var name = reader.ReadQueueName();
+        return new DequeueCommand(name);
     }
 
     private CountCommand DeserializeCountCommand(ArrayBinaryReader reader)
     {
-        var queue = reader.ReadString();
-        return new CountCommand(QueueName.Parse(queue));
+        var queue = reader.ReadQueueName();
+        return new CountCommand(queue);
     }
 
     private EnqueueCommand DeserializeEnqueueCommand(ArrayBinaryReader reader)
     {
-        var queue = reader.ReadString();
+        var queue = reader.ReadQueueName();
         var key = reader.ReadInt64();
         var buffer = reader.ReadBuffer();
-        return new EnqueueCommand(key, buffer, QueueName.Parse(queue));
+        return new EnqueueCommand(key, buffer, queue);
     }
 }

@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
-using System.ComponentModel;
 using System.Runtime.Serialization;
 using System.Text;
 using JobQueue.Core;
+using JobQueue.Core.Exceptions;
 
 namespace TaskFlux.Serialization.Helpers;
 
@@ -16,7 +16,7 @@ public struct ArrayBinaryReader
         _buffer = buffer;
     }
 
-    
+
     /// <summary>
     /// Прочитать <see cref="long"/> и сдвинуться на нужное кол-во байт
     /// </summary>
@@ -28,10 +28,11 @@ public struct ArrayBinaryReader
         {
             throw new SerializationException("Нельзя прочитать байт. Место в буфере закончилось");
         }
+
         return _buffer[_index++];
     }
 
-    
+
     /// <summary>
     /// Прочитать <see cref="int"/> и сдвинуться на нужное кол-во байт
     /// </summary>
@@ -47,10 +48,11 @@ public struct ArrayBinaryReader
         }
         catch (ArgumentOutOfRangeException e)
         {
-            throw new SerializationException("Ошибка десериализации int: в буфере не осталось нужного количества байт", e);
+            throw new SerializationException("Ошибка десериализации int: в буфере не осталось нужного количества байт",
+                e);
         }
     }
-    
+
     /// <summary>
     /// Прочитать <see cref="long"/> и сдвинуться на нужное кол-во байт
     /// </summary>
@@ -66,17 +68,23 @@ public struct ArrayBinaryReader
         }
         catch (ArgumentOutOfRangeException e)
         {
-            throw new SerializationException(
-                "Ошибка десериализации long: в буфере не осталось нужного количества байт", e);
+            throw new SerializationException("Ошибка десериализации long: в буфере не осталось нужного количества байт",
+                e);
         }
     }
 
+    /// <summary>
+    /// Проверить, что в буфере есть <paramref name="shouldHasLength"/> свободных байтов
+    /// </summary>
+    /// <param name="shouldHasLength">Количество свободных байтов</param>
+    /// <exception cref="SerializationException">В буфере нет требуемого количества свободных байт</exception>
     private void EnsureLength(int shouldHasLength)
     {
         var leftLength = _buffer.Length - _index;
         if (leftLength < shouldHasLength)
         {
-            throw new SerializationException($"В буфере отсутствует указанное количество байт. Требуется: {shouldHasLength}. Оставшееся количество: {leftLength}");
+            throw new SerializationException(
+                $"В буфере отсутствует указанное количество байт. Требуется: {shouldHasLength}. Оставшееся количество: {leftLength}");
         }
     }
 
@@ -93,7 +101,7 @@ public struct ArrayBinaryReader
         {
             return Array.Empty<byte>();
         }
-        
+
         EnsureLength(length);
         var span = _buffer.AsSpan(_index, length);
         try
@@ -126,12 +134,13 @@ public struct ArrayBinaryReader
         }
         catch (ArgumentOutOfRangeException e)
         {
-            throw new SerializationException($"Ошибка десериализации строки: в буффере нет нужного количества байт: требуется {length}", e);
+            throw new SerializationException(
+                $"Ошибка десериализации строки: в буффере нет нужного количества байт: требуется {length}", e);
         }
-        
+
         // Надо правильно обрабатываеть неправильную последовательность байт
         // почему-то UTF8Encoding класс не кидает исключения при ошибках и возвращает мусор
-        
+
         var str = Encoding.UTF8.GetString(stringSpan);
         _index += length;
         return str;
@@ -145,13 +154,13 @@ public struct ArrayBinaryReader
     /// <exception cref="SerializationException">В буфере не осталось места для десериализации</exception>
     public bool ReadBoolean()
     {
-        const byte falseByte = 0;   
-        
+        const byte falseByte = 0;
+
         if (_buffer.Length <= _index)
         {
             throw new SerializationException("Ошибка десериализации bool: в буфере закончилось место");
         }
-        
+
         var value = _buffer[_index];
         _index++;
         return value != falseByte;
@@ -176,10 +185,24 @@ public struct ArrayBinaryReader
         }
     }
 
+    /// <summary>
+    /// Прочитать из буфера сериализованное название очереди
+    /// </summary>
+    /// <returns>Десериализованное название очереди</returns>
+    /// <exception cref="InvalidQueueNameException">Хранившееся название очереди было в неверном формате</exception>
+    /// <exception cref="SerializationException">Во время десериализации возникло исключение</exception>
     public QueueName ReadQueueName()
     {
-        // TODO: сделать оптимальнее - сразу байты чекать
-        var str = ReadString();
-        return QueueName.Parse(str);
+        if (_buffer.Length <= _index)
+        {
+            throw new SerializationException("Невозможно прочитать название очереди: в буфере не осталось места");
+        }
+        
+        var length = _buffer[_index];
+        EnsureLength(length);
+        var span = _buffer.AsSpan(++_index, length);
+        var name = QueueNameParser.Parse(span);
+        _index += length;
+        return name;
     }
 }
