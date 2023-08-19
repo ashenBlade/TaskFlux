@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net6.0</TargetFramework>
+        <TargetFramework>net7.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
@@ -22,7 +22,8 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\src\JobQueue\JobQueue.SortedQueue\JobQueue.SortedQueue.csproj" />
+      <ProjectReference Include="..\..\src\JobQueue\JobQueue.PriorityQueue\JobQueue.PriorityQueue.StandardLibrary\JobQueue.PriorityQueue.StandardLibrary.csproj" />
+      <ProjectReference Include="..\..\src\JobQueue\JobQueue.PriorityQueue\JobQueue.PriorityQueue\JobQueue.PriorityQueue.csproj" />
     </ItemGroup>
 
 </Project>

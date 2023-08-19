@@ -5,6 +5,7 @@ using Moq;
 
 namespace Consensus.Log.Tests;
 
+[Trait("Category", "Raft")]
 public class StorageLogTests
 {
     private static LogEntry EmptyLogEntry(int term) => new LogEntry(new Term(term), Array.Empty<byte>());

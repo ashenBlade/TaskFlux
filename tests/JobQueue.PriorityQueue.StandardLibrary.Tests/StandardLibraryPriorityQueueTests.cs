@@ -1,8 +1,11 @@
-namespace JobQueue.SortedQueue.Tests;
+using Xunit;
 
-public class PriorityQueueSortedQueueTests
+namespace JobQueue.PriorityQueue.StandardLibrary.Tests;
+
+[Trait("Category", "BusinessLogic")]
+public class StandardLibraryPriorityQueueTests
 {
-    private static PriorityQueueSortedQueue<int, int> CreateQueue() => new();
+    private static StandardLibraryPriorityQueue<int, int> CreateQueue() => new();
 
     [Fact]
     public void TryDequeue__СПустойОчередью__ДолженВозвращатьFalse()

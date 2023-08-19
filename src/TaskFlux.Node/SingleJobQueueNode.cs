@@ -5,12 +5,15 @@ namespace TaskFlux.Node;
 
 public class SingleJobQueueNode: INode
 {
-    private readonly IJobQueue _singleJobQueue;
+    private readonly IJobQueueManager _jobQueueManager;
 
-    public SingleJobQueueNode(IJobQueue singleJobQueue)
+    public SingleJobQueueNode(IJobQueueManager jobQueueManager)
     {
-        _singleJobQueue = singleJobQueue;
+        _jobQueueManager = jobQueueManager;
     }
     
-    public IJobQueue GetJobQueue() => _singleJobQueue;
+    public IJobQueueManager GetJobQueueManager()
+    {
+        return _jobQueueManager;
+    }
 }

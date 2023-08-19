@@ -10,20 +10,30 @@ using TaskFlux.Commands;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
+using TaskFlux.Commands.Error;
+using TaskFlux.Commands.ListQueues;
+using TaskFlux.Commands.Ok;
+using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 
 namespace TaskFlux.Host.Modules.HttpRequest;
 
 public class SubmitCommandRequestHandler: IRequestHandler
 {
-    public IClusterInfo ClusterInfo { get; }
     private static readonly Encoding Encoding = Encoding.UTF8;
+    
+    private readonly IClusterInfo _clusterInfo;
+    private readonly IApplicationInfo _applicationInfo;
     private readonly IConsensusModule<Command, Result> _consensusModule;
     private readonly ILogger _logger;
 
-    public SubmitCommandRequestHandler(IConsensusModule<Command, Result> consensusModule, IClusterInfo clusterInfo, ILogger logger)
+    public SubmitCommandRequestHandler(IConsensusModule<Command, Result> consensusModule, 
+                                       IClusterInfo clusterInfo, 
+                                       IApplicationInfo applicationInfo,
+                                       ILogger logger)
     {
-        ClusterInfo = clusterInfo;
+        _clusterInfo = clusterInfo;
+        _applicationInfo = applicationInfo;
         _consensusModule = consensusModule;
         _logger = logger;
     }
@@ -84,21 +94,21 @@ public class SubmitCommandRequestHandler: IRequestHandler
         {
             var key = int.Parse(tokens[1]);
             var data = Encoding.GetBytes( tokens[2] );
-            command = new CommandDescriptor<Command>( new EnqueueCommand(key, data), false );
+            command = new CommandDescriptor<Command>( new EnqueueCommand(key, data, _applicationInfo.DefaultQueueName), false );
             return true;
         }
 
         if (commandString.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase) 
          && tokens.Length == 1)
         {
-            command = new CommandDescriptor<Command>( DequeueCommand.Instance, false );
+            command = new CommandDescriptor<Command>( new DequeueCommand(_applicationInfo.DefaultQueueName), false );
             return true;
         }
 
         if (commandString.Equals("count", StringComparison.InvariantCultureIgnoreCase) 
          && tokens.Length == 1)
         {
-            command = new CommandDescriptor<Command>( CountCommand.Instance, true );
+            command = new CommandDescriptor<Command>( new CountCommand(_applicationInfo.DefaultQueueName), true );
             return true;
         }
 
@@ -138,7 +148,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
             resultData = new Dictionary<string, object?>()
             {
                 {"message", "Узел не лидер"},
-                {"leaderId", ClusterInfo.LeaderId.Value}
+                {"leaderId", _clusterInfo.LeaderId.Value}
             };
             success = false;
         }
@@ -176,6 +186,30 @@ public class SubmitCommandRequestHandler: IRequestHandler
         public void Visit(CountResult response)
         {
             Payload["count"] = response.Count;
+        }
+
+        public void Visit(ErrorResult result)
+        {
+            Payload["type"] = "error";
+            Payload["subtype"] = (byte) result.ErrorType;
+            Payload["message"] = result.Message;
+        }
+
+        public void Visit(OkResult result)
+        {
+            Payload["type"] = "ok";
+        }
+
+        public void Visit(ListQueuesResult result)
+        {
+            Payload["type"] = "list-queues";
+            Payload["data"] = result.Metadata.ToDictionary(m => m.QueueName, m => new Dictionary<string, object?>()
+            {
+                {"count", m.Count},
+                {"limit", m.HasMaxSize 
+                              ? m.MaxSize
+                              : null}
+            });
         }
     }
 

@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net6.0</TargetFramework>
+        <TargetFramework>net7.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\JobQueue.Core\JobQueue.Core.csproj" />
-      <ProjectReference Include="..\JobQueue.SortedQueue\JobQueue.SortedQueue.csproj" />
+      <ProjectReference Include="..\JobQueue.PriorityQueue\JobQueue.PriorityQueue\JobQueue.PriorityQueue.csproj" />
     </ItemGroup>
 
 </Project>

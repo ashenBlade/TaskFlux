@@ -1,6 +1,6 @@
-namespace JobQueue.SortedQueue;
+namespace JobQueue.PriorityQueue;
 
-public interface ISortedQueue<TKey, TValue>
+public interface IPriorityQueue<TKey, TValue>
 {
     public int Count { get; }
     public void Enqueue(TKey key, TValue value);

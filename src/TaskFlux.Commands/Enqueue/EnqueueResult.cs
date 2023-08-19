@@ -1,9 +1,11 @@
+using TaskFlux.Commands.Visitors;
+
 namespace TaskFlux.Commands.Enqueue;
 
 public class EnqueueResult: Result
 {
     public static readonly EnqueueResult Ok = new(true);
-    public static readonly EnqueueResult Fail = new(false);
+    public static readonly EnqueueResult Full = new(false);
     public override ResultType Type => ResultType.Enqueue;
     public bool Success { get; }
     public EnqueueResult(bool success)

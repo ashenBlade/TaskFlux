@@ -1,14 +1,29 @@
+using System.Diagnostics;
+using JobQueue.Core;
+using TaskFlux.Commands.Error;
+using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 
 namespace TaskFlux.Commands.Dequeue;
 
 public class DequeueCommand: Command
 {
-    public static readonly DequeueCommand Instance = new();
+    public QueueName Queue { get; }
+    public DequeueCommand(QueueName queue)
+    {
+        Queue = queue;
+    }
+
     public override CommandType Type => CommandType.Dequeue;
     public override Result Apply(ICommandContext context)
     {
-        var queue = context.Node.GetJobQueue();
+        var manager = context.Node.GetJobQueueManager();
+
+        if (!manager.TryGetQueue(Queue, out var queue))
+        {
+            return DefaultErrors.QueueDoesNotExist;
+        }
+        
         if (queue.TryDequeue(out var key, out var payload))
         {
             return DequeueResult.Create(key, payload);
@@ -19,16 +34,20 @@ public class DequeueCommand: Command
 
     public override void ApplyNoResult(ICommandContext context)
     {
-        context.Node
-               .GetJobQueue()
-               .TryDequeue(out _, out _);
+        var manager = context.Node.GetJobQueueManager();
+
+        if (!manager.TryGetQueue(Queue, out var queue))
+        {
+            return;
+        }
+
+        queue.TryDequeue(out _, out _);
     }
 
     public override void Accept(ICommandVisitor visitor)
     {
         visitor.Visit(this);
     }
-    
     
     public override ValueTask AcceptAsync(IAsyncCommandVisitor visitor, CancellationToken token = default)
     {

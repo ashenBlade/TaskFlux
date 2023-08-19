@@ -4,5 +4,5 @@ namespace TaskFlux.Core;
 
 public interface INode
 {
-    public IJobQueue GetJobQueue();
+    public IJobQueueManager GetJobQueueManager();
 }

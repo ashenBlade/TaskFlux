@@ -1,10 +1,12 @@
 using System.Buffers;
+using System.ComponentModel;
 using System.Reflection;
 using TaskFlux.Network.Requests.Authorization;
 using TaskFlux.Network.Requests.Packets;
 
 namespace TaskFlux.Network.Requests.Serialization.Tests;
 
+[Trait("Category", "Serialization")]
 public class PoolingNetworkPacketSerializerTests
 {
     private static async Task AssertBase(Packet expected)

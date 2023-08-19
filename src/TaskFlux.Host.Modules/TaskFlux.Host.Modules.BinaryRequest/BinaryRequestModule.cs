@@ -37,13 +37,14 @@ public class BinaryRequestModule
         var backlogSize = _options.CurrentValue.BacklogSize;
         _logger.Debug("Инициализирую сокет сервера на порту {Port} с размером бэклога {BacklogSize}", port, backlogSize);
         listener.Start(backlogSize);
-        _logger.Information("Инициализация сервера окончилась. Начинаю принимать входящие запросы");
+        _logger.Information("Инициализация модуля закончилась. Начинаю принимать входящие запросы");
         try
         {
             while (token.IsCancellationRequested is false)
             {
                 var client = await listener.AcceptTcpClientAsync(token);
-                var processor = new RequestProcessor(client, _consensusModule, _applicationInfo, _clusterInfo, Log.ForContext<RequestProcessor>());
+                var processor = new RequestProcessor(client, _consensusModule, _options, _applicationInfo, _clusterInfo, Log.ForContext<RequestProcessor>());
+                // MAYBE: может лучше свой пул потоков для обработки клиентов?
                 _ = processor.ProcessAsync(token);
             }
         }
