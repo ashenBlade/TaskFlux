@@ -48,9 +48,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Consensus.StateMachine", "C
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.StateMachine", "src\Consensus\Consensus.StateMachine\Consensus.StateMachine\Consensus.StateMachine.csproj", "{08898D90-D9FB-4D18-B6E6-E0970936F3C1}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Consensus.StateMachine.JobQueue", "Consensus.StateMachine.JobQueue", "{532FBCA4-722D-4B4A-AFE9-4DB4FB6B4475}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Consensus.StateMachine.TaskFlux", "Consensus.StateMachine.TaskFlux", "{532FBCA4-722D-4B4A-AFE9-4DB4FB6B4475}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.StateMachine.JobQueue", "src\Consensus\Consensus.StateMachine\Raft.StateMachine.JobQueue\Consensus.StateMachine.JobQueue\Consensus.StateMachine.JobQueue.csproj", "{5F26D5BF-1B07-49F5-8D92-569E48A56BB6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.StateMachine.TaskFlux", "src\Consensus\Consensus.StateMachine\Raft.StateMachine.JobQueue\Consensus.StateMachine.TaskFlux\Consensus.StateMachine.TaskFlux.csproj", "{5F26D5BF-1B07-49F5-8D92-569E48A56BB6}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.Peer", "src\Consensus\Consensus.Peer\Consensus.Peer.csproj", "{D81C8F24-B2B7-43A3-A051-BCEC4F06A67C}"
 EndProject

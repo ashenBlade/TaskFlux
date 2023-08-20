@@ -1,8 +1,9 @@
+using Consensus.CommandQueue;
 using Consensus.Core.Commands.AppendEntries;
+using Consensus.Core.Commands.InstallSnapshot;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Commands.Submit;
 using Consensus.Core.Log;
-using Consensus.CommandQueue;
 using Consensus.StateMachine;
 using TaskFlux.Core;
 
@@ -70,5 +71,19 @@ public abstract class ConsensusModuleState<TCommand, TResponse>
     /// <param name="request">Объект запроса</param>
     /// <returns>Результат операции</returns>
     public abstract SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request);
+
+    /// <summary>
+    /// Вызывается, когда состояние узла меняется, для очищения предыдущего (т.е. состояния, которому этот Dispose принадлежит) состояния
+    /// </summary>
+    /// <example>
+    /// Сработал ElectionTimeout и из Follower узел перешел в Candidate
+    /// </example>
     public abstract void Dispose();
+
+    /// <summary>
+    /// Применить команду InstallSnapshot для создания нового снапшота, принятого от лидера
+    /// </summary>
+    /// <param name="request"><see cref="InstallSnapshotRequest"/></param>
+    /// <returns><see cref="InstallSnapshotResponse"/></returns>
+    public abstract InstallSnapshotResponse Apply(InstallSnapshotRequest request);
 }

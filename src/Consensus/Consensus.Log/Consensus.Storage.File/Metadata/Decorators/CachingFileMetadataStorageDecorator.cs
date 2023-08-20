@@ -1,13 +1,13 @@
 using Consensus.Core;
 using TaskFlux.Core;
 
-namespace Consensus.Storage.File.Decorators;
+namespace Consensus.Storage.File.Metadata.Decorators;
 
-public class CachingFileMetadataStorageDecorator: IMetadataStorage
+public class CachingFileMetadataStorageDecorator : IMetadataStorage
 {
     private readonly IMetadataStorage _storage;
     private Term _term;
-    private NodeId? _votedFor; 
+    private NodeId? _votedFor;
 
     public CachingFileMetadataStorageDecorator(IMetadataStorage storage)
     {

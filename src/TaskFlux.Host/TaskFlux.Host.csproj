@@ -17,7 +17,7 @@
       <ProjectReference Include="..\Consensus\Consensus.Log\Consensus.Storage.File\Consensus.Storage.File.csproj" />
       <ProjectReference Include="..\Consensus\Consensus.Network\Consensus.Network.csproj" />
       <ProjectReference Include="..\Consensus\Consensus.Peer\Consensus.Peer.csproj" />
-      <ProjectReference Include="..\Consensus\Consensus.StateMachine\Raft.StateMachine.JobQueue\Consensus.StateMachine.JobQueue\Consensus.StateMachine.JobQueue.csproj" />
+      <ProjectReference Include="..\Consensus\Consensus.StateMachine\Raft.StateMachine.JobQueue\Consensus.StateMachine.TaskFlux\Consensus.StateMachine.TaskFlux.csproj"/>
       <ProjectReference Include="..\Consensus\Consensus.Timers\Consensus.Timers.csproj" />
       <ProjectReference Include="..\JobQueue\JobQueue.InMemory\JobQueue.InMemory.csproj" />
       <ProjectReference Include="..\JobQueue\JobQueue.PriorityQueue\JobQueue.PriorityQueue.StandardLibrary\JobQueue.PriorityQueue.StandardLibrary.csproj" />

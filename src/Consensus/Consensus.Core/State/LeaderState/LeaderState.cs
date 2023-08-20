@@ -1,4 +1,5 @@
 using Consensus.Core.Commands.AppendEntries;
+using Consensus.Core.Commands.InstallSnapshot;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Commands.Submit;
 using Consensus.Core.Log;
@@ -147,6 +148,11 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         // CommandQueue.Enqueue(new StopHeartbeatTimerCommand(this, Node));
         HeartbeatTimer.Stop();
         HeartbeatTimer.Timeout -= OnHeartbeatTimer;
+    }
+
+    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request)
+    {
+        throw new NotImplementedException();
     }
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)

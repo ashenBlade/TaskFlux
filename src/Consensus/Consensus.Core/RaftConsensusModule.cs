@@ -1,10 +1,11 @@
 using System.Diagnostics;
+using Consensus.CommandQueue;
 using Consensus.Core.Commands.AppendEntries;
+using Consensus.Core.Commands.InstallSnapshot;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Commands.Submit;
 using Consensus.Core.Log;
 using Consensus.Core.State;
-using Consensus.CommandQueue;
 using Consensus.Core.State.LeaderState;
 using Consensus.StateMachine;
 using Serilog;
@@ -14,13 +15,14 @@ namespace Consensus.Core;
 
 [DebuggerDisplay("Роль: {CurrentRole}; Терм: {CurrentTerm}; Id: {Id}")]
 public class RaftConsensusModule<TCommand, TResponse>
-    : IConsensusModule<TCommand, TResponse>, 
+    : IConsensusModule<TCommand, TResponse>,
       IDisposable
 {
     private readonly IRequestQueueFactory _requestQueueFactory;
 
     public NodeRole CurrentRole =>
         ( ( IConsensusModule<TCommand, TResponse> ) this ).CurrentState.Role;
+
     private ILogger Logger { get; }
     public NodeId Id { get; }
     public Term CurrentTerm => MetadataStorage.ReadTerm();
@@ -42,21 +44,21 @@ public class RaftConsensusModule<TCommand, TResponse>
             oldState?.Dispose();
             _currentState = value;
             value.Initialize();
-            
+
             RoleChanged?.Invoke(oldState?.Role ?? NodeRole.Follower, value.Role);
         }
     }
 
     private ConsensusModuleState<TCommand, TResponse> GetCurrentStateCheck()
     {
-        return _currentState 
+        return _currentState
             ?? throw new ArgumentNullException(nameof(_currentState), "Текущее состояние еще не проставлено");
     }
 
     public ITimer ElectionTimer { get; }
     public ITimer HeartbeatTimer { get; }
     public IBackgroundJobQueue BackgroundJobQueue { get; }
-    public ICommandQueue CommandQueue { get; } 
+    public ICommandQueue CommandQueue { get; }
     public ILog Log { get; }
 
     internal RaftConsensusModule(
@@ -96,10 +98,15 @@ public class RaftConsensusModule<TCommand, TResponse>
     {
         return CommandQueue.Enqueue(new RequestVoteCommand<TCommand, TResponse>(request, this));
     }
-    
+
     public AppendEntriesResponse Handle(AppendEntriesRequest request)
     {
         return CommandQueue.Enqueue(new AppendEntriesCommand<TCommand, TResponse>(request, this));
+    }
+
+    public InstallSnapshotResponse Handle(InstallSnapshotRequest request)
+    {
+        return CommandQueue.Enqueue(new InstallSnapshotCommand<TCommand, TResponse>(request, this));
     }
 
     public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request)
@@ -108,6 +115,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     }
 
     public event RoleChangedEventHandler? RoleChanged;
+
     public FollowerState<TCommand, TResponse> CreateFollowerState()
     {
         return new FollowerState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Follower)"));
@@ -115,7 +123,8 @@ public class RaftConsensusModule<TCommand, TResponse>
 
     public LeaderState<TCommand, TResponse> CreateLeaderState()
     {
-        return new LeaderState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Leader)"), _requestQueueFactory);
+        return new LeaderState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Leader)"),
+            _requestQueueFactory);
     }
 
     public CandidateState<TCommand, TResponse> CreateCandidateState()
@@ -125,13 +134,15 @@ public class RaftConsensusModule<TCommand, TResponse>
 
     public override string ToString()
     {
-        return $"RaftNode(Id = {Id}, Role = {CurrentRole}, Term = {CurrentTerm}, VotedFor = {VotedFor?.ToString() ?? "null"})";
+        return
+            $"RaftNode(Id = {Id}, Role = {CurrentRole}, Term = {CurrentTerm}, VotedFor = {VotedFor?.ToString() ?? "null"})";
     }
 
     public void Dispose()
     {
         _currentState?.Dispose();
     }
+
     public static RaftConsensusModule<TCommand, TResponse> Create(NodeId id,
                                                                   PeerGroup peerGroup,
                                                                   ILogger logger,
@@ -145,7 +156,8 @@ public class RaftConsensusModule<TCommand, TResponse>
                                                                   ISerializer<TCommand> serializer,
                                                                   IRequestQueueFactory requestQueueFactory)
     {
-        var raft = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, electionTimer, heartbeatTimer, backgroundJobQueue, log, commandQueue, stateMachine, metadataStorage, serializer, requestQueueFactory);
+        var raft = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, electionTimer, heartbeatTimer,
+            backgroundJobQueue, log, commandQueue, stateMachine, metadataStorage, serializer, requestQueueFactory);
         ( ( IConsensusModule<TCommand, TResponse> ) raft ).CurrentState = raft.CreateFollowerState();
         return raft;
     }

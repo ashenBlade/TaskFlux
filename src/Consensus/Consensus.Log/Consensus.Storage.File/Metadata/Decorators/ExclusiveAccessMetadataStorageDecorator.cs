@@ -1,9 +1,9 @@
 using Consensus.Core;
 using TaskFlux.Core;
 
-namespace Consensus.Storage.File.Decorators;
+namespace Consensus.Storage.File.Metadata.Decorators;
 
-public class ExclusiveAccessMetadataStorageDecorator: IMetadataStorage
+public class ExclusiveAccessMetadataStorageDecorator : IMetadataStorage
 {
     private readonly IMetadataStorage _storage;
     private SpinLock _lock = new();
@@ -49,7 +49,6 @@ public class ExclusiveAccessMetadataStorageDecorator: IMetadataStorage
 
     public void Update(Term term, NodeId? votedFor)
     {
-        
         var acquired = false;
         try
         {

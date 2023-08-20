@@ -1,17 +1,16 @@
 using TaskFlux.Commands;
-using TaskFlux.Core;
 
-namespace Consensus.StateMachine.JobQueue;
+namespace Consensus.StateMachine.TaskFlux;
 
-public class ProxyJobQueueStateMachine: IStateMachine<Command, Result>
+public class TaskFluxStateMachine : IStateMachine<Command, Result>
 {
     private readonly ICommandContext _context;
 
-    public ProxyJobQueueStateMachine(ICommandContext context)
+    public TaskFluxStateMachine(ICommandContext context)
     {
         _context = context;
     }
-    
+
     public Result Apply(Command command)
     {
         return command.Apply(_context);

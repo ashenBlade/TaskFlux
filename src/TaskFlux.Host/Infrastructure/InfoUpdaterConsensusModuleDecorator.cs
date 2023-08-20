@@ -1,30 +1,32 @@
 using Consensus.CommandQueue;
 using Consensus.Core;
 using Consensus.Core.Commands.AppendEntries;
+using Consensus.Core.Commands.InstallSnapshot;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Commands.Submit;
 using Consensus.Core.Log;
 using Consensus.Core.State;
 using Consensus.Core.State.LeaderState;
 using Consensus.StateMachine;
-using Serilog;
 using TaskFlux.Core;
 using TaskFlux.Node;
 
 namespace TaskFlux.Host.Infrastructure;
 
-public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult>: IConsensusModule<TCommand, TResult>
+public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensusModule<TCommand, TResult>
 {
     private readonly IConsensusModule<TCommand, TResult> _module;
     private readonly ClusterInfo _clusterInfo;
     private readonly NodeInfo _nodeInfo;
 
-    public InfoUpdaterConsensusModuleDecorator(IConsensusModule<TCommand, TResult> module, ClusterInfo clusterInfo, NodeInfo nodeInfo)
+    public InfoUpdaterConsensusModuleDecorator(IConsensusModule<TCommand, TResult> module,
+                                               ClusterInfo clusterInfo,
+                                               NodeInfo nodeInfo)
     {
         _module = module;
         _clusterInfo = clusterInfo;
         _nodeInfo = nodeInfo;
-        _module.RoleChanged += OnRoleChanged;    
+        _module.RoleChanged += OnRoleChanged;
     }
 
     private void OnRoleChanged(NodeRole oldRole, NodeRole newRole)
@@ -51,7 +53,7 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult>: IConsensusM
         get => _module.CurrentState;
         set => _module.CurrentState = value;
     }
-    
+
     public ITimer ElectionTimer =>
         _module.ElectionTimer;
 
@@ -96,6 +98,7 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult>: IConsensusM
         {
             _clusterInfo.LeaderId = request.LeaderId;
         }
+
         return response;
     }
 
@@ -103,6 +106,11 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult>: IConsensusM
     {
         var response = _module.Handle(request);
         return response;
+    }
+
+    public InstallSnapshotResponse Handle(InstallSnapshotRequest request)
+    {
+        return _module.Handle(request);
     }
 
     public event RoleChangedEventHandler? RoleChanged

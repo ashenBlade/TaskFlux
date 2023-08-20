@@ -1,5 +1,3 @@
-using Consensus.StateMachine;
-
 namespace Consensus.Core.Log;
 
 public interface ILog
@@ -29,7 +27,7 @@ public interface ILog
     /// <param name="entries">Записи, которые необходимо добавить</param>
     /// <param name="startIndex">Индекс, начиная с которого необходимо добавить записи</param>
     public void InsertRange(IEnumerable<LogEntry> entries, int startIndex);
-    
+
     /// <summary>
     /// Добавить в лог одну запись
     /// </summary>
@@ -46,7 +44,7 @@ public interface ILog
     /// Индекс последней закомиченной записи
     /// </summary>
     public int CommitIndex { get; }
-    
+
     /// <summary>
     /// Индекс последней применной записи журнала.
     /// Обновляется после успешного коммита 
@@ -68,7 +66,7 @@ public interface ILog
     /// <param name="index">Индекс новой закомиченной записи</param>
     /// <returns>Результат коммита лога</returns>
     public void Commit(int index);
-    
+
     /// <summary>
     /// Получить информацию о записи, предшествующей указанной
     /// </summary>
@@ -78,7 +76,9 @@ public interface ILog
     public LogEntryInfo GetPrecedingEntryInfo(int nextIndex);
 
     /// <summary>
-    /// Получить закомиченные, но еще не примененные записи из лога
+    /// Получить закомиченные, но еще не примененные записи из лога.
+    /// Это записи, индекс которых находится между индексом последней применненной записи (<see cref="LastApplied"/>) и
+    /// последней закоммиченной записи (<see cref="CommitIndex"/>) 
     /// </summary>
     /// <returns>Записи, которые были закомичены, но еще не применены</returns>
     public IReadOnlyList<LogEntry> GetNotApplied();

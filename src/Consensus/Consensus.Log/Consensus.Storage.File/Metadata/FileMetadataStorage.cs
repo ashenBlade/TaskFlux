@@ -1,12 +1,11 @@
 using System.Runtime.CompilerServices;
-using System.Runtime.Intrinsics.Arm;
 using System.Text;
 using Consensus.Core;
 using TaskFlux.Core;
 
-namespace Consensus.Storage.File;
+namespace Consensus.Storage.File.Metadata;
 
-public class FileMetadataStorage: IMetadataStorage
+public class FileMetadataStorage : IMetadataStorage
 {
     private const int Marker = Constants.Marker;
 
@@ -26,17 +25,18 @@ public class FileMetadataStorage: IMetadataStorage
     /// Терм, чтобы использовать, если файл не был изначально инициализирован
     /// </summary>
     public Term InitialTerm { get; }
-    
+
     /// <summary>
     /// Голос, который будет использоваться, если файл не был изначально иницилазирован
     /// </summary>
     public NodeId? InitialVotedFor { get; }
+
     private readonly Stream _file;
     private readonly BinaryWriter _writer;
     private readonly BinaryReader _reader;
 
     private volatile bool _initialized;
-    
+
     public FileMetadataStorage(Stream file, Term initialTerm, NodeId? initialVotedFor)
     {
         if (!file.CanRead)
@@ -53,7 +53,7 @@ public class FileMetadataStorage: IMetadataStorage
         {
             throw new ArgumentException("Переданный поток не поддерживает запись", nameof(file));
         }
-        
+
         _file = file;
         InitialTerm = initialTerm;
         InitialVotedFor = initialVotedFor;
@@ -64,12 +64,12 @@ public class FileMetadataStorage: IMetadataStorage
     public Term ReadTerm()
     {
         CheckInitialized();
-        
+
         _file.Seek(TermPosition, SeekOrigin.Begin);
         var term = _reader.ReadInt32();
         return new Term(term);
     }
-    
+
     public NodeId? ReadVotedFor()
     {
         CheckInitialized();
@@ -81,7 +81,7 @@ public class FileMetadataStorage: IMetadataStorage
             var votedFor = _reader.ReadInt32();
             return new NodeId(votedFor);
         }
-        
+
         return null;
     }
 
@@ -101,7 +101,7 @@ public class FileMetadataStorage: IMetadataStorage
             Initialize();
         }
     }
-    
+
     private void Initialize()
     {
         if (_file.Length == 0)
@@ -109,9 +109,9 @@ public class FileMetadataStorage: IMetadataStorage
             _file.Seek(0, SeekOrigin.Begin);
             _writer.Write(Marker);
             _writer.Write(CurrentVersion);
-            
+
             WriteAll(InitialTerm, InitialVotedFor, _writer);
-            
+
             _writer.Flush();
             _initialized = true;
             return;
@@ -138,7 +138,7 @@ public class FileMetadataStorage: IMetadataStorage
                 $"Хранившаяся в файле версия больше текущей. Считанная версия: {version}. Текущая версия: {CurrentVersion}");
         }
 
-        
+
         if (_file.Position == _file.Length)
         {
             // Дальше нет данных, поэтому инициализируем начальными 
@@ -146,15 +146,15 @@ public class FileMetadataStorage: IMetadataStorage
             _initialized = true;
             return;
         }
-        
+
         // Пропускаем чтение терма
         _writer.Seek(sizeof(int), SeekOrigin.Current);
 
         if (_file.Position == _file.Length)
         {
-            WriteVote(InitialVotedFor, _writer);   
+            WriteVote(InitialVotedFor, _writer);
         }
-        
+
         _initialized = true;
     }
 

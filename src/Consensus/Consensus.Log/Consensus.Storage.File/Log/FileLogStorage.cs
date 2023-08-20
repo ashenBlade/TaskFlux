@@ -6,7 +6,7 @@ using Consensus.Log;
 
 namespace Consensus.Storage.File.Log;
 
-public class FileLogStorage: ILogStorage
+public class FileLogStorage : ILogStorage
 {
     private const int Marker = Constants.Marker;
 
@@ -22,12 +22,12 @@ public class FileLogStorage: ILogStorage
     private const int HeaderSizeBytes = 8;
 
     private const int DataStartPosition = HeaderSizeBytes;
-    
+
     /// <summary>
     /// Кодировка, используемая для сериализации/десериализации команды
     /// </summary>
     private static readonly Encoding Encoding = Encoding.UTF8;
-    
+
     /// <summary>
     /// Поток, представляющий файл
     /// </summary>
@@ -48,7 +48,7 @@ public class FileLogStorage: ILogStorage
     /// Флаг инициализации
     /// </summary>
     private volatile bool _initialized;
-    
+
     public FileLogStorage(Stream file)
     {
         if (!file.CanRead)
@@ -71,7 +71,7 @@ public class FileLogStorage: ILogStorage
         _writer = new BinaryWriter(file, Encoding, true);
         _reader = new BinaryReader(file, Encoding, true);
     }
-    
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void CheckInitialized()
     {
@@ -92,12 +92,12 @@ public class FileLogStorage: ILogStorage
             _writer.Write(Marker);
             _writer.Write(CurrentVersion);
             _writer.Flush();
-            
+
             _index = new List<PositionTerm>();
             _initialized = true;
             return;
         }
-        
+
         if (_file.Length < HeaderSizeBytes)
         {
             throw new InvalidDataException(
@@ -105,28 +105,29 @@ public class FileLogStorage: ILogStorage
         }
 
         _file.Seek(0, SeekOrigin.Begin);
-        
+
         // Валидируем заголовок
         var marker = _reader.ReadInt32();
         if (marker != Marker)
         {
-            throw new InvalidDataException($"Считанный из файла маркер не равен требуемому. Ожидалось: {Marker}. Получено: {marker}");
+            throw new InvalidDataException(
+                $"Считанный из файла маркер не равен требуемому. Ожидалось: {Marker}. Получено: {marker}");
         }
 
         var version = _reader.ReadInt32();
         if (CurrentVersion < version)
         {
             throw new InvalidDataException(
-                $"Указанная версия файла меньше текущей версии программы. Текущая версия: {CurrentVersion}. Указанная версия: {version}");
+                $"Указанная версия файла больше текущей версии программы. Текущая версия: {CurrentVersion}. Указанная версия: {version}");
         }
 
         var index = new List<PositionTerm>();
-        
+
         // Воссоздаем индекс
         try
         {
             long filePosition;
-            while ((filePosition = _file.Position ) < _file.Length)
+            while (( filePosition = _file.Position ) < _file.Length)
             {
                 var term = _reader.ReadInt32();
                 var dataLength = _reader.ReadInt32();
@@ -136,7 +137,8 @@ public class FileLogStorage: ILogStorage
         }
         catch (EndOfStreamException e)
         {
-            throw new InvalidDataException("Ошибка при воссоздании индекса из файла лога. Не удалось прочитать указанное количество данных", e);
+            throw new InvalidDataException(
+                "Ошибка при воссоздании индекса из файла лога. Не удалось прочитать указанное количество данных", e);
         }
 
         _index = index;
@@ -157,10 +159,18 @@ public class FileLogStorage: ILogStorage
         }
         catch (Exception)
         {
-            try { _file.Position = savedLastPosition; } catch (Exception) { /* */ }
+            try
+            {
+                _file.Position = savedLastPosition;
+            }
+            catch (Exception)
+            {
+                /* */
+            }
+
             throw;
         }
-        
+
         _index.Add(new PositionTerm(entry.Term, savedLastPosition));
         return new LogEntryInfo(entry.Term, _index.Count - 1);
     }
@@ -172,14 +182,14 @@ public class FileLogStorage: ILogStorage
         // Вместо поочередной записи используем буффер в памяти.
         // Сначала запишем сериализованные данные на него, одновременно создавая новые записи индекса.
         // После быстро запишем данные на диск и обновим список индексов 
-        
+
         var entriesArray = entries.ToArray();
-        
+
         var newIndexes = new List<PositionTerm>(entriesArray.Length);
         using var memory = CreateMemoryStream();
         using var writer = new BinaryWriter(memory, Encoding, true);
-        
-        var startPosition =  _file.Length;
+
+        var startPosition = _file.Length;
 
         foreach (var entry in entriesArray)
         {
@@ -187,7 +197,7 @@ public class FileLogStorage: ILogStorage
             Serialize(entry, writer);
             newIndexes.Add(new PositionTerm(entry.Term, currentPosition));
         }
-        
+
         var dataBytes = memory.ToArray();
         _writer.Seek(0, SeekOrigin.End);
         _writer.Write(dataBytes);
@@ -198,8 +208,8 @@ public class FileLogStorage: ILogStorage
 
         MemoryStream CreateMemoryStream()
         {
-            var capacity = ( sizeof(int) /* Терм */  + sizeof(int) /* Длина массива */  ) * entriesArray.Length +
-                           entriesArray.Sum(e => e.Data.Length);
+            var capacity = ( sizeof(int) /* Терм */ + sizeof(int) /* Длина массива */ ) * entriesArray.Length
+                         + entriesArray.Sum(e => e.Data.Length);
             return new MemoryStream(capacity);
         }
     }
@@ -207,17 +217,17 @@ public class FileLogStorage: ILogStorage
     private LogEntryInfo GetLastLogEntryInfoCore()
     {
         CheckInitialized();
-        
+
         return _index.Count == 0
                    ? LogEntryInfo.Tomb
                    : new LogEntryInfo(_index[^1].Term, _index.Count - 1);
     }
-    
+
 
     public LogEntryInfo GetPrecedingLogEntryInfo(int nextIndex)
     {
         CheckInitialized();
-        
+
         if (nextIndex < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
@@ -238,7 +248,7 @@ public class FileLogStorage: ILogStorage
     public LogEntryInfo GetLastLogEntry()
     {
         CheckInitialized();
-        
+
         if (_index.Count == 0)
         {
             return LogEntryInfo.Tomb;
@@ -246,11 +256,11 @@ public class FileLogStorage: ILogStorage
 
         return new LogEntryInfo(_index[^1].Term, _index.Count - 1);
     }
-    
+
     public IReadOnlyList<LogEntry> ReadAll()
     {
         CheckInitialized();
-        
+
         return ReadLogCore(DataStartPosition, _index.Count);
     }
 
@@ -261,6 +271,7 @@ public class FileLogStorage: ILogStorage
         {
             return Array.Empty<LogEntry>();
         }
+
         var position = _index[startIndex].Position;
         return ReadLogCore(position, _index.Count - startIndex);
     }
@@ -275,7 +286,7 @@ public class FileLogStorage: ILogStorage
     private IEnumerable<LogEntry> ReadLogIncrementally(long position)
     {
         _file.Seek(position, SeekOrigin.Begin);
-        
+
         while (_file.Position != _file.Length)
         {
             var term = new Term(_reader.ReadInt32());
@@ -287,6 +298,7 @@ public class FileLogStorage: ILogStorage
                 throw new InvalidDataException(
                     $"Файл в неконсистентном состоянии: указанная длина буфера {bufferLength}, но удалось прочитать {read}");
             }
+
             yield return new LogEntry(term, data);
         }
     }
@@ -294,22 +306,24 @@ public class FileLogStorage: ILogStorage
     public LogEntryInfo GetAt(int index)
     {
         CheckInitialized();
-        
+
         return new LogEntryInfo(_index[index].Term, index);
     }
 
     public IReadOnlyList<LogEntry> GetRange(int start, int end)
     {
         CheckInitialized();
-        
+
         if (_index.Count < end)
         {
-            throw new InvalidOperationException($"Индекс конца больше размера лога. Индекс конца: {end}. Размер лога: {_index.Count}");
+            throw new InvalidOperationException(
+                $"Индекс конца больше размера лога. Индекс конца: {end}. Размер лога: {_index.Count}");
         }
 
         if (end < start)
         {
-            throw new ArgumentException($"Индекс конца не может быть раньше индекса начала. Индекс начала: {start}. Индекс конца: {end}");
+            throw new ArgumentException(
+                $"Индекс конца не может быть раньше индекса начала. Индекс начала: {start}. Индекс конца: {end}");
         }
 
         // Индексы включительно
@@ -324,15 +338,16 @@ public class FileLogStorage: ILogStorage
             Serilog.Log.Error("Ошибка на позиции старта {Position} для индекса {Index}", _index[start].Position, start);
             throw;
         }
+
         return entries;
     }
 
     public void Flush(int index)
     {
         CheckInitialized();
-        
+
         // Проверяем индекс на размер лога (индекса)
-        
+
         throw new NotImplementedException();
     }
 

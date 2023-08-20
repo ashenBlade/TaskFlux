@@ -1,5 +1,6 @@
 using Consensus.Core.Commands;
 using Consensus.Core.Commands.AppendEntries;
+using Consensus.Core.Commands.InstallSnapshot;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Commands.Submit;
 using Serilog;
@@ -7,19 +8,19 @@ using TaskFlux.Core;
 
 namespace Consensus.Core.State;
 
-public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
+public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand, TResponse>
 {
-
     public override NodeRole Role => NodeRole.Candidate;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;
+
     internal CandidateState(IConsensusModule<TCommand, TResponse> consensusModule, ILogger logger)
-        :base(consensusModule)
+        : base(consensusModule)
     {
         _logger = logger;
         _cts = new();
     }
-    
+
     public override void Initialize()
     {
         ElectionTimer.Timeout += OnElectionTimerTimeout;
@@ -38,7 +39,7 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
             requests[i] = peers[i].SendRequestVote(request, token);
         }
 
-        return await Task.WhenAll( requests );
+        return await Task.WhenAll(requests);
     }
 
     /// <summary>
@@ -72,10 +73,11 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
         var leftPeers = new List<IPeer>(PeerGroup.Peers.Count);
         var term = CurrentTerm;
         leftPeers.AddRange(PeerGroup.Peers);
-        
+
         var notResponded = new List<IPeer>();
         var votes = 0;
-        _logger.Debug("Начинаю раунд кворума для терма {Term}. Отправляю запросы на узлы: {Peers}", term, leftPeers.Select(x => x.Id));
+        _logger.Debug("Начинаю раунд кворума для терма {Term}. Отправляю запросы на узлы: {Peers}", term,
+            leftPeers.Select(x => x.Id));
         while (!QuorumReached())
         {
             var responses = await SendRequestVotes(leftPeers, token);
@@ -84,6 +86,7 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
                 _logger.Debug("Операция была отменена во время отправки запросов. Завершаю кворум");
                 return;
             }
+
             for (var i = 0; i < responses.Length; i++)
             {
                 var response = responses[i];
@@ -99,10 +102,12 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
                 }
                 else if (CurrentTerm < response.CurrentTerm)
                 {
-                    _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower", leftPeers[i].Id);
+                    _logger.Verbose("Узел {NodeId} имеет более высокий Term. Перехожу в состояние Follower",
+                        leftPeers[i].Id);
                     _cts.Cancel();
 
-                    CommandQueue.Enqueue(new MoveToFollowerStateCommand<TCommand, TResponse>(response.CurrentTerm, null, this, ConsensusModule));
+                    CommandQueue.Enqueue(new MoveToFollowerStateCommand<TCommand, TResponse>(response.CurrentTerm, null,
+                        this, ConsensusModule));
                     return;
                 }
                 else
@@ -110,18 +115,20 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
                     _logger.Verbose("Узел {NodeId} не отдал голос за", leftPeers[i].Id);
                 }
             }
-            
+
             ( leftPeers, notResponded ) = ( notResponded, leftPeers );
             notResponded.Clear();
-            
+
             if (leftPeers.Count == 0 && !QuorumReached())
             {
-                _logger.Debug("Кворум не достигнут и нет узлов, которым можно послать запросы. Дожидаюсь завершения Election Timeout");
+                _logger.Debug(
+                    "Кворум не достигнут и нет узлов, которым можно послать запросы. Дожидаюсь завершения Election Timeout");
                 return;
             }
         }
-        
-        _logger.Debug("Кворум собран. Получено {VotesCount} голосов. Посылаю команду перехода в состояние Leader", votes);
+
+        _logger.Debug("Кворум собран. Получено {VotesCount} голосов. Посылаю команду перехода в состояние Leader",
+            votes);
 
         if (token.IsCancellationRequested)
         {
@@ -130,7 +137,7 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
         }
 
         CommandQueue.Enqueue(new MoveToLeaderStateCommand<TCommand, TResponse>(this, ConsensusModule));
-        
+
         bool QuorumReached()
         {
             return PeerGroup.IsQuorumReached(votes);
@@ -143,7 +150,8 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
 
         _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
 
-        CommandQueue.Enqueue(new MoveToCandidateAfterElectionTimerTimeoutCommand<TCommand, TResponse>(this, ConsensusModule));
+        CommandQueue.Enqueue(
+            new MoveToCandidateAfterElectionTimerTimeoutCommand<TCommand, TResponse>(this, ConsensusModule));
     }
 
 
@@ -160,12 +168,12 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
             ConsensusModule.UpdateState(request.Term, null);
             CurrentState = ConsensusModule.CreateFollowerState();
         }
-        
+
         if (Log.Contains(request.PrevLogEntryInfo) is false)
         {
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
-        
+
         if (0 < request.Entries.Count)
         {
             Log.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
@@ -184,10 +192,10 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
                     StateMachine.ApplyNoResponse(command);
                 }
             }
-            
+
             Log.SetLastApplied(lastCommitIndex);
         }
-        
+
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
 
@@ -217,25 +225,27 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
             CurrentState = ConsensusModule.CreateFollowerState();
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
-        
-        var canVote = 
+
+        var canVote =
             // Ранее не голосовали
-            VotedFor is null || 
+            VotedFor is null
+          ||
             // Текущий лидер/кандидат посылает этот запрос (почему бы не согласиться)
             VotedFor == request.CandidateId;
-        
+
         // Отдать свободный голос можем только за кандидата 
-        if (canVote && 
+        if (canVote
+          &&
             // У которого лог в консистентном с нашим состоянием
             !Log.Conflicts(request.LastLogEntryInfo))
         {
             ElectionTimer.Start();
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
             CurrentState = ConsensusModule.CreateFollowerState();
-            
+
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
-        
+
         // Кандидат только что проснулся и не знает о текущем состоянии дел. 
         // Обновим его
         return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
@@ -249,8 +259,14 @@ public class CandidateState<TCommand, TResponse>: ConsensusModuleState<TCommand,
             _cts.Dispose();
         }
         catch (ObjectDisposedException)
-        { }
-        
+        {
+        }
+
         ElectionTimer.Timeout -= OnElectionTimerTimeout;
+    }
+
+    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request)
+    {
+        throw new NotImplementedException();
     }
 }
