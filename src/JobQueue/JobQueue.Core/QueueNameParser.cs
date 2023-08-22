@@ -8,8 +8,8 @@ namespace JobQueue.Core;
 /// </summary>
 public static class QueueNameParser
 {
-    private const int MaxNameLength = 255;
-    
+    public const int MaxNameLength = 255;
+
     /// <summary>
     /// Попытаться спарсить название очереди
     /// </summary>
@@ -20,7 +20,7 @@ public static class QueueNameParser
     public static bool TryParse(string raw, out QueueName name)
     {
         ArgumentNullException.ThrowIfNull(raw);
-        
+
         Span<byte> buffer = stackalloc byte[MaxNameLength];
         int encoded;
         try
@@ -42,13 +42,13 @@ public static class QueueNameParser
         name = QueueName.Default;
         return false;
     }
-    
+
     private const char MinChar = '!';
     private const char MaxChar = '~';
-    
+
     private const byte MinByte = ( byte ) MinChar;
     private const byte MaxByte = ( byte ) MaxChar;
-    
+
     // В кодировке UTF-8 (+ ASCII и UTF-16) - возврастающий диапазон [33; 126]
     internal const string AllowedCharacters =
         "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
@@ -68,26 +68,26 @@ public static class QueueNameParser
         {
             return name;
         }
-        
+
         // MAYBE: переделать логику TryParse, чтобы он сам выкидывал исключения + там же и сделать их дескриптивными.
         // например - передавать флаг bool safe и если выставлен, то не кидать исключения, иначе исключение с пояснением
         throw new InvalidQueueNameException(raw);
     }
-    
+
     /// <summary>
     /// Кодировка, используемая для работы с названием очереди
     /// </summary>
-    public static readonly Encoding Encoding = Encoding.GetEncoding("ascii", 
+    public static readonly Encoding Encoding = Encoding.GetEncoding("ascii",
         EncoderFallback.ExceptionFallback,
         DecoderFallback.ExceptionFallback);
-    
+
     public static QueueName Parse(ReadOnlySpan<byte> span)
     {
         if (MaxNameLength < span.Length)
         {
             throw new InvalidQueueNameException();
         }
-        
+
         if (span.Length == 0)
         {
             return QueueName.Default;
@@ -101,7 +101,7 @@ public static class QueueNameParser
         throw new InvalidQueueNameException();
     }
 
-    
+
     private static bool TryParse(in ReadOnlySpan<byte> span, out QueueName name)
     {
         if (IsValidQueueName(span))
@@ -109,7 +109,7 @@ public static class QueueNameParser
             name = new QueueName(Encoding.GetString(span));
             return true;
         }
-        
+
         name = QueueName.Default;
         return false;
     }
@@ -127,7 +127,7 @@ public static class QueueNameParser
         {
             // Выбранный диапазон допустимых значений образует непрерывный отрезок
             // Начиная от 33 (!), заканчивая 126 (~).
-            
+
             // В первых 127 символах страниц кодировок UTF-8, UTF-16 и ASCII одинаковые символы с кодами,
             // Поэтому можно проверять и не беспокоиться, т.к. кроме них в приложении другие не используются
             var b = span[i];

@@ -66,7 +66,6 @@ public class FileLogStorage : ILogStorage
             throw new ArgumentException("Переданный поток не поддерживает запись", nameof(file));
         }
 
-
         _file = file;
         _writer = new BinaryWriter(file, Encoding, true);
         _reader = new BinaryReader(file, Encoding, true);
@@ -147,6 +146,10 @@ public class FileLogStorage : ILogStorage
 
     public int Count => _index.Count;
 
+    // Очень надеюсь, что такого никогда не произойдет
+    // Чтобы такого точно не произошло, надо на уровне выставления максимального размера файла лога ограничение сделать
+    public ulong Size => checked( ( ulong ) _file.Length );
+
     public LogEntryInfo Append(LogEntry entry)
     {
         CheckInitialized();
@@ -159,15 +162,7 @@ public class FileLogStorage : ILogStorage
         }
         catch (Exception)
         {
-            try
-            {
-                _file.Position = savedLastPosition;
-            }
-            catch (Exception)
-            {
-                /* */
-            }
-
+            _file.Position = savedLastPosition;
             throw;
         }
 

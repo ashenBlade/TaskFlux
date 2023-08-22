@@ -23,7 +23,6 @@
     <ItemGroup>
       <ProjectReference Include="..\..\TaskFlux.Core\TaskFlux.Core.csproj" />
       <ProjectReference Include="..\Consensus.CommandQueue\Consensus.CommandQueue\Consensus.CommandQueue.csproj" />
-      <ProjectReference Include="..\Consensus.StateMachine\Consensus.StateMachine\Consensus.StateMachine.csproj" />
     </ItemGroup>
 
 </Project>

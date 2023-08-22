@@ -44,9 +44,19 @@ public interface IJobQueueManager
     /// </summary>
     /// <returns>Список из метаданных очередей</returns>
     public IReadOnlyCollection<IJobQueueMetadata> GetAllQueuesMetadata();
-    
+
     /// <summary>
     /// Количество очередей, которыми <see cref="IJobQueueManager"/> управляет
     /// </summary>
     public int QueuesCount { get; }
+
+    /// <summary>
+    /// Получить список из всех очередей, присутствующих в системе.
+    /// </summary>
+    /// <remarks>
+    /// Необходимо для создания снапшота.
+    /// Для работы лучше пользоваться другими методами.
+    /// </remarks>
+    /// <returns>Список из всех очередей</returns>
+    public IEnumerable<IJobQueue> GetAllQueues();
 }

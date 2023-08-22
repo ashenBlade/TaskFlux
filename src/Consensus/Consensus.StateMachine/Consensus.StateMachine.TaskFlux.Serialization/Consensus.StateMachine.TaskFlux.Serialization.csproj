@@ -6,4 +6,8 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\JobQueue\JobQueue.Core\JobQueue.Core.csproj"/>
+    </ItemGroup>
+
 </Project>

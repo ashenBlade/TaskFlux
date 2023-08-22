@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using Consensus.Core.Commands;
 using Consensus.Core.Commands.AppendEntries;
 using Consensus.Core.Commands.InstallSnapshot;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Commands.Submit;
+using Consensus.Core.Log;
 using Serilog;
 using TaskFlux.Core;
 
@@ -97,33 +99,62 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
             Log.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
 
-        if (Log.CommitIndex < request.LeaderCommit)
+        Debug.Assert(Log.CommitIndex <= request.LeaderCommit,
+            $"Индекс коммита лидера не должен быть меньше индекса коммита последователя. Индекс лидера: {request.LeaderCommit}. Индекс последователя: {Log.CommitIndex}");
+
+        if (Log.CommitIndex == request.LeaderCommit)
         {
-            // В случае, если какие-то записи были закоммичены лидером, то сделать то же самое у себя.
+            return AppendEntriesResponse.Ok(CurrentTerm);
+        }
 
-            // Коммитим записи по индексу лидера
-            Log.Commit(request.LeaderCommit);
+        // В случае, если какие-то записи были закоммичены лидером, то сделать то же самое у себя.
 
-            // Закоммиченные записи можно уже применять к машине состояний 
-            var notApplied = Log.GetNotApplied();
-            if (0 < notApplied.Count)
-            {
-                foreach (var entry in notApplied)
-                {
-                    var command = CommandSerializer.Deserialize(entry.Data);
-                    StateMachine.ApplyNoResponse(command);
-                }
-            }
+        // Коммитим записи по индексу лидера
+        Log.Commit(request.LeaderCommit);
 
-            // После применения команды, обновляем индекс последней примененной записи.
-            // Этот индекс обновляем сразу, т.к. 
-            // 1. Если возникнет исключение в работе, то это означает неправильную работу самого приложения, а не бизнес-логики
-            // 2. Эта операция сразу сбрасывает данные на диск (Flush) - дорого
-            Log.SetLastApplied(request.LeaderCommit);
+        // Закоммиченные записи можно уже применять к машине состояний 
+        var notApplied = Log.GetNotApplied();
+        var lastTerm = Term.Start;
+        foreach (var entry in notApplied)
+        {
+            var command = CommandSerializer.Deserialize(entry.Data);
+            StateMachine.ApplyNoResponse(command);
+            lastTerm = entry.Term;
+        }
+
+        // После применения команды, обновляем индекс последней примененной записи.
+        // Этот индекс обновляем сразу, т.к. 
+        // 1. Если возникнет исключение в работе, то это означает неправильную работу самого приложения, а не бизнес-логики
+        // 2. Эта операция сразу сбрасывает данные на диск (Flush) - дорого
+        Log.SetLastApplied(request.LeaderCommit);
+
+        if (MaxLogFileSize < Log.LogFileSize)
+        {
+            // 1. Получить снапшот от машины состояний
+            var snapshot = StateMachine.GetSnapshot();
+            // 2. Создать временный файл снапшота
+
+            // Последняя примененная запись - последняя закомиченная запись 
+            var snapshotLastEntryInfo = new LogEntryInfo(lastTerm, Log.CommitIndex);
+
+            Log.SaveSnapshot(snapshotLastEntryInfo, snapshot, CancellationToken.None);
+            // 3. Сбросить все данные на него
+            // 4. Заменить файл снапшота на новый (переименовать)
+            // 5. Очистить файл лога
+
+            throw new NotImplementedException("Создание снапшота еще не реализовано");
         }
 
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
+
+    /// <summary>
+    /// Максимальный размер файла лога
+    /// </summary>
+    /// <remarks>Это значение по умолчанию. В будущем, может стать параметром</remarks>
+    private const ulong MaxLogFileSize = 16    // Мб 
+                                       * 1024  // Кб
+                                       * 1024; // б
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
     {

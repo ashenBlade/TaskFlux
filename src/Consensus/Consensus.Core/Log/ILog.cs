@@ -1,7 +1,14 @@
 namespace Consensus.Core.Log;
 
+/// <summary>
+/// Объект доступа к пресистентным структурам данных: лог команд, метаданные, снапшот
+/// </summary>
 public interface ILog
 {
+    /// <summary>
+    /// Прочитать все записи лога
+    /// </summary>
+    /// <returns>Список хранящихся записей лога</returns>
     public IReadOnlyList<LogEntry> ReadLog();
 
     /// <summary>
@@ -49,7 +56,12 @@ public interface ILog
     /// Индекс последней применной записи журнала.
     /// Обновляется после успешного коммита 
     /// </summary>
-    public int LastApplied { get; }
+    public int LastAppliedIndex { get; }
+
+    /// <summary>
+    /// Размер файла лога, включая заголовки
+    /// </summary>
+    public ulong LogFileSize { get; }
 
     /// <summary>
     /// Получить все записи, начиная с указанного индекса
@@ -77,7 +89,7 @@ public interface ILog
 
     /// <summary>
     /// Получить закомиченные, но еще не примененные записи из лога.
-    /// Это записи, индекс которых находится между индексом последней применненной записи (<see cref="LastApplied"/>) и
+    /// Это записи, индекс которых находится между индексом последней применненной записи (<see cref="LastAppliedIndex"/>) и
     /// последней закоммиченной записи (<see cref="CommitIndex"/>) 
     /// </summary>
     /// <returns>Записи, которые были закомичены, но еще не применены</returns>
@@ -88,4 +100,13 @@ public interface ILog
     /// </summary>
     /// <param name="index">Индекс записи в логе</param>
     void SetLastApplied(int index);
+
+    /// <summary>
+    /// Перезаписать старый снапшот новым
+    /// </summary>
+    /// <param name="lastLogEntry">Информация о последней примененной команде в <paramref name="snapshot"/></param>
+    /// <param name="snapshot">Слепок системы</param>
+    /// <param name="token">Токен отмены</param>
+    /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
+    public void SaveSnapshot(LogEntryInfo lastLogEntry, ISnapshot snapshot, CancellationToken token = default);
 }

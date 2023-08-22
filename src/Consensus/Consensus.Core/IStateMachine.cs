@@ -1,4 +1,6 @@
-﻿namespace Consensus.StateMachine;
+﻿using Consensus.Core.Log;
+
+namespace Consensus.Core;
 
 public interface IStateMachine<in TCommand, out TResponse>
 {
@@ -15,4 +17,10 @@ public interface IStateMachine<in TCommand, out TResponse>
     /// </summary>
     /// <param name="command">Команда, которую нужно выполнить</param>
     public void ApplyNoResponse(TCommand command);
+
+    /// <summary>
+    /// Получить слепок состояния машины на текущий момент
+    /// </summary>
+    /// <returns>Слепок состояния машины</returns>
+    public ISnapshot GetSnapshot();
 }

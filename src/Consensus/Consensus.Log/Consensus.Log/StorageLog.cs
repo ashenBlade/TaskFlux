@@ -1,38 +1,47 @@
 using System.Runtime.CompilerServices;
 using Consensus.Core.Log;
-using Consensus.StateMachine;
 
 [assembly: InternalsVisibleTo("Consensus.Log.Tests")]
+
 namespace Consensus.Log;
 
-public class StorageLog: ILog
+public class StorageLog : ILog
 {
     /// <summary>
     /// Персистентное хранилище записей лога
     /// </summary>
     private readonly ILogStorage _storage;
-    public LogEntryInfo LastEntry => _buffer.Count > 0 
-                                         ? new LogEntryInfo(_buffer[^1].Term, CommitIndex + _buffer.Count)
-                                         : _storage.GetLastLogEntry();
 
-    public int CommitIndex => _storage.Count - 1;
-    public int LastApplied { get; internal set; } = LogEntryInfo.TombIndex;
-    public IReadOnlyList<LogEntry> ReadLog() => _storage.ReadAll();
+    /// <summary>
+    /// Хранилище для слепков состояния (снапшотов)
+    /// </summary>
+    private readonly ISnapshotStorage _snapshotStorage;
 
     /// <summary>
     /// Временный буфер для незакоммиченных записей
     /// </summary>
     private readonly List<LogEntry> _buffer = new();
-    
-    public StorageLog(ILogStorage storage )
+
+    public LogEntryInfo LastEntry => _buffer.Count > 0
+                                         ? new LogEntryInfo(_buffer[^1].Term, CommitIndex + _buffer.Count)
+                                         : _storage.GetLastLogEntry();
+
+    public int CommitIndex => _storage.Count - 1;
+    public int LastAppliedIndex { get; private set; } = LogEntryInfo.TombIndex;
+    public ulong LogFileSize => _storage.Size;
+    public IReadOnlyList<LogEntry> ReadLog() => _storage.ReadAll();
+
+    public StorageLog(ILogStorage storage, ISnapshotStorage snapshotStorage)
     {
         _storage = storage;
+        _snapshotStorage = snapshotStorage;
     }
 
     // Для тестов
-    internal StorageLog(ILogStorage storage, List<LogEntry> buffer)
+    internal StorageLog(ILogStorage storage, ISnapshotStorage snapshotStorage, List<LogEntry> buffer)
     {
         _storage = storage;
+        _snapshotStorage = snapshotStorage;
         _buffer = buffer;
     }
 
@@ -40,7 +49,7 @@ public class StorageLog: ILog
     {
         // Неважно на каком индексе последний элемент.
         // Если он последний, то наши старые могут быть заменены
-        
+
         // Наш:      | 1 | 1 | 2 | 3 |
         // Другой 1: | 1 | 1 | 2 | 3 | 4 | 5 |
         // Другой 2: | 1 | 5 | 
@@ -51,16 +60,15 @@ public class StorageLog: ILog
 
         // В противном случае голос отдает только за тех,
         // префикс лога, которых не меньше нашего
-        
+
         // Наш:      | 1 | 1 | 2 | 3 |
         // Другой 1: | 1 | 1 | 2 | 3 | 3 | 3 |
         // Другой 2: | 1 | 1 | 2 | 3 |
-        if (prefix.Term == LastEntry.Term && 
-            LastEntry.Index <= prefix.Index)
+        if (prefix.Term == LastEntry.Term && LastEntry.Index <= prefix.Index)
         {
             return false;
         }
-        
+
         return true;
     }
 
@@ -87,8 +95,9 @@ public class StorageLog: ILog
             return true;
         }
 
-        
-        if (prefix.Index <= LastEntry.Index && // Наш лог не меньше (используется PrevLogEntry, поэтому нет +1)
+
+        if (prefix.Index <= LastEntry.Index
+         && // Наш лог не меньше (используется PrevLogEntry, поэтому нет +1)
             prefix.Term == GetLogEntryInfoAtIndex(prefix.Index).Term) // Термы записей одинаковые
         {
             return true;
@@ -108,7 +117,7 @@ public class StorageLog: ILog
         var bufferEntry = _buffer[index - _storage.Count];
         return new LogEntryInfo(bufferEntry.Term, index);
     }
-    
+
     public IReadOnlyList<LogEntry> GetFrom(int index)
     {
         if (index <= _storage.Count)
@@ -122,23 +131,21 @@ public class StorageLog: ILog
             // Конкатенируем
             return result;
         }
-        
+
         // Требуемые записи только в памяти 
         var bufferStartIndex = index - _storage.Count;
         if (index <= _buffer.Count)
         {
             // Берем часть из лога
             var logPart = _buffer.GetRange(bufferStartIndex, _buffer.Count - bufferStartIndex);
-            
+
             // Возвращаем
             return logPart;
         }
-        else
-        {
-            // Индекс неверный
-            throw new ArgumentOutOfRangeException(nameof(index), index,
-                "Указанный индекс больше чем последний индекс лога");
-        }
+
+        // Индекс неверный
+        throw new ArgumentOutOfRangeException(nameof(index), index,
+            "Указанный индекс больше чем последний индекс лога");
     }
 
     public void Commit(int index)
@@ -154,7 +161,7 @@ public class StorageLog: ILog
             throw new ArgumentOutOfRangeException(nameof(index), index,
                 "Указанный индекс больше количества записей в логе");
         }
-        
+
         var notCommitted = _buffer.GetRange(0, removeCount);
         _storage.AppendRange(notCommitted);
         _buffer.RemoveRange(0, removeCount);
@@ -164,7 +171,8 @@ public class StorageLog: ILog
     {
         if (nextIndex < 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex, "Следующий индекс лога не может быть отрицательным");
+            throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
+                "Следующий индекс лога не может быть отрицательным");
         }
 
         if (_storage.Count + _buffer.Count + 1 < nextIndex)
@@ -172,12 +180,12 @@ public class StorageLog: ILog
             throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
                 "Следующий индекс лога не может быть больше числа записей в логе + 1");
         }
-        
+
         if (nextIndex == 0)
         {
             return LogEntryInfo.Tomb;
         }
-        
+
         var index = nextIndex - 1;
 
         // Запись находится в логе
@@ -193,12 +201,12 @@ public class StorageLog: ILog
 
     public IReadOnlyList<LogEntry> GetNotApplied()
     {
-        if (CommitIndex <= LastApplied || CommitIndex == LogEntryInfo.TombIndex)
+        if (CommitIndex <= LastAppliedIndex || CommitIndex == LogEntryInfo.TombIndex)
         {
             return Array.Empty<LogEntry>();
         }
 
-        return _storage.ReadFrom(LastApplied + 1);
+        return _storage.ReadFrom(LastAppliedIndex + 1);
     }
 
     public void SetLastApplied(int index)
@@ -207,7 +215,34 @@ public class StorageLog: ILog
         {
             throw new ArgumentOutOfRangeException(nameof(index), index, "Переданный индекс меньше TombIndex");
         }
-        
-        LastApplied = index;
+
+        LastAppliedIndex = index;
+    }
+
+    public void SaveSnapshot(LogEntryInfo lastLogEntry, ISnapshot snapshot, CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        // 1. Создать временный файл
+        var tempFile = _snapshotStorage.CreateTempSnapshotFile();
+
+        // 2. Записать заголовок: маркер, индекс, терм
+        tempFile.Initialize(lastLogEntry);
+
+
+        // 3. Записываем сами данные на диск
+
+        try
+        {
+            tempFile.WriteSnapshot(snapshot, token);
+        }
+        catch (OperationCanceledException e)
+        {
+            // 3.1. Если роль изменилась/появился новый лидер и т.д. - прекрать создание нового снапшота
+            tempFile.Discard();
+            return;
+        }
+
+        // 4. Переименовать файл в нужное имя
+        tempFile.Save();
     }
 }

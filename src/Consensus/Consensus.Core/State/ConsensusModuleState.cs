@@ -4,7 +4,6 @@ using Consensus.Core.Commands.InstallSnapshot;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Commands.Submit;
 using Consensus.Core.Log;
-using Consensus.StateMachine;
 using TaskFlux.Core;
 
 namespace Consensus.Core.State;

@@ -7,7 +7,6 @@ using Consensus.Core.Commands.Submit;
 using Consensus.Core.Log;
 using Consensus.Core.State;
 using Consensus.Core.State.LeaderState;
-using Consensus.StateMachine;
 using TaskFlux.Core;
 using TaskFlux.Node;
 
@@ -104,8 +103,7 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
 
     public SubmitResponse<TResult> Handle(SubmitRequest<TCommand> request)
     {
-        var response = _module.Handle(request);
-        return response;
+        return _module.Handle(request);
     }
 
     public InstallSnapshotResponse Handle(InstallSnapshotRequest request)

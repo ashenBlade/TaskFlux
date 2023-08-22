@@ -3,7 +3,7 @@ using Consensus.Log;
 
 namespace Consensus.Storage.File.Log.Decorators;
 
-public class ExclusiveAccessLogStorageDecorator: ILogStorage
+public class ExclusiveAccessLogStorageDecorator : ILogStorage
 {
     private readonly ILogStorage _log;
     private SpinLock _lock;
@@ -14,6 +14,7 @@ public class ExclusiveAccessLogStorageDecorator: ILogStorage
     }
 
     public int Count => _log.Count;
+    public ulong Size => _log.Size;
 
     public LogEntryInfo Append(LogEntry entry)
     {

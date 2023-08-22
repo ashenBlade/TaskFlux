@@ -7,11 +7,11 @@ namespace Consensus.Storage.File.Log.Decorators;
 /// Декоратор для быстрого доступа к последней записи в логе.
 /// Используется стратегия Read-Through
 /// </summary>
-public class LastLogEntryCachingFileLogStorageDecorator: ILogStorage
+public class LastLogEntryCachingFileLogStorageDecorator : ILogStorage
 {
     private readonly ILogStorage _storage;
     private LogEntryInfo _lastLogEntry;
-    
+
     public LastLogEntryCachingFileLogStorageDecorator(ILogStorage storage)
     {
         _lastLogEntry = storage.GetLastLogEntry();
@@ -19,6 +19,7 @@ public class LastLogEntryCachingFileLogStorageDecorator: ILogStorage
     }
 
     public int Count => _storage.Count;
+    public ulong Size => _storage.Size;
 
     public LogEntryInfo Append(LogEntry entry)
     {
@@ -45,7 +46,7 @@ public class LastLogEntryCachingFileLogStorageDecorator: ILogStorage
         {
             return _lastLogEntry;
         }
-        
+
         return _storage.GetPrecedingLogEntryInfo(nextIndex);
     }
 
@@ -65,6 +66,7 @@ public class LastLogEntryCachingFileLogStorageDecorator: ILogStorage
         {
             return _lastLogEntry;
         }
+
         return _storage.GetAt(index);
     }
 

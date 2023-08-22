@@ -1,24 +1,25 @@
 using System.Diagnostics;
 using JobQueue.Core;
-using JobQueue.PriorityQueue;
 
 namespace JobQueue.InMemory;
 
-public class SimpleJobQueueManager: IJobQueueManager
+public class SimpleJobQueueManager : IJobQueueManager
 {
     // Если решим добавить одну очередь, но под разными именами, то такое нужно обрабатывать правильно
     public int QueuesCount => _queues.Count;
-    
+
+    public IEnumerable<IJobQueue> GetAllQueues()
+    {
+        return _queues.Values;
+    }
+
     private readonly Dictionary<QueueName, IJobQueue> _queues;
 
     public SimpleJobQueueManager(IJobQueue defaultJobQueue)
     {
-        _queues = new(QueueNameEqualityComparer.Instance)
-        {
-            [defaultJobQueue.Name] = defaultJobQueue
-        };
+        _queues = new(QueueNameEqualityComparer.Instance) {[defaultJobQueue.Name] = defaultJobQueue};
     }
-    
+
     public bool TryGetQueue(QueueName name, out IJobQueue jobQueue)
     {
         if (_queues.TryGetValue(name, out jobQueue!))

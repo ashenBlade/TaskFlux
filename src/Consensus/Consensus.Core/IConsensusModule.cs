@@ -6,7 +6,6 @@ using Consensus.Core.Commands.Submit;
 using Consensus.Core.Log;
 using Consensus.Core.State;
 using Consensus.Core.State.LeaderState;
-using Consensus.StateMachine;
 using TaskFlux.Core;
 
 namespace Consensus.Core;

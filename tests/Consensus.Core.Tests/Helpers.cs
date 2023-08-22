@@ -1,8 +1,8 @@
 using System.Runtime.CompilerServices;
 using Consensus.CommandQueue;
-using Moq;
 using Consensus.Core.Log;
 using Consensus.Core.State.LeaderState;
+using Moq;
 using Serilog;
 using TaskFlux.Core;
 
@@ -18,7 +18,7 @@ public static class Helpers
     public static readonly IStateMachine NullStateMachine = CreateNullStateMachine();
     public static readonly IMetadataStorage NullMetadataStorage = CreateNullStorage();
     public static readonly IRequestQueueFactory NullRequestQueueFactory = CreateNullRequestQueueFactory();
-    
+
     private static IRequestQueueFactory CreateNullRequestQueueFactory()
     {
         var mockQueueFactory = new Mock<IRequestQueueFactory>();
@@ -31,11 +31,11 @@ public static class Helpers
         mockQueueFactory.Setup(x => x.CreateQueue()).Returns(mockQueue.Object);
         return mockQueueFactory.Object;
 
-        async IAsyncEnumerable<AppendEntriesRequestSynchronizer> CreateNullEnumerable([EnumeratorCancellation] CancellationToken token)
+        async IAsyncEnumerable<AppendEntriesRequestSynchronizer> CreateNullEnumerable(
+            [EnumeratorCancellation] CancellationToken token)
         {
             yield break;
         }
-
     }
 
     private static IMetadataStorage CreateNullStorage()
@@ -46,12 +46,14 @@ public static class Helpers
     private static IStateMachine CreateNullStateMachine()
     {
         return new Mock<IStateMachine>().Apply(m =>
-        {
-            m.Setup(x => x.Apply(It.IsAny<int>())).Returns(1);
-        }).Object;
+                                         {
+                                             m.Setup(x => x.Apply(It.IsAny<int>())).Returns(1);
+                                         })
+                                        .Object;
     }
 
     public static readonly ICommandQueue DefaultCommandQueue = new SimpleCommandQueue();
+
     private static ITimer CreateNullTimer()
     {
         var mock = new Mock<ITimer>(MockBehavior.Loose);
@@ -64,33 +66,36 @@ public static class Helpers
         mock.Setup(x => x.EnqueueInfinite(It.IsAny<Func<Task>>(), It.IsAny<CancellationToken>()));
         return mock.Object;
     }
-    
+
     public static ILog CreateLog(LogEntryInfo? logEntryInfo = null, int commitIndex = 0, int lastApplied = 0)
     {
         var entry = logEntryInfo ?? LastLogEntryInfo;
-        return Mock.Of<ILog>(x => x.LastEntry == entry && 
-                                  x.CommitIndex == commitIndex &&
-                                  x.LastApplied == lastApplied &&
-                                  x.Contains(It.IsAny<LogEntryInfo>()) == true);
+        return Mock.Of<ILog>(x =>
+            x.LastEntry == entry
+         && x.CommitIndex == commitIndex
+         && x.LastAppliedIndex == lastApplied
+         && x.Contains(It.IsAny<LogEntryInfo>()) == true);
     }
 
-    public static RaftConsensusModule<int, int> CreateNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IBackgroundJobQueue? jobQueue = null, ILog? log = null, ICommandQueue? commandQueue = null)
+    public static RaftConsensusModule<int, int> CreateNode(Term currentTerm,
+                                                           NodeId? votedFor,
+                                                           IEnumerable<IPeer>? peers = null,
+                                                           ITimer? electionTimer = null,
+                                                           ITimer? heartbeatTimer = null,
+                                                           IBackgroundJobQueue? jobQueue = null,
+                                                           ILog? log = null,
+                                                           ICommandQueue? commandQueue = null)
     {
-        return RaftConsensusModule<int, int>.Create(
-            NodeId, 
+        return RaftConsensusModule<int, int>.Create(NodeId,
             new PeerGroup(peers?.ToArray() ?? Array.Empty<IPeer>()),
-            NullLogger, 
+            NullLogger,
             electionTimer ?? Mock.Of<ITimer>(),
-            heartbeatTimer ?? Mock.Of<ITimer>(), 
+            heartbeatTimer ?? Mock.Of<ITimer>(),
             jobQueue ?? NullBackgroundJobQueue,
             log ?? CreateLog(),
             commandQueue ?? DefaultCommandQueue,
             NullStateMachine,
             new StubMetadataStorage(currentTerm, votedFor),
-            new StubSerializer<int>()
-            {
-                Deserialized = 1,
-                Serialized = Array.Empty<byte>()
-            }, NullRequestQueueFactory);
+            new StubSerializer<int>() {Deserialized = 1, Serialized = Array.Empty<byte>()}, NullRequestQueueFactory);
     }
 }

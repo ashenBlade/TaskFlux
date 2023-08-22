@@ -10,16 +10,17 @@ using Consensus.JobQueue;
 using Consensus.Log;
 using Consensus.Peer;
 using Consensus.Peer.Decorators;
-using Consensus.StateMachine;
 using Consensus.StateMachine.TaskFlux;
 using Consensus.Storage.File.Log;
 using Consensus.Storage.File.Log.Decorators;
 using Consensus.Storage.File.Metadata;
 using Consensus.Storage.File.Metadata.Decorators;
+using Consensus.Storage.File.Snapshot;
 using Consensus.Timers;
 using JobQueue.Core;
 using JobQueue.InMemory;
 using JobQueue.PriorityQueue.StandardLibrary;
+using JobQueue.Serialization;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 using TaskFlux.Commands;
@@ -35,8 +36,7 @@ using TaskFlux.Node;
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()
             .Enrich.FromLogContext()
-            .WriteTo.Console(
-                 outputTemplate:
+            .WriteTo.Console(outputTemplate:
                  "[{Timestamp:HH:mm:ss.ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
             .CreateLogger();
 try
@@ -85,7 +85,7 @@ try
     await using var fileStream = GetLogFileStream(serverOptions);
     Log.Information("Инициализирую хранилище лога предзаписи");
     var (storage, fileStorage) = CreateLogStorage(fileStream);
-    var log = new StorageLog(storage);
+    var log = CreateStorageLog(storage);
 
     Log.Information("Создаю очередь машины состояний");
     var appInfo = CreateApplicationInfo();
@@ -306,7 +306,7 @@ FileStream OpenMetadataFile(RaftServerOptions options)
 IStateMachine<Command, Result> CreateJobQueueStateMachine(ICommandContext context)
 {
     Log.Information("Создаю пустую очередь задач в памяти");
-    return new TaskFluxStateMachine(context);
+    return new TaskFluxStateMachine(context, new FileJobQueueSnapshotSerializer());
 }
 
 INode CreateNode(IApplicationInfo applicationInfo)
@@ -380,4 +380,43 @@ ClusterInfo CreateClusterInfo(RaftServerOptions options)
 NodeInfo CreateNodeInfo(RaftServerOptions options)
 {
     return new NodeInfo(new NodeId(options.NodeId), NodeRole.Follower);
+}
+
+StorageLog CreateStorageLog(ILogStorage storage1)
+{
+    var currentDirectory = Directory.GetCurrentDirectory();
+    var raftDirectory = new DirectoryInfo(Path.Combine(currentDirectory, "consensus"));
+    if (!raftDirectory.Exists)
+    {
+        if (File.Exists(raftDirectory.FullName))
+        {
+            throw new ApplicationException($"По пути {raftDirectory.FullName} лежит не диретория, а файл");
+        }
+
+        Log.Information("Директории с данными рафта нет. Создаю новую");
+        raftDirectory.Create();
+    }
+
+    var snapshotFile = new FileInfo(Path.Combine(raftDirectory.FullName, "raft.snapshot"));
+    var tempDir = CreateTemporarySnapshotFileDirectory(raftDirectory);
+    return new StorageLog(storage1,
+        new FileSnapshotStorage(new FileSystemTemporarySnapshotFileFactory(tempDir, snapshotFile)));
+
+
+    static DirectoryInfo CreateTemporarySnapshotFileDirectory(DirectoryInfo raftDir)
+    {
+        var tempDir = new DirectoryInfo(Path.Combine(raftDir.FullName, "temp"));
+        if (!tempDir.Exists)
+        {
+            if (File.Exists(tempDir.FullName))
+            {
+                throw new ApplicationException(
+                    $"По пути директории {tempDir.FullName} для временных файлов рафта лежит не директория, а файл");
+            }
+
+            tempDir.Create();
+        }
+
+        return tempDir;
+    }
 }

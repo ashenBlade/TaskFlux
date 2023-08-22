@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Threading.Channels;
 using JobQueue.Core;
 using JobQueue.PriorityQueue;
 
@@ -8,7 +7,7 @@ namespace JobQueue.InMemory;
 /// <summary>
 /// Очередь с ограничением на размер
 /// </summary>
-public class BoundedJobQueue: IJobQueue
+public class BoundedJobQueue : IJobQueue
 {
     public IJobQueueMetadata Metadata { get; }
     private readonly IPriorityQueue<long, byte[]> _queue;
@@ -28,7 +27,7 @@ public class BoundedJobQueue: IJobQueue
             throw new ArgumentOutOfRangeException(nameof(limit), limit,
                 "Максимальный размер очереди не может быть равен 0. Чтобы убрать лимит надо использовать UnboundedJobQueue");
         }
-        
+
         Name = name;
         _queue = queue;
         _limit = limit;
@@ -43,15 +42,19 @@ public class BoundedJobQueue: IJobQueue
         {
             return false;
         }
-        
+
         _queue.Enqueue(key, payload);
         return true;
-
     }
 
     public bool TryDequeue(out long key, out byte[] payload)
     {
         return _queue.TryDequeue(out key, out payload);
+    }
+
+    public IReadOnlyCollection<(long Priority, byte[] Payload)> GetAllData()
+    {
+        return _queue.ReadAllData();
     }
 
     public QueueName Name { get; }
@@ -60,9 +63,9 @@ public class BoundedJobQueue: IJobQueue
     private class BoundedJobQueueMetadata : IJobQueueMetadata
     {
         private readonly BoundedJobQueue _queue;
-        
+
         public QueueName QueueName => _queue.Name;
-        public uint Count => (uint) _queue.Count;
+        public uint Count => ( uint ) _queue.Count;
         public uint MaxSize => _queue._limit;
 
         public BoundedJobQueueMetadata(BoundedJobQueue queue)

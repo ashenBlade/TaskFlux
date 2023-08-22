@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Consensus.Core.Commands.AppendEntries;
 using Consensus.Core.Commands.InstallSnapshot;
 using Consensus.Core.Commands.RequestVote;
@@ -10,7 +11,6 @@ namespace Consensus.Core.State.LeaderState;
 
 public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TResponse>
 {
-
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
@@ -85,25 +85,38 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
             Log.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
 
-        if (Log.CommitIndex < request.LeaderCommit)
+        // Должен быть такой инвариант, так как нельзя голосовать за кандидата, 
+        // у которого лог отстает от нашего по закоммиченным записям
+        Debug.Assert(Log.CommitIndex <= request.LeaderCommit, "Log.CommitIndex <= request.LeaderCommit; Нельзя голосовать за лидера, у которого индекс закоммиченной записи меньше нашей");
+        
+        if (request.LeaderCommit == Log.CommitIndex)
         {
-            var lastCommitIndex = Math.Min(request.LeaderCommit, Log.LastEntry.Index);
-            Log.Commit(lastCommitIndex);
-            var notApplied = Log.GetNotApplied();
-            if (0 < notApplied.Count)
-            {
-                foreach (var entry in notApplied)
-                {
-                    var command = CommandSerializer.Deserialize(entry.Data);
-                    StateMachine.ApplyNoResponse(command);
-                }
-            }
-            
-            Log.SetLastApplied(lastCommitIndex);
+            // Закомиченные записи одинаковые, ничего применять не нужно
+            return AppendEntriesResponse.Ok(CurrentTerm);
         }
+        
+        
+        var lastCommitIndex = Math.Min(request.LeaderCommit, Log.LastEntry.Index);
+        Log.Commit(lastCommitIndex);
 
+        foreach (var entry in Log.GetNotApplied())
+        {
+            var command = CommandSerializer.Deserialize(entry.Data);
+            StateMachine.ApplyNoResponse(command);
+        }
+            
+        Log.SetLastApplied(lastCommitIndex);
+        
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
+
+    /// <summary>
+    /// Максимальный размер лога
+    /// </summary>
+    /// <remarks>16 Мб</remarks>
+    private const long MaxLogSize = 16    // Мб 
+                                  * 1024  // Кб
+                                  * 1024; // б
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)
     {

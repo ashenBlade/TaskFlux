@@ -21,6 +21,7 @@
       <ProjectReference Include="..\Consensus\Consensus.Timers\Consensus.Timers.csproj" />
       <ProjectReference Include="..\JobQueue\JobQueue.InMemory\JobQueue.InMemory.csproj" />
       <ProjectReference Include="..\JobQueue\JobQueue.PriorityQueue\JobQueue.PriorityQueue.StandardLibrary\JobQueue.PriorityQueue.StandardLibrary.csproj" />
+        <ProjectReference Include="..\JobQueue\JobQueue.Serialization\JobQueue.Serialization.csproj"/>
       <ProjectReference Include="..\TaskFlux.Commands.Serialization\TaskFlux.Commands.Serialization.csproj" />
       <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.BinaryRequest\TaskFlux.Host.Modules.BinaryRequest.csproj" />
       <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.HttpRequest\TaskFlux.Host.Modules.HttpRequest.csproj" />
