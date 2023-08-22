@@ -1,31 +1,28 @@
 using JobQueue.Core;
 using JobQueue.InMemory;
 using JobQueue.PriorityQueue.StandardLibrary;
-using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
 
 namespace TaskFlux.Commands.CreateQueue;
 
-public class CreateQueueCommand: Command
+public class CreateQueueCommand : Command
 {
     public override CommandType Type => CommandType.CreateQueue;
     public QueueName Name { get; }
     public uint Size { get; }
     public bool HasLimit => Size == 0;
 
-    private IJobQueue CreateJobQueue() => 
-        HasLimit
-            ? new BoundedJobQueue(Name, new StandardLibraryPriorityQueue<long, byte[]>(), Size)
-            : new UnboundedJobQueue(Name, new StandardLibraryPriorityQueue<long, byte[]>());
-    
+    private IJobQueue CreateJobQueue() =>
+        new PrioritizedJobQueue(Name, Size, new StandardLibraryPriorityQueue<long, byte[]>());
+
     public CreateQueueCommand(QueueName name, uint size)
     {
         Name = name;
         Size = size;
     }
-    
+
     public override Result Apply(ICommandContext context)
     {
         var manager = context.Node.GetJobQueueManager();
@@ -33,6 +30,7 @@ public class CreateQueueCommand: Command
         {
             return DefaultErrors.QueueAlreadyExists;
         }
+
         var queue = CreateJobQueue();
         if (manager.TryAddQueue(Name, queue))
         {
@@ -49,6 +47,7 @@ public class CreateQueueCommand: Command
         {
             return;
         }
+
         var queue = CreateJobQueue();
         manager.TryAddQueue(Name, queue);
     }

@@ -15,7 +15,7 @@ namespace TaskFlux.Commands.Serialization;
 public class ResultSerializer
 {
     public static readonly ResultSerializer Instance = new();
-    
+
     /// <summary>
     /// Сериализовать <see cref="Result"/> для передачи по сети
     /// </summary>
@@ -33,7 +33,9 @@ public class ResultSerializer
     private class SerializerResultVisitor : IResultVisitor
     {
         private byte[]? _buffer;
-        public byte[] Buffer => _buffer ?? throw new ArgumentNullException(nameof(_buffer), "Сериализованное значениеу не выставлено");
+
+        public byte[] Buffer =>
+            _buffer ?? throw new ArgumentNullException(nameof(_buffer), "Сериализованное значениеу не выставлено");
 
         public void Visit(EnqueueResult result)
         {
@@ -41,7 +43,7 @@ public class ResultSerializer
                               + sizeof(bool);
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)ResultType.Enqueue);
+            writer.Write(( byte ) ResultType.Enqueue);
             writer.Write(result.Success);
             _buffer = buffer;
         }
@@ -57,7 +59,7 @@ public class ResultSerializer
                                   + result.Payload.Length; // Данные
                 var buffer = new byte[estimatedSize];
                 var writer = new MemoryBinaryWriter(buffer);
-                writer.Write((byte)ResultType.Dequeue);
+                writer.Write(( byte ) ResultType.Dequeue);
                 writer.Write(true);
                 writer.Write(key);
                 writer.WriteBuffer(payload);
@@ -67,8 +69,7 @@ public class ResultSerializer
             {
                 _buffer = new byte[]
                 {
-                    ( byte ) ResultType.Dequeue, 
-                    0 // Успех: false
+                    ( byte ) ResultType.Dequeue, 0 // Успех: false
                 };
             }
         }
@@ -79,7 +80,7 @@ public class ResultSerializer
                               + sizeof(int);       // Количество
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)ResultType.Count);
+            writer.Write(( byte ) ResultType.Count);
             writer.Write(result.Count);
             _buffer = buffer;
         }
@@ -93,9 +94,9 @@ public class ResultSerializer
 
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            
-            writer.Write((byte)ResultType.Error);
-            writer.Write((byte)result.ErrorType);
+
+            writer.Write(( byte ) ResultType.Error);
+            writer.Write(( byte ) result.ErrorType);
             writer.Write(result.Message);
 
             _buffer = buffer;
@@ -106,8 +107,8 @@ public class ResultSerializer
             var estimatedSize = sizeof(ResultType);
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            
-            writer.Write((byte)ResultType.Ok);
+
+            writer.Write(( byte ) ResultType.Ok);
 
             _buffer = buffer;
         }
@@ -117,20 +118,20 @@ public class ResultSerializer
             var estimatedSize = EstimateSize();
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            
-            writer.Write((byte)ResultType.ListQueues);
+
+            writer.Write(( byte ) ResultType.ListQueues);
             writer.Write(result.Metadata.Count);
-            
+
             foreach (var metadata in result.Metadata)
             {
                 // Название очереди (ключ)
                 writer.Write(metadata.QueueName);
-                
+
                 // Метаданные очереди (список)
                 if (metadata.HasMaxSize)
                 {
                     writer.Write(2); // Размер очереди + максимальный размер
-                    
+
                     writer.Write("count");
                     writer.Write(metadata.Count.ToString());
 
@@ -140,7 +141,7 @@ public class ResultSerializer
                 else
                 {
                     writer.Write(1); // Размер очереди
-                    
+
                     writer.Write("count");
                     writer.Write(metadata.Count.ToString());
                 }
@@ -158,10 +159,10 @@ public class ResultSerializer
                 {
                     // Размер ключа (название очереди)
                     size += MemoryBinaryWriter.EstimateResultSize(metadata.QueueName);
-                    
+
                     // Кол-во элементов списка
                     size += sizeof(int);
-                    
+
                     // Сами данные
                     if (metadata.HasMaxSize)
                     {
@@ -198,9 +199,9 @@ public class ResultSerializer
         {
             throw new SerializationException("Переденный массив байт пуст");
         }
-        
+
         var reader = new ArrayBinaryReader(payload);
-        var marker = (ResultType) reader.ReadByte();
+        var marker = ( ResultType ) reader.ReadByte();
         return marker switch
                {
                    ResultType.Count      => DeserializeCountResult(reader),
@@ -223,7 +224,7 @@ public class ResultSerializer
             // но на всякий случай
             return new ListQueuesResult(Array.Empty<IJobQueueMetadata>());
         }
-        
+
         var result = new List<IJobQueueMetadata>(metadataCount);
 
         for (int i = 0; i < metadataCount; i++)
@@ -232,7 +233,7 @@ public class ResultSerializer
             var size = reader.ReadInt32();
             var builder = new PlainJobQueueMetadata.Builder();
             builder.WithQueueName(queueName);
-            
+
             for (int j = 0; j < size; j++)
             {
                 var attribute = reader.ReadString();
@@ -251,10 +252,10 @@ public class ResultSerializer
                         break;
                 }
             }
-            
+
             result.Add(builder.Build());
         }
-        
+
         return new ListQueuesResult(result);
     }
 
@@ -272,12 +273,12 @@ public class ResultSerializer
 
     private CountResult DeserializeCountResult(ArrayBinaryReader reader)
     {
-        var count = reader.ReadInt32();
+        var count = reader.ReadUInt32();
         if (count == 0)
         {
             return CountResult.Empty;
         }
-        
+
         return new CountResult(count);
     }
 

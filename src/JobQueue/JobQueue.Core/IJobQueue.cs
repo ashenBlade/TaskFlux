@@ -10,7 +10,7 @@ public interface IJobQueue
     /// <summary>
     /// Количество элементов в ней на данный момент
     /// </summary>
-    public int Count { get; }
+    public uint Count { get; }
 
     /// <summary>
     /// Метаданные очереди

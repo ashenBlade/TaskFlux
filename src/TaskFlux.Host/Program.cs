@@ -27,6 +27,7 @@ using TaskFlux.Commands;
 using TaskFlux.Commands.Serialization;
 using TaskFlux.Core;
 using TaskFlux.Host;
+using TaskFlux.Host.Helpers;
 using TaskFlux.Host.Infrastructure;
 using TaskFlux.Host.Modules.BinaryRequest;
 using TaskFlux.Host.Modules.HttpRequest;
@@ -305,13 +306,13 @@ FileStream OpenMetadataFile(RaftServerOptions options)
 IStateMachine<Command, Result> CreateJobQueueStateMachine(ICommandContext context)
 {
     Log.Information("Создаю пустую очередь задач в памяти");
-    return new TaskFluxStateMachine(context, new FileJobQueueSnapshotSerializer());
+    return new TaskFluxStateMachine(context, new FileJobQueueSnapshotSerializer(new PrioritizedJobQueueFactory()));
 }
 
 INode CreateNode(IApplicationInfo applicationInfo)
 {
-    var defaultJobQueue =
-        new UnboundedJobQueue(applicationInfo.DefaultQueueName, new StandardLibraryPriorityQueue<long, byte[]>());
+    var defaultJobQueue = PrioritizedJobQueue.CreateUnbounded(applicationInfo.DefaultQueueName,
+        new StandardLibraryPriorityQueue<long, byte[]>());
     var jobQueueManager = new SimpleJobQueueManager(defaultJobQueue);
     return new SingleJobQueueNode(jobQueueManager);
 }
