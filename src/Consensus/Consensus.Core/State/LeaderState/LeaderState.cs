@@ -109,15 +109,7 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
-
-    /// <summary>
-    /// Максимальный размер лога
-    /// </summary>
-    /// <remarks>16 Мб</remarks>
-    private const long MaxLogSize = 16    // Мб 
-                                  * 1024  // Кб
-                                  * 1024; // б
-
+    
     public override RequestVoteResponse Apply(RequestVoteRequest request)
     {
         if (request.CandidateTerm < CurrentTerm)
@@ -185,6 +177,7 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         Array.ForEach(_processors, p => p.NotifyAppendEntries(synchronizer));
         
         // Ждем достижения кворума
+        // TODO: убрать асинхронность
         synchronizer.LogReplicated.Wait(_cts.Token);
         
         // Применяем команду к машине состояний
@@ -193,6 +186,15 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         // Обновляем индекс последней закоммиченной записи
         Log.Commit(appended.Index);
         Log.SetLastApplied(appended.Index);
+
+        
+        if (MaxLogFileSize < Log.LogFileSize)
+        {
+            var snapshot = StateMachine.GetSnapshot();
+            var snapshotLastEntryInfo = Log.LastApplied;
+            Log.SaveSnapshot(snapshotLastEntryInfo, snapshot, CancellationToken.None);
+            Log.ClearCommandLog();
+        }
         
         // Возвращаем результат
         return SubmitResponse<TResponse>.Success(response, true);

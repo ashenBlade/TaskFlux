@@ -64,6 +64,11 @@ public interface ILog
     public ulong LogFileSize { get; }
 
     /// <summary>
+    /// Последняя примененная запись из лога
+    /// </summary>
+    public LogEntryInfo LastApplied { get; }
+
+    /// <summary>
     /// Получить все записи, начиная с указанного индекса
     /// </summary>
     /// <param name="index">Индекс, начиная с которого нужно вернуть записи</param>
@@ -102,11 +107,20 @@ public interface ILog
     void SetLastApplied(int index);
 
     /// <summary>
-    /// Перезаписать старый снапшот новым
+    /// Перезаписать старый снапшот новым и обновить файл лога (удалить старые записи)
     /// </summary>
-    /// <param name="lastLogEntry">Информация о последней примененной команде в <paramref name="snapshot"/></param>
+    /// <param name="lastLogEntry">
+    /// Информация о последней примененной команде в <paramref name="snapshot"/>.
+    /// Этот метод только сохраняет новый файл снапшота, без очищения или удаления лога команд
+    /// </param>
     /// <param name="snapshot">Слепок системы</param>
     /// <param name="token">Токен отмены</param>
     /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
     public void SaveSnapshot(LogEntryInfo lastLogEntry, ISnapshot snapshot, CancellationToken token = default);
+
+    /// <summary>
+    /// Очистить файл лога команд.
+    /// Выполняется после создания нового снапшота.
+    /// </summary>
+    public void ClearCommandLog();
 }

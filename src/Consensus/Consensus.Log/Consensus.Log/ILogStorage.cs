@@ -71,8 +71,8 @@ public interface ILogStorage
     IReadOnlyList<LogEntry> GetRange(int start, int end);
 
     /// <summary>
-    /// Сбросить на диск все предшествующие указанному индексу включительно записи на диск 
+    /// Полностью очистить лог команд.
+    /// Вызывается когда размер лога превысил максимальный и снашот состояния сброшен на диск 
     /// </summary>
-    /// <param name="index">Индекс, до которого нужно сбросить все записи включительно</param>
-    void Flush(int index);
+    public void ClearCommandLog();
 }

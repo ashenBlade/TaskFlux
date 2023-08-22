@@ -16,6 +16,14 @@ namespace Consensus.Core.State;
 /// </remarks>
 public abstract class ConsensusModuleState<TCommand, TResponse>
 {
+    /// <summary>
+    /// Максимальный размер лога
+    /// </summary>
+    /// <remarks>16 Мб</remarks>
+    protected const int MaxLogFileSize = 16    // Мб
+                                       * 1024  // Кб
+                                       * 1024; // б
+
     internal IConsensusModule<TCommand, TResponse> ConsensusModule { get; }
     protected ILog Log => ConsensusModule.Log;
     protected Term CurrentTerm => ConsensusModule.CurrentTerm;

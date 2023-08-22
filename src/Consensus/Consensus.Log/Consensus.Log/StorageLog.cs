@@ -5,6 +5,7 @@ using Consensus.Core.Log;
 
 namespace Consensus.Log;
 
+// TODO: переименовать в PersistenceManager
 public class StorageLog : ILog
 {
     /// <summary>
@@ -29,6 +30,11 @@ public class StorageLog : ILog
     public int CommitIndex => _storage.Count - 1;
     public int LastAppliedIndex { get; private set; } = LogEntryInfo.TombIndex;
     public ulong LogFileSize => _storage.Size;
+
+    public LogEntryInfo LastApplied => LastAppliedIndex == LogEntryInfo.TombIndex
+                                           ? LogEntryInfo.Tomb
+                                           : GetLogEntryInfoAtIndex(LastAppliedIndex);
+
     public IReadOnlyList<LogEntry> ReadLog() => _storage.ReadAll();
 
     public StorageLog(ILogStorage storage, ISnapshotStorage snapshotStorage)
@@ -228,14 +234,12 @@ public class StorageLog : ILog
         // 2. Записать заголовок: маркер, индекс, терм
         tempFile.Initialize(lastLogEntry);
 
-
         // 3. Записываем сами данные на диск
-
         try
         {
             tempFile.WriteSnapshot(snapshot, token);
         }
-        catch (OperationCanceledException e)
+        catch (OperationCanceledException)
         {
             // 3.1. Если роль изменилась/появился новый лидер и т.д. - прекрать создание нового снапшота
             tempFile.Discard();
@@ -244,5 +248,10 @@ public class StorageLog : ILog
 
         // 4. Переименовать файл в нужное имя
         tempFile.Save();
+    }
+
+    public void ClearCommandLog()
+    {
+        _storage.ClearCommandLog();
     }
 }

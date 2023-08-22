@@ -260,8 +260,7 @@ FileStream GetLogFileStream(RaftServerOptions options)
         throw;
     }
 
-    ILogStorage logStorage = new ExclusiveAccessLogStorageDecorator(fileStorage);
-    logStorage = new LastLogEntryCachingFileLogStorageDecorator(logStorage);
+    ILogStorage logStorage = new LastLogEntryCachingFileLogStorageDecorator(fileStorage);
     return ( logStorage, fileStorage );
 }
 

@@ -337,13 +337,10 @@ public class FileLogStorage : ILogStorage
         return entries;
     }
 
-    public void Flush(int index)
+    public void ClearCommandLog()
     {
-        CheckInitialized();
-
-        // Проверяем индекс на размер лога (индекса)
-
-        throw new NotImplementedException();
+        // Оптимально ли?
+        _file.SetLength(DataStartPosition);
     }
 
     private static void Serialize(LogEntry entry, BinaryWriter writer)
