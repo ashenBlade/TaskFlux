@@ -6,7 +6,7 @@ namespace Consensus.Core.State.LeaderState;
 
 internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TResponse> State, IPeer Peer, IRequestQueue Queue)
 {
-    private PeerInfo Info { get; } = new(State.ConsensusModule.Log.LastEntry.Index + 1);
+    private PeerInfo Info { get; } = new(State.ConsensusModule.PersistenceManager.LastEntry.Index + 1);
 
     /// <summary>
     /// Метод для обработки узла
@@ -45,10 +45,10 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
             // 1. Отправить запрос
             var request = new AppendEntriesRequest(
                 Term: ConsensusModule.CurrentTerm,
-                LeaderCommit: ConsensusModule.Log.CommitIndex,
+                LeaderCommit: ConsensusModule.PersistenceManager.CommitIndex,
                 LeaderId: ConsensusModule.Id,
-                PrevLogEntryInfo: ConsensusModule.Log.GetPrecedingEntryInfo(Info.NextIndex), 
-                Entries: ConsensusModule.Log.GetFrom(Info.NextIndex));
+                PrevLogEntryInfo: ConsensusModule.PersistenceManager.GetPrecedingEntryInfo(Info.NextIndex), 
+                Entries: ConsensusModule.PersistenceManager.GetFrom(Info.NextIndex));
             
             var response = await Peer.SendAppendEntries(request, token);
 

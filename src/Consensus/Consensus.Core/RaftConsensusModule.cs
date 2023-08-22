@@ -58,7 +58,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     public ITimer HeartbeatTimer { get; }
     public IBackgroundJobQueue BackgroundJobQueue { get; }
     public ICommandQueue CommandQueue { get; }
-    public ILog Log { get; }
+    public IPersistenceManager PersistenceManager { get; }
 
     internal RaftConsensusModule(
         NodeId id,
@@ -67,7 +67,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         ITimer electionTimer,
         ITimer heartbeatTimer,
         IBackgroundJobQueue backgroundJobQueue,
-        ILog log,
+        IPersistenceManager persistenceManager,
         ICommandQueue commandQueue,
         IStateMachine<TCommand, TResponse> stateMachine,
         IMetadataStorage metadataStorage,
@@ -81,7 +81,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         ElectionTimer = electionTimer;
         HeartbeatTimer = heartbeatTimer;
         BackgroundJobQueue = backgroundJobQueue;
-        Log = log;
+        PersistenceManager = persistenceManager;
         CommandQueue = commandQueue;
         StateMachine = stateMachine;
         MetadataStorage = metadataStorage;
@@ -148,7 +148,7 @@ public class RaftConsensusModule<TCommand, TResponse>
                                                                   ITimer electionTimer,
                                                                   ITimer heartbeatTimer,
                                                                   IBackgroundJobQueue backgroundJobQueue,
-                                                                  ILog log,
+                                                                  IPersistenceManager persistenceManager,
                                                                   ICommandQueue commandQueue,
                                                                   IStateMachine<TCommand, TResponse> stateMachine,
                                                                   IMetadataStorage metadataStorage,
@@ -156,7 +156,7 @@ public class RaftConsensusModule<TCommand, TResponse>
                                                                   IRequestQueueFactory requestQueueFactory)
     {
         var raft = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, electionTimer, heartbeatTimer,
-            backgroundJobQueue, log, commandQueue, stateMachine, metadataStorage, serializer, requestQueueFactory);
+            backgroundJobQueue, persistenceManager, commandQueue, stateMachine, metadataStorage, serializer, requestQueueFactory);
         ( ( IConsensusModule<TCommand, TResponse> ) raft ).CurrentState = raft.CreateFollowerState();
         return raft;
     }

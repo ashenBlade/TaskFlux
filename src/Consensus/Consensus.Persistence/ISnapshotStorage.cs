@@ -1,6 +1,6 @@
 using Consensus.Core.Log;
 
-namespace Consensus.Log;
+namespace Consensus.Persistence;
 
 /// <summary>
 /// Интерфейс хранилище снапшотов машины состояний.

@@ -75,37 +75,37 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
             CurrentState = ConsensusModule.CreateFollowerState();
         }
         
-        if (Log.Contains(request.PrevLogEntryInfo) is false)
+        if (PersistenceManager.Contains(request.PrevLogEntryInfo) is false)
         {
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
         
         if (0 < request.Entries.Count)
         {
-            Log.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
+            PersistenceManager.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
 
         // Должен быть такой инвариант, так как нельзя голосовать за кандидата, 
         // у которого лог отстает от нашего по закоммиченным записям
-        Debug.Assert(Log.CommitIndex <= request.LeaderCommit, "Log.CommitIndex <= request.LeaderCommit; Нельзя голосовать за лидера, у которого индекс закоммиченной записи меньше нашей");
+        Debug.Assert(PersistenceManager.CommitIndex <= request.LeaderCommit, "Log.CommitIndex <= request.LeaderCommit; Нельзя голосовать за лидера, у которого индекс закоммиченной записи меньше нашей");
         
-        if (request.LeaderCommit == Log.CommitIndex)
+        if (request.LeaderCommit == PersistenceManager.CommitIndex)
         {
             // Закомиченные записи одинаковые, ничего применять не нужно
             return AppendEntriesResponse.Ok(CurrentTerm);
         }
         
         
-        var lastCommitIndex = Math.Min(request.LeaderCommit, Log.LastEntry.Index);
-        Log.Commit(lastCommitIndex);
+        var lastCommitIndex = Math.Min(request.LeaderCommit, PersistenceManager.LastEntry.Index);
+        PersistenceManager.Commit(lastCommitIndex);
 
-        foreach (var entry in Log.GetNotApplied())
+        foreach (var entry in PersistenceManager.GetNotApplied())
         {
             var command = CommandSerializer.Deserialize(entry.Data);
             StateMachine.ApplyNoResponse(command);
         }
             
-        Log.SetLastApplied(lastCommitIndex);
+        PersistenceManager.SetLastApplied(lastCommitIndex);
         
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
@@ -134,7 +134,7 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         
         // Отдать свободный голос можем только за кандидата 
         if (canVote &&                                // За которого можем проголосовать и
-            !Log.Conflicts(request.LastLogEntryInfo)) // У которого лог не хуже нашего
+            !PersistenceManager.Conflicts(request.LastLogEntryInfo)) // У которого лог не хуже нашего
         {
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
             ElectionTimer.Start();
@@ -170,7 +170,7 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         
         // Добавляем команду в лог
         var entry = new LogEntry( CurrentTerm, CommandSerializer.Serialize(request.Descriptor.Command) );
-        var appended = Log.Append(entry);
+        var appended = PersistenceManager.Append(entry);
         
         // Сигнализируем узлам, чтобы принялись реплицировать
         var synchronizer = new AppendEntriesRequestSynchronizer(PeerGroup, appended.Index);
@@ -184,16 +184,16 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         var response = StateMachine.Apply(request.Descriptor.Command);
         
         // Обновляем индекс последней закоммиченной записи
-        Log.Commit(appended.Index);
-        Log.SetLastApplied(appended.Index);
+        PersistenceManager.Commit(appended.Index);
+        PersistenceManager.SetLastApplied(appended.Index);
 
         
-        if (MaxLogFileSize < Log.LogFileSize)
+        if (MaxLogFileSize < PersistenceManager.LogFileSize)
         {
             var snapshot = StateMachine.GetSnapshot();
-            var snapshotLastEntryInfo = Log.LastApplied;
-            Log.SaveSnapshot(snapshotLastEntryInfo, snapshot, CancellationToken.None);
-            Log.ClearCommandLog();
+            var snapshotLastEntryInfo = PersistenceManager.LastApplied;
+            PersistenceManager.SaveSnapshot(snapshotLastEntryInfo, snapshot, CancellationToken.None);
+            PersistenceManager.ClearCommandLog();
         }
         
         // Возвращаем результат

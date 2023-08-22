@@ -7,7 +7,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\Consensus.Core\Consensus.Core.csproj" />
+      <ProjectReference Include="..\Consensus.Core\Consensus.Core.csproj"/>
     </ItemGroup>
 
 </Project>

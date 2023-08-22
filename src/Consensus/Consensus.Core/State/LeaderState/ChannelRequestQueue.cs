@@ -3,18 +3,16 @@ using Consensus.Core.Log;
 
 namespace Consensus.Core.State.LeaderState;
 
-internal record ChannelRequestQueue(ILog Log): IRequestQueue
+internal record ChannelRequestQueue(IPersistenceManager PersistenceManager) : IRequestQueue
 {
     private const int DefaultQueueSize = 32;
-    
+
     private readonly Channel<AppendEntriesRequestSynchronizer> _channel =
         Channel.CreateBounded<AppendEntriesRequestSynchronizer>(new BoundedChannelOptions(DefaultQueueSize)
         {
-            SingleReader = true,
-            SingleWriter = false,
-            FullMode = BoundedChannelFullMode.DropWrite
+            SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.DropWrite
         });
-       
+
     public IAsyncEnumerable<AppendEntriesRequestSynchronizer> ReadAllRequestsAsync(CancellationToken token)
     {
         return _channel.Reader.ReadAllAsync(token);
@@ -24,8 +22,8 @@ internal record ChannelRequestQueue(ILog Log): IRequestQueue
     {
         if (0 < _channel.Reader.Count) return;
 
-        _channel.Writer.TryWrite(
-            new AppendEntriesRequestSynchronizer(AlwaysTrueQuorumChecker.Instance, Log.LastEntry.Index));
+        _channel.Writer.TryWrite(new AppendEntriesRequestSynchronizer(AlwaysTrueQuorumChecker.Instance,
+            PersistenceManager.LastEntry.Index));
     }
 
     public void AddAppendEntries(AppendEntriesRequestSynchronizer synchronizer)

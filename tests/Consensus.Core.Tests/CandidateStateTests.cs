@@ -1,8 +1,8 @@
-using Moq;
 using Consensus.Core.Commands.AppendEntries;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Log;
 using Consensus.Core.State;
+using Moq;
 using TaskFlux.Core;
 
 namespace Consensus.Core.Tests;
@@ -10,10 +10,17 @@ namespace Consensus.Core.Tests;
 [Trait("Category", "Raft")]
 public class CandidateStateTests
 {
-    private static RaftConsensusModule<int, int> CreateCandidateNode(Term term, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, IBackgroundJobQueue? jobQueue = null, ILog? log = null)
+    private static RaftConsensusModule<int, int> CreateCandidateNode(Term term,
+                                                                     NodeId? votedFor,
+                                                                     IEnumerable<IPeer>? peers = null,
+                                                                     ITimer? electionTimer = null,
+                                                                     IBackgroundJobQueue? jobQueue = null,
+                                                                     IPersistenceManager? log = null)
     {
-        var raftStateMachine = Helpers.CreateNode(term, votedFor, peers: peers, electionTimer: electionTimer, heartbeatTimer: null, jobQueue: jobQueue, log: log);
-        ( ( IConsensusModule<int, int> ) raftStateMachine ).CurrentState = new CandidateState<int, int>(raftStateMachine, Helpers.NullLogger);
+        var raftStateMachine = Helpers.CreateNode(term, votedFor, peers: peers, electionTimer: electionTimer,
+            heartbeatTimer: null, jobQueue: jobQueue, log: log);
+        ( ( IConsensusModule<int, int> ) raftStateMachine ).CurrentState =
+            new CandidateState<int, int>(raftStateMachine, Helpers.NullLogger);
         return raftStateMachine;
     }
 
@@ -23,7 +30,7 @@ public class CandidateStateTests
         var oldTerm = new Term(1);
         var electionTimer = new Mock<ITimer>();
         using var raft = CreateCandidateNode(oldTerm, null, electionTimer: electionTimer.Object);
-        
+
         electionTimer.Raise(x => x.Timeout += null);
 
         var nextTerm = oldTerm.Increment();
@@ -36,7 +43,7 @@ public class CandidateStateTests
         var oldTerm = new Term(1);
         var electionTimer = new Mock<ITimer>();
         using var raft = CreateCandidateNode(oldTerm, null, electionTimer: electionTimer.Object);
-        
+
         electionTimer.Raise(x => x.Timeout += null);
 
         Assert.Equal(NodeRole.Candidate, raft.CurrentRole);
@@ -53,7 +60,7 @@ public class CandidateStateTests
 
         Assert.Equal(NodeRole.Leader, raft.CurrentRole);
     }
-    
+
     [Fact]
     public async Task ПослеЗапускаКворумаИПереходаВСостояниеЛидера__ДолженОстановитьElectionTimeout()
     {
@@ -72,19 +79,22 @@ public class CandidateStateTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task ПриЗапускеКворума__СЕдинственнымДругимУзлом__ДолженСтатьЛидеромТолькоКогдаДругойУзелОтдалСвойГолос(bool voteGranted)
+    public async Task
+        ПриЗапускеКворума__СЕдинственнымДругимУзлом__ДолженСтатьЛидеромТолькоКогдаДругойУзелОтдалСвойГолос(
+        bool voteGranted)
     {
         var oldTerm = new Term(1);
         var jobQueue = new SingleRunBackgroundJobQueue();
         var timer = new Mock<ITimer>();
         timer.Setup(x => x.Stop()).Verifiable();
-        
+
         var peer = new Mock<IPeer>();
         peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: voteGranted));
-        
-        using var raft = CreateCandidateNode(oldTerm, null, peers: new[]{peer.Object},  jobQueue: jobQueue, electionTimer: timer.Object);
-        
+
+        using var raft = CreateCandidateNode(oldTerm, null, peers: new[] {peer.Object}, jobQueue: jobQueue,
+            electionTimer: timer.Object);
+
         await jobQueue.Run();
 
         if (voteGranted)
@@ -100,24 +110,28 @@ public class CandidateStateTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task ПриЗапускеКворума__СЕдинственнымДругимУзлом__ДолженПрекратитьОтправлятьЗапросыПослеПолученияОтвета(bool voteGranted)
+    public async Task
+        ПриЗапускеКворума__СЕдинственнымДругимУзлом__ДолженПрекратитьОтправлятьЗапросыПослеПолученияОтвета(
+        bool voteGranted)
     {
         var oldTerm = new Term(1);
         var jobQueue = new SingleRunBackgroundJobQueue();
         var timer = new Mock<ITimer>();
         timer.Setup(x => x.Stop()).Verifiable();
-        
+
         var peer = new Mock<IPeer>();
         peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: voteGranted));
-        
-        using var raft = CreateCandidateNode(oldTerm, null, peers: new[] {peer.Object}, jobQueue: jobQueue, electionTimer: timer.Object);
-        
+
+        using var raft = CreateCandidateNode(oldTerm, null, peers: new[] {peer.Object}, jobQueue: jobQueue,
+            electionTimer: timer.Object);
+
         await jobQueue.Run();
-        
-        peer.Verify(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()), Times.Once());
+
+        peer.Verify(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()),
+            Times.Once());
     }
-    
+
     [Theory]
     [InlineData(1, 0)]
     [InlineData(2, 0)]
@@ -128,7 +142,9 @@ public class CandidateStateTests
     [InlineData(2, 2)]
     [InlineData(3, 2)]
     [InlineData(3, 3)]
-    public async Task ПриЗапускеКворума__СНесколькимиУзлами__ДолженСтатьЛидеромКогдаСобралКворум(int grantedVotesCount, int nonGrantedVotesCount)
+    public async Task ПриЗапускеКворума__СНесколькимиУзлами__ДолженСтатьЛидеромКогдаСобралКворум(
+        int grantedVotesCount,
+        int nonGrantedVotesCount)
     {
         var oldTerm = new Term(1);
         var jobQueue = new SingleRunBackgroundJobQueue();
@@ -136,26 +152,27 @@ public class CandidateStateTests
         timer.Setup(x => x.Stop()).Verifiable();
 
 
-        var peers = Random.Shared.Shuffle(
-            Enumerable.Range(0, grantedVotesCount + nonGrantedVotesCount)
-                      .Select(i =>
-                       {
-                           var mock = new Mock<IPeer>();
-                           mock.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(),
-                                    It.IsAny<CancellationToken>()))
-                               .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm,
-                                    VoteGranted: i < grantedVotesCount));
-                           return mock.Object;
-                       })
-                      .ToArray() );
-        
-        using var raft = CreateCandidateNode(oldTerm, null, peers: peers, jobQueue: jobQueue, electionTimer: timer.Object);
-        
+        var peers = Random.Shared.Shuffle(Enumerable.Range(0, grantedVotesCount + nonGrantedVotesCount)
+                                                    .Select(i =>
+                                                     {
+                                                         var mock = new Mock<IPeer>();
+                                                         mock.Setup(x => x.SendRequestVote(
+                                                                  It.IsAny<RequestVoteRequest>(),
+                                                                  It.IsAny<CancellationToken>()))
+                                                             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm,
+                                                                  VoteGranted: i < grantedVotesCount));
+                                                         return mock.Object;
+                                                     })
+                                                    .ToArray());
+
+        using var raft =
+            CreateCandidateNode(oldTerm, null, peers: peers, jobQueue: jobQueue, electionTimer: timer.Object);
+
         await jobQueue.Run();
-        
+
         Assert.Equal(NodeRole.Leader, raft.CurrentRole);
     }
-    
+
     [Theory]
     [InlineData(0, 1)]
     [InlineData(0, 2)]
@@ -176,22 +193,24 @@ public class CandidateStateTests
         timer.Setup(x => x.Stop()).Verifiable();
 
 
-        var peers = Random.Shared.Shuffle(
-            Enumerable.Range(0, grantedVotesCount + nonGrantedVotesCount)
-                      .Select(i =>
-                       {
-                           var mock = new Mock<IPeer>();
-                           mock.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-                               .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm,
-                                    VoteGranted: i < grantedVotesCount));
-                           return mock.Object;
-                       })
-                      .ToArray() );
-        
-        using var raft = CreateCandidateNode(oldTerm, null, peers: peers, jobQueue: jobQueue, electionTimer: timer.Object);
-        
+        var peers = Random.Shared.Shuffle(Enumerable.Range(0, grantedVotesCount + nonGrantedVotesCount)
+                                                    .Select(i =>
+                                                     {
+                                                         var mock = new Mock<IPeer>();
+                                                         mock.Setup(x => x.SendRequestVote(
+                                                                  It.IsAny<RequestVoteRequest>(),
+                                                                  It.IsAny<CancellationToken>()))
+                                                             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm,
+                                                                  VoteGranted: i < grantedVotesCount));
+                                                         return mock.Object;
+                                                     })
+                                                    .ToArray());
+
+        using var raft =
+            CreateCandidateNode(oldTerm, null, peers: peers, jobQueue: jobQueue, electionTimer: timer.Object);
+
         await jobQueue.Run();
-        
+
         Assert.Equal(NodeRole.Candidate, raft.CurrentRole);
     }
 
@@ -213,20 +232,25 @@ public class CandidateStateTests
                      calledFirstTime = false;
                      return null;
                  }
+
                  return new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true);
              });
-        
-        using var raft = CreateCandidateNode(oldTerm, null, peers: new []{mock.Object}, jobQueue: jobQueue, electionTimer: timer.Object);
-        
+
+        using var raft = CreateCandidateNode(oldTerm, null, peers: new[] {mock.Object}, jobQueue: jobQueue,
+            electionTimer: timer.Object);
+
         await jobQueue.Run();
-        
-        mock.Verify(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+
+        mock.Verify(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
     }
-    
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task ПриЗапускеКворума__СЕдинственнымУзломКоторыйОтветилТолькоНаВторойПопытке__ДолженСтатьЛидеромТолькоЕслиОтдалГолос(bool voteGranted)
+    public async Task
+        ПриЗапускеКворума__СЕдинственнымУзломКоторыйОтветилТолькоНаВторойПопытке__ДолженСтатьЛидеромТолькоЕслиОтдалГолос(
+        bool voteGranted)
     {
         var oldTerm = new Term(1);
         var jobQueue = new SingleRunBackgroundJobQueue();
@@ -243,16 +267,20 @@ public class CandidateStateTests
                      calledFirstTime = false;
                      return null;
                  }
+
                  return new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: voteGranted);
              });
-        
-        using var raft = CreateCandidateNode(oldTerm, null, peers: new []{mock.Object}, jobQueue: jobQueue, electionTimer: timer.Object);
-        
+
+        using var raft = CreateCandidateNode(oldTerm, null, peers: new[] {mock.Object}, jobQueue: jobQueue,
+            electionTimer: timer.Object);
+
         await jobQueue.Run();
 
-        Assert.Equal(voteGranted ? NodeRole.Leader : NodeRole.Candidate, raft.CurrentRole);
+        Assert.Equal(voteGranted
+                         ? NodeRole.Leader
+                         : NodeRole.Candidate, raft.CurrentRole);
     }
-    
+
     [Fact]
     public void ПриОбработкеRequestVote__СБолееВысокимТермом__ДолженСтатьFollower()
     {
@@ -260,7 +288,7 @@ public class CandidateStateTests
         using var raft = CreateCandidateNode(oldTerm, null);
 
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: oldTerm.Increment(),
-            LastLogEntryInfo: raft.Log.LastEntry);
+            LastLogEntryInfo: raft.PersistenceManager.LastEntry);
 
         raft.Handle(request);
 
@@ -275,27 +303,27 @@ public class CandidateStateTests
 
         var requestTerm = oldTerm.Increment();
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: requestTerm,
-            LastLogEntryInfo: raft.Log.LastEntry);
+            LastLogEntryInfo: raft.PersistenceManager.LastEntry);
 
         raft.Handle(request);
 
         Assert.Equal(requestTerm, raft.CurrentTerm);
     }
-    
+
     [Fact]
     public void ПриОбработкеHeartbeat__СБолееВысокимТермом__ДолженПерейтиВFollower()
     {
         var oldTerm = new Term(1);
         using var raft = CreateCandidateNode(oldTerm, null, log: CreateLog());
 
-        var request = AppendEntriesRequest.Heartbeat(oldTerm.Increment(), raft.Log.CommitIndex,
-            new NodeId(2), raft.Log.LastEntry);
+        var request = AppendEntriesRequest.Heartbeat(oldTerm.Increment(), raft.PersistenceManager.CommitIndex,
+            new NodeId(2), raft.PersistenceManager.LastEntry);
 
         raft.Handle(request);
 
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);
     }
-    
+
     [Fact]
     public void ПриОбработкеHeartbeat__СБолееВысокимТермом__ДолженОбновитьСвойТерм()
     {
@@ -303,19 +331,20 @@ public class CandidateStateTests
         using var node = CreateCandidateNode(oldTerm, null, log: CreateLog());
 
         var leaderTerm = oldTerm.Increment();
-        var request = AppendEntriesRequest.Heartbeat(leaderTerm, node.Log.CommitIndex, new NodeId(2), node.Log.LastEntry);
+        var request = AppendEntriesRequest.Heartbeat(leaderTerm, node.PersistenceManager.CommitIndex, new NodeId(2),
+            node.PersistenceManager.LastEntry);
 
         node.Handle(request);
 
         Assert.Equal(leaderTerm, node.CurrentTerm);
     }
 
-    private ILog CreateLog(bool isConsistent = true)
+    private IPersistenceManager CreateLog(bool isConsistent = true)
     {
-        var mock = new Mock<ILog>();
+        var mock = new Mock<IPersistenceManager>();
 
         mock.Setup(x => x.Contains(It.IsAny<LogEntryInfo>())).Returns(isConsistent);
-        
+
         return mock.Object;
     }
 
@@ -330,14 +359,15 @@ public class CandidateStateTests
         using var raft = CreateCandidateNode(oldTerm, null, jobQueue: jobQueue, log: CreateLog());
 
         var leaderTerm = oldTerm.Increment();
-        var request = AppendEntriesRequest.Heartbeat(leaderTerm, raft.Log.CommitIndex, new NodeId(2), raft.Log.LastEntry);
+        var request = AppendEntriesRequest.Heartbeat(leaderTerm, raft.PersistenceManager.CommitIndex, new NodeId(2),
+            raft.PersistenceManager.LastEntry);
 
         raft.Handle(request);
         await jobQueue.Run();
 
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);
     }
-    
+
     [Fact]
     public async Task ПриОбработкеRequestVote__СБолееВысокимТермомИСобраннымКворумом__ДолженСтатьFollower()
     {
@@ -349,15 +379,15 @@ public class CandidateStateTests
         using var raft = CreateCandidateNode(oldTerm, null, jobQueue: jobQueue);
 
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: oldTerm.Increment(),
-            LastLogEntryInfo: raft.Log.LastEntry);
+            LastLogEntryInfo: raft.PersistenceManager.LastEntry);
 
         raft.Handle(request);
         await jobQueue.Run();
 
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);
     }
-    
-    
+
+
     [Fact]
     public async Task ПриОбработкеRequestVote__СБолееВысокимТермомИСобраннымКворумом__ДолженОбновитьСвойТерм()
     {
@@ -370,14 +400,14 @@ public class CandidateStateTests
         using var raft = CreateCandidateNode(oldTerm, null, jobQueue: jobQueue);
 
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: leaderTerm,
-            LastLogEntryInfo: raft.Log.LastEntry);
+            LastLogEntryInfo: raft.PersistenceManager.LastEntry);
 
         raft.Handle(request);
         await jobQueue.Run();
 
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);
     }
-    
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -387,7 +417,7 @@ public class CandidateStateTests
     {
         var oldTerm = new Term(1);
         var jobQueue = new SingleRunBackgroundJobQueue();
-        
+
         var peer = new Mock<IPeer>();
         peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true));
@@ -396,8 +426,8 @@ public class CandidateStateTests
         {
             t.Setup(x => x.Stop()).Verifiable();
         });
-        
-        
+
+
         var peers = Enumerable.Range(0, votes)
                               .Select(_ => new Mock<IPeer>()
                                           .Apply(t => t.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(),
@@ -406,10 +436,11 @@ public class CandidateStateTests
                                                             VoteGranted: true)))
                                           .Object)
                               .ToArray();
-        using var raft = CreateCandidateNode(oldTerm, null, peers, electionTimer: electionTimer.Object, jobQueue: jobQueue);
+        using var raft =
+            CreateCandidateNode(oldTerm, null, peers, electionTimer: electionTimer.Object, jobQueue: jobQueue);
 
         await jobQueue.Run();
-        
+
         electionTimer.Verify(x => x.Stop(), Times.Once());
     }
 
@@ -423,30 +454,36 @@ public class CandidateStateTests
     [InlineData(5, 2)]
     [InlineData(5, 3)]
     [InlineData(5, 4)]
-    public async Task ПослеОтправкиЗапросов__КворумДостигнутНоНекоторыеУзлыНеОтветили__ДолженПерейтиВСостояниеLeader(int successResponses, int notResponded)
+    public async Task ПослеОтправкиЗапросов__КворумДостигнутНоНекоторыеУзлыНеОтветили__ДолженПерейтиВСостояниеLeader(
+        int successResponses,
+        int notResponded)
     {
         var oldTerm = new Term(1);
         var jobQueue = new SingleRunBackgroundJobQueue();
         var timer = new Mock<ITimer>();
         timer.Setup(x => x.Stop()).Verifiable();
 
-        var peers = Random.Shared.Shuffle(
-            Enumerable.Range(0, successResponses + notResponded)
-                      .Select(i =>
-                       {
-                           var mock = new Mock<IPeer>();
-                           mock.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-                               .ReturnsAsync(i < successResponses 
-                                                 ? new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true)
-                                                 : null);
-                           return mock.Object;
-                       })
-                      .ToArray() );
-        
-        using var raft = CreateCandidateNode(oldTerm, null, peers: peers, jobQueue: jobQueue, electionTimer: timer.Object);
-        
+        var peers = Random.Shared.Shuffle(Enumerable.Range(0, successResponses + notResponded)
+                                                    .Select(i =>
+                                                     {
+                                                         var mock = new Mock<IPeer>();
+                                                         mock.Setup(x => x.SendRequestVote(
+                                                                  It.IsAny<RequestVoteRequest>(),
+                                                                  It.IsAny<CancellationToken>()))
+                                                             .ReturnsAsync(i < successResponses
+                                                                               ? new RequestVoteResponse(
+                                                                                   CurrentTerm: oldTerm,
+                                                                                   VoteGranted: true)
+                                                                               : null);
+                                                         return mock.Object;
+                                                     })
+                                                    .ToArray());
+
+        using var raft =
+            CreateCandidateNode(oldTerm, null, peers: peers, jobQueue: jobQueue, electionTimer: timer.Object);
+
         await jobQueue.Run();
-        
+
         Assert.Equal(NodeRole.Leader, raft.CurrentRole);
     }
 
@@ -462,13 +499,13 @@ public class CandidateStateTests
         using var raft = CreateCandidateNode(currentTerm, null, jobQueue: jobQueue);
 
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: currentTerm,
-            LastLogEntryInfo: raft.Log.LastEntry);
+            LastLogEntryInfo: raft.PersistenceManager.LastEntry);
 
         raft.Handle(request);
 
         Assert.Equal(NodeRole.Follower, raft.CurrentRole);
     }
-    
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
@@ -480,15 +517,12 @@ public class CandidateStateTests
         var jobQueue = new SingleRunBackgroundJobQueue();
         using var node = CreateCandidateNode(currentTerm, null, jobQueue: jobQueue);
 
-        var request = new RequestVoteRequest(
-            CandidateId: new NodeId(2),
+        var request = new RequestVoteRequest(CandidateId: new NodeId(2),
             CandidateTerm: currentTerm,
-            LastLogEntryInfo: node.Log.LastEntry);
+            LastLogEntryInfo: node.PersistenceManager.LastEntry);
 
         node.Handle(request);
 
         Assert.Equal(node.CurrentTerm, currentTerm);
     }
-    
-    
 }

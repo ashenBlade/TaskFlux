@@ -55,7 +55,7 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
         if (canVote
           &&
             // У которого лог в консистентном с нашим состоянием
-            !Log.Conflicts(request.LastLogEntryInfo))
+            !PersistenceManager.Conflicts(request.LastLogEntryInfo))
         {
             _logger.Debug(
                 "Получен RequestVote от узла за которого можем проголосовать. Id узла {NodeId}, Терм узла {Term}. Обновляю состояние",
@@ -86,7 +86,7 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
             ConsensusModule.UpdateState(request.Term, null);
         }
 
-        if (Log.Contains(request.PrevLogEntryInfo) is false)
+        if (PersistenceManager.Contains(request.PrevLogEntryInfo) is false)
         {
             // Префиксы закомиченных записей лога не совпадают 
             return AppendEntriesResponse.Fail(CurrentTerm);
@@ -95,13 +95,13 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
         if (0 < request.Entries.Count)
         {
             // Если это не Heartbeat, то применить новые команды
-            Log.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
+            PersistenceManager.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
 
-        Debug.Assert(Log.CommitIndex <= request.LeaderCommit,
-            $"Индекс коммита лидера не должен быть меньше индекса коммита последователя. Индекс лидера: {request.LeaderCommit}. Индекс последователя: {Log.CommitIndex}");
+        Debug.Assert(PersistenceManager.CommitIndex <= request.LeaderCommit,
+            $"Индекс коммита лидера не должен быть меньше индекса коммита последователя. Индекс лидера: {request.LeaderCommit}. Индекс последователя: {PersistenceManager.CommitIndex}");
 
-        if (Log.CommitIndex == request.LeaderCommit)
+        if (PersistenceManager.CommitIndex == request.LeaderCommit)
         {
             return AppendEntriesResponse.Ok(CurrentTerm);
         }
@@ -109,10 +109,10 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
         // В случае, если какие-то записи были закоммичены лидером, то сделать то же самое у себя.
 
         // Коммитим записи по индексу лидера
-        Log.Commit(request.LeaderCommit);
+        PersistenceManager.Commit(request.LeaderCommit);
 
         // Закоммиченные записи можно уже применять к машине состояний 
-        var notApplied = Log.GetNotApplied();
+        var notApplied = PersistenceManager.GetNotApplied();
 
         foreach (var entry in notApplied)
         {
@@ -124,14 +124,14 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
         // Этот индекс обновляем сразу, т.к. 
         // 1. Если возникнет исключение в работе, то это означает неправильную работу самого приложения, а не бизнес-логики
         // 2. Эта операция сразу сбрасывает данные на диск (Flush) - дорого
-        Log.SetLastApplied(request.LeaderCommit);
+        PersistenceManager.SetLastApplied(request.LeaderCommit);
 
-        if (MaxLogFileSize < Log.LogFileSize)
+        if (MaxLogFileSize < PersistenceManager.LogFileSize)
         {
             var snapshot = StateMachine.GetSnapshot();
-            var snapshotLastEntryInfo = Log.LastApplied;
-            Log.SaveSnapshot(snapshotLastEntryInfo, snapshot, CancellationToken.None);
-            Log.ClearCommandLog();
+            var snapshotLastEntryInfo = PersistenceManager.LastApplied;
+            PersistenceManager.SaveSnapshot(snapshotLastEntryInfo, snapshot, CancellationToken.None);
+            PersistenceManager.ClearCommandLog();
         }
 
         return AppendEntriesResponse.Ok(CurrentTerm);

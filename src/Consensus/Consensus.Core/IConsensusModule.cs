@@ -62,7 +62,7 @@ public interface IConsensusModule<TCommand, TResponse>
     /// <summary>
     /// WAL для машины состояний, которую мы реплицируем
     /// </summary>
-    ILog Log { get; }
+    IPersistenceManager PersistenceManager { get; }
 
     /// <summary>
     /// Группа других узлов кластера

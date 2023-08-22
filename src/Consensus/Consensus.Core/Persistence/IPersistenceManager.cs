@@ -3,7 +3,7 @@ namespace Consensus.Core.Log;
 /// <summary>
 /// Объект доступа к пресистентным структурам данных: лог команд, метаданные, снапшот
 /// </summary>
-public interface ILog
+public interface IPersistenceManager
 {
     /// <summary>
     /// Прочитать все записи лога

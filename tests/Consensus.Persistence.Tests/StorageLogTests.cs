@@ -1,8 +1,9 @@
 using Consensus.Core;
 using Consensus.Core.Log;
+using Consensus.Persistence;
 using Moq;
 
-namespace Consensus.Log.Tests;
+namespace Consensus.Persistence.Tests;
 
 [Trait("Category", "Raft")]
 public class StorageLogTests
@@ -13,7 +14,7 @@ public class StorageLogTests
     public void Append__СПустымЛогом__ДолженДобавитьЗаписьВБуферВПамяти()
     {
         var buffer = new List<LogEntry>();
-        var log = new StorageLog(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
 
         var entry = EmptyLogEntry(1);
         log.Append(entry);
@@ -28,7 +29,7 @@ public class StorageLogTests
         mock.Setup(s => s.Append(It.IsAny<LogEntry>())).Verifiable();
         mock.Setup(s => s.AppendRange(It.IsAny<IEnumerable<LogEntry>>())).Verifiable();
 
-        var log = new StorageLog(mock.Object, NullSnapshotStorage.Instance);
+        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance);
         log.Append(EmptyLogEntry(1));
 
         mock.Verify(x => x.Append(It.IsAny<LogEntry>()), Times.Never());
@@ -40,7 +41,7 @@ public class StorageLogTests
     {
         var entry = new LogEntry(new Term(1), new byte[] {1, 2, 3, 4});
         var expected = new LogEntryInfo(entry.Term, 0);
-        var log = new StorageLog(Mock.Of<ILogStorage>(), NullSnapshotStorage.Instance);
+        var log = new StoragePersistenceManager(Mock.Of<ILogStorage>(), NullSnapshotStorage.Instance);
 
         var actual = log.Append(entry);
         Assert.Equal(expected, actual);
@@ -55,7 +56,7 @@ public class StorageLogTests
         };
         var entry = new LogEntry(new Term(3), new byte[] {7, 8, 9});
         var expected = new LogEntryInfo(entry.Term, 2);
-        var log = new StorageLog(Mock.Of<ILogStorage>(), NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Mock.Of<ILogStorage>(), NullSnapshotStorage.Instance, buffer);
 
         var actual = log.Append(entry);
 
@@ -70,7 +71,7 @@ public class StorageLogTests
         storageMock.SetupGet(x => x.Count).Returns(storageSize);
         var entry = new LogEntry(new Term(3), new byte[] {7, 8, 9});
         var expected = new LogEntryInfo(entry.Term, storageSize);
-        var log = new StorageLog(storageMock.Object, NullSnapshotStorage.Instance);
+        var log = new StoragePersistenceManager(storageMock.Object, NullSnapshotStorage.Instance);
 
         var actual = log.Append(entry);
 
@@ -86,7 +87,7 @@ public class StorageLogTests
         storageMock.SetupGet(x => x.Count).Returns(storageSize);
         var entry = new LogEntry(new Term(11), new byte[] {7, 8, 9});
         var expected = new LogEntryInfo(entry.Term, storageSize + buffer.Count);
-        var log = new StorageLog(storageMock.Object, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(storageMock.Object, NullSnapshotStorage.Instance, buffer);
 
         var actual = log.Append(entry);
 
@@ -109,7 +110,7 @@ public class StorageLogTests
         mock.Setup(x => x.AppendRange(Match.Create<IEnumerable<LogEntry>>(c => c.SequenceEqual(entries))))
             .Verifiable();
 
-        var log = new StorageLog(mock.Object, NullSnapshotStorage.Instance);
+        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance);
         log.InsertRange(entries, 0);
         log.Commit(entries.Length - 1);
 
@@ -128,7 +129,7 @@ public class StorageLogTests
         mock.SetupGet(x => x.Count)
             .Returns(0);
 
-        var log = new StorageLog(mock.Object, NullSnapshotStorage.Instance, new List<LogEntry>() {entry});
+        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance, new List<LogEntry>() {entry});
 
         log.Commit(0);
 
@@ -156,7 +157,7 @@ public class StorageLogTests
         var expected = buffer.Skip(index + 1)
                              .ToList();
 
-        var log = new StorageLog(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
         log.Commit(index);
 
         Assert.Equal(expected, buffer, LogEntryEqualityComparer.Instance);
@@ -175,7 +176,7 @@ public class StorageLogTests
         };
         var expected = buffer.Skip(2).ToList();
         var index = 2;
-        var log = new StorageLog(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
 
         var actual = log.GetFrom(index);
 
@@ -216,7 +217,7 @@ public class StorageLogTests
         mock.Setup(x => x.ReadFrom(index)).Returns(storage.Skip(index + 1).ToList());
         mock.SetupGet(x => x.Count).Returns(storageCount);
 
-        var log = new StorageLog(mock.Object, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance, buffer);
 
         var actual = log.GetFrom(index);
 
@@ -246,7 +247,7 @@ public class StorageLogTests
         mock.Setup(x => x.ReadFrom(0)).Returns(storage);
         mock.SetupGet(x => x.Count).Returns(storageCount);
 
-        var log = new StorageLog(mock.Object, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance, buffer);
 
         var actual = log.GetFrom(0);
 
@@ -265,7 +266,7 @@ public class StorageLogTests
                                .Select(EmptyLogEntry)
                                .ToList();
 
-        var log = new StorageLog(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
 
         for (int nextIndex = 1; nextIndex <= bufferCount; nextIndex++)
         {
@@ -293,7 +294,7 @@ public class StorageLogTests
         mock.Setup(x => x.GetAt(It.IsAny<int>())).Returns<int>((index) => new LogEntryInfo(storage[index].Term, index));
         mock.SetupGet(x => x.Count).Returns(storageCount);
 
-        var log = new StorageLog(mock.Object, NullSnapshotStorage.Instance);
+        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance);
 
         for (int nextIndex = 1; nextIndex <= storageCount; nextIndex++)
         {
@@ -329,7 +330,7 @@ public class StorageLogTests
         var expected = new LogEntryInfo(storage[^1].Term, storageCount - 1);
         var nextIndex = storageCount;
 
-        var log = new StorageLog(mock.Object, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance, buffer);
 
         var actual = log.GetPrecedingEntryInfo(nextIndex);
 
@@ -349,7 +350,7 @@ public class StorageLogTests
 
         var buffer = new List<LogEntry>();
 
-        var log = new StorageLog(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
 
         log.InsertRange(expected, 0);
 
@@ -378,7 +379,7 @@ public class StorageLogTests
         var expected = buffer.Concat(toInsert)
                              .ToList();
 
-        var log = new StorageLog(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
 
         log.InsertRange(toInsert, bufferCount);
 
@@ -416,7 +417,7 @@ public class StorageLogTests
                              .Concat(toInsert)
                              .ToList();
 
-        var log = new StorageLog(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
 
         log.InsertRange(toInsert, insertIndex);
 

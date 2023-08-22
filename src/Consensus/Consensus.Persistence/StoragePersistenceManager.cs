@@ -1,12 +1,11 @@
 using System.Runtime.CompilerServices;
 using Consensus.Core.Log;
 
-[assembly: InternalsVisibleTo("Consensus.Log.Tests")]
+[assembly: InternalsVisibleTo("Consensus.Persistence.Tests")]
 
-namespace Consensus.Log;
+namespace Consensus.Persistence;
 
-// TODO: переименовать в PersistenceManager
-public class StorageLog : ILog
+public class StoragePersistenceManager : IPersistenceManager
 {
     /// <summary>
     /// Персистентное хранилище записей лога
@@ -37,14 +36,14 @@ public class StorageLog : ILog
 
     public IReadOnlyList<LogEntry> ReadLog() => _storage.ReadAll();
 
-    public StorageLog(ILogStorage storage, ISnapshotStorage snapshotStorage)
+    public StoragePersistenceManager(ILogStorage storage, ISnapshotStorage snapshotStorage)
     {
         _storage = storage;
         _snapshotStorage = snapshotStorage;
     }
 
     // Для тестов
-    internal StorageLog(ILogStorage storage, ISnapshotStorage snapshotStorage, List<LogEntry> buffer)
+    internal StoragePersistenceManager(ILogStorage storage, ISnapshotStorage snapshotStorage, List<LogEntry> buffer)
     {
         _storage = storage;
         _snapshotStorage = snapshotStorage;

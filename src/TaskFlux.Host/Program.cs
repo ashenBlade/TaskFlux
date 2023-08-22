@@ -7,7 +7,7 @@ using Consensus.Core;
 using Consensus.Core.Log;
 using Consensus.Core.State.LeaderState;
 using Consensus.JobQueue;
-using Consensus.Log;
+using Consensus.Persistence;
 using Consensus.Peer;
 using Consensus.Peer.Decorators;
 using Consensus.StateMachine.TaskFlux;
@@ -321,7 +321,7 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
                                                                IPeer[] peers,
                                                                ITimer randomizedTimer,
                                                                ITimer systemTimersTimer,
-                                                               ILog storageLog,
+                                                               IPersistenceManager storageLog,
                                                                ICommandQueue channelCommandQueue,
                                                                IStateMachine<Command, Result> stateMachine,
                                                                IMetadataStorage metadataStorage)
@@ -337,7 +337,7 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
         requestQueueFactory);
 }
 
-void RestoreState(StorageLog storageLog, FileLogStorage fileLogStorage, ICommandContext context)
+void RestoreState(StoragePersistenceManager storageLog, FileLogStorage fileLogStorage, ICommandContext context)
 {
     if (fileLogStorage.Count == 0)
     {
@@ -382,7 +382,7 @@ NodeInfo CreateNodeInfo(RaftServerOptions options)
     return new NodeInfo(new NodeId(options.NodeId), NodeRole.Follower);
 }
 
-StorageLog CreateStorageLog(ILogStorage storage1)
+StoragePersistenceManager CreateStorageLog(ILogStorage storage1)
 {
     var currentDirectory = Directory.GetCurrentDirectory();
     var raftDirectory = new DirectoryInfo(Path.Combine(currentDirectory, "consensus"));
@@ -399,7 +399,7 @@ StorageLog CreateStorageLog(ILogStorage storage1)
 
     var snapshotFile = new FileInfo(Path.Combine(raftDirectory.FullName, "raft.snapshot"));
     var tempDir = CreateTemporarySnapshotFileDirectory(raftDirectory);
-    return new StorageLog(storage1,
+    return new StoragePersistenceManager(storage1,
         new FileSnapshotStorage(new FileSystemTemporarySnapshotFileFactory(tempDir, snapshotFile)));
 
 

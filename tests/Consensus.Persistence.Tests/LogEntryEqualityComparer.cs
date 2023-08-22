@@ -1,6 +1,6 @@
 using Consensus.Core.Log;
 
-namespace Consensus.Log.Tests;
+namespace Consensus.Persistence.Tests;
 
 public class LogEntryEqualityComparer: IEqualityComparer<LogEntry>
 {

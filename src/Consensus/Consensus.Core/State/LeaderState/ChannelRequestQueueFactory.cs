@@ -2,17 +2,17 @@ using Consensus.Core.Log;
 
 namespace Consensus.Core.State.LeaderState;
 
-public class ChannelRequestQueueFactory: IRequestQueueFactory
+public class ChannelRequestQueueFactory : IRequestQueueFactory
 {
-    private readonly ILog _log;
+    private readonly IPersistenceManager _persistenceManager;
 
-    public ChannelRequestQueueFactory(ILog log)
+    public ChannelRequestQueueFactory(IPersistenceManager persistenceManager)
     {
-        _log = log;
-    }    
-    
+        _persistenceManager = persistenceManager;
+    }
+
     public IRequestQueue CreateQueue()
     {
-        return new ChannelRequestQueue(_log);
+        return new ChannelRequestQueue(_persistenceManager);
     }
 }

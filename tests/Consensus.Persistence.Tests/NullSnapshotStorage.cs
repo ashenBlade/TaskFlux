@@ -1,6 +1,7 @@
 using Consensus.Core.Log;
+using Consensus.Persistence;
 
-namespace Consensus.Log.Tests;
+namespace Consensus.Persistence.Tests;
 
 public class NullSnapshotStorage : ISnapshotStorage
 {

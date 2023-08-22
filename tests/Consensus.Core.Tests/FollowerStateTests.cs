@@ -12,7 +12,9 @@ public class FollowerStateTests
     private static readonly NodeId NodeId = new(1);
     private static readonly LogEntryInfo LastLogEntryInfo = new(new Term(1), 0);
 
-    private static ILog CreateLog(LogEntryInfo? logEntryInfo = null, int commitIndex = 0, int lastApplied = 0)
+    private static IPersistenceManager CreateLog(LogEntryInfo? logEntryInfo = null,
+                                                 int commitIndex = 0,
+                                                 int lastApplied = 0)
     {
         return Helpers.CreateLog(logEntryInfo, commitIndex, lastApplied);
     }
@@ -21,7 +23,7 @@ public class FollowerStateTests
                                                             NodeId? votedFor,
                                                             ITimer? electionTimer = null,
                                                             IBackgroundJobQueue? jobQueue = null,
-                                                            ILog? log = null)
+                                                            IPersistenceManager? log = null)
     {
         return Helpers.CreateNode(currentTerm,
             votedFor,
@@ -35,7 +37,8 @@ public class FollowerStateTests
     {
         var machine = RaftConsensusModule<int, int>.Create(new(1), new PeerGroup(Array.Empty<IPeer>()),
             Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullBackgroundJobQueue,
-            Mock.Of<ILog>(x => x.LastEntry == LastLogEntryInfo && x.CommitIndex == 0 && x.LastAppliedIndex == 0),
+            Mock.Of<IPersistenceManager>(x =>
+                x.LastEntry == LastLogEntryInfo && x.CommitIndex == 0 && x.LastAppliedIndex == 0),
             Helpers.DefaultCommandQueue, Helpers.NullStateMachine, Helpers.NullMetadataStorage,
             StubSerializer<int>.Default, Helpers.NullRequestQueueFactory);
         Assert.Equal(NodeRole.Follower, machine.CurrentRole);
@@ -176,7 +179,8 @@ public class FollowerStateTests
         var oldTerm = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
         timer.Setup(x => x.Reset()).Verifiable();
-        var log = new Mock<ILog>().Apply(l => l.Setup(x => x.Contains(It.IsAny<LogEntryInfo>())).Returns(true));
+        var log = new Mock<IPersistenceManager>().Apply(l =>
+            l.Setup(x => x.Contains(It.IsAny<LogEntryInfo>())).Returns(true));
         using var raft = CreateNode(oldTerm, null, electionTimer: timer.Object, log: log.Object);
         var leaderTerm = new Term(term);
         var request = AppendEntriesRequest.Heartbeat(leaderTerm, 0,
@@ -197,13 +201,13 @@ public class FollowerStateTests
 
         var candidateId = new NodeId(2);
         var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: oldTerm.Increment(),
-            LastLogEntryInfo: raft.Log.LastEntry);
+            LastLogEntryInfo: raft.PersistenceManager.LastEntry);
         raft.Handle(request);
         Assert.Equal(candidateId, raft.VotedFor);
     }
 
-    private static ILog CreateLog(bool isConsistentWith = true) =>
-        new Mock<ILog>()
+    private static IPersistenceManager CreateLog(bool isConsistentWith = true) =>
+        new Mock<IPersistenceManager>()
            .Apply(l =>
             {
                 l.Setup(x => x.Contains(It.IsAny<LogEntryInfo>()))
@@ -225,8 +229,9 @@ public class FollowerStateTests
 
         using var node = CreateNode(oldTerm, votedForId, log: CreateLog(true));
 
-        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.Log.CommitIndex, new NodeId(2),
-            node.Log.LastEntry);
+        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.PersistenceManager.CommitIndex,
+            new NodeId(2),
+            node.PersistenceManager.LastEntry);
         node.Handle(request);
 
         Assert.False(node.VotedFor.HasValue);
@@ -239,8 +244,9 @@ public class FollowerStateTests
 
         using var node = CreateNode(oldTerm, null, log: CreateLog(isConsistentWith: true));
 
-        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.Log.CommitIndex, new NodeId(2),
-            node.Log.LastEntry);
+        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.PersistenceManager.CommitIndex,
+            new NodeId(2),
+            node.PersistenceManager.LastEntry);
         node.Handle(request);
 
         Assert.Equal(NodeRole.Follower, node.CurrentRole);

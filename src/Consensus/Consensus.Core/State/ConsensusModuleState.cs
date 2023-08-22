@@ -25,7 +25,7 @@ public abstract class ConsensusModuleState<TCommand, TResponse>
                                        * 1024; // б
 
     internal IConsensusModule<TCommand, TResponse> ConsensusModule { get; }
-    protected ILog Log => ConsensusModule.Log;
+    protected IPersistenceManager PersistenceManager => ConsensusModule.PersistenceManager;
     protected Term CurrentTerm => ConsensusModule.CurrentTerm;
     protected NodeId? VotedFor => ConsensusModule.VotedFor;
     protected ICommandQueue CommandQueue => ConsensusModule.CommandQueue;

@@ -23,7 +23,8 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\src\Consensus\Consensus.Log\Consensus.Log\Consensus.Log.csproj" />
+        <ProjectReference Include="..\..\src\Consensus\Consensus.Core\Consensus.Core.csproj"/>
+        <ProjectReference Include="..\..\src\Consensus\Consensus.Persistence\Consensus.Persistence.csproj"/>
     </ItemGroup>
 
 </Project>

@@ -31,7 +31,7 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
     {
         // Отправляем запрос всем пирам
         var request = new RequestVoteRequest(CandidateId: Id,
-            CandidateTerm: CurrentTerm, LastLogEntryInfo: Log.LastEntry);
+            CandidateTerm: CurrentTerm, LastLogEntryInfo: PersistenceManager.LastEntry);
 
         var requests = new Task<RequestVoteResponse?>[peers.Count];
         for (var i = 0; i < peers.Count; i++)
@@ -169,21 +169,21 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
             CurrentState = ConsensusModule.CreateFollowerState();
         }
 
-        if (Log.Contains(request.PrevLogEntryInfo) is false)
+        if (PersistenceManager.Contains(request.PrevLogEntryInfo) is false)
         {
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
         if (0 < request.Entries.Count)
         {
-            Log.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
+            PersistenceManager.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
 
-        if (Log.CommitIndex < request.LeaderCommit)
+        if (PersistenceManager.CommitIndex < request.LeaderCommit)
         {
-            var lastCommitIndex = Math.Min(request.LeaderCommit, Log.LastEntry.Index);
-            Log.Commit(lastCommitIndex);
-            var notApplied = Log.GetNotApplied();
+            var lastCommitIndex = Math.Min(request.LeaderCommit, PersistenceManager.LastEntry.Index);
+            PersistenceManager.Commit(lastCommitIndex);
+            var notApplied = PersistenceManager.GetNotApplied();
             if (0 < notApplied.Count)
             {
                 foreach (var entry in notApplied)
@@ -193,7 +193,7 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
                 }
             }
 
-            Log.SetLastApplied(lastCommitIndex);
+            PersistenceManager.SetLastApplied(lastCommitIndex);
         }
 
         return AppendEntriesResponse.Ok(CurrentTerm);
@@ -237,7 +237,7 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
         if (canVote
           &&
             // У которого лог в консистентном с нашим состоянием
-            !Log.Conflicts(request.LastLogEntryInfo))
+            !PersistenceManager.Conflicts(request.LastLogEntryInfo))
         {
             ElectionTimer.Start();
             ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);

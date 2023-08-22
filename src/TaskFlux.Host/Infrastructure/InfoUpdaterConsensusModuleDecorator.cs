@@ -65,8 +65,8 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
     public ICommandQueue CommandQueue =>
         _module.CommandQueue;
 
-    public ILog Log =>
-        _module.Log;
+    public IPersistenceManager PersistenceManager =>
+        _module.PersistenceManager;
 
     public PeerGroup PeerGroup =>
         _module.PeerGroup;

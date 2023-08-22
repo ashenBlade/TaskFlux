@@ -1,6 +1,6 @@
 using Moq;
 
-namespace Consensus.Log.Tests;
+namespace Consensus.Persistence.Tests;
 
 public static class Helpers
 {

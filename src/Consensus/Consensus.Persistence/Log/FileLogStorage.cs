@@ -2,7 +2,7 @@
 using System.Text;
 using Consensus.Core;
 using Consensus.Core.Log;
-using Consensus.Log;
+using Consensus.Persistence;
 
 namespace Consensus.Storage.File.Log;
 

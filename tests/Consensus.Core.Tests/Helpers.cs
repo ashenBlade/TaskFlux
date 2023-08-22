@@ -67,10 +67,12 @@ public static class Helpers
         return mock.Object;
     }
 
-    public static ILog CreateLog(LogEntryInfo? logEntryInfo = null, int commitIndex = 0, int lastApplied = 0)
+    public static IPersistenceManager CreateLog(LogEntryInfo? logEntryInfo = null,
+                                                int commitIndex = 0,
+                                                int lastApplied = 0)
     {
         var entry = logEntryInfo ?? LastLogEntryInfo;
-        return Mock.Of<ILog>(x =>
+        return Mock.Of<IPersistenceManager>(x =>
             x.LastEntry == entry
          && x.CommitIndex == commitIndex
          && x.LastAppliedIndex == lastApplied
@@ -83,7 +85,7 @@ public static class Helpers
                                                            ITimer? electionTimer = null,
                                                            ITimer? heartbeatTimer = null,
                                                            IBackgroundJobQueue? jobQueue = null,
-                                                           ILog? log = null,
+                                                           IPersistenceManager? log = null,
                                                            ICommandQueue? commandQueue = null)
     {
         return RaftConsensusModule<int, int>.Create(NodeId,

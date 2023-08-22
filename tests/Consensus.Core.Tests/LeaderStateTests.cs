@@ -11,7 +11,7 @@ namespace Consensus.Core.Tests;
 [Trait("Category", "Raft")]
 public class LeaderStateTests
 {
-    private static RaftConsensusModule<int, int> CreateLeaderNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IBackgroundJobQueue? jobQueue = null, ILog? log = null, IRequestQueueFactory? requestQueueFactory = null)
+    private static RaftConsensusModule<int, int> CreateLeaderNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IBackgroundJobQueue? jobQueue = null, IPersistenceManager? log = null, IRequestQueueFactory? requestQueueFactory = null)
     {
         var node = Helpers.CreateNode(
             currentTerm,
@@ -53,7 +53,7 @@ public class LeaderStateTests
                                                .Verifiable()))
                               .ToList();
         
-        var log = new Mock<ILog>().Apply(l =>
+        var log = new Mock<IPersistenceManager>().Apply(l =>
         {
             l.Setup(x => x.GetFrom(It.IsAny<int>())).Returns(Array.Empty<LogEntry>());
         });
@@ -110,7 +110,7 @@ public class LeaderStateTests
         using var node = CreateLeaderNode(term, null);
 
         var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: term.Increment(),
-            LastLogEntryInfo: node.Log.LastEntry);
+            LastLogEntryInfo: node.PersistenceManager.LastEntry);
 
         node.Handle(request);
         
@@ -130,7 +130,7 @@ public class LeaderStateTests
         using var node = CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object);
 
         var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: term.Increment(),
-            LastLogEntryInfo: node.Log.LastEntry);
+            LastLogEntryInfo: node.PersistenceManager.LastEntry);
 
         node.Handle(request);
         
@@ -149,7 +149,7 @@ public class LeaderStateTests
         using var node = CreateLeaderNode(term, null);
 
         var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: new(otherTerm),
-            LastLogEntryInfo: node.Log.LastEntry);
+            LastLogEntryInfo: node.PersistenceManager.LastEntry);
 
         var response = node.Handle(request);
         
@@ -172,7 +172,7 @@ public class LeaderStateTests
 
         using var node = CreateLeaderNode(term, null);
 
-        var request = AppendEntriesRequest.Heartbeat( new(otherTerm), node.Log.CommitIndex, node.Id + 1, node.Log.LastEntry);
+        var request = AppendEntriesRequest.Heartbeat( new(otherTerm), node.PersistenceManager.CommitIndex, node.Id + 1, node.PersistenceManager.LastEntry);
 
         var response = node.Handle(request);
         
@@ -189,7 +189,7 @@ public class LeaderStateTests
             t.Setup(x => x.Stop()).Verifiable();
         });
 
-        var log = new Mock<ILog>().Apply(l =>
+        var log = new Mock<IPersistenceManager>().Apply(l =>
         {
             l.Setup(x => x.ReadLog()).Returns(Array.Empty<LogEntry>());
             l.Setup(x => x.Contains(It.IsAny<LogEntryInfo>())).Returns(true);
@@ -197,7 +197,7 @@ public class LeaderStateTests
 
         using var node = CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object, log: log.Object);
 
-        var request = AppendEntriesRequest.Heartbeat(term.Increment(), node.Log.CommitIndex, new NodeId(2), node.Log.LastEntry);
+        var request = AppendEntriesRequest.Heartbeat(term.Increment(), node.PersistenceManager.CommitIndex, new NodeId(2), node.PersistenceManager.LastEntry);
 
         node.Handle(request);
         
