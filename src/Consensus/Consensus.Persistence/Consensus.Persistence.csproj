@@ -7,7 +7,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Consensus.Core\Consensus.Core.csproj"/>
+        <ProjectReference Include="..\Consensus.Core\Consensus.Core.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="System.IO.Abstractions" Version="19.2.64"/>
     </ItemGroup>
 
 </Project>

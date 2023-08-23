@@ -1,64 +1,53 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO.Abstractions;
 using System.Text;
 using Consensus.Core;
 using Consensus.Core.Log;
-using Consensus.Persistence;
+using Consensus.Storage.File;
 
-namespace Consensus.Storage.File.Snapshot;
+namespace Consensus.Persistence.Snapshot;
 
 /// <summary>
 /// Файловый интерфейс взаимодействия с файлами снапшотов
 /// </summary>
-public class FileSnapshotStorage : ISnapshotStorage, IDisposable
+public class FileSystemSnapshotStorage : ISnapshotStorage
 {
+    private readonly IFileInfo _snapshotFile;
+    private readonly IDirectoryInfo _temporarySnapshotFileDirectory;
+
     /// <inheritdoc cref="Constants.Marker"/>
     public const int Marker = Constants.Marker;
 
-    /// <summary>
-    /// Поток файла снапшота.
-    /// <c>null</c> - файл не создан
-    /// </summary>
-    private Stream? _snapshotFileStream;
+    private LogEntryInfo? _lastLogEntryInfo;
 
-    /// <summary>
-    /// Фабрика для создания временных файлов снапшотов
-    /// </summary>
-    private ITemporarySnapshotFileFactory _fileFactory;
-
-    public FileSnapshotStorage(Stream snapshotFileStream, ITemporarySnapshotFileFactory fileFactory)
+    public FileSystemSnapshotStorage(IFileInfo snapshotFile, IDirectoryInfo temporarySnapshotFileDirectory)
     {
-        ArgumentNullException.ThrowIfNull(snapshotFileStream);
-        ArgumentNullException.ThrowIfNull(fileFactory);
-        _snapshotFileStream = snapshotFileStream;
-        _fileFactory = fileFactory;
-    }
-
-    public FileSnapshotStorage(ITemporarySnapshotFileFactory fileFactory)
-    {
-        ArgumentNullException.ThrowIfNull(fileFactory);
-        _fileFactory = fileFactory;
+        ArgumentNullException.ThrowIfNull(snapshotFile);
+        ArgumentNullException.ThrowIfNull(temporarySnapshotFileDirectory);
+        _snapshotFile = snapshotFile;
+        _temporarySnapshotFileDirectory = temporarySnapshotFileDirectory;
     }
 
     public ISnapshotFileWriter CreateTempSnapshotFile()
     {
-        var tempFileStream = _fileFactory.CreateTempSnapshotFile();
-        return new SnapshotFileWriter(tempFileStream, this);
+        return new SnapshotFileWriter(this);
     }
 
-    public LogEntryInfo? LastLogEntry => _snapshotFileStream is null
-                                             ? null
-                                             : ReadLogEntryInfo();
+    public LogEntryInfo? LastLogEntry => _snapshotFile.Exists
+                                             ? _lastLogEntryInfo is null
+                                                   ? null
+                                                   : _lastLogEntryInfo = ReadLogEntryInfo()
+                                             : null;
 
     private LogEntryInfo ReadLogEntryInfo()
     {
-        Debug.Assert(_snapshotFileStream is not null,
-            "Поток файла снапшота не был инициализирован, но был вызван метод чтения заголовка");
-
+        Debug.Assert(_snapshotFile.Exists,
+            "Вызван метод чтения последней записи из снапшота, но он файл не существует");
+        using var fs = _snapshotFile.OpenRead();
         // Выставляем позицию сразу после маркера
-        _snapshotFileStream.Position = sizeof(int);
-        var reader = new BinaryReader(_snapshotFileStream, Encoding.UTF8, true);
-
+        fs.Position = sizeof(int);
+        var reader = new BinaryReader(fs, Encoding.UTF8, true);
 
         var index = reader.ReadInt32();
         var term = reader.ReadInt32();
@@ -66,30 +55,29 @@ public class FileSnapshotStorage : ISnapshotStorage, IDisposable
         return new LogEntryInfo(new Term(term), index);
     }
 
-
-    public void Dispose()
-    {
-        _snapshotFileStream?.Dispose();
-    }
-
     private class SnapshotFileWriter : ISnapshotFileWriter
     {
         /// <summary>
-        /// Объект, представляющий новый файл снапшота
+        /// Временный файл снапшота
         /// </summary>
-        private ITemporarySnapshotFile _tempSnapshotFile;
+        private IFileInfo? _temporarySnapshotFile;
 
         /// <summary>
         /// Поток нового файла снапшота.
-        /// Инициализируется во время вызова <see cref="Initialize"/>
+        /// Создается во время вызова <see cref="Initialize"/>
         /// </summary>
-        private Stream _snapshotFileStream = null!;
+        private Stream? _temporarySnapshotFileStream;
+
+        /// <summary>
+        /// Значение LogEntry, которое было записано в файл снапшота
+        /// </summary>
+        private LogEntryInfo? _writtenLogEntry;
 
         /// <summary>
         /// Родительский объект хранилища снапшота.
         /// Для него это все и замутили - ему нужно обновить файл снапшота
         /// </summary>
-        private FileSnapshotStorage _parent;
+        private FileSystemSnapshotStorage _parent;
 
         private enum SnapshotFileState
         {
@@ -114,10 +102,8 @@ public class FileSnapshotStorage : ISnapshotStorage, IDisposable
         /// </summary>
         private SnapshotFileState _state = SnapshotFileState.Start;
 
-        public SnapshotFileWriter(ITemporarySnapshotFile tempSnapshotTempSnapshotFile,
-                                  FileSnapshotStorage parent)
+        public SnapshotFileWriter(FileSystemSnapshotStorage parent)
         {
-            _tempSnapshotFile = tempSnapshotTempSnapshotFile;
             _parent = parent;
         }
 
@@ -138,7 +124,8 @@ public class FileSnapshotStorage : ISnapshotStorage, IDisposable
             }
 
             // 1. Создаем новый файл снапшота
-            var stream = _tempSnapshotFile.Open();
+            var (file, stream) = CreateAndOpenTemporarySnapshotFile();
+
             var writer = new BinaryWriter(stream);
 
             // 2. Записываем маркер файла
@@ -150,7 +137,32 @@ public class FileSnapshotStorage : ISnapshotStorage, IDisposable
 
             _state = SnapshotFileState.Initialized;
 
-            _snapshotFileStream = stream;
+            _writtenLogEntry = lastApplied;
+            _temporarySnapshotFileStream = stream;
+            _temporarySnapshotFile = file;
+        }
+
+        private (IFileInfo File, Stream Stream) CreateAndOpenTemporarySnapshotFile()
+        {
+            var tempDir = _parent._temporarySnapshotFileDirectory;
+            while (true)
+            {
+                var file = tempDir.FileSystem.FileInfo.New(GetRandomTempFileName());
+                try
+                {
+                    var stream = file.Open(FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+                    return ( file, stream );
+                }
+                catch (IOException)
+                {
+                }
+            }
+
+            string GetRandomTempFileName()
+            {
+                var fileName = Path.GetRandomFileName();
+                return Path.Combine(tempDir!.FullName, fileName);
+            }
         }
 
         public void Save()
@@ -168,18 +180,21 @@ public class FileSnapshotStorage : ISnapshotStorage, IDisposable
                     throw new InvalidEnumArgumentException(nameof(_state), ( int ) _state, typeof(SnapshotFileState));
             }
 
-            _parent._snapshotFileStream?.Close();
+            Debug.Assert(_temporarySnapshotFileStream is not null, "Поток временного файла не должен быть null");
+            Debug.Assert(_temporarySnapshotFile is not null, "Объект временного файла не должен быть null");
+            Debug.Assert(_writtenLogEntry is not null,
+                "Объект информации последней команды снапшота не должен быть null");
 
-            // Флашить не надо, это сделает объект файла
-            _tempSnapshotFile.Commit();
+            // 1. Флашим все данные 
+            _temporarySnapshotFileStream.Flush();
 
-            _parent._snapshotFileStream = _snapshotFileStream;
+            // 3. Переименовываем новый
+            _temporarySnapshotFile.MoveTo(_parent._snapshotFile.FullName);
+            _temporarySnapshotFileStream.Close();
+
+            _parent._lastLogEntryInfo = _writtenLogEntry;
 
             _state = SnapshotFileState.Finished;
-
-            _snapshotFileStream = null!;
-            _parent = null!;
-            _tempSnapshotFile = null!;
         }
 
         public void Discard()
@@ -197,10 +212,13 @@ public class FileSnapshotStorage : ISnapshotStorage, IDisposable
 
             _state = SnapshotFileState.Finished;
 
-            _tempSnapshotFile.Delete();
+            _temporarySnapshotFileStream?.Close();
+            _temporarySnapshotFileStream = null;
 
-            _tempSnapshotFile = null!;
-            _snapshotFileStream = null!;
+            _temporarySnapshotFile?.Delete();
+            _temporarySnapshotFile = null;
+
+            _parent = null!;
         }
 
         public void WriteSnapshot(ISnapshot snapshot, CancellationToken token)
@@ -220,7 +238,7 @@ public class FileSnapshotStorage : ISnapshotStorage, IDisposable
 
             // Наверное, надо добавить еще одно состояние,
             // чтобы предотвратить повторную запись снапшота или нового
-            snapshot.WriteTo(_snapshotFileStream, token);
+            snapshot.WriteTo(_temporarySnapshotFileStream, token);
         }
     }
 }

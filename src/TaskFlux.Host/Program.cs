@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.IO.Abstractions;
 using System.Net;
 using System.Net.Sockets;
 using Consensus.CommandQueue;
@@ -7,15 +8,15 @@ using Consensus.Core;
 using Consensus.Core.Log;
 using Consensus.Core.State.LeaderState;
 using Consensus.JobQueue;
-using Consensus.Persistence;
 using Consensus.Peer;
 using Consensus.Peer.Decorators;
+using Consensus.Persistence;
+using Consensus.Persistence.Snapshot;
 using Consensus.StateMachine.TaskFlux;
 using Consensus.Storage.File.Log;
 using Consensus.Storage.File.Log.Decorators;
 using Consensus.Storage.File.Metadata;
 using Consensus.Storage.File.Metadata.Decorators;
-using Consensus.Storage.File.Snapshot;
 using Consensus.Timers;
 using JobQueue.Core;
 using JobQueue.InMemory;
@@ -397,10 +398,12 @@ StoragePersistenceManager CreateStorageLog(ILogStorage storage1)
         raftDirectory.Create();
     }
 
-    var snapshotFile = new FileInfo(Path.Combine(raftDirectory.FullName, "raft.snapshot"));
-    var tempDir = CreateTemporarySnapshotFileDirectory(raftDirectory);
+    var fs = new FileSystem();
+    var snapshotFile = new FileInfoWrapper(fs, new FileInfo(Path.Combine(raftDirectory.FullName, "raft.snapshot")));
+    var tempDir = new DirectoryInfoWrapper(fs, CreateTemporarySnapshotFileDirectory(raftDirectory));
+
     return new StoragePersistenceManager(storage1,
-        new FileSnapshotStorage(new FileSystemTemporarySnapshotFileFactory(tempDir, snapshotFile)));
+        new FileSystemSnapshotStorage(snapshotFile, tempDir));
 
 
     static DirectoryInfo CreateTemporarySnapshotFileDirectory(DirectoryInfo raftDir)

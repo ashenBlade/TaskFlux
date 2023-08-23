@@ -227,6 +227,7 @@ public class StoragePersistenceManager : IPersistenceManager
     public void SaveSnapshot(LogEntryInfo lastLogEntry, ISnapshot snapshot, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
+
         // 1. Создать временный файл
         var tempFile = _snapshotStorage.CreateTempSnapshotFile();
 
