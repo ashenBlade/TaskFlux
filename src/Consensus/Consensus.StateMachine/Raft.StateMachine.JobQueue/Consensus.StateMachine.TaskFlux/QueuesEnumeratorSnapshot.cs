@@ -1,4 +1,5 @@
 using Consensus.Core.Log;
+using Consensus.Core.Persistence;
 using Consensus.StateMachine.TaskFlux.Serialization;
 using JobQueue.Core;
 
@@ -21,9 +22,6 @@ public class QueuesEnumeratorSnapshot : ISnapshot
     public void WriteTo(Stream stream, CancellationToken token = default)
     {
         var queues = _manager.GetAllQueues();
-        foreach (var queue in queues)
-        {
-            _serializer.Serialize(stream, queue, token);
-        }
+        _serializer.Serialize(stream, queues, token);
     }
 }

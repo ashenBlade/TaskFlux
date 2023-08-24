@@ -1,3 +1,5 @@
+using Consensus.Core.Persistence;
+
 namespace Consensus.Core.Log;
 
 /// <summary>
@@ -123,4 +125,11 @@ public interface IPersistenceManager
     /// Выполняется после создания нового снапшота.
     /// </summary>
     public void ClearCommandLog();
+    
+    /// <summary>
+    /// Получить снапшот состояния, если файл существовал
+    /// </summary>
+    /// <param name="snapshot">Хранившийся файл снапшота</param>
+    /// <returns><c>true</c> - файл снапшота существовал, <c>false</c> - файл снапшота не существовал</returns>
+    public bool TryGetSnapshot(out ISnapshot snapshot);
 }

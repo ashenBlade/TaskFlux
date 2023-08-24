@@ -265,7 +265,7 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
         ElectionTimer.Timeout -= OnElectionTimerTimeout;
     }
 
-    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request)
+    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }

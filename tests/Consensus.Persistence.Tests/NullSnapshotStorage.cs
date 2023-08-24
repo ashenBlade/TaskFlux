@@ -1,4 +1,5 @@
 using Consensus.Core.Log;
+using Consensus.Core.Persistence;
 using Consensus.Persistence;
 
 namespace Consensus.Persistence.Tests;
@@ -13,4 +14,8 @@ public class NullSnapshotStorage : ISnapshotStorage
     }
 
     public LogEntryInfo? LastLogEntry => null;
+    public ISnapshot GetSnapshot()
+    {
+        throw new NotImplementedException();
+    }
 }

@@ -4,6 +4,7 @@ using Consensus.Core.Commands.AppendEntries;
 using Consensus.Core.Commands.InstallSnapshot;
 using Consensus.Core.Commands.RequestVote;
 using Consensus.Core.Commands.Submit;
+using Consensus.Core.Log;
 using Serilog;
 using TaskFlux.Core;
 
@@ -160,8 +161,43 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
         ElectionTimer.Timeout -= OnElectionTimerTimeout;
     }
 
-    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request)
+    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken cancellationToken)
     {
-        throw new NotImplementedException();
+        if (request.Term < CurrentTerm)
+        {
+            return new InstallSnapshotResponse(CurrentTerm);
+        }
+
+        // 1. Обновляем файл снапшота
+        PersistenceManager.SaveSnapshot(new LogEntryInfo(request.LastIncludedTerm, request.LastIncludedIndex), request.Snapshot, cancellationToken);
+        // 2. Очищаем лог (лучше будет перезаписать данные полностью)
+        PersistenceManager.ClearCommandLog();
+        
+        // 3. Восстановить состояние из снапшота
+        RestoreState();
+        return new InstallSnapshotResponse(CurrentTerm);
+    }
+
+    private void RestoreState()
+    {
+        // 1. Восстанавливаем из снапшота
+        var stateMachine =
+            PersistenceManager.TryGetSnapshot(out var snapshot)
+                ? StateMachineFactory.Restore(snapshot)
+                : StateMachineFactory.CreateEmpty();
+
+        // 2. Применяем команды из лога, если есть
+        var nonApplied = PersistenceManager.GetNotApplied();
+        if (nonApplied.Count > 0)
+        {
+            foreach (var (_, payload) in nonApplied)
+            {
+                var command = ConsensusModule.CommandSerializer.Deserialize(payload);
+                stateMachine.ApplyNoResponse(command);
+            }
+        }
+
+        // 3. Обновляем машину
+        ConsensusModule.StateMachine = stateMachine;
     }
 }

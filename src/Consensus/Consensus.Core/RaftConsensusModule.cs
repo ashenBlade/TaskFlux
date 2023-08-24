@@ -27,7 +27,8 @@ public class RaftConsensusModule<TCommand, TResponse>
     public Term CurrentTerm => MetadataStorage.ReadTerm();
     public NodeId? VotedFor => MetadataStorage.ReadVotedFor();
     public PeerGroup PeerGroup { get; }
-    public IStateMachine<TCommand, TResponse> StateMachine { get; }
+    public IStateMachine<TCommand, TResponse> StateMachine { get; set; }
+    public IStateMachineFactory<TCommand, TResponse> StateMachineFactory { get; private set; }
     public IMetadataStorage MetadataStorage { get; }
     public ISerializer<TCommand> CommandSerializer { get; }
 
@@ -72,9 +73,11 @@ public class RaftConsensusModule<TCommand, TResponse>
         IStateMachine<TCommand, TResponse> stateMachine,
         IMetadataStorage metadataStorage,
         ISerializer<TCommand> commandSerializer,
-        IRequestQueueFactory requestQueueFactory)
+        IRequestQueueFactory requestQueueFactory,
+        IStateMachineFactory<TCommand, TResponse> stateMachineFactory)
     {
         _requestQueueFactory = requestQueueFactory;
+        StateMachineFactory = stateMachineFactory;
         Id = id;
         Logger = logger;
         PeerGroup = peerGroup;
@@ -103,9 +106,9 @@ public class RaftConsensusModule<TCommand, TResponse>
         return CommandQueue.Enqueue(new AppendEntriesCommand<TCommand, TResponse>(request, this));
     }
 
-    public InstallSnapshotResponse Handle(InstallSnapshotRequest request)
+    public InstallSnapshotResponse Handle(InstallSnapshotRequest request, CancellationToken token)
     {
-        return CommandQueue.Enqueue(new InstallSnapshotCommand<TCommand, TResponse>(request, this));
+        return CommandQueue.Enqueue(new InstallSnapshotCommand<TCommand, TResponse>(request, this, token));
     }
 
     public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request)
@@ -151,12 +154,13 @@ public class RaftConsensusModule<TCommand, TResponse>
                                                                   IPersistenceManager persistenceManager,
                                                                   ICommandQueue commandQueue,
                                                                   IStateMachine<TCommand, TResponse> stateMachine,
+                                                                  IStateMachineFactory<TCommand, TResponse> stateMachineFactory,
                                                                   IMetadataStorage metadataStorage,
                                                                   ISerializer<TCommand> serializer,
                                                                   IRequestQueueFactory requestQueueFactory)
     {
         var raft = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, electionTimer, heartbeatTimer,
-            backgroundJobQueue, persistenceManager, commandQueue, stateMachine, metadataStorage, serializer, requestQueueFactory);
+            backgroundJobQueue, persistenceManager, commandQueue, stateMachine, metadataStorage, serializer, requestQueueFactory, stateMachineFactory);
         ( ( IConsensusModule<TCommand, TResponse> ) raft ).CurrentState = raft.CreateFollowerState();
         return raft;
     }

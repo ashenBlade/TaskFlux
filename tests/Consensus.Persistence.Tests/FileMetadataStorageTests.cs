@@ -1,5 +1,5 @@
 using Consensus.Core;
-using Consensus.Storage.File.Metadata;
+using Consensus.Persistence.Metadata;
 using TaskFlux.Core;
 
 namespace Consensus.Storage.File.Tests;

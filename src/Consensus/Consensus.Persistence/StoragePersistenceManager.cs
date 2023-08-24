@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Consensus.Core.Log;
+using Consensus.Core.Persistence;
 
 [assembly: InternalsVisibleTo("Consensus.Persistence.Tests")]
 
@@ -10,7 +11,7 @@ public class StoragePersistenceManager : IPersistenceManager
     /// <summary>
     /// Персистентное хранилище записей лога
     /// </summary>
-    private readonly ILogStorage _storage;
+    private readonly ILogStorage _logStorage;
 
     /// <summary>
     /// Хранилище для слепков состояния (снапшотов)
@@ -24,28 +25,28 @@ public class StoragePersistenceManager : IPersistenceManager
 
     public LogEntryInfo LastEntry => _buffer.Count > 0
                                          ? new LogEntryInfo(_buffer[^1].Term, CommitIndex + _buffer.Count)
-                                         : _storage.GetLastLogEntry();
+                                         : _logStorage.GetLastLogEntry();
 
-    public int CommitIndex => _storage.Count - 1;
+    public int CommitIndex => _logStorage.Count - 1;
     public int LastAppliedIndex { get; private set; } = LogEntryInfo.TombIndex;
-    public ulong LogFileSize => _storage.Size;
+    public ulong LogFileSize => _logStorage.Size;
 
     public LogEntryInfo LastApplied => LastAppliedIndex == LogEntryInfo.TombIndex
                                            ? LogEntryInfo.Tomb
                                            : GetLogEntryInfoAtIndex(LastAppliedIndex);
 
-    public IReadOnlyList<LogEntry> ReadLog() => _storage.ReadAll();
+    public IReadOnlyList<LogEntry> ReadLog() => _logStorage.ReadAll();
 
-    public StoragePersistenceManager(ILogStorage storage, ISnapshotStorage snapshotStorage)
+    public StoragePersistenceManager(ILogStorage logStorage, ISnapshotStorage snapshotStorage)
     {
-        _storage = storage;
+        _logStorage = logStorage;
         _snapshotStorage = snapshotStorage;
     }
 
     // Для тестов
-    internal StoragePersistenceManager(ILogStorage storage, ISnapshotStorage snapshotStorage, List<LogEntry> buffer)
+    internal StoragePersistenceManager(ILogStorage logStorage, ISnapshotStorage snapshotStorage, List<LogEntry> buffer)
     {
-        _storage = storage;
+        _logStorage = logStorage;
         _snapshotStorage = snapshotStorage;
         _buffer = buffer;
     }
@@ -79,7 +80,7 @@ public class StoragePersistenceManager : IPersistenceManager
 
     public void InsertRange(IEnumerable<LogEntry> entries, int startIndex)
     {
-        var actualIndex = startIndex - _storage.Count;
+        var actualIndex = startIndex - _logStorage.Count;
         var removeCount = _buffer.Count - actualIndex;
         _buffer.RemoveRange(actualIndex, removeCount);
         _buffer.AddRange(entries);
@@ -87,7 +88,7 @@ public class StoragePersistenceManager : IPersistenceManager
 
     public LogEntryInfo Append(LogEntry entry)
     {
-        var newIndex = _storage.Count + _buffer.Count;
+        var newIndex = _logStorage.Count + _buffer.Count;
         _buffer.Add(entry);
         return new LogEntryInfo(entry.Term, newIndex);
     }
@@ -113,22 +114,22 @@ public class StoragePersistenceManager : IPersistenceManager
 
     private LogEntryInfo GetLogEntryInfoAtIndex(int index)
     {
-        var storageLastEntry = _storage.GetLastLogEntry();
+        var storageLastEntry = _logStorage.GetLastLogEntry();
         if (index <= storageLastEntry.Index)
         {
-            return _storage.GetInfoAt(index);
+            return _logStorage.GetInfoAt(index);
         }
 
-        var bufferEntry = _buffer[index - _storage.Count];
+        var bufferEntry = _buffer[index - _logStorage.Count];
         return new LogEntryInfo(bufferEntry.Term, index);
     }
 
     public IReadOnlyList<LogEntry> GetFrom(int index)
     {
-        if (index <= _storage.Count)
+        if (index <= _logStorage.Count)
         {
             // Читаем часть из диска
-            var logEntries = _storage.ReadFrom(index);
+            var logEntries = _logStorage.ReadFrom(index);
             var result = new List<LogEntry>(logEntries.Count + _buffer.Count);
             result.AddRange(logEntries);
             // Прибаляем весь лог в памяти
@@ -138,7 +139,7 @@ public class StoragePersistenceManager : IPersistenceManager
         }
 
         // Требуемые записи только в памяти 
-        var bufferStartIndex = index - _storage.Count;
+        var bufferStartIndex = index - _logStorage.Count;
         if (index <= _buffer.Count)
         {
             // Берем часть из лога
@@ -155,7 +156,7 @@ public class StoragePersistenceManager : IPersistenceManager
 
     public void Commit(int index)
     {
-        var removeCount = index - _storage.Count + 1;
+        var removeCount = index - _logStorage.Count + 1;
         if (removeCount == 0)
         {
             return;
@@ -168,7 +169,7 @@ public class StoragePersistenceManager : IPersistenceManager
         }
 
         var notCommitted = _buffer.GetRange(0, removeCount);
-        _storage.AppendRange(notCommitted);
+        _logStorage.AppendRange(notCommitted);
         _buffer.RemoveRange(0, removeCount);
     }
 
@@ -180,7 +181,7 @@ public class StoragePersistenceManager : IPersistenceManager
                 "Следующий индекс лога не может быть отрицательным");
         }
 
-        if (_storage.Count + _buffer.Count + 1 < nextIndex)
+        if (_logStorage.Count + _buffer.Count + 1 < nextIndex)
         {
             throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
                 "Следующий индекс лога не может быть больше числа записей в логе + 1");
@@ -194,14 +195,14 @@ public class StoragePersistenceManager : IPersistenceManager
         var index = nextIndex - 1;
 
         // Запись находится в логе
-        if (_storage.Count <= index)
+        if (_logStorage.Count <= index)
         {
-            var bufferIndex = index - _storage.Count;
+            var bufferIndex = index - _logStorage.Count;
             var bufferEntry = _buffer[bufferIndex];
             return new LogEntryInfo(bufferEntry.Term, index);
         }
 
-        return _storage.GetInfoAt(index);
+        return _logStorage.GetInfoAt(index);
     }
 
     public IReadOnlyList<LogEntry> GetNotApplied()
@@ -211,7 +212,7 @@ public class StoragePersistenceManager : IPersistenceManager
             return Array.Empty<LogEntry>();
         }
 
-        return _storage.ReadFrom(LastAppliedIndex + 1);
+        return _logStorage.ReadFrom(LastAppliedIndex + 1);
     }
 
     public void SetLastApplied(int index)
@@ -252,6 +253,22 @@ public class StoragePersistenceManager : IPersistenceManager
 
     public void ClearCommandLog()
     {
-        _storage.ClearCommandLog();
+        // Очищаем непримененные команды
+        _buffer.Clear();
+        // Очищаем сам файл лога
+        _logStorage.ClearCommandLog();
+        LastAppliedIndex = 0;
+    }
+
+    public bool TryGetSnapshot(out ISnapshot snapshot)
+    {
+        if (_snapshotStorage.HasSnapshot)
+        {
+            snapshot = _snapshotStorage.GetSnapshot();
+            return true;
+        }
+
+        snapshot = default!;
+        return false;
     }
 }

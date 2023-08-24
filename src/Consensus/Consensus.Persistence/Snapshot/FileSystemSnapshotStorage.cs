@@ -1,9 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Abstractions;
-using System.Text;
 using Consensus.Core;
 using Consensus.Core.Log;
+using Consensus.Core.Persistence;
 using Consensus.Storage.File;
 using TaskFlux.Serialization.Helpers;
 
@@ -41,6 +41,17 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
                                                    : _lastLogEntryInfo = ReadLogEntryInfo()
                                              : null;
 
+    public ISnapshot GetSnapshot()
+    {
+        var fs = _snapshotFile.OpenRead();
+        fs.Position = SnapshotStartPosition;
+        return new FileSnapshot(fs);
+    }
+
+    private const long SnapshotStartPosition = sizeof(int)  // Маркер
+                                             + sizeof(int)  // Терм
+                                             + sizeof(int); // Индекс
+
     private LogEntryInfo ReadLogEntryInfo()
     {
         Debug.Assert(_snapshotFile.Exists,
@@ -48,7 +59,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         using var fs = _snapshotFile.OpenRead();
         // Выставляем позицию сразу после маркера
         fs.Position = sizeof(int);
-        var reader = new BinaryReader(fs, Encoding.UTF8, true);
+        var reader = new StreamBinaryReader(fs);
 
         var index = reader.ReadInt32();
         var term = reader.ReadInt32();

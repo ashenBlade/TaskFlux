@@ -3,11 +3,11 @@ using TaskFlux.Core;
 
 namespace TaskFlux.Node;
 
-public class SingleJobQueueNode: INode
+public class TaskFluxNode: INode
 {
     private readonly IJobQueueManager _jobQueueManager;
 
-    public SingleJobQueueNode(IJobQueueManager jobQueueManager)
+    public TaskFluxNode(IJobQueueManager jobQueueManager)
     {
         _jobQueueManager = jobQueueManager;
     }

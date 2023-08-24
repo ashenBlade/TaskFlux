@@ -39,7 +39,8 @@ public class FollowerStateTests
             Helpers.NullLogger, Helpers.NullTimer, Helpers.NullTimer, Helpers.NullBackgroundJobQueue,
             Mock.Of<IPersistenceManager>(x =>
                 x.LastEntry == LastLogEntryInfo && x.CommitIndex == 0 && x.LastAppliedIndex == 0),
-            Helpers.DefaultCommandQueue, Helpers.NullStateMachine, Helpers.NullMetadataStorage,
+            Helpers.DefaultCommandQueue, Helpers.NullStateMachine, Helpers.NullStateMachineFactory,
+            Helpers.NullMetadataStorage,
             StubSerializer<int>.Default, Helpers.NullRequestQueueFactory);
         Assert.Equal(NodeRole.Follower, machine.CurrentRole);
     }

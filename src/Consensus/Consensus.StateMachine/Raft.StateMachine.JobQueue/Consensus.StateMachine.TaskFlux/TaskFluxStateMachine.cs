@@ -1,7 +1,8 @@
 using Consensus.Core;
-using Consensus.Core.Log;
+using Consensus.Core.Persistence;
 using Consensus.StateMachine.TaskFlux.Serialization;
 using TaskFlux.Commands;
+using TaskFlux.Commands.Visitors;
 
 namespace Consensus.StateMachine.TaskFlux;
 

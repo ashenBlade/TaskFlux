@@ -14,33 +14,39 @@ public class FileJobQueueSnapshotSerializer : IJobQueueSnapshotSerializer
         _factory = factory;
     }
 
-    public void Serialize(Stream destination, IJobQueue queue, CancellationToken token = default)
+    /// <summary>
+    /// Сериализовать все переданные очереди в поток (файл) снапшота
+    /// </summary>
+    /// <param name="destination">Поток для записи данных</param>
+    /// <param name="queues">Очереди, которые нужно сериализовать</param>
+    /// <param name="token">Токен отмены</param>
+    public void Serialize(Stream destination, IEnumerable<IJobQueue> queues, CancellationToken token = default)
     {
         // Была идея сделать писателя в поток буферизирующим,
         // но лучше сразу передавать забуферизированный поток (BufferedStream)
         // - меньше головной боли по поводу реализации
         var writer = new StreamBinaryWriter(destination);
-
-        // Заголовок
-        var metadata = queue.Metadata;
-        writer.Write(metadata.QueueName);
-        writer.Write(metadata.MaxSize);
-        var count = metadata.Count;
-        writer.Write(count);
-
-        if (count == 0)
+        foreach (var queue in queues)
         {
-            destination.Flush();
-            return;
-        }
+            // Заголовок
+            var metadata = queue.Metadata;
+            writer.Write(metadata.QueueName);
+            writer.Write(metadata.MaxSize);
+            var count = metadata.Count;
+            writer.Write(count);
 
-        token.ThrowIfCancellationRequested();
+            if (count == 0)
+            {
+                continue;
+            }
 
-        // Сами данные
-        foreach (var (priority, payload) in queue.GetAllData())
-        {
-            writer.Write(priority);
-            writer.WriteBuffer(payload);
+            foreach (var (priority, payload) in queue.GetAllData())
+            {
+                writer.Write(priority);
+                writer.WriteBuffer(payload);
+            }
+
+            token.ThrowIfCancellationRequested();
         }
 
         destination.Flush();
@@ -55,23 +61,33 @@ public class FileJobQueueSnapshotSerializer : IJobQueueSnapshotSerializer
     /// <param name="token">
     /// Токен отмены
     /// </param>
-    /// <returns>Десериализованная очередь</returns>
-    public IJobQueue Deserialize(Stream file, CancellationToken token = default)
+    /// <returns>Десериализованные очереди</returns>
+    /// <remarks>
+    /// Данный метод только десериализует очереди.
+    /// Проверка бизнес-правил остается на вызывающем
+    /// </remarks>
+    /// 
+    public IEnumerable<IJobQueue> Deserialize(Stream file, CancellationToken token = default)
     {
         var reader = new StreamBinaryReader(file);
 
-        // 1. Название
-        // 2. Максимальная длина
-        // 3. Текущая длина
-        var name = reader.ReadQueueName();
-        var maxSize = reader.ReadUInt32();
-        var count = reader.ReadUInt32();
+        var result = new List<IJobQueue>();
 
-        IReadOnlyCollection<(long, byte[])> elements =
-            count == 0
-                ? Array.Empty<(long, byte[])>()
-                : new StreamQueueElementsCollection(file, count);
-        return _factory.CreateJobQueue(name, maxSize, elements);
+        while (!reader.IsEnd)
+        {
+            var name = reader.ReadQueueName();
+            var maxSize = reader.ReadUInt32();
+            var count = reader.ReadUInt32();
+
+            IReadOnlyCollection<(long, byte[])> elements =
+                count == 0
+                    ? Array.Empty<(long, byte[])>()
+                    : new StreamQueueElementsCollection(file, count);
+
+            result.Add(_factory.CreateJobQueue(name, maxSize, elements));
+        }
+
+        return result;
     }
 
     private class StreamQueueElementsCollection : IReadOnlyCollection<(long, byte[])>
@@ -101,6 +117,6 @@ public class FileJobQueueSnapshotSerializer : IJobQueueSnapshotSerializer
             return GetEnumerator();
         }
 
-        public int Count { get; }
+        public int Count => ( int ) _count;
     }
 }

@@ -1,4 +1,5 @@
 using Consensus.Core.Log;
+using Consensus.Core.Persistence;
 using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Persistence.Tests;

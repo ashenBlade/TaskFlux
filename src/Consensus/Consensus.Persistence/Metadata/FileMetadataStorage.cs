@@ -1,9 +1,10 @@
 using System.Runtime.CompilerServices;
 using System.Text;
 using Consensus.Core;
+using Consensus.Storage.File;
 using TaskFlux.Core;
 
-namespace Consensus.Storage.File.Metadata;
+namespace Consensus.Persistence.Metadata;
 
 public class FileMetadataStorage : IMetadataStorage
 {

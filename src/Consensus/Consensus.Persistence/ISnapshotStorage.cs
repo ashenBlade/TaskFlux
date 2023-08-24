@@ -1,4 +1,5 @@
 using Consensus.Core.Log;
+using Consensus.Core.Persistence;
 
 namespace Consensus.Persistence;
 
@@ -24,4 +25,13 @@ public interface ISnapshotStorage
     /// Сделан ли для машины состояний снапшот
     /// </summary>
     public bool HasSnapshot => LastLogEntry is not null;
+
+    /// <summary>
+    /// Получить снапшот, хранящийся в файле на диске
+    /// </summary>
+    /// <returns>Объект снапшота</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Файла снапшота не существует
+    /// </exception>
+    public ISnapshot GetSnapshot();
 }

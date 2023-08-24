@@ -1,6 +1,6 @@
 using TaskFlux.Core;
 
-namespace TaskFlux.Commands;
+namespace TaskFlux.Commands.Visitors;
 
 public interface ICommandContext
 {

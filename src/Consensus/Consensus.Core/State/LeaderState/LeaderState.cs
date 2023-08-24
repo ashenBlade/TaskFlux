@@ -155,7 +155,7 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         HeartbeatTimer.Timeout -= OnHeartbeatTimer;
     }
 
-    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request)
+    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }

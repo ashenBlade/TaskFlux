@@ -1,3 +1,5 @@
+using Consensus.Core.Log;
+using Consensus.Core.Persistence;
 using TaskFlux.Core;
 
 namespace Consensus.Core.Commands.InstallSnapshot;
@@ -10,13 +12,9 @@ namespace Consensus.Core.Commands.InstallSnapshot;
 /// <param name="LeaderId">ID лидера (тот кто посылает запрос)</param>
 /// <param name="LastIncludedIndex">Последний индекс команды, которая была применена к передаваемому состоянию</param>
 /// <param name="LastIncludedTerm">Терм, в котором была последняя применная команда</param>
-/// <param name="Offset">Смещение в файла в байтах. С этой позиции нужно записывать в файл байты из <paramref name="Data"/></param>
-/// <param name="Data">Данные снапшота, находящиеся в файле с позиции <paramref name="Offset"/></param>
-/// <param name="Done">Это был последний чанк данных. Означает конец передачи</param>
+/// <param name="Snapshot">Снапшот, который передается от лидера</param>
 public record InstallSnapshotRequest(Term Term,
                                      NodeId LeaderId,
                                      int LastIncludedIndex,
                                      Term LastIncludedTerm,
-                                     long Offset,
-                                     byte[] Data,
-                                     bool Done);
+                                     ISnapshot Snapshot);

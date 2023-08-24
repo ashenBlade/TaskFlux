@@ -372,4 +372,29 @@ public class FileLogStorageTests
         var actual = log.GetLastLogEntry();
         Assert.Equal(expected, actual);
     }
+
+    [Fact]
+    public void ClearCommandLog__КогдаВЛогеОднаКоманда__ДолженОчиститьЛог()
+    {
+        using var memory = new MemoryStream();
+        var log = new FileLogStorage(memory);
+        log.AppendRange(new[] {Entry(123, "Hello, world")});
+
+        log.ClearCommandLog();
+
+        var stored = log.ReadAll();
+        Assert.Empty(stored);
+    }
+
+    [Fact]
+    public void ClearCommandLog__КогдаВЛогеОднаКоманда__ДолженУстановитьРазмерВ0()
+    {
+        using var memory = new MemoryStream();
+        var log = new FileLogStorage(memory);
+        log.AppendRange(new[] {Entry(123, "Hello, world")});
+
+        log.ClearCommandLog();
+
+        Assert.Equal(0, log.Count);
+    }
 }

@@ -71,8 +71,14 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
     public PeerGroup PeerGroup =>
         _module.PeerGroup;
 
-    public IStateMachine<TCommand, TResult> StateMachine =>
-        _module.StateMachine;
+    public IStateMachine<TCommand, TResult> StateMachine
+    {
+        get => _module.StateMachine;
+        set => _module.StateMachine = value;
+    }
+
+    public IStateMachineFactory<TCommand, TResult> StateMachineFactory =>
+        _module.StateMachineFactory;
 
     public IMetadataStorage MetadataStorage =>
         _module.MetadataStorage;
@@ -106,11 +112,11 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
         return _module.Handle(request);
     }
 
-    public InstallSnapshotResponse Handle(InstallSnapshotRequest request)
+    public InstallSnapshotResponse Handle(InstallSnapshotRequest request, CancellationToken token)
     {
-        return _module.Handle(request);
+        return _module.Handle(request, token);
     }
-
+    
     public event RoleChangedEventHandler? RoleChanged
     {
         add => _module.RoleChanged += value;

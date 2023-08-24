@@ -30,6 +30,7 @@ public abstract class ConsensusModuleState<TCommand, TResponse>
     protected NodeId? VotedFor => ConsensusModule.VotedFor;
     protected ICommandQueue CommandQueue => ConsensusModule.CommandQueue;
     protected IStateMachine<TCommand, TResponse> StateMachine => ConsensusModule.StateMachine;
+    protected IStateMachineFactory<TCommand, TResponse> StateMachineFactory => ConsensusModule.StateMachineFactory;
     protected NodeId Id => ConsensusModule.Id;
     protected ITimer ElectionTimer => ConsensusModule.ElectionTimer;
     protected ITimer HeartbeatTimer => ConsensusModule.HeartbeatTimer;
@@ -91,6 +92,7 @@ public abstract class ConsensusModuleState<TCommand, TResponse>
     /// Применить команду InstallSnapshot для создания нового снапшота, принятого от лидера
     /// </summary>
     /// <param name="request"><see cref="InstallSnapshotRequest"/></param>
+    /// <param name="cancellationToken"></param>
     /// <returns><see cref="InstallSnapshotResponse"/></returns>
-    public abstract InstallSnapshotResponse Apply(InstallSnapshotRequest request);
+    public abstract InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken cancellationToken);
 }

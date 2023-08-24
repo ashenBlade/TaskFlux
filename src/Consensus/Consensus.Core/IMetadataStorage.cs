@@ -2,6 +2,9 @@ using TaskFlux.Core;
 
 namespace Consensus.Core;
 
+/// <summary>
+/// Объект-обертка вокруг файла метаданных рафта - `consensus/raft.metadata`
+/// </summary>
 public interface IMetadataStorage
 {
     /// <summary>

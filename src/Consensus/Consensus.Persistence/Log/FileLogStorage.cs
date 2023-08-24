@@ -322,14 +322,8 @@ public class FileLogStorage : ILogStorage, IDisposable
 
     public void ClearCommandLog()
     {
-        // Оптимально ли?
         _fileStream.SetLength(DataStartPosition);
-    }
-
-    private void Serialize(LogEntry entry)
-    {
-        _writer.Write(entry.Term.Value);
-        _writer.WriteBuffer(entry.Data);
+        _index.Clear();
     }
 
     /// <summary>

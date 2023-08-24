@@ -7,6 +7,7 @@ namespace TaskFlux.Host.Helpers;
 
 public class PrioritizedJobQueueFactory : IJobQueueFactory
 {
+    public static readonly PrioritizedJobQueueFactory Instance = new();
     public IJobQueue CreateJobQueue(QueueName name,
                                     uint maxSize,
                                     IReadOnlyCollection<(long Priority, byte[] Payload)> data)

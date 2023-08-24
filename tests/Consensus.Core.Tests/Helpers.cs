@@ -16,6 +16,14 @@ public static class Helpers
     public static readonly IBackgroundJobQueue NullBackgroundJobQueue = CreateNullJobQueue();
     public static readonly ITimer NullTimer = CreateNullTimer();
     public static readonly IStateMachine NullStateMachine = CreateNullStateMachine();
+    public static readonly IStateMachineFactory NullStateMachineFactory = CreateNullStateMachineFactory();
+
+    private static IStateMachineFactory CreateNullStateMachineFactory()
+    {
+        var mock = new Mock<IStateMachineFactory>();
+        return mock.Object;
+    }
+
     public static readonly IMetadataStorage NullMetadataStorage = CreateNullStorage();
     public static readonly IRequestQueueFactory NullRequestQueueFactory = CreateNullRequestQueueFactory();
 
@@ -97,6 +105,7 @@ public static class Helpers
             log ?? CreateLog(),
             commandQueue ?? DefaultCommandQueue,
             NullStateMachine,
+            NullStateMachineFactory,
             new StubMetadataStorage(currentTerm, votedFor),
             new StubSerializer<int>() {Deserialized = 1, Serialized = Array.Empty<byte>()}, NullRequestQueueFactory);
     }

@@ -72,7 +72,9 @@ public interface IConsensusModule<TCommand, TResponse>
     /// <summary>
     /// Объект, представляющий текущий узел
     /// </summary>
-    public IStateMachine<TCommand, TResponse> StateMachine { get; }
+    public IStateMachine<TCommand, TResponse> StateMachine { get; set; }
+    
+    public IStateMachineFactory<TCommand, TResponse> StateMachineFactory { get; }
 
     public IMetadataStorage MetadataStorage { get; }
     public ISerializer<TCommand> CommandSerializer { get; }
@@ -87,7 +89,7 @@ public interface IConsensusModule<TCommand, TResponse>
     public RequestVoteResponse Handle(RequestVoteRequest request);
     public AppendEntriesResponse Handle(AppendEntriesRequest request);
     public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request);
-    public InstallSnapshotResponse Handle(InstallSnapshotRequest request);
+    public InstallSnapshotResponse Handle(InstallSnapshotRequest request, CancellationToken token);
 
     /// <summary>
     /// Событие, вызывающееся при обновлении роли узла

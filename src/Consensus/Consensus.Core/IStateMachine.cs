@@ -1,4 +1,5 @@
 ﻿using Consensus.Core.Log;
+using Consensus.Core.Persistence;
 
 namespace Consensus.Core;
 

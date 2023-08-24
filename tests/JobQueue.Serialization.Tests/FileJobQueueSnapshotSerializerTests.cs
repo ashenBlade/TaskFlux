@@ -10,9 +10,9 @@ public class FileJobQueueSnapshotSerializerTests
     private static void AssertBase(StubJobQueue queue)
     {
         var stream = new MemoryStream();
-        Serializer.Serialize(stream, queue);
+        Serializer.Serialize(stream, new[] {queue});
         stream.Position = 0;
-        var actual = Serializer.Deserialize(stream);
+        var actual = Serializer.Deserialize(stream).Single();
         Assert.Equal(queue, actual, JobQueueEqualityComparer.Instance);
     }
 

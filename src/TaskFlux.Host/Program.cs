@@ -12,6 +12,7 @@ using Consensus.Peer;
 using Consensus.Peer.Decorators;
 using Consensus.Persistence;
 using Consensus.Persistence.Log;
+using Consensus.Persistence.Metadata;
 using Consensus.Persistence.Snapshot;
 using Consensus.StateMachine.TaskFlux;
 using Consensus.Storage.File.Log.Decorators;
@@ -26,6 +27,7 @@ using Microsoft.Extensions.Configuration;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Serialization;
+using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 using TaskFlux.Host;
 using TaskFlux.Host.Helpers;
@@ -83,10 +85,8 @@ try
     Log.Logger.Information("Инициализирую хранилище метаданных");
     var (metadataStorage, _) = CreateMetadataStorage(metadataFileStream);
 
-    Log.Information("Открываю файл с логом предзаписи");
-    await using var fileStream = GetLogFileStream(serverOptions);
-    Log.Information("Инициализирую хранилище лога предзаписи");
-    var (storage, fileStorage) = CreateLogStorage(fileStream);
+    Log.Information("Инициализирую хранилище лога команд");
+    var (storage, fileStorage) = CreateLogStorage();
     var log = CreateStorageLog(storage);
 
     Log.Information("Создаю очередь машины состояний");
@@ -105,7 +105,7 @@ try
     using var commandQueue = new ChannelCommandQueue();
 
     using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, electionTimer, heartbeatTimer, log,
-        commandQueue, jobQueueStateMachine, metadataStorage);
+        commandQueue, jobQueueStateMachine, metadataStorage, nodeInfo, appInfo, clusterInfo);
     var consensusModule =
         new InfoUpdaterConsensusModuleDecorator<Command, Result>(raftConsensusModule, clusterInfo, nodeInfo);
 
@@ -230,22 +230,8 @@ EndPoint GetEndpoint(string host, int port)
     return new DnsEndPoint(host, port);
 }
 
-FileStream GetLogFileStream(RaftServerOptions options)
+( ILogStorage, FileLogStorage ) CreateLogStorage()
 {
-    try
-    {
-        return File.Open(options.LogFile, FileMode.OpenOrCreate, FileAccess.ReadWrite);
-    }
-    catch (Exception e)
-    {
-        Log.Fatal(e, "Не удалось получить доступ к файлу лога {Filename}", options.LogFile);
-        throw;
-    }
-}
-
-( ILogStorage, FileLogStorage ) CreateLogStorage(Stream stream)
-{
-    stream = new BufferedStream(stream);
     FileLogStorage fileStorage;
 
     try
@@ -323,7 +309,7 @@ INode CreateNode(IApplicationInfo applicationInfo)
     var defaultJobQueue = PrioritizedJobQueue.CreateUnbounded(applicationInfo.DefaultQueueName,
         new StandardLibraryPriorityQueue<long, byte[]>());
     var jobQueueManager = new SimpleJobQueueManager(defaultJobQueue);
-    return new SingleJobQueueNode(jobQueueManager);
+    return new TaskFluxNode(jobQueueManager);
 }
 
 RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
@@ -333,16 +319,20 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
                                                                IPersistenceManager storageLog,
                                                                ICommandQueue channelCommandQueue,
                                                                IStateMachine<Command, Result> stateMachine,
-                                                               IMetadataStorage metadataStorage)
+                                                               IMetadataStorage metadataStorage,
+                                                               INodeInfo nodeInfo,
+                                                               IApplicationInfo appInfo,
+                                                               IClusterInfo clusterInfo)
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
     var logger = Log.ForContext("SourceContext", "Raft");
     var commandSerializer = new ProxyCommandSerializer();
     var requestQueueFactory = new ChannelRequestQueueFactory(storageLog);
     var peerGroup = new PeerGroup(peers);
+    var stateMachineFactory = new TaskFluxStateMachineFactory(nodeInfo, appInfo, clusterInfo);
 
     return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, randomizedTimer, systemTimersTimer,
-        jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage, commandSerializer,
+        jobQueue, storageLog, channelCommandQueue, stateMachine, stateMachineFactory, metadataStorage, commandSerializer,
         requestQueueFactory);
 }
 
