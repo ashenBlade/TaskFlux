@@ -23,6 +23,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\JobQueue\JobQueue.Serialization\JobQueue.Serialization.csproj"/>
+        <ProjectReference Include="..\JobQueue.Core.TestHelpers\JobQueue.Core.TestHelpers.csproj"/>
     </ItemGroup>
 
 </Project>

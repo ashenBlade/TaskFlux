@@ -6,6 +6,14 @@ public class StubJobQueue : IJobQueue
 {
     private readonly uint _maxSize;
 
+    public StubJobQueue(QueueName name, uint maxSize = 0, (long, byte[])[]? elements = null)
+    {
+        _maxSize = maxSize;
+        Name = name;
+        _data = elements ?? Array.Empty<(long, byte[])>();
+        Metadata = new StubMetadata(this);
+    }
+
     public StubJobQueue(QueueName name, uint maxSize = 0, IEnumerable<(long, byte[])>? elements = null)
     {
         _maxSize = maxSize;

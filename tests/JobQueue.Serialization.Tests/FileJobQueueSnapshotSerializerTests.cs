@@ -1,4 +1,5 @@
 using JobQueue.Core;
+using JobQueue.Core.TestHelpers;
 
 namespace JobQueue.Serialization.Tests;
 
@@ -14,6 +15,16 @@ public class FileJobQueueSnapshotSerializerTests
         stream.Position = 0;
         var actual = Serializer.Deserialize(stream).Single();
         Assert.Equal(queue, actual, JobQueueEqualityComparer.Instance);
+    }
+
+    private static void AssertBase(IEnumerable<StubJobQueue> queues)
+    {
+        var stream = new MemoryStream();
+        var expected = queues.ToHashSet();
+        Serializer.Serialize(stream, expected);
+        stream.Position = 0;
+        var actual = Serializer.Deserialize(stream).ToHashSet();
+        Assert.Equal(expected, actual, JobQueueEqualityComparer.Instance);
     }
 
     private static readonly QueueName DefaultName = QueueNameParser.Parse("hello");
@@ -73,5 +84,55 @@ public class FileJobQueueSnapshotSerializerTests
     public void Serialize__КогдаЭлементовНесколько(int count)
     {
         AssertBase(new StubJobQueue(DefaultName, 0, CreateRandomQueueElements(count)));
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
+    [InlineData(20)]
+    [InlineData(100)]
+    public void Serialize__КогдаПереданоНесколькоПустыхОчередей__ДолженПравильноДесериализовать(int count)
+    {
+        var queues = Enumerable.Range(0, count)
+                               .Select(x =>
+                                    new StubJobQueue(QueueNameHelpers.CreateRandomQueueName(), 0,
+                                        Array.Empty<(long, byte[])>()));
+        AssertBase(queues);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
+    [InlineData(20)]
+    public void Serialize__КогдаПереданоНесколькоНеПустыхОчередей__ДолженПравильноДесериализовать(int count)
+    {
+        var queues = Enumerable.Range(0, count)
+                               .Select(_ => new StubJobQueue(QueueNameHelpers.CreateRandomQueueName(), 0,
+                                    CreateRandomQueueElements(Random.Next(0, 255))));
+        AssertBase(queues);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
+    [InlineData(20)]
+    public void Serialize__КогдаПереданоНесколькоОграниченныхОчередей__ДолженПравильноДесериализовать(
+        int count)
+    {
+        var queues = Enumerable.Range(0, count)
+                               .Select(_ =>
+                                {
+                                    var limit = Random.Next(0, 255);
+                                    var data = CreateRandomQueueElements(Random.Next(0, limit));
+                                    return new StubJobQueue(QueueNameHelpers.CreateRandomQueueName(), ( uint ) limit,
+                                        data);
+                                });
+        AssertBase(queues);
     }
 }
