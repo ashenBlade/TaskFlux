@@ -40,7 +40,7 @@ public class FileJobQueueSnapshotSerializer : IJobQueueSnapshotSerializer
         foreach (var (priority, payload) in queue.GetAllData())
         {
             writer.Write(priority);
-            writer.Write(payload);
+            writer.WriteBuffer(payload);
         }
 
         destination.Flush();

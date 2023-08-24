@@ -70,7 +70,7 @@ public struct StreamBinaryReader
         }
     }
 
-    private int ReadInt32()
+    public int ReadInt32()
     {
         Span<byte> buffer = stackalloc byte[sizeof(int)];
         Stream.ReadExactly(buffer);

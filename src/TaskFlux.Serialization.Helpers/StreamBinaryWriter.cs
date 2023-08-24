@@ -34,7 +34,14 @@ public struct StreamBinaryWriter
         Stream.Write(buffer);
     }
 
-    public void Write(byte[] value)
+    public void Write(int value)
+    {
+        Span<byte> buffer = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32BigEndian(buffer, value);
+        Stream.Write(buffer);
+    }
+
+    public void WriteBuffer(byte[] value)
     {
         // Длина
         Span<byte> buffer = stackalloc byte[sizeof(int)];

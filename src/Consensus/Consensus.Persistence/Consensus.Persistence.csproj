@@ -7,6 +7,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\..\TaskFlux.Serialization.Helpers\TaskFlux.Serialization.Helpers.csproj"/>
         <ProjectReference Include="..\Consensus.Core\Consensus.Core.csproj"/>
     </ItemGroup>
 

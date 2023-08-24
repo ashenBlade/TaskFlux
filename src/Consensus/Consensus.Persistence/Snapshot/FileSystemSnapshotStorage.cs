@@ -5,6 +5,7 @@ using System.Text;
 using Consensus.Core;
 using Consensus.Core.Log;
 using Consensus.Storage.File;
+using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Persistence.Snapshot;
 
@@ -31,7 +32,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
 
     public ISnapshotFileWriter CreateTempSnapshotFile()
     {
-        return new SnapshotFileWriter(this);
+        return new FileSystemSnapshotFileWriter(this);
     }
 
     public LogEntryInfo? LastLogEntry => _snapshotFile.Exists
@@ -55,7 +56,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         return new LogEntryInfo(new Term(term), index);
     }
 
-    private class SnapshotFileWriter : ISnapshotFileWriter
+    private class FileSystemSnapshotFileWriter : ISnapshotFileWriter
     {
         /// <summary>
         /// Временный файл снапшота
@@ -92,7 +93,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             Initialized = 1,
 
             /// <summary>
-            /// Работа с файлом закончена (вызваны <see cref="SnapshotFileWriter.Save"/> или <see cref="SnapshotFileWriter.Discard"/>
+            /// Работа с файлом закончена (вызваны <see cref="FileSystemSnapshotFileWriter.Save"/> или <see cref="FileSystemSnapshotFileWriter.Discard"/>
             /// </summary>
             Finished = 2,
         }
@@ -102,7 +103,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         /// </summary>
         private SnapshotFileState _state = SnapshotFileState.Start;
 
-        public SnapshotFileWriter(FileSystemSnapshotStorage parent)
+        public FileSystemSnapshotFileWriter(FileSystemSnapshotStorage parent)
         {
             _parent = parent;
         }
@@ -126,7 +127,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             // 1. Создаем новый файл снапшота
             var (file, stream) = CreateAndOpenTemporarySnapshotFile();
 
-            var writer = new BinaryWriter(stream);
+            var writer = new StreamBinaryWriter(stream);
 
             // 2. Записываем маркер файла
             writer.Write(Marker);
@@ -161,7 +162,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             string GetRandomTempFileName()
             {
                 var fileName = Path.GetRandomFileName();
-                return Path.Combine(tempDir!.FullName, fileName);
+                return Path.Combine(tempDir.FullName, fileName);
             }
         }
 
@@ -185,11 +186,11 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             Debug.Assert(_writtenLogEntry is not null,
                 "Объект информации последней команды снапшота не должен быть null");
 
-            // 1. Флашим все данные 
+            // 1. Сбрасываем все данные на диск 
             _temporarySnapshotFileStream.Flush();
 
             // 3. Переименовываем новый
-            _temporarySnapshotFile.MoveTo(_parent._snapshotFile.FullName);
+            _temporarySnapshotFile.Replace(_parent._snapshotFile.FullName, Path.GetRandomFileName());
             _temporarySnapshotFileStream.Close();
 
             _parent._lastLogEntryInfo = _writtenLogEntry;
@@ -236,8 +237,8 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
                     throw new InvalidEnumArgumentException(nameof(_state), ( int ) _state, typeof(SnapshotFileState));
             }
 
-            // Наверное, надо добавить еще одно состояние,
-            // чтобы предотвратить повторную запись снапшота или нового
+            Debug.Assert(_temporarySnapshotFileStream is not null, "Поток файла снапшота не должен быть null");
+
             snapshot.WriteTo(_temporarySnapshotFileStream, token);
         }
     }

@@ -1,12 +1,12 @@
 using Consensus.Core;
 using Consensus.Core.Log;
-using Consensus.Persistence;
+using Consensus.Persistence.Snapshot;
 using Moq;
 
 namespace Consensus.Persistence.Tests;
 
 [Trait("Category", "Raft")]
-public class StorageLogTests
+public class StoragePersistenceManagerTests
 {
     private static LogEntry EmptyLogEntry(int term) => new LogEntry(new Term(term), Array.Empty<byte>());
 
@@ -129,7 +129,8 @@ public class StorageLogTests
         mock.SetupGet(x => x.Count)
             .Returns(0);
 
-        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance, new List<LogEntry>() {entry});
+        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance,
+            new List<LogEntry>() {entry});
 
         log.Commit(0);
 
@@ -422,5 +423,64 @@ public class StorageLogTests
         log.InsertRange(toInsert, insertIndex);
 
         Assert.Equal(expected, buffer);
+    }
+
+    [Fact]
+    public void SaveSnapshot__КогдаФайлаСнапшотаНеБыло__ДолженСоздатьНовыйФайлСнапшота()
+    {
+        var (fs, snapshot, tempDir) = Helpers.CreateBaseMockFileSystem(createEmptySnapshotFile: false);
+
+        var manager =
+            new StoragePersistenceManager(Helpers.NullStorage, new FileSystemSnapshotStorage(snapshot, tempDir));
+
+        var entry = new LogEntryInfo(new Term(1), 1);
+        var data = new byte[] {1, 2, 3};
+
+        manager.SaveSnapshot(entry, new StubSnapshot(data));
+
+        var fileSystemStream = snapshot.OpenRead();
+        var (actualLastEntry, actualData) = Helpers.ReadSnapshot(fileSystemStream);
+        Assert.Equal(entry, actualLastEntry);
+        Assert.Equal(data, actualData);
+    }
+
+    [Fact]
+    public void SaveSnapshot__КогдаФайлСнапшотаСуществовалПустой__ДолженПерезаписатьСтарыйФайл()
+    {
+        var (fs, snapshot, tempDir) = Helpers.CreateBaseMockFileSystem(createEmptySnapshotFile: true);
+        var entry = new LogEntryInfo(new Term(1), 1);
+        var data = new byte[] {1, 2, 4};
+
+        var manager =
+            new StoragePersistenceManager(Helpers.NullStorage, new FileSystemSnapshotStorage(snapshot, tempDir));
+        manager.SaveSnapshot(entry, new StubSnapshot(data));
+
+        var fileSystemStream = snapshot.OpenRead();
+        var (actualLastEntry, actualData) = Helpers.ReadSnapshot(fileSystemStream);
+        Assert.Equal(entry, actualLastEntry);
+        Assert.Equal(data, actualData);
+    }
+
+    [Fact]
+    public void SaveSnapshot__КогдаФайлСнапшотаСуществовалСДанными__ДолженПерезаписатьСтарыйФайл()
+    {
+        var (fs, snapshot, tempDir) = Helpers.CreateBaseMockFileSystem(createEmptySnapshotFile: true);
+        var originalData = new byte[] {123, 123, 4, 1, 65, 86, 035, 37, 75};
+        using (var s = snapshot.OpenWrite())
+        {
+            s.Write(originalData);
+        }
+
+        var entry = new LogEntryInfo(new Term(1), 1);
+        var data = new byte[] {1, 2, 4};
+
+        var manager =
+            new StoragePersistenceManager(Helpers.NullStorage, new FileSystemSnapshotStorage(snapshot, tempDir));
+        manager.SaveSnapshot(entry, new StubSnapshot(data));
+
+        var fileSystemStream = snapshot.OpenRead();
+        var (actualLastEntry, actualData) = Helpers.ReadSnapshot(fileSystemStream);
+        Assert.Equal(entry, actualLastEntry);
+        Assert.Equal(data, actualData);
     }
 }
