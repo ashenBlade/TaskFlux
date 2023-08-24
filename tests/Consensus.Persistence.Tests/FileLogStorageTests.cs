@@ -1,24 +1,25 @@
 using System.Text;
 using Consensus.Core;
 using Consensus.Core.Log;
-using Consensus.Storage.File.Log;
+using Consensus.Persistence.Log;
 
-namespace Consensus.Storage.File.Tests;
+namespace Consensus.Persistence.Tests;
 
 [Trait("Category", "Raft")]
 public class FileLogStorageTests
 {
-    public static LogEntry Entry(int term, string data) 
+    public static LogEntry Entry(int term, string data)
         => new(new Term(term), Encoding.UTF8.GetBytes(data));
-    
+
+
     [Fact]
     public void ReadLog__КогдаЛогПуст__ДолженВернутьПустойСписок()
     {
         using var memory = new MemoryStream();
         var storage = new FileLogStorage(memory);
-        
+
         var log = storage.ReadAll();
-        
+
         Assert.Empty(log);
     }
 
@@ -36,34 +37,34 @@ public class FileLogStorageTests
         for (int i = 0; i < operationsCount; i++)
         {
             var log = storage.ReadAll();
-        
+
             Assert.Empty(log);
         }
     }
-    
+
     [Fact]
     public void ReadLogПослеAppend__КогдаЛогПуст__ДолженВернутьСписокИзЕдинственнойЗаписи()
     {
         using var memory = new MemoryStream();
         var storage = new FileLogStorage(memory);
-        
+
         var entry = Entry(1, "some data");
         storage.Append(entry);
         var log = storage.ReadAll();
-        
+
         Assert.Single(log);
     }
-    
+
     [Fact]
     public void ReadLogПослеAppend__КогдаЛогПуст__ДолженВернутьСписокИзТойЖеЗаписи()
     {
         using var memory = new MemoryStream();
         var storage = new FileLogStorage(memory);
-        
+
         var expected = Entry(1, "some data");
         storage.Append(expected);
         var actual = storage.ReadAll().Single();
-        
+
         Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
     }
 
@@ -73,9 +74,9 @@ public class FileLogStorageTests
     [InlineData(3)]
     [InlineData(10)]
     [InlineData(20)]
-    public void ReadLogПослеНесколькихAppend__КогдаЛогПуст__ДолженВернутьСписокСТакимЖеКоличествомДобавленныхЗаписей(int entriesCount)
+    public void ReadLogПослеНесколькихAppend__КогдаЛогПуст__ДолженВернутьСписокСТакимЖеКоличествомДобавленныхЗаписей(
+        int entriesCount)
     {
-        
         using var memory = new MemoryStream();
         var storage = new FileLogStorage(memory);
 
@@ -83,13 +84,12 @@ public class FileLogStorageTests
         {
             var expected = Entry(i, $"some data {i}");
             storage.Append(expected);
-            
         }
-        
+
         var actual = storage.ReadAll();
         Assert.Equal(entriesCount, actual.Count);
     }
-    
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
@@ -98,7 +98,6 @@ public class FileLogStorageTests
     [InlineData(20)]
     public void ReadLogПослеНесколькихAppend__КогдаЛогПуст__ДолженВернутьСписокСДобавленнымиЗаписями(int entriesCount)
     {
-        
         using var memory = new MemoryStream();
         var storage = new FileLogStorage(memory);
 
@@ -110,18 +109,19 @@ public class FileLogStorageTests
         {
             storage.Append(entry);
         }
-        
+
         var actual = storage.ReadAll();
         Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
     }
-    
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(10)]
     [InlineData(20)]
-    public void ReadLogПослеAppendRange__КогдаЛогПуст__ДолженВернутьСписокСТакимЖеКоличествомДобавленныхЗаписей(int entriesCount)
+    public void ReadLogПослеAppendRange__КогдаЛогПуст__ДолженВернутьСписокСТакимЖеКоличествомДобавленныхЗаписей(
+        int entriesCount)
     {
         using var memory = new MemoryStream();
         var storage = new FileLogStorage(memory);
@@ -131,7 +131,7 @@ public class FileLogStorageTests
                                  .ToArray();
 
         storage.AppendRange(expected);
-        
+
         var actual = storage.ReadAll();
         Assert.Equal(entriesCount, actual.Count);
     }
@@ -152,10 +152,10 @@ public class FileLogStorageTests
         using var memory = new MemoryStream();
         var storage = new FileLogStorage(memory);
         var expected = Entry(2, "sample data");
-        
+
         storage.Append(expected);
         var actual = storage.ReadFrom(0).Single();
-        
+
         Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
     }
 
@@ -204,7 +204,7 @@ public class FileLogStorageTests
         firstLog.AppendRange(entries);
         var secondLog = new FileLogStorage(memory);
         var actual = secondLog.ReadAll();
-        
+
         Assert.Equal(entries, actual, LogEntryEqualityComparer.Instance);
     }
 
@@ -224,15 +224,15 @@ public class FileLogStorageTests
                                  .Select(i => Entry(i, $"data {i}"))
                                  .ToArray();
         var expected = initial.Concat(appended).ToArray();
-        
+
         var firstLog = new FileLogStorage(memory);
         firstLog.AppendRange(initial);
         firstLog.AppendRange(appended);
-        
+
         var actual = firstLog.ReadAll();
         Assert.Equal(expected, actual, LogEntryEqualityComparer.Instance);
     }
-    
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
@@ -246,13 +246,13 @@ public class FileLogStorageTests
         var initial = Enumerable.Range(1, logSize)
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
-        
+
         var log = new FileLogStorage(memory);
         log.AppendRange(initial);
-        
+
         for (int index = 0; index < logSize; index++)
         {
-            var expected = new LogEntryInfo( initial[index].Term, index );
+            var expected = new LogEntryInfo(initial[index].Term, index);
             var actual = log.GetAt(index);
             Assert.Equal(expected, actual);
         }
@@ -263,7 +263,7 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var expected = LogEntryInfo.Tomb;
-        
+
         var log = new FileLogStorage(memory);
 
         var actual = log.GetPrecedingLogEntryInfo(0);
@@ -282,7 +282,7 @@ public class FileLogStorageTests
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         var expected = LogEntryInfo.Tomb;
-        
+
         var log = new FileLogStorage(memory);
         log.AppendRange(initial);
 
@@ -304,7 +304,7 @@ public class FileLogStorageTests
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         var expected = new LogEntryInfo(initial[^1].Term, initial.Length - 1);
-        
+
         var log = new FileLogStorage(memory);
         log.AppendRange(initial);
 
@@ -325,14 +325,14 @@ public class FileLogStorageTests
         var initial = Enumerable.Range(1, logSize)
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
-        
+
         var log = new FileLogStorage(memory);
         log.AppendRange(initial);
-        
+
         for (int index = 1; index <= logSize; index++)
         {
             var expected = new LogEntryInfo(initial[index - 1].Term, index - 1);
-            
+
             var actual = log.GetPrecedingLogEntryInfo(index);
             Assert.Equal(expected, actual);
         }
@@ -343,7 +343,7 @@ public class FileLogStorageTests
     {
         using var memory = new MemoryStream();
         var expected = LogEntryInfo.Tomb;
-        
+
         var log = new FileLogStorage(memory);
 
         var actual = log.GetLastLogEntry();
@@ -364,11 +364,11 @@ public class FileLogStorageTests
         var initial = Enumerable.Range(1, logSize)
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
-        
+
         var log = new FileLogStorage(memory);
         log.AppendRange(initial);
 
-        var expected = new LogEntryInfo( initial[^1].Term, initial.Length - 1 );
+        var expected = new LogEntryInfo(initial[^1].Term, initial.Length - 1);
         var actual = log.GetLastLogEntry();
         Assert.Equal(expected, actual);
     }

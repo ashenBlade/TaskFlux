@@ -1,23 +1,25 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.IO.Abstractions;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Consensus.Core;
 using Consensus.Core.Log;
-using Consensus.Persistence;
+using Consensus.Storage.File;
+using Consensus.Storage.File.Log;
 
-namespace Consensus.Storage.File.Log;
+namespace Consensus.Persistence.Log;
 
-public class FileLogStorage : ILogStorage
+public class FileLogStorage : ILogStorage, IDisposable
 {
     private const int Marker = Constants.Marker;
 
     /// <summary>
     /// Версия-константа для бинарной совместимости.
-    /// Вряд-ли будет использоваться, но выглядит значимо
+    /// Вряд-ли будет использоваться, но звучит значимо
     /// </summary>
     private const int CurrentVersion = 1;
 
     /// <summary>
-    /// Общий размер заголовка: Маркер + Версия
+    /// Общий размер заголовка в байтах: Маркер + Версия
     /// </summary>
     private const int HeaderSizeBytes = 8;
 
@@ -34,8 +36,9 @@ public class FileLogStorage : ILogStorage
     /// <remarks>
     /// Используется базовый <see cref="Stream"/> вместо <see cref="FileStream"/> для тестирования
     /// </remarks>
-    private readonly Stream _file;
+    private readonly Stream _fileStream;
 
+    // TODO: поменять на свои классы для BigEndian
     private readonly BinaryReader _reader;
     private readonly BinaryWriter _writer;
 
@@ -49,26 +52,27 @@ public class FileLogStorage : ILogStorage
     /// </summary>
     private volatile bool _initialized;
 
-    public FileLogStorage(Stream file)
+    internal FileLogStorage(Stream fileStream)
     {
-        if (!file.CanRead)
+        if (!fileStream.CanRead)
         {
-            throw new ArgumentException("Переданный поток не поддерживает чтение", nameof(file));
+            throw new ArgumentException("Переданный поток не поддерживает чтение", nameof(fileStream));
         }
 
-        if (!file.CanSeek)
+        if (!fileStream.CanSeek)
         {
-            throw new ArgumentException("Переданный поток не поддерживает позиционирование", nameof(file));
+            throw new ArgumentException("Переданный поток не поддерживает позиционирование", nameof(fileStream));
         }
 
-        if (!file.CanWrite)
+        if (!fileStream.CanWrite)
         {
-            throw new ArgumentException("Переданный поток не поддерживает запись", nameof(file));
+            throw new ArgumentException("Переданный поток не поддерживает запись", nameof(fileStream));
         }
 
-        _file = file;
-        _writer = new BinaryWriter(file, Encoding, true);
-        _reader = new BinaryReader(file, Encoding, true);
+        _fileStream = fileStream;
+
+        _writer = new BinaryWriter(fileStream, Encoding, true);
+        _reader = new BinaryReader(fileStream, Encoding, true);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -76,18 +80,19 @@ public class FileLogStorage : ILogStorage
     {
         if (!_initialized)
         {
-            Initialize();
+            UpdateIndex();
         }
     }
 
     /// <summary>
-    /// Проверить и инициализировать поток
+    /// Прочитать и инициализировать индекс с диска.
+    /// Выполняется во время первоначальноий инициализации
     /// </summary>
-    private void Initialize()
+    private void UpdateIndex()
     {
-        if (_file.Length == 0)
+        if (_fileStream.Length == 0)
         {
-            _file.Seek(0, SeekOrigin.Begin);
+            _fileStream.Seek(0, SeekOrigin.Begin);
             _writer.Write(Marker);
             _writer.Write(CurrentVersion);
             _writer.Flush();
@@ -97,13 +102,13 @@ public class FileLogStorage : ILogStorage
             return;
         }
 
-        if (_file.Length < HeaderSizeBytes)
+        if (_fileStream.Length < HeaderSizeBytes)
         {
             throw new InvalidDataException(
-                $"Минимальный размер файла должен быть {HeaderSizeBytes}. Длина файла оказалась {_file.Length}");
+                $"Минимальный размер файла должен быть {HeaderSizeBytes}. Длина файла оказалась {_fileStream.Length}");
         }
 
-        _file.Seek(0, SeekOrigin.Begin);
+        _fileStream.Seek(0, SeekOrigin.Begin);
 
         // Валидируем заголовок
         var marker = _reader.ReadInt32();
@@ -126,11 +131,11 @@ public class FileLogStorage : ILogStorage
         try
         {
             long filePosition;
-            while (( filePosition = _file.Position ) < _file.Length)
+            while (( filePosition = _fileStream.Position ) < _fileStream.Length)
             {
                 var term = _reader.ReadInt32();
                 var dataLength = _reader.ReadInt32();
-                _file.Seek(dataLength, SeekOrigin.Current);
+                _fileStream.Seek(dataLength, SeekOrigin.Current);
                 index.Add(new PositionTerm(new Term(term), filePosition));
             }
         }
@@ -148,13 +153,13 @@ public class FileLogStorage : ILogStorage
 
     // Очень надеюсь, что такого никогда не произойдет
     // Чтобы такого точно не произошло, надо на уровне выставления максимального размера файла лога ограничение сделать
-    public ulong Size => checked( ( ulong ) _file.Length );
+    public ulong Size => checked( ( ulong ) _fileStream.Length );
 
     public LogEntryInfo Append(LogEntry entry)
     {
         CheckInitialized();
 
-        var savedLastPosition = _file.Seek(0, SeekOrigin.End);
+        var savedLastPosition = _fileStream.Seek(0, SeekOrigin.End);
         try
         {
             Serialize(entry, _writer);
@@ -162,7 +167,7 @@ public class FileLogStorage : ILogStorage
         }
         catch (Exception)
         {
-            _file.Position = savedLastPosition;
+            _fileStream.Position = savedLastPosition;
             throw;
         }
 
@@ -184,7 +189,7 @@ public class FileLogStorage : ILogStorage
         using var memory = CreateMemoryStream();
         using var writer = new BinaryWriter(memory, Encoding, true);
 
-        var startPosition = _file.Length;
+        var startPosition = _fileStream.Length;
 
         foreach (var entry in entriesArray)
         {
@@ -280,9 +285,9 @@ public class FileLogStorage : ILogStorage
 
     private IEnumerable<LogEntry> ReadLogIncrementally(long position)
     {
-        _file.Seek(position, SeekOrigin.Begin);
+        _fileStream.Seek(position, SeekOrigin.Begin);
 
-        while (_file.Position != _file.Length)
+        while (_fileStream.Position != _fileStream.Length)
         {
             var term = new Term(_reader.ReadInt32());
             var bufferLength = _reader.ReadInt32();
@@ -340,7 +345,7 @@ public class FileLogStorage : ILogStorage
     public void ClearCommandLog()
     {
         // Оптимально ли?
-        _file.SetLength(DataStartPosition);
+        _fileStream.SetLength(DataStartPosition);
     }
 
     private static void Serialize(LogEntry entry, BinaryWriter writer)
@@ -351,22 +356,79 @@ public class FileLogStorage : ILogStorage
     }
 
     /// <summary>
-    /// Создать новый <see cref="FileLogStorage"/> и тут же его инициализировать
+    /// Создать новый <see cref="FileLogStorage"/> и тут же его инициализировать.
+    /// Испольуется во время старта приложения.
     /// </summary>
-    /// <param name="stream">Переданный поток. В проде - файл (<see cref="FileStream"/>)</param>
+    /// <param name="consensusDirectory">
+    /// Информация о директории с данными рафта.
+    /// В базовой директории - это `{BASE}/consensus`.
+    /// В ней должен лежать файл с логом - `raft.log`
+    /// </param>
     /// <returns>Новый, иницилизированный <see cref="FileLogStorage"/></returns>
-    /// <exception cref="ArgumentException"><paramref name="stream"/> - не поддерживает чтение, запись или позиционирование</exception>
     /// <exception cref="InvalidDataException">
     /// Обнаружены ошибки во время инициализации файла (потока) данных: <br/>
     ///    - Поток не пуст и при этом его размер меньше минимального (размер заголовка) <br/> 
     ///    - Полученное магическое число не соответствует требуемому <br/>
     ///    - Указанная в файле версия несовместима с текущей <br/>\
     /// </exception>
-    /// <exception cref="IOException">Ошибка во время чтения из потока</exception>
-    public static FileLogStorage Initialize(Stream stream)
+    /// <exception cref="IOException">
+    /// - Ошибка во время создания нового файла лога, либо <br/>
+    /// - Ошибка во время открытия сущесвтующего файла лога, либо <br/>
+    /// </exception>
+    public static FileLogStorage Initialize(IDirectoryInfo consensusDirectory)
     {
-        var logStorage = new FileLogStorage(stream);
-        logStorage.Initialize();
+        var fileStream = OpenOrCreateLogFile();
+
+        var logStorage = new FileLogStorage(fileStream);
+        logStorage.UpdateIndex();
         return logStorage;
+
+        FileSystemStream OpenOrCreateLogFile()
+        {
+            var file = consensusDirectory.FileSystem.FileInfo.New(Path.Combine(consensusDirectory.FullName,
+                Constants.LogFileName));
+            FileSystemStream stream;
+
+            if (!file.Exists)
+            {
+                try
+                {
+                    stream = file.Create();
+                }
+                catch (UnauthorizedAccessException uae)
+                {
+                    throw new IOException(
+                        "Не удалось создать новый файл лога команд для рафта: нет прав для создания файла", uae);
+                }
+                catch (IOException e)
+                {
+                    throw new IOException("Не удалось создать новый файл лога команд для рафта", e);
+                }
+            }
+            else
+            {
+                try
+                {
+                    stream = file.Open(FileMode.Open);
+                }
+                catch (UnauthorizedAccessException uae)
+                {
+                    throw new IOException("Не удалось открыть файл лога команд: ошибка доступа к файлу", uae);
+                }
+                catch (IOException e)
+                {
+                    throw new IOException("Не удалось открыть файл лога команд: файл уже открыт", e);
+                }
+            }
+
+            return stream;
+        }
+    }
+
+    public void Dispose()
+    {
+        _fileStream.Flush();
+        _fileStream.Close();
+        _fileStream.Dispose();
     }
 }

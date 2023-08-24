@@ -11,9 +11,9 @@ using Consensus.JobQueue;
 using Consensus.Peer;
 using Consensus.Peer.Decorators;
 using Consensus.Persistence;
+using Consensus.Persistence.Log;
 using Consensus.Persistence.Snapshot;
 using Consensus.StateMachine.TaskFlux;
-using Consensus.Storage.File.Log;
 using Consensus.Storage.File.Log.Decorators;
 using Consensus.Storage.File.Metadata;
 using Consensus.Storage.File.Metadata.Decorators;
@@ -247,9 +247,10 @@ FileStream GetLogFileStream(RaftServerOptions options)
 {
     stream = new BufferedStream(stream);
     FileLogStorage fileStorage;
+
     try
     {
-        fileStorage = FileLogStorage.Initialize(stream);
+        fileStorage = FileLogStorage.Initialize(GetConsensusDirectory());
     }
     catch (InvalidDataException invalidDataException)
     {
@@ -264,6 +265,13 @@ FileStream GetLogFileStream(RaftServerOptions options)
 
     ILogStorage logStorage = new LastLogEntryCachingFileLogStorageDecorator(fileStorage);
     return ( logStorage, fileStorage );
+
+
+    IDirectoryInfo GetConsensusDirectory()
+    {
+        var cwd = Directory.GetCurrentDirectory();
+        return new DirectoryInfoWrapper(new FileSystem(), new DirectoryInfo(Path.Combine(cwd, "consensus")));
+    }
 }
 
 FileStream OpenMetadataFile(RaftServerOptions options)
