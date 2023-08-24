@@ -2,6 +2,9 @@ using Consensus.Core.Log;
 
 namespace Consensus.Persistence;
 
+/// <summary>
+/// Объект-обертка над файлом лога команд - `consensus/raft.log`
+/// </summary>
 public interface ILogStorage
 {
     /// <summary>
@@ -25,7 +28,6 @@ public interface ILogStorage
     /// Добавить в хранилище несколько записей лога
     /// </summary>
     /// <param name="entries">Записи, которые необходимо добавить</param>
-    /// <param name="index">Индекс, начиная с которого необходимо добавить записи</param>
     /// <returns>Информация о последней записе лога</returns>
     public LogEntryInfo AppendRange(IEnumerable<LogEntry> entries);
 
@@ -60,7 +62,7 @@ public interface ILogStorage
     /// </summary>
     /// <param name="index"></param>
     /// <returns></returns>
-    public LogEntryInfo GetAt(int index);
+    public LogEntryInfo GetInfoAt(int index);
 
     /// <summary>
     /// Получить срез лога с <paramref name="start"/> до <paramref name="end"/> индекса включительно

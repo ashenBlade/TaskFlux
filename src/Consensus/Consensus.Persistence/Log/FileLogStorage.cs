@@ -1,10 +1,10 @@
-﻿using System.IO.Abstractions;
-using System.Runtime.CompilerServices;
-using System.Text;
+﻿using System.Buffers;
+using System.IO.Abstractions;
 using Consensus.Core;
 using Consensus.Core.Log;
 using Consensus.Storage.File;
 using Consensus.Storage.File.Log;
+using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Persistence.Log;
 
@@ -26,11 +26,6 @@ public class FileLogStorage : ILogStorage, IDisposable
     private const int DataStartPosition = HeaderSizeBytes;
 
     /// <summary>
-    /// Кодировка, используемая для сериализации/десериализации команды
-    /// </summary>
-    private static readonly Encoding Encoding = Encoding.UTF8;
-
-    /// <summary>
     /// Поток, представляющий файл
     /// </summary>
     /// <remarks>
@@ -38,19 +33,13 @@ public class FileLogStorage : ILogStorage, IDisposable
     /// </remarks>
     private readonly Stream _fileStream;
 
-    // TODO: поменять на свои классы для BigEndian
-    private readonly BinaryReader _reader;
-    private readonly BinaryWriter _writer;
+    private StreamBinaryReader _reader;
+    private StreamBinaryWriter _writer;
 
     /// <summary>
     /// Список отображений: индекс записи - позиция в файле (потоке)
     /// </summary>
     private List<PositionTerm> _index = null!;
-
-    /// <summary>
-    /// Флаг инициализации
-    /// </summary>
-    private volatile bool _initialized;
 
     internal FileLogStorage(Stream fileStream)
     {
@@ -71,34 +60,26 @@ public class FileLogStorage : ILogStorage, IDisposable
 
         _fileStream = fileStream;
 
-        _writer = new BinaryWriter(fileStream, Encoding, true);
-        _reader = new BinaryReader(fileStream, Encoding, true);
-    }
+        _writer = new StreamBinaryWriter(fileStream);
+        _reader = new StreamBinaryReader(fileStream);
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void CheckInitialized()
-    {
-        if (!_initialized)
-        {
-            UpdateIndex();
-        }
+        Initialize();
     }
 
     /// <summary>
     /// Прочитать и инициализировать индекс с диска.
-    /// Выполняется во время первоначальноий инициализации
+    /// Выполняется во время создания объекта
     /// </summary>
-    private void UpdateIndex()
+    private void Initialize()
     {
         if (_fileStream.Length == 0)
         {
             _fileStream.Seek(0, SeekOrigin.Begin);
             _writer.Write(Marker);
             _writer.Write(CurrentVersion);
-            _writer.Flush();
+            // _writer.Flush();
 
             _index = new List<PositionTerm>();
-            _initialized = true;
             return;
         }
 
@@ -146,7 +127,6 @@ public class FileLogStorage : ILogStorage, IDisposable
         }
 
         _index = index;
-        _initialized = true;
     }
 
     public int Count => _index.Count;
@@ -157,67 +137,57 @@ public class FileLogStorage : ILogStorage, IDisposable
 
     public LogEntryInfo Append(LogEntry entry)
     {
-        CheckInitialized();
-
         var savedLastPosition = _fileStream.Seek(0, SeekOrigin.End);
-        try
-        {
-            Serialize(entry, _writer);
-            _writer.Flush();
-        }
-        catch (Exception)
-        {
-            _fileStream.Position = savedLastPosition;
-            throw;
-        }
-
+        _writer.Write(entry);
         _index.Add(new PositionTerm(entry.Term, savedLastPosition));
         return new LogEntryInfo(entry.Term, _index.Count - 1);
     }
 
     public LogEntryInfo AppendRange(IEnumerable<LogEntry> entries)
     {
-        CheckInitialized();
-
         // Вместо поочередной записи используем буффер в памяти.
         // Сначала запишем сериализованные данные на него, одновременно создавая новые записи индекса.
         // После быстро запишем данные на диск и обновим список индексов 
 
         var entriesArray = entries.ToArray();
-
         var newIndexes = new List<PositionTerm>(entriesArray.Length);
-        using var memory = CreateMemoryStream();
-        using var writer = new BinaryWriter(memory, Encoding, true);
 
-        var startPosition = _fileStream.Length;
-
-        foreach (var entry in entriesArray)
+        var size = CalculateBufferSize(entriesArray);
+        var position = _fileStream.Length;
+        var buffer = ArrayPool<byte>.Shared.Rent(size);
+        try
         {
-            var currentPosition = startPosition + memory.Position;
-            Serialize(entry, writer);
-            newIndexes.Add(new PositionTerm(entry.Term, currentPosition));
+            var writer = new MemoryBinaryWriter(buffer.AsMemory(0, size));
+            foreach (var entry in entriesArray)
+            {
+                var written = writer.Write(entry);
+                newIndexes.Add(new PositionTerm(entry.Term, position));
+                position += written;
+            }
+
+            _fileStream.Seek(0, SeekOrigin.End);
+            _writer.Write(buffer.AsSpan(0, size));
+            _writer.Flush();
+
+            _index.AddRange(newIndexes);
+
+            return GetLastLogEntryInfoCore();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        var dataBytes = memory.ToArray();
-        _writer.Seek(0, SeekOrigin.End);
-        _writer.Write(dataBytes);
-        _writer.Flush();
-        _index.AddRange(newIndexes);
-
-        return GetLastLogEntryInfoCore();
-
-        MemoryStream CreateMemoryStream()
+        int CalculateBufferSize(LogEntry[] logEntries)
         {
-            var capacity = ( sizeof(int) /* Терм */ + sizeof(int) /* Длина массива */ ) * entriesArray.Length
-                         + entriesArray.Sum(e => e.Data.Length);
-            return new MemoryStream(capacity);
+            return ( sizeof(int) /* Терм */ + sizeof(int) /* Длина массива */ ) * logEntries.Length
+                 + logEntries.Sum(e => e.Data.Length);
         }
     }
 
+
     private LogEntryInfo GetLastLogEntryInfoCore()
     {
-        CheckInitialized();
-
         return _index.Count == 0
                    ? LogEntryInfo.Tomb
                    : new LogEntryInfo(_index[^1].Term, _index.Count - 1);
@@ -226,8 +196,6 @@ public class FileLogStorage : ILogStorage, IDisposable
 
     public LogEntryInfo GetPrecedingLogEntryInfo(int nextIndex)
     {
-        CheckInitialized();
-
         if (nextIndex < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
@@ -247,8 +215,6 @@ public class FileLogStorage : ILogStorage, IDisposable
 
     public LogEntryInfo GetLastLogEntry()
     {
-        CheckInitialized();
-
         if (_index.Count == 0)
         {
             return LogEntryInfo.Tomb;
@@ -259,14 +225,11 @@ public class FileLogStorage : ILogStorage, IDisposable
 
     public IReadOnlyList<LogEntry> ReadAll()
     {
-        CheckInitialized();
-
         return ReadLogCore(DataStartPosition, _index.Count);
     }
 
     public IReadOnlyList<LogEntry> ReadFrom(int startIndex)
     {
-        CheckInitialized();
         if (_index.Count <= startIndex)
         {
             return Array.Empty<LogEntry>();
@@ -276,44 +239,59 @@ public class FileLogStorage : ILogStorage, IDisposable
         return ReadLogCore(position, _index.Count - startIndex);
     }
 
-    private IReadOnlyList<LogEntry> ReadLogCore(long position, int sizeHint)
+    private IReadOnlyList<LogEntry> ReadLogCore(long position, int countHint)
     {
-        var list = new List<LogEntry>(sizeHint);
+        var list = new List<LogEntry>(countHint);
         list.AddRange(ReadLogIncrementally(position));
         return list;
     }
 
+    /// <summary>
+    /// Читать данные из файла постепенно, начиная с указанной позиции
+    /// </summary>
+    /// <param name="position">Позиция в файле, с которой нужно читать команды</param>
+    /// <returns>Поток записей лога</returns>
+    /// <exception cref="InvalidDataException">В файле представлены неверные данные</exception>
+    /// <remarks>
+    /// Метод будет читать до конца, пока не дойдет до конца файла,
+    /// поэтому вызывающий должен контролировать сколько записей он хочет получить
+    /// </remarks>
     private IEnumerable<LogEntry> ReadLogIncrementally(long position)
     {
         _fileStream.Seek(position, SeekOrigin.Begin);
 
         while (_fileStream.Position != _fileStream.Length)
         {
-            var term = new Term(_reader.ReadInt32());
-            var bufferLength = _reader.ReadInt32();
-            var data = new byte[bufferLength];
-            var read = _reader.Read(data);
-            if (read < bufferLength)
+            yield return ReadNextLogEntry();
+        }
+
+        LogEntry ReadNextLogEntry()
+        {
+            try
+            {
+                var term = new Term(_reader.ReadInt32());
+                var buffer = _reader.ReadBuffer();
+                return new LogEntry(term, buffer);
+            }
+            catch (EndOfStreamException e)
             {
                 throw new InvalidDataException(
-                    $"Файл в неконсистентном состоянии: указанная длина буфера {bufferLength}, но удалось прочитать {read}");
+                    "Не удалось прочитать записи команд из файла лога: достигнут конец файла", e);
             }
-
-            yield return new LogEntry(term, data);
+            catch (ArgumentOutOfRangeException e)
+            {
+                throw new InvalidDataException("Сериализованное значение терма невалидное", e);
+            }
         }
     }
 
-    public LogEntryInfo GetAt(int index)
+    public LogEntryInfo GetInfoAt(int index)
     {
-        CheckInitialized();
-
         return new LogEntryInfo(_index[index].Term, index);
     }
 
     public IReadOnlyList<LogEntry> GetRange(int start, int end)
     {
-        CheckInitialized();
-
         if (_index.Count < end)
         {
             throw new InvalidOperationException(
@@ -348,11 +326,10 @@ public class FileLogStorage : ILogStorage, IDisposable
         _fileStream.SetLength(DataStartPosition);
     }
 
-    private static void Serialize(LogEntry entry, BinaryWriter writer)
+    private void Serialize(LogEntry entry)
     {
-        writer.Write(entry.Term.Value);
-        writer.Write(entry.Data.Length);
-        writer.Write(entry.Data);
+        _writer.Write(entry.Term.Value);
+        _writer.WriteBuffer(entry.Data);
     }
 
     /// <summary>
@@ -375,13 +352,11 @@ public class FileLogStorage : ILogStorage, IDisposable
     /// - Ошибка во время создания нового файла лога, либо <br/>
     /// - Ошибка во время открытия сущесвтующего файла лога, либо <br/>
     /// </exception>
-    public static FileLogStorage Initialize(IDirectoryInfo consensusDirectory)
+    public static FileLogStorage InitializeFromFileSystem(IDirectoryInfo consensusDirectory)
     {
         var fileStream = OpenOrCreateLogFile();
 
-        var logStorage = new FileLogStorage(fileStream);
-        logStorage.UpdateIndex();
-        return logStorage;
+        return new FileLogStorage(fileStream);
 
         FileSystemStream OpenOrCreateLogFile()
         {
@@ -430,5 +405,22 @@ public class FileLogStorage : ILogStorage, IDisposable
         _fileStream.Flush();
         _fileStream.Close();
         _fileStream.Dispose();
+    }
+}
+
+file static class SerializationHelpers
+{
+    public static int Write(this ref MemoryBinaryWriter writer, LogEntry entry)
+    {
+        var written = 0;
+        written += writer.Write(entry.Term.Value);
+        written += writer.WriteBuffer(entry.Data);
+        return written;
+    }
+
+    public static void Write(this StreamBinaryWriter writer, LogEntry entry)
+    {
+        writer.Write(entry.Term.Value);
+        writer.WriteBuffer(entry.Data);
     }
 }

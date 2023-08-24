@@ -292,7 +292,8 @@ public class StoragePersistenceManagerTests
 
         var mock = new Mock<ILogStorage>();
 
-        mock.Setup(x => x.GetAt(It.IsAny<int>())).Returns<int>((index) => new LogEntryInfo(storage[index].Term, index));
+        mock.Setup(x => x.GetInfoAt(It.IsAny<int>()))
+            .Returns<int>((index) => new LogEntryInfo(storage[index].Term, index));
         mock.SetupGet(x => x.Count).Returns(storageCount);
 
         var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance);
@@ -324,7 +325,7 @@ public class StoragePersistenceManagerTests
                                .ToList();
 
         var mock = new Mock<ILogStorage>();
-        mock.Setup(x => x.GetAt(It.IsAny<int>()))
+        mock.Setup(x => x.GetInfoAt(It.IsAny<int>()))
             .Returns<int>(index => new LogEntryInfo(storage[index].Term, index));
         mock.SetupGet(x => x.Count).Returns(storageCount);
 

@@ -60,14 +60,14 @@ public class LastLogEntryCachingFileLogStorageDecorator : ILogStorage
         return _storage.ReadFrom(startIndex);
     }
 
-    public LogEntryInfo GetAt(int index)
+    public LogEntryInfo GetInfoAt(int index)
     {
         if (index == _lastLogEntry.Index)
         {
             return _lastLogEntry;
         }
 
-        return _storage.GetAt(index);
+        return _storage.GetInfoAt(index);
     }
 
     public IReadOnlyList<LogEntry> GetRange(int start, int end)

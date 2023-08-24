@@ -250,7 +250,7 @@ FileStream GetLogFileStream(RaftServerOptions options)
 
     try
     {
-        fileStorage = FileLogStorage.Initialize(GetConsensusDirectory());
+        fileStorage = FileLogStorage.InitializeFromFileSystem(GetConsensusDirectory());
     }
     catch (InvalidDataException invalidDataException)
     {

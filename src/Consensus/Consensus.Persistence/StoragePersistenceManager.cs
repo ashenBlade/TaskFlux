@@ -116,7 +116,7 @@ public class StoragePersistenceManager : IPersistenceManager
         var storageLastEntry = _storage.GetLastLogEntry();
         if (index <= storageLastEntry.Index)
         {
-            return _storage.GetAt(index);
+            return _storage.GetInfoAt(index);
         }
 
         var bufferEntry = _buffer[index - _storage.Count];
@@ -201,7 +201,7 @@ public class StoragePersistenceManager : IPersistenceManager
             return new LogEntryInfo(bufferEntry.Term, index);
         }
 
-        return _storage.GetAt(index);
+        return _storage.GetInfoAt(index);
     }
 
     public IReadOnlyList<LogEntry> GetNotApplied()

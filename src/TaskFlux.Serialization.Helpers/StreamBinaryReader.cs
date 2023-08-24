@@ -46,6 +46,11 @@ public struct StreamBinaryReader
         return BinaryPrimitives.ReadUInt32BigEndian(buffer);
     }
 
+    /// <summary>
+    /// Прочитать <see cref="long"/> из потока с текущей позиции
+    /// </summary>
+    /// <returns>Десериализованный <see cref="long"/></returns>
+    /// <exception cref="EndOfStreamException">В потоке не было нужного количества байт для <see cref="long"/></exception>
     public long ReadInt64()
     {
         Span<byte> buffer = stackalloc byte[sizeof(long)];
@@ -53,6 +58,11 @@ public struct StreamBinaryReader
         return BinaryPrimitives.ReadInt64BigEndian(buffer);
     }
 
+    /// <summary>
+    /// Прочитать сериализованный массив из потока с текущей позиции
+    /// </summary>
+    /// <returns>Десериализованный массив</returns>
+    /// <exception cref="EndOfStreamException"></exception>
     public byte[] ReadBuffer()
     {
         var length = ReadInt32();

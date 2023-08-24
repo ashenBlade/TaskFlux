@@ -253,7 +253,7 @@ public class FileLogStorageTests
         for (int index = 0; index < logSize; index++)
         {
             var expected = new LogEntryInfo(initial[index].Term, index);
-            var actual = log.GetAt(index);
+            var actual = log.GetInfoAt(index);
             Assert.Equal(expected, actual);
         }
     }

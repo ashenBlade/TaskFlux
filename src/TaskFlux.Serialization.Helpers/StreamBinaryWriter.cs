@@ -51,4 +51,27 @@ public struct StreamBinaryWriter
         // Данные
         Stream.Write(value);
     }
+
+    public void Flush()
+    {
+        Stream.Flush();
+    }
+
+    public void Seek(long position, SeekOrigin origin)
+    {
+        Stream.Seek(position, origin);
+    }
+
+    /// <summary>
+    /// Записать в поток сырые байты
+    /// </summary>
+    /// <param name="value">Массив, который нужно записать в поток</param>
+    /// <remarks>
+    /// Этот метод записывает массив как есть - без добавления длины буфера в начале.
+    /// Если нужно добавить длину - есть <see cref="WriteBuffer"/>
+    /// </remarks>
+    public void Write(ReadOnlySpan<byte> value)
+    {
+        Stream.Write(value);
+    }
 }
