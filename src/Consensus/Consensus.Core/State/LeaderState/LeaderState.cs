@@ -14,7 +14,7 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
-    private PeerProcessor<TCommand, TResponse>[] _processors;
+    private readonly PeerProcessor<TCommand, TResponse>[] _processors;
 
     internal LeaderState(IConsensusModule<TCommand, TResponse> consensusModule, ILogger logger, IRequestQueueFactory queueFactory)
         : base(consensusModule)
@@ -71,7 +71,7 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         if (CurrentTerm < request.Term)
         {
             ElectionTimer.Start();
-            ConsensusModule.UpdateState(request.Term, null);
+            ConsensusModule.PersistenceManager.UpdateState(request.Term, null);
             CurrentState = ConsensusModule.CreateFollowerState();
         }
         
@@ -119,7 +119,7 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
+            ConsensusModule.PersistenceManager.UpdateState(request.CandidateTerm, request.CandidateId);
             ElectionTimer.Start();
             CurrentState = ConsensusModule.CreateFollowerState();
 
@@ -136,7 +136,7 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         if (canVote &&                                // За которого можем проголосовать и
             !PersistenceManager.Conflicts(request.LastLogEntryInfo)) // У которого лог не хуже нашего
         {
-            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
+            ConsensusModule.PersistenceManager.UpdateState(request.CandidateTerm, request.CandidateId);
             ElectionTimer.Start();
             CurrentState = ConsensusModule.CreateFollowerState();
             
@@ -155,9 +155,20 @@ public class LeaderState<TCommand, TResponse>: ConsensusModuleState<TCommand, TR
         HeartbeatTimer.Timeout -= OnHeartbeatTimer;
     }
 
-    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken cancellationToken)
+    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default)
     {
-        throw new NotImplementedException();
+        if (request.Term < CurrentTerm)
+        {
+            return new InstallSnapshotResponse(CurrentTerm);
+        }
+        
+        var followerState = ConsensusModule.CreateFollowerState();
+        if (ConsensusModule.TryUpdateState(followerState, this))
+        {
+            return ConsensusModule.Handle(request, token);
+        }
+
+        return new InstallSnapshotResponse(CurrentTerm);
     }
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)

@@ -8,13 +8,14 @@ namespace Consensus.Persistence.Tests;
 [Trait("Category", "Raft")]
 public class StoragePersistenceManagerTests
 {
-    private static LogEntry EmptyLogEntry(int term) => new LogEntry(new Term(term), Array.Empty<byte>());
+    private static LogEntry EmptyLogEntry(int term) => new(new Term(term), Array.Empty<byte>());
 
     [Fact]
     public void Append__СПустымЛогом__ДолженДобавитьЗаписьВБуферВПамяти()
     {
         var buffer = new List<LogEntry>();
-        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
 
         var entry = EmptyLogEntry(1);
         log.Append(entry);
@@ -29,7 +30,8 @@ public class StoragePersistenceManagerTests
         mock.Setup(s => s.Append(It.IsAny<LogEntry>())).Verifiable();
         mock.Setup(s => s.AppendRange(It.IsAny<IEnumerable<LogEntry>>())).Verifiable();
 
-        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance);
+        var log = new StoragePersistenceManager(mock.Object, NullMetadataStorage.Instance,
+            NullSnapshotStorage.Instance);
         log.Append(EmptyLogEntry(1));
 
         mock.Verify(x => x.Append(It.IsAny<LogEntry>()), Times.Never());
@@ -41,7 +43,8 @@ public class StoragePersistenceManagerTests
     {
         var entry = new LogEntry(new Term(1), new byte[] {1, 2, 3, 4});
         var expected = new LogEntryInfo(entry.Term, 0);
-        var log = new StoragePersistenceManager(Mock.Of<ILogStorage>(), NullSnapshotStorage.Instance);
+        var log = new StoragePersistenceManager(Mock.Of<ILogStorage>(), NullMetadataStorage.Instance,
+            NullSnapshotStorage.Instance);
 
         var actual = log.Append(entry);
         Assert.Equal(expected, actual);
@@ -56,7 +59,8 @@ public class StoragePersistenceManagerTests
         };
         var entry = new LogEntry(new Term(3), new byte[] {7, 8, 9});
         var expected = new LogEntryInfo(entry.Term, 2);
-        var log = new StoragePersistenceManager(Mock.Of<ILogStorage>(), NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Mock.Of<ILogStorage>(), NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
 
         var actual = log.Append(entry);
 
@@ -71,8 +75,8 @@ public class StoragePersistenceManagerTests
         storageMock.SetupGet(x => x.Count).Returns(storageSize);
         var entry = new LogEntry(new Term(3), new byte[] {7, 8, 9});
         var expected = new LogEntryInfo(entry.Term, storageSize);
-        var log = new StoragePersistenceManager(storageMock.Object, NullSnapshotStorage.Instance);
-
+        var log = new StoragePersistenceManager(storageMock.Object, NullMetadataStorage.Instance,
+            NullSnapshotStorage.Instance);
         var actual = log.Append(entry);
 
         Assert.Equal(expected, actual);
@@ -87,7 +91,8 @@ public class StoragePersistenceManagerTests
         storageMock.SetupGet(x => x.Count).Returns(storageSize);
         var entry = new LogEntry(new Term(11), new byte[] {7, 8, 9});
         var expected = new LogEntryInfo(entry.Term, storageSize + buffer.Count);
-        var log = new StoragePersistenceManager(storageMock.Object, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(storageMock.Object, NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
 
         var actual = log.Append(entry);
 
@@ -110,7 +115,8 @@ public class StoragePersistenceManagerTests
         mock.Setup(x => x.AppendRange(Match.Create<IEnumerable<LogEntry>>(c => c.SequenceEqual(entries))))
             .Verifiable();
 
-        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance);
+        var log = new StoragePersistenceManager(mock.Object, NullMetadataStorage.Instance,
+            NullSnapshotStorage.Instance);
         log.InsertRange(entries, 0);
         log.Commit(entries.Length - 1);
 
@@ -130,7 +136,7 @@ public class StoragePersistenceManagerTests
             .Returns(0);
 
         var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance,
-            new List<LogEntry>() {entry});
+            new List<LogEntry>() {entry}, NullMetadataStorage.Instance);
 
         log.Commit(0);
 
@@ -158,7 +164,8 @@ public class StoragePersistenceManagerTests
         var expected = buffer.Skip(index + 1)
                              .ToList();
 
-        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
         log.Commit(index);
 
         Assert.Equal(expected, buffer, LogEntryEqualityComparer.Instance);
@@ -177,7 +184,8 @@ public class StoragePersistenceManagerTests
         };
         var expected = buffer.Skip(2).ToList();
         var index = 2;
-        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
 
         var actual = log.GetFrom(index);
 
@@ -218,7 +226,8 @@ public class StoragePersistenceManagerTests
         mock.Setup(x => x.ReadFrom(index)).Returns(storage.Skip(index + 1).ToList());
         mock.SetupGet(x => x.Count).Returns(storageCount);
 
-        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
 
         var actual = log.GetFrom(index);
 
@@ -248,7 +257,8 @@ public class StoragePersistenceManagerTests
         mock.Setup(x => x.ReadFrom(0)).Returns(storage);
         mock.SetupGet(x => x.Count).Returns(storageCount);
 
-        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
 
         var actual = log.GetFrom(0);
 
@@ -267,7 +277,8 @@ public class StoragePersistenceManagerTests
                                .Select(EmptyLogEntry)
                                .ToList();
 
-        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
 
         for (int nextIndex = 1; nextIndex <= bufferCount; nextIndex++)
         {
@@ -296,7 +307,8 @@ public class StoragePersistenceManagerTests
             .Returns<int>((index) => new LogEntryInfo(storage[index].Term, index));
         mock.SetupGet(x => x.Count).Returns(storageCount);
 
-        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance);
+        var log = new StoragePersistenceManager(mock.Object, NullMetadataStorage.Instance,
+            NullSnapshotStorage.Instance);
 
         for (int nextIndex = 1; nextIndex <= storageCount; nextIndex++)
         {
@@ -332,7 +344,8 @@ public class StoragePersistenceManagerTests
         var expected = new LogEntryInfo(storage[^1].Term, storageCount - 1);
         var nextIndex = storageCount;
 
-        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(mock.Object, NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
 
         var actual = log.GetPrecedingEntryInfo(nextIndex);
 
@@ -352,7 +365,8 @@ public class StoragePersistenceManagerTests
 
         var buffer = new List<LogEntry>();
 
-        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
 
         log.InsertRange(expected, 0);
 
@@ -381,7 +395,8 @@ public class StoragePersistenceManagerTests
         var expected = buffer.Concat(toInsert)
                              .ToList();
 
-        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
 
         log.InsertRange(toInsert, bufferCount);
 
@@ -419,7 +434,8 @@ public class StoragePersistenceManagerTests
                              .Concat(toInsert)
                              .ToList();
 
-        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer);
+        var log = new StoragePersistenceManager(Helpers.NullStorage, NullSnapshotStorage.Instance, buffer,
+            NullMetadataStorage.Instance);
 
         log.InsertRange(toInsert, insertIndex);
 
@@ -429,10 +445,11 @@ public class StoragePersistenceManagerTests
     [Fact]
     public void SaveSnapshot__КогдаФайлаСнапшотаНеБыло__ДолженСоздатьНовыйФайлСнапшота()
     {
-        var (fs, snapshot, tempDir) = Helpers.CreateBaseMockFileSystem(createEmptySnapshotFile: false);
+        var (_, snapshot, tempDir) = Helpers.CreateBaseMockFileSystem(createEmptySnapshotFile: false);
 
         var manager =
-            new StoragePersistenceManager(Helpers.NullStorage, new FileSystemSnapshotStorage(snapshot, tempDir));
+            new StoragePersistenceManager(Helpers.NullStorage, NullMetadataStorage.Instance,
+                new FileSystemSnapshotStorage(snapshot, tempDir));
 
         var entry = new LogEntryInfo(new Term(1), 1);
         var data = new byte[] {1, 2, 3};
@@ -448,12 +465,13 @@ public class StoragePersistenceManagerTests
     [Fact]
     public void SaveSnapshot__КогдаФайлСнапшотаСуществовалПустой__ДолженПерезаписатьСтарыйФайл()
     {
-        var (fs, snapshot, tempDir) = Helpers.CreateBaseMockFileSystem(createEmptySnapshotFile: true);
+        var (_, snapshot, tempDir) = Helpers.CreateBaseMockFileSystem(createEmptySnapshotFile: true);
         var entry = new LogEntryInfo(new Term(1), 1);
         var data = new byte[] {1, 2, 4};
 
         var manager =
-            new StoragePersistenceManager(Helpers.NullStorage, new FileSystemSnapshotStorage(snapshot, tempDir));
+            new StoragePersistenceManager(Helpers.NullStorage, NullMetadataStorage.Instance,
+                new FileSystemSnapshotStorage(snapshot, tempDir));
         manager.SaveSnapshot(entry, new StubSnapshot(data));
 
         var fileSystemStream = snapshot.OpenRead();
@@ -465,7 +483,7 @@ public class StoragePersistenceManagerTests
     [Fact]
     public void SaveSnapshot__КогдаФайлСнапшотаСуществовалСДанными__ДолженПерезаписатьСтарыйФайл()
     {
-        var (fs, snapshot, tempDir) = Helpers.CreateBaseMockFileSystem(createEmptySnapshotFile: true);
+        var (_, snapshot, tempDir) = Helpers.CreateBaseMockFileSystem(createEmptySnapshotFile: true);
         var originalData = new byte[] {123, 123, 4, 1, 65, 86, 035, 37, 75};
         using (var s = snapshot.OpenWrite())
         {
@@ -476,7 +494,8 @@ public class StoragePersistenceManagerTests
         var data = new byte[] {1, 2, 4};
 
         var manager =
-            new StoragePersistenceManager(Helpers.NullStorage, new FileSystemSnapshotStorage(snapshot, tempDir));
+            new StoragePersistenceManager(Helpers.NullStorage, NullMetadataStorage.Instance,
+                new FileSystemSnapshotStorage(snapshot, tempDir));
         manager.SaveSnapshot(entry, new StubSnapshot(data));
 
         var fileSystemStream = snapshot.OpenRead();

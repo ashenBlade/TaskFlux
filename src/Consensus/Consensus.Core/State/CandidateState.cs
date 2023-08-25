@@ -1,4 +1,3 @@
-using Consensus.Core.Commands;
 using Consensus.Core.Commands.AppendEntries;
 using Consensus.Core.Commands.InstallSnapshot;
 using Consensus.Core.Commands.RequestVote;
@@ -106,8 +105,13 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
                         leftPeers[i].Id);
                     _cts.Cancel();
 
-                    CommandQueue.Enqueue(new MoveToFollowerStateCommand<TCommand, TResponse>(response.CurrentTerm, null,
-                        this, ConsensusModule));
+                    var followerState = ConsensusModule.CreateFollowerState();
+                    if (ConsensusModule.TryUpdateState(followerState, this))
+                    {
+                        ConsensusModule.ElectionTimer.Start();
+                        ConsensusModule.PersistenceManager.UpdateState(response.CurrentTerm, null);
+                    }
+
                     return;
                 }
                 else
@@ -136,7 +140,12 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
             return;
         }
 
-        CommandQueue.Enqueue(new MoveToLeaderStateCommand<TCommand, TResponse>(this, ConsensusModule));
+        var leaderState = ConsensusModule.CreateLeaderState();
+        if (ConsensusModule.TryUpdateState(leaderState, this))
+        {
+            ConsensusModule.HeartbeatTimer.Start();
+            ConsensusModule.ElectionTimer.Stop();
+        }
 
         bool QuorumReached()
         {
@@ -150,8 +159,13 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
 
         _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
 
-        CommandQueue.Enqueue(
-            new MoveToCandidateAfterElectionTimerTimeoutCommand<TCommand, TResponse>(this, ConsensusModule));
+        var candidateState = ConsensusModule.CreateCandidateState();
+        if (ConsensusModule.TryUpdateState(candidateState, this))
+        {
+            ConsensusModule.ElectionTimer.Stop();
+            ConsensusModule.PersistenceManager.UpdateState(ConsensusModule.CurrentTerm.Increment(), ConsensusModule.Id);
+            ConsensusModule.ElectionTimer.Start();
+        }
     }
 
 
@@ -165,7 +179,7 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
         if (CurrentTerm < request.Term)
         {
             ElectionTimer.Start();
-            ConsensusModule.UpdateState(request.Term, null);
+            ConsensusModule.PersistenceManager.UpdateState(request.Term, null);
             CurrentState = ConsensusModule.CreateFollowerState();
         }
 
@@ -220,7 +234,7 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
+            ConsensusModule.PersistenceManager.UpdateState(request.CandidateTerm, request.CandidateId);
             ElectionTimer.Start();
             CurrentState = ConsensusModule.CreateFollowerState();
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -240,7 +254,7 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
             !PersistenceManager.Conflicts(request.LastLogEntryInfo))
         {
             ElectionTimer.Start();
-            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
+            ConsensusModule.PersistenceManager.UpdateState(request.CandidateTerm, request.CandidateId);
             CurrentState = ConsensusModule.CreateFollowerState();
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -265,8 +279,14 @@ public class CandidateState<TCommand, TResponse> : ConsensusModuleState<TCommand
         ElectionTimer.Timeout -= OnElectionTimerTimeout;
     }
 
-    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken cancellationToken)
+    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token)
     {
-        throw new NotImplementedException();
+        if (request.Term < CurrentTerm)
+        {
+            return new InstallSnapshotResponse(CurrentTerm);
+        }
+
+        var followerState = ConsensusModule.CreateFollowerState();
+        return followerState.Apply(request, token);
     }
 }

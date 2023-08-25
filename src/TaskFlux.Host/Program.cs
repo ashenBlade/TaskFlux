@@ -16,7 +16,6 @@ using Consensus.Persistence.Metadata;
 using Consensus.Persistence.Snapshot;
 using Consensus.StateMachine.TaskFlux;
 using Consensus.Storage.File.Log.Decorators;
-using Consensus.Storage.File.Metadata;
 using Consensus.Storage.File.Metadata.Decorators;
 using Consensus.Timers;
 using JobQueue.Core;
@@ -87,7 +86,7 @@ try
 
     Log.Information("Инициализирую хранилище лога команд");
     var (storage, fileStorage) = CreateLogStorage();
-    var log = CreateStorageLog(storage);
+    var log = CreateStoragePersistenceManager(storage, metadataStorage);
 
     Log.Information("Создаю очередь машины состояний");
     var appInfo = CreateApplicationInfo();
@@ -332,7 +331,8 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
     var stateMachineFactory = new TaskFluxStateMachineFactory(nodeInfo, appInfo, clusterInfo);
 
     return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, randomizedTimer, systemTimersTimer,
-        jobQueue, storageLog, channelCommandQueue, stateMachine, stateMachineFactory, metadataStorage, commandSerializer,
+        jobQueue, storageLog, channelCommandQueue, stateMachine, stateMachineFactory, metadataStorage,
+        commandSerializer,
         requestQueueFactory);
 }
 
@@ -381,7 +381,7 @@ NodeInfo CreateNodeInfo(RaftServerOptions options)
     return new NodeInfo(new NodeId(options.NodeId), NodeRole.Follower);
 }
 
-StoragePersistenceManager CreateStorageLog(ILogStorage storage1)
+StoragePersistenceManager CreateStoragePersistenceManager(ILogStorage logStorage, IMetadataStorage metadataStorage)
 {
     var currentDirectory = Directory.GetCurrentDirectory();
     var raftDirectory = new DirectoryInfo(Path.Combine(currentDirectory, "consensus"));
@@ -399,10 +399,9 @@ StoragePersistenceManager CreateStorageLog(ILogStorage storage1)
     var fs = new FileSystem();
     var snapshotFile = new FileInfoWrapper(fs, new FileInfo(Path.Combine(raftDirectory.FullName, "raft.snapshot")));
     var tempDir = new DirectoryInfoWrapper(fs, CreateTemporarySnapshotFileDirectory(raftDirectory));
+    var snapshotStorage = new FileSystemSnapshotStorage(snapshotFile, tempDir);
 
-    return new StoragePersistenceManager(storage1,
-        new FileSystemSnapshotStorage(snapshotFile, tempDir));
-
+    return new StoragePersistenceManager(logStorage, metadataStorage, snapshotStorage);
 
     static DirectoryInfo CreateTemporarySnapshotFileDirectory(DirectoryInfo raftDir)
     {

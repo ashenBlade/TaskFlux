@@ -1,4 +1,5 @@
 using Consensus.Core.Persistence;
+using TaskFlux.Core;
 
 namespace Consensus.Core.Log;
 
@@ -125,11 +126,20 @@ public interface IPersistenceManager
     /// Выполняется после создания нового снапшота.
     /// </summary>
     public void ClearCommandLog();
-    
+
     /// <summary>
     /// Получить снапшот состояния, если файл существовал
     /// </summary>
     /// <param name="snapshot">Хранившийся файл снапшота</param>
     /// <returns><c>true</c> - файл снапшота существовал, <c>false</c> - файл снапшота не существовал</returns>
     public bool TryGetSnapshot(out ISnapshot snapshot);
+
+    /// <summary>
+    /// Обновить состояние узла.
+    /// Вызывается когда состояние (роль) узла меняется и
+    /// нужно обновить голос/терм.
+    /// </summary>
+    /// <param name="newTerm">Новый терм</param>
+    /// <param name="votedFor">Id узла, за который отдали голос</param>
+    public void UpdateState(Term newTerm, NodeId? votedFor);
 }

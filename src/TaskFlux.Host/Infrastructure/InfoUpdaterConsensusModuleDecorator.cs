@@ -53,6 +53,12 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
         set => _module.CurrentState = value;
     }
 
+    public bool TryUpdateState(ConsensusModuleState<TCommand, TResult> newState,
+                               ConsensusModuleState<TCommand, TResult> oldState)
+    {
+        return _module.TryUpdateState(newState, oldState);
+    }
+
     public ITimer ElectionTimer =>
         _module.ElectionTimer;
 
@@ -80,16 +86,8 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
     public IStateMachineFactory<TCommand, TResult> StateMachineFactory =>
         _module.StateMachineFactory;
 
-    public IMetadataStorage MetadataStorage =>
-        _module.MetadataStorage;
-
     public ISerializer<TCommand> CommandSerializer =>
         _module.CommandSerializer;
-
-    public void UpdateState(Term newTerm, NodeId? votedFor)
-    {
-        _module.UpdateState(newTerm, votedFor);
-    }
 
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {
@@ -116,7 +114,7 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
     {
         return _module.Handle(request, token);
     }
-    
+
     public event RoleChangedEventHandler? RoleChanged
     {
         add => _module.RoleChanged += value;

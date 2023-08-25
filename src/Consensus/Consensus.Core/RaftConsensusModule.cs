@@ -55,6 +55,20 @@ public class RaftConsensusModule<TCommand, TResponse>
             ?? throw new ArgumentNullException(nameof(_currentState), "Текущее состояние еще не проставлено");
     }
 
+    public bool TryUpdateState(ConsensusModuleState<TCommand, TResponse> newState,
+                               ConsensusModuleState<TCommand, TResponse> oldState)
+    {
+        var stored = Interlocked.CompareExchange(ref _currentState, newState, oldState);
+        if (stored == oldState)
+        {
+            stored.Dispose();
+            newState.Initialize();
+            return true;
+        }
+
+        return false;
+    }
+
     public ITimer ElectionTimer { get; }
     public ITimer HeartbeatTimer { get; }
     public IBackgroundJobQueue BackgroundJobQueue { get; }
@@ -154,13 +168,15 @@ public class RaftConsensusModule<TCommand, TResponse>
                                                                   IPersistenceManager persistenceManager,
                                                                   ICommandQueue commandQueue,
                                                                   IStateMachine<TCommand, TResponse> stateMachine,
-                                                                  IStateMachineFactory<TCommand, TResponse> stateMachineFactory,
+                                                                  IStateMachineFactory<TCommand, TResponse>
+                                                                      stateMachineFactory,
                                                                   IMetadataStorage metadataStorage,
                                                                   ISerializer<TCommand> serializer,
                                                                   IRequestQueueFactory requestQueueFactory)
     {
         var raft = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, electionTimer, heartbeatTimer,
-            backgroundJobQueue, persistenceManager, commandQueue, stateMachine, metadataStorage, serializer, requestQueueFactory, stateMachineFactory);
+            backgroundJobQueue, persistenceManager, commandQueue, stateMachine, metadataStorage, serializer,
+            requestQueueFactory, stateMachineFactory);
         ( ( IConsensusModule<TCommand, TResponse> ) raft ).CurrentState = raft.CreateFollowerState();
         return raft;
     }

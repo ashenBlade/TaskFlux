@@ -1,6 +1,8 @@
 using System.Runtime.CompilerServices;
+using Consensus.Core;
 using Consensus.Core.Log;
 using Consensus.Core.Persistence;
+using TaskFlux.Core;
 
 [assembly: InternalsVisibleTo("Consensus.Persistence.Tests")]
 
@@ -9,12 +11,17 @@ namespace Consensus.Persistence;
 public class StoragePersistenceManager : IPersistenceManager
 {
     /// <summary>
-    /// Персистентное хранилище записей лога
+    /// Файл лога команд - `consensus/raft.log`
     /// </summary>
     private readonly ILogStorage _logStorage;
 
     /// <summary>
-    /// Хранилище для слепков состояния (снапшотов)
+    /// Файл метаданных - `consensus/raft.metadata`
+    /// </summary>
+    private readonly IMetadataStorage _metadataStorage;
+
+    /// <summary>
+    /// Файл снапшота - `consensus/raft.snapshot`
     /// </summary>
     private readonly ISnapshotStorage _snapshotStorage;
 
@@ -37,18 +44,25 @@ public class StoragePersistenceManager : IPersistenceManager
 
     public IReadOnlyList<LogEntry> ReadLog() => _logStorage.ReadAll();
 
-    public StoragePersistenceManager(ILogStorage logStorage, ISnapshotStorage snapshotStorage)
+    public StoragePersistenceManager(ILogStorage logStorage,
+                                     IMetadataStorage metadataStorage,
+                                     ISnapshotStorage snapshotStorage)
     {
         _logStorage = logStorage;
+        _metadataStorage = metadataStorage;
         _snapshotStorage = snapshotStorage;
     }
 
     // Для тестов
-    internal StoragePersistenceManager(ILogStorage logStorage, ISnapshotStorage snapshotStorage, List<LogEntry> buffer)
+    internal StoragePersistenceManager(ILogStorage logStorage,
+                                       ISnapshotStorage snapshotStorage,
+                                       List<LogEntry> buffer,
+                                       IMetadataStorage metadataStorage)
     {
         _logStorage = logStorage;
         _snapshotStorage = snapshotStorage;
         _buffer = buffer;
+        _metadataStorage = metadataStorage;
     }
 
     public bool Conflicts(LogEntryInfo prefix)
@@ -270,5 +284,9 @@ public class StoragePersistenceManager : IPersistenceManager
 
         snapshot = default!;
         return false;
+    }
+
+    public void UpdateState(Term newTerm, NodeId? votedFor)
+    {
     }
 }

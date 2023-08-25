@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Consensus.Core.Commands;
 using Consensus.Core.Commands.AppendEntries;
 using Consensus.Core.Commands.InstallSnapshot;
 using Consensus.Core.Commands.RequestVote;
@@ -41,7 +40,7 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
         {
             _logger.Debug("Получен RequestVote с большим термом {MyTerm} < {NewTerm}. Перехожу в Follower", CurrentTerm,
                 request.CandidateTerm);
-            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
+            ConsensusModule.PersistenceManager.UpdateState(request.CandidateTerm, request.CandidateId);
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
 
@@ -61,7 +60,7 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
             _logger.Debug(
                 "Получен RequestVote от узла за которого можем проголосовать. Id узла {NodeId}, Терм узла {Term}. Обновляю состояние",
                 request.CandidateId.Value, request.CandidateTerm.Value);
-            ConsensusModule.UpdateState(request.CandidateTerm, request.CandidateId);
+            ConsensusModule.PersistenceManager.UpdateState(request.CandidateTerm, request.CandidateId);
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -84,7 +83,7 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
         if (CurrentTerm < request.Term)
         {
             // Мы отстали от общего состояния (старый терм)
-            ConsensusModule.UpdateState(request.Term, null);
+            ConsensusModule.PersistenceManager.UpdateState(request.Term, null);
         }
 
         if (PersistenceManager.Contains(request.PrevLogEntryInfo) is false)
@@ -152,8 +151,14 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
     private void OnElectionTimerTimeout()
     {
         _logger.Debug("Сработал Election Timeout. Перехожу в состояние Candidate");
-        CommandQueue.Enqueue(
-            new MoveToCandidateAfterElectionTimerTimeoutCommand<TCommand, TResponse>(this, ConsensusModule));
+        var candidateState = ConsensusModule.CreateCandidateState();
+        if (ConsensusModule.TryUpdateState(candidateState, this))
+        {
+            ConsensusModule.ElectionTimer.Stop();
+            // Голосуем за себя и переходим в следующий терм
+            ConsensusModule.PersistenceManager.UpdateState(ConsensusModule.CurrentTerm.Increment(), ConsensusModule.Id);
+            ConsensusModule.ElectionTimer.Start();
+        }
     }
 
     public override void Dispose()
@@ -161,7 +166,7 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
         ElectionTimer.Timeout -= OnElectionTimerTimeout;
     }
 
-    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken cancellationToken)
+    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default)
     {
         if (request.Term < CurrentTerm)
         {
@@ -169,10 +174,11 @@ public class FollowerState<TCommand, TResponse> : ConsensusModuleState<TCommand,
         }
 
         // 1. Обновляем файл снапшота
-        PersistenceManager.SaveSnapshot(new LogEntryInfo(request.LastIncludedTerm, request.LastIncludedIndex), request.Snapshot, cancellationToken);
+        PersistenceManager.SaveSnapshot(new LogEntryInfo(request.LastIncludedTerm, request.LastIncludedIndex),
+            request.Snapshot, token);
         // 2. Очищаем лог (лучше будет перезаписать данные полностью)
         PersistenceManager.ClearCommandLog();
-        
+
         // 3. Восстановить состояние из снапшота
         RestoreState();
         return new InstallSnapshotResponse(CurrentTerm);

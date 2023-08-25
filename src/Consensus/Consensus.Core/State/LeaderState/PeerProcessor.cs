@@ -1,10 +1,10 @@
-using Consensus.Core.Commands;
 using Consensus.Core.Commands.AppendEntries;
 
 namespace Consensus.Core.State.LeaderState;
 
-
-internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TResponse> State, IPeer Peer, IRequestQueue Queue)
+internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TResponse> State,
+                                                   IPeer Peer,
+                                                   IRequestQueue Queue)
 {
     private PeerInfo Info { get; } = new(State.ConsensusModule.PersistenceManager.LastEntry.Index + 1);
 
@@ -43,13 +43,12 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
         while (token.IsCancellationRequested is false)
         {
             // 1. Отправить запрос
-            var request = new AppendEntriesRequest(
-                Term: ConsensusModule.CurrentTerm,
+            var request = new AppendEntriesRequest(Term: ConsensusModule.CurrentTerm,
                 LeaderCommit: ConsensusModule.PersistenceManager.CommitIndex,
                 LeaderId: ConsensusModule.Id,
-                PrevLogEntryInfo: ConsensusModule.PersistenceManager.GetPrecedingEntryInfo(Info.NextIndex), 
+                PrevLogEntryInfo: ConsensusModule.PersistenceManager.GetPrecedingEntryInfo(Info.NextIndex),
                 Entries: ConsensusModule.PersistenceManager.GetFrom(Info.NextIndex));
-            
+
             var response = await Peer.SendAppendEntries(request, token);
 
             // 2. Если ответ не вернулся (null) - соединение было разорвано. Прекратить обработку
@@ -57,40 +56,46 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
             {
                 return true;
             }
-            
+
             // 3. Если ответ успешный 
             if (response.Success)
             {
                 // 3.1. Обновить nextIndex = + кол-во Entries в запросе
                 // 3.2. Обновить matchIndex = новый nextIndex - 1
                 Info.Update(request.Entries.Count);
-                
+
                 // 3.3. Если лог не до конца был синхронизирован
                 if (Info.NextIndex < synchronizer.LogEntryIndex)
                 {
                     // Заходим на новый круг и отправляем заново
                     continue;
                 }
-                
+
                 // 3.4. Уведомляем об успешной отправке команды на узел
                 return true;
             }
-            
+
             // Дальше узел отказался принимать наш запрос (Success = false)
             // 4. Если вернувшийся терм больше нашего
             if (ConsensusModule.CurrentTerm < response.Term)
             {
                 // 4.1. Перейти в состояние Follower
-                ConsensusModule.CommandQueue.Enqueue(new MoveToFollowerStateCommand<TCommand, TResponse>(response.Term, null, State, ConsensusModule));
+                var followerState = ConsensusModule.CreateFollowerState();
+                if (ConsensusModule.TryUpdateState(followerState, State))
+                {
+                    ConsensusModule.ElectionTimer.Start();
+                    ConsensusModule.PersistenceManager.UpdateState(response.Term, null);
+                }
+
                 // 4.2. Закончить работу
                 return false;
             }
-            
+
             // 5. В противном случае у узла не синхронизирован лог 
-                
+
             // 5.1. Декрементируем последние записи лога
             Info.Decrement();
-            
+
             // 5.2. Идем на следующий круг
         }
 

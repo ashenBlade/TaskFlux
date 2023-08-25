@@ -92,7 +92,7 @@ public abstract class ConsensusModuleState<TCommand, TResponse>
     /// Применить команду InstallSnapshot для создания нового снапшота, принятого от лидера
     /// </summary>
     /// <param name="request"><see cref="InstallSnapshotRequest"/></param>
-    /// <param name="cancellationToken"></param>
+    /// <param name="token">Токен отмены</param>
     /// <returns><see cref="InstallSnapshotResponse"/></returns>
-    public abstract InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken cancellationToken);
+    public abstract InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default);
 }

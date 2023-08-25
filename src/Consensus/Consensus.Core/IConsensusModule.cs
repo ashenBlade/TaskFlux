@@ -38,6 +38,17 @@ public interface IConsensusModule<TCommand, TResponse>
     public ConsensusModuleState<TCommand, TResponse> CurrentState { get; set; }
 
     /// <summary>
+    /// Заменить роль с <paramref name="oldState"/> на <paramref name="newState"/> с проверкой.
+    /// Если предыдущее состояние было <paramref name="oldState"/>, то оно заменяется на новое <paramref name="newState"/>.
+    /// Так же для нового состояния вызывается <see cref="ConsensusModuleState{TCommand,TResponse}.Initialize"/>,
+    /// а для старого <see cref="ConsensusModuleState{TCommand,TResponse}.Dispose"/>.
+    /// </summary>
+    /// <param name="newState">Новое состояние</param>
+    /// <param name="oldState">Старое состояние</param>
+    public bool TryUpdateState(ConsensusModuleState<TCommand, TResponse> newState,
+                               ConsensusModuleState<TCommand, TResponse> oldState);
+
+    /// <summary>
     /// Таймер выборов.
     /// Используется в Follower и Candidate состояниях
     /// </summary>
@@ -54,13 +65,13 @@ public interface IConsensusModule<TCommand, TResponse>
     IBackgroundJobQueue BackgroundJobQueue { get; }
 
     /// <summary>
-    /// Очередь команд для применения к узлу.
-    /// Используется в первую очередь для изменения состояния
+    /// Очередь команд для применения к машине состояний.
+    /// Если нужно применить команду (бизнес-логики), то это сюда, а не напрямую в <see cref="StateMachine"/>
     /// </summary>
     ICommandQueue CommandQueue { get; }
 
     /// <summary>
-    /// WAL для машины состояний, которую мы реплицируем
+    /// Фасад для работы с файлами
     /// </summary>
     IPersistenceManager PersistenceManager { get; }
 
@@ -73,19 +84,9 @@ public interface IConsensusModule<TCommand, TResponse>
     /// Объект, представляющий текущий узел
     /// </summary>
     public IStateMachine<TCommand, TResponse> StateMachine { get; set; }
-    
+
     public IStateMachineFactory<TCommand, TResponse> StateMachineFactory { get; }
-
-    public IMetadataStorage MetadataStorage { get; }
     public ISerializer<TCommand> CommandSerializer { get; }
-
-    /// <summary>
-    /// Обновить состояние узла
-    /// </summary>
-    /// <param name="newTerm">Новый терм</param>
-    /// <param name="votedFor">Отданный голос</param>
-    public void UpdateState(Term newTerm, NodeId? votedFor);
-
     public RequestVoteResponse Handle(RequestVoteRequest request);
     public AppendEntriesResponse Handle(AppendEntriesRequest request);
     public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request);
