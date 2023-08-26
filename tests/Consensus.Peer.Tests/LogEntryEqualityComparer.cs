@@ -1,4 +1,4 @@
-using Consensus.Core.Log;
+using Consensus.Raft.Persistence;
 
 namespace Consensus.Peer.Tests;
 

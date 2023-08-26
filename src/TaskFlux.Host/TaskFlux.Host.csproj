@@ -11,11 +11,10 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Consensus\Consensus.CommandQueue\Consensus.CommandQueue.Channel\Consensus.CommandQueue.Channel.csproj"/>
-        <ProjectReference Include="..\Consensus\Consensus.Core\Consensus.Core.csproj"/>
+        <ProjectReference Include="..\Consensus\Consensus.Raft\Consensus.Raft.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.JobQueue\Consensus.JobQueue.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.Network\Consensus.Network.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.Peer\Consensus.Peer.csproj"/>
-        <ProjectReference Include="..\Consensus\Consensus.Persistence\Consensus.Persistence.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.StateMachine\Raft.StateMachine.JobQueue\Consensus.StateMachine.TaskFlux\Consensus.StateMachine.TaskFlux.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.Timers\Consensus.Timers.csproj"/>
         <ProjectReference Include="..\JobQueue\JobQueue.InMemory\JobQueue.InMemory.csproj"/>

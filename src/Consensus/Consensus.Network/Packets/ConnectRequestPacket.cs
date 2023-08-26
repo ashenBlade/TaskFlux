@@ -1,5 +1,5 @@
 using System.Buffers;
-using Consensus.Core;
+using Consensus.Raft;
 using TaskFlux.Core;
 using TaskFlux.Serialization.Helpers;
 

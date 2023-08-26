@@ -1,11 +1,11 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
-using Consensus.Core;
-using Consensus.Core.Commands.AppendEntries;
-using Consensus.Core.Commands.RequestVote;
 using Consensus.Network;
 using Consensus.Network.Packets;
+using Consensus.Raft;
+using Consensus.Raft.Commands.AppendEntries;
+using Consensus.Raft.Commands.RequestVote;
 using Serilog;
 using TaskFlux.Core;
 

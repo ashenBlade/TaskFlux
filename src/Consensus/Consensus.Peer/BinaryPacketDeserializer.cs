@@ -1,11 +1,11 @@
 using System.Buffers;
 using System.Net.Sockets;
-using Consensus.Core;
-using Consensus.Core.Commands.AppendEntries;
-using Consensus.Core.Commands.RequestVote;
-using Consensus.Core.Log;
 using Consensus.Network;
 using Consensus.Network.Packets;
+using Consensus.Raft;
+using Consensus.Raft.Commands.AppendEntries;
+using Consensus.Raft.Commands.RequestVote;
+using Consensus.Raft.Persistence;
 using TaskFlux.Core;
 using TaskFlux.Serialization.Helpers;
 
@@ -14,6 +14,7 @@ namespace Consensus.Peer;
 public class BinaryPacketDeserializer
 {
     public static readonly BinaryPacketDeserializer Instance = new();
+
     public async ValueTask<RaftPacket> DeserializeAsync(Stream stream, CancellationToken token = default)
     {
         var array = ArrayPool<byte>.Shared.Rent(1);
@@ -26,7 +27,7 @@ public class BinaryPacketDeserializer
                 throw new SocketException(( int ) SocketError.Shutdown);
             }
 
-            packetType = (RaftPacketType) array[0];
+            packetType = ( RaftPacketType ) array[0];
         }
         finally
         {
@@ -44,8 +45,10 @@ public class BinaryPacketDeserializer
                    _ => throw new ArgumentOutOfRangeException()
                };
     }
-    
-    private static async ValueTask<AppendEntriesResponsePacket> DeserializeAppendEntriesResponsePacket(Stream stream, CancellationToken token)
+
+    private static async ValueTask<AppendEntriesResponsePacket> DeserializeAppendEntriesResponsePacket(
+        Stream stream,
+        CancellationToken token)
     {
         var buffer = await ReadRequiredLengthAsync(stream, sizeof(bool) + sizeof(int), token);
         try
@@ -53,7 +56,7 @@ public class BinaryPacketDeserializer
             var reader = new ArrayBinaryReader(buffer);
             var success = reader.ReadBoolean();
             var term = reader.ReadInt32();
-        
+
             return new AppendEntriesResponsePacket(new AppendEntriesResponse(new Term(term), success));
         }
         finally
@@ -62,7 +65,9 @@ public class BinaryPacketDeserializer
         }
     }
 
-    private static async ValueTask<AppendEntriesRequestPacket> DeserializeAppendEntriesRequestPacket(Stream stream, CancellationToken token)
+    private static async ValueTask<AppendEntriesRequestPacket> DeserializeAppendEntriesRequestPacket(
+        Stream stream,
+        CancellationToken token)
     {
         var buffer = await ReadRequiredLengthAsync(stream, sizeof(int), token);
         int totalPacketLength;
@@ -80,7 +85,7 @@ public class BinaryPacketDeserializer
         try
         {
             var reader = new ArrayBinaryReader(buffer);
-            
+
             var term = reader.ReadInt32();
             var leaderId = reader.ReadInt32();
             var leaderCommit = reader.ReadInt32();
@@ -104,6 +109,7 @@ public class BinaryPacketDeserializer
 
                 entries = list;
             }
+
             return new AppendEntriesRequestPacket(new AppendEntriesRequest(new Term(term), leaderCommit,
                 new NodeId(leaderId), new LogEntryInfo(new Term(entryTerm), entryIndex), entries));
         }
@@ -113,7 +119,9 @@ public class BinaryPacketDeserializer
         }
     }
 
-    private static async ValueTask<RequestVoteResponsePacket> DeserializeRequestVoteResponsePacket(Stream stream, CancellationToken token)
+    private static async ValueTask<RequestVoteResponsePacket> DeserializeRequestVoteResponsePacket(
+        Stream stream,
+        CancellationToken token)
     {
         const int packetSize = sizeof(bool) // Success 
                              + sizeof(int); // Term
@@ -146,6 +154,7 @@ public class BinaryPacketDeserializer
                 {
                     throw new EndOfStreamException("Не удалось прочитать указанное количество байт");
                 }
+
                 left -= read;
                 index += read;
             }
@@ -159,7 +168,9 @@ public class BinaryPacketDeserializer
         }
     }
 
-    private static async ValueTask<RequestVoteRequestPacket> DeserializeRequestVoteRequestPacketAsync(Stream stream, CancellationToken token = default)
+    private static async ValueTask<RequestVoteRequestPacket> DeserializeRequestVoteRequestPacketAsync(
+        Stream stream,
+        CancellationToken token = default)
     {
         const int packetSize = sizeof(int)  // Id
                              + sizeof(int)  // Term
@@ -183,7 +194,9 @@ public class BinaryPacketDeserializer
         }
     }
 
-    private static async ValueTask<ConnectResponsePacket> DeserializeConnectResponsePacketAsync(Stream stream, CancellationToken token)
+    private static async ValueTask<ConnectResponsePacket> DeserializeConnectResponsePacketAsync(
+        Stream stream,
+        CancellationToken token)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(1);
         try
@@ -204,7 +217,9 @@ public class BinaryPacketDeserializer
         }
     }
 
-    private static async ValueTask<ConnectRequestPacket> DeserializeConnectRequestPacketAsync(Stream stream, CancellationToken token)
+    private static async ValueTask<ConnectRequestPacket> DeserializeConnectRequestPacketAsync(
+        Stream stream,
+        CancellationToken token)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(sizeof(int));
         try

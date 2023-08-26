@@ -1,5 +1,4 @@
-using Consensus.Core.Log;
-using Consensus.Core.Persistence;
+using Consensus.Raft.Persistence;
 using Consensus.StateMachine.TaskFlux.Serialization;
 using JobQueue.Core;
 

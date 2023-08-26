@@ -1,4 +1,4 @@
-using Consensus.Core;
+using Consensus.Raft;
 using TaskFlux.Core;
 
 namespace TaskFlux.Host.Infrastructure;

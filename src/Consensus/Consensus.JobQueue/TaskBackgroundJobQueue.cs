@@ -1,4 +1,4 @@
-﻿using Consensus.Core;
+﻿using Consensus.Raft;
 using Serilog;
 
 namespace Consensus.JobQueue;
@@ -12,7 +12,7 @@ public class TaskBackgroundJobQueue: IBackgroundJobQueue
         _logger = logger;
     }
     
-    public void EnqueueInfinite(Func<Task> job, CancellationToken token)
+    public void RunInfinite(Func<Task> job, CancellationToken token)
     {
         _ = Task.Run(async () =>
         {

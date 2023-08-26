@@ -10,7 +10,7 @@
         <ProjectReference Include="..\..\..\..\JobQueue\JobQueue.Core\JobQueue.Core.csproj"/>
         <ProjectReference Include="..\..\..\..\TaskFlux.Commands\TaskFlux.Commands.csproj"/>
         <ProjectReference Include="..\..\..\..\TaskFlux.Network.Requests\TaskFlux.Network.Requests.csproj"/>
-        <ProjectReference Include="..\..\..\Consensus.Core\Consensus.Core.csproj"/>
+        <ProjectReference Include="..\..\..\Consensus.Raft\Consensus.Raft.csproj"/>
         <ProjectReference Include="..\..\Consensus.StateMachine.TaskFlux.Serialization\Consensus.StateMachine.TaskFlux.Serialization.csproj"/>
     </ItemGroup>
 

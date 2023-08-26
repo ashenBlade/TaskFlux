@@ -1,5 +1,5 @@
 using System.Net.Sockets;
-using Consensus.Core;
+using Consensus.Raft;
 using Consensus.Network;
 using Consensus.Network.Packets;
 using Consensus.Peer;

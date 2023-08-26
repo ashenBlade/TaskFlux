@@ -1,4 +1,4 @@
-using Consensus.Core.Commands.Submit;
+using Consensus.Raft.Commands.Submit;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.CreateQueue;

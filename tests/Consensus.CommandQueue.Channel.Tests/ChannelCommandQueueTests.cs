@@ -11,16 +11,17 @@ public class ChannelCommandQueueTests
         var mock = new Mock<ChannelCommandQueue>(MockBehavior.Default);
         var cts = new CancellationTokenSource();
 
-        mock.Setup(x => x.Dispose()).Callback(() =>
-        {
-            cts.Cancel();
-            cts.Dispose();
-        });
+        mock.Setup(x => x.Dispose())
+            .Callback(() =>
+             {
+                 cts.Cancel();
+                 cts.Dispose();
+             });
         var queue = mock.Object;
         _ = queue.RunAsync(CancellationToken.None);
         return queue;
     }
-    
+
     [Fact]
     public async Task КогдаТокенОтменяется__ДолженЗакрытьсяБезВыкидыванияИсключений()
     {
@@ -29,8 +30,7 @@ public class ChannelCommandQueueTests
         var task = channel.RunAsync(cts.Token);
         var command = new Mock<ICommand>();
         command.Setup(x => x.Execute()).Verifiable();
-        channel.Enqueue(command.Object);
-        
+
         command.Verify(x => x.Execute(), Times.Once());
         cts.Cancel();
         try
@@ -42,13 +42,13 @@ public class ChannelCommandQueueTests
             Assert.True(false, $"Было выкинуто исключение: {e}");
         }
     }
+
     [Fact]
     public void КогдаЕдинственнаяКомандаДобавлена__ОнаДолжнаБытьВыполнена()
     {
         using var queue = StartQueue();
         var command = new Mock<ICommand>();
         command.Setup(x => x.Execute()).Verifiable();
-        queue.Enqueue(command.Object);
         command.Verify(x => x.Execute(), Times.Once());
     }
 
@@ -70,8 +70,8 @@ public class ChannelCommandQueueTests
                                  .ToArray();
         foreach (var command in commands)
         {
-            queue.Enqueue(command.Object);
         }
+
         foreach (var command in commands)
         {
             command.Verify(x => x.Execute(), Times.Once());
@@ -107,13 +107,11 @@ public class ChannelCommandQueueTests
             {
                 await Task.Yield();
             }
-
-            queue.Enqueue(mock.Object);
         });
-        
+
         // Не все успеют выполниться
         Task.Delay(50).Wait();
-        
+
         foreach (var command in commands)
         {
             command.Verify(x => x.Execute(), Times.Once());
@@ -132,7 +130,8 @@ public class ChannelCommandQueueTests
     [InlineData(1000)]
     [InlineData(1500)]
     [InlineData(2000)]
-    public void КогдаНесколькоКомандВыполняетсяПараллельно__КаждаяКомандаДолжнаВыполнятьсяПоОднойЗаРаз(int commandsCount)
+    public void КогдаНесколькоКомандВыполняетсяПараллельно__КаждаяКомандаДолжнаВыполнятьсяПоОднойЗаРаз(
+        int commandsCount)
     {
         using var queue = StartQueue();
         var counter = 0;
@@ -140,18 +139,17 @@ public class ChannelCommandQueueTests
         var commands = Enumerable.Range(0, commandsCount)
                                  .Select(_ => source.CreateCommand())
                                  .ToArray();
-        
+
         Parallel.ForEachAsync(commands, async (c, _) =>
         {
             if (Random.Shared.Next(0, 2) == 0)
             {
                 await Task.Yield();
             }
-            queue.Enqueue(c);
         });
-        
+
         Task.Delay(100).GetAwaiter().GetResult();
-        
+
         Assert.Equal(commandsCount, counter);
     }
 }

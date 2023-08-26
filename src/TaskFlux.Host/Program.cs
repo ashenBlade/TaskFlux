@@ -4,19 +4,16 @@ using System.Net;
 using System.Net.Sockets;
 using Consensus.CommandQueue;
 using Consensus.CommandQueue.Channel;
-using Consensus.Core;
-using Consensus.Core.Log;
-using Consensus.Core.State.LeaderState;
+using Consensus.Raft;
+using Consensus.Raft.Persistence;
+using Consensus.Raft.Persistence.Log;
+using Consensus.Raft.Persistence.Metadata;
+using Consensus.Raft.Persistence.Metadata.Decorators;
+using Consensus.Raft.Persistence.Snapshot;
+using Consensus.Raft.State.LeaderState;
 using Consensus.JobQueue;
 using Consensus.Peer;
-using Consensus.Peer.Decorators;
-using Consensus.Persistence;
-using Consensus.Persistence.Log;
-using Consensus.Persistence.Metadata;
-using Consensus.Persistence.Snapshot;
 using Consensus.StateMachine.TaskFlux;
-using Consensus.Storage.File.Log.Decorators;
-using Consensus.Storage.File.Metadata.Decorators;
 using Consensus.Timers;
 using JobQueue.Core;
 using JobQueue.InMemory;
@@ -40,7 +37,7 @@ Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()
             .Enrich.FromLogContext()
             .WriteTo.Console(outputTemplate:
-                 "[{Timestamp:HH:mm:ss.ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
+                 "[{Timestamp:HH:mm:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
             .CreateLogger();
 try
 {
@@ -71,7 +68,6 @@ try
                                   IPeer peer = new TcpPeer(client, endpoint, id, nodeId,
                                       networkOptions.ConnectionTimeout, networkOptions.RequestTimeout,
                                       Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
-                                  peer = new ExclusiveAccessPeerDecorator(peer);
                                   peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
                                   return peer;
                               })
@@ -82,11 +78,11 @@ try
     Log.Logger.Information("Открываю файл с метаданными");
     await using var metadataFileStream = OpenMetadataFile(serverOptions);
     Log.Logger.Information("Инициализирую хранилище метаданных");
-    var (metadataStorage, _) = CreateMetadataStorage(metadataFileStream);
+    var (_, fileMetadataStorage) = CreateMetadataStorage(metadataFileStream);
 
     Log.Information("Инициализирую хранилище лога команд");
-    var (storage, fileStorage) = CreateLogStorage();
-    var log = CreateStoragePersistenceManager(storage, metadataStorage);
+    var fileLogStorage = CreateLogStorage();
+    var log = CreateStoragePersistenceManager(fileLogStorage, fileMetadataStorage);
 
     Log.Information("Создаю очередь машины состояний");
     var appInfo = CreateApplicationInfo();
@@ -95,7 +91,7 @@ try
     var nodeInfo = CreateNodeInfo(serverOptions);
     var commandContext = new CommandContext(node, nodeInfo, appInfo, clusterInfo);
 
-    RestoreState(log, fileStorage, commandContext);
+    RestoreState(log, fileLogStorage, commandContext);
 
     var jobQueueStateMachine = CreateJobQueueStateMachine(commandContext);
 
@@ -104,7 +100,7 @@ try
     using var commandQueue = new ChannelCommandQueue();
 
     using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, electionTimer, heartbeatTimer, log,
-        commandQueue, jobQueueStateMachine, metadataStorage, nodeInfo, appInfo, clusterInfo);
+        commandQueue, jobQueueStateMachine, nodeInfo, appInfo, clusterInfo);
     var consensusModule =
         new InfoUpdaterConsensusModuleDecorator<Command, Result>(raftConsensusModule, clusterInfo, nodeInfo);
 
@@ -229,7 +225,7 @@ EndPoint GetEndpoint(string host, int port)
     return new DnsEndPoint(host, port);
 }
 
-( ILogStorage, FileLogStorage ) CreateLogStorage()
+FileLogStorage CreateLogStorage()
 {
     FileLogStorage fileStorage;
 
@@ -248,8 +244,8 @@ EndPoint GetEndpoint(string host, int port)
         throw;
     }
 
-    ILogStorage logStorage = new LastLogEntryCachingFileLogStorageDecorator(fileStorage);
-    return ( logStorage, fileStorage );
+    
+    return fileStorage;
 
 
     IDirectoryInfo GetConsensusDirectory()
@@ -315,28 +311,27 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
                                                                IPeer[] peers,
                                                                ITimer randomizedTimer,
                                                                ITimer systemTimersTimer,
-                                                               IPersistenceManager storageLog,
+                                                               StoragePersistenceFacade storage,
                                                                ICommandQueue channelCommandQueue,
                                                                IStateMachine<Command, Result> stateMachine,
-                                                               IMetadataStorage metadataStorage,
                                                                INodeInfo nodeInfo,
                                                                IApplicationInfo appInfo,
                                                                IClusterInfo clusterInfo)
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
     var logger = Log.ForContext("SourceContext", "Raft");
-    var commandSerializer = new ProxyCommandSerializer();
-    var requestQueueFactory = new ChannelRequestQueueFactory(storageLog);
+    var commandSerializer = new ProxyCommandCommandSerializer();
+    var requestQueueFactory = new ChannelRequestQueueFactory(storage);
     var peerGroup = new PeerGroup(peers);
     var stateMachineFactory = new TaskFluxStateMachineFactory(nodeInfo, appInfo, clusterInfo);
 
     return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, randomizedTimer, systemTimersTimer,
-        jobQueue, storageLog, channelCommandQueue, stateMachine, stateMachineFactory, metadataStorage,
+        jobQueue, storage, channelCommandQueue, stateMachine, stateMachineFactory,
         commandSerializer,
         requestQueueFactory);
 }
 
-void RestoreState(StoragePersistenceManager storageLog, FileLogStorage fileLogStorage, ICommandContext context)
+void RestoreState(StoragePersistenceFacade storageLog, FileLogStorage fileLogStorage, ICommandContext context)
 {
     if (fileLogStorage.Count == 0)
     {
@@ -381,7 +376,7 @@ NodeInfo CreateNodeInfo(RaftServerOptions options)
     return new NodeInfo(new NodeId(options.NodeId), NodeRole.Follower);
 }
 
-StoragePersistenceManager CreateStoragePersistenceManager(ILogStorage logStorage, IMetadataStorage metadataStorage)
+StoragePersistenceFacade CreateStoragePersistenceManager(FileLogStorage logStorage, FileMetadataStorage metadataStorage)
 {
     var currentDirectory = Directory.GetCurrentDirectory();
     var raftDirectory = new DirectoryInfo(Path.Combine(currentDirectory, "consensus"));
@@ -401,7 +396,7 @@ StoragePersistenceManager CreateStoragePersistenceManager(ILogStorage logStorage
     var tempDir = new DirectoryInfoWrapper(fs, CreateTemporarySnapshotFileDirectory(raftDirectory));
     var snapshotStorage = new FileSystemSnapshotStorage(snapshotFile, tempDir);
 
-    return new StoragePersistenceManager(logStorage, metadataStorage, snapshotStorage);
+    return new StoragePersistenceFacade(logStorage, metadataStorage, snapshotStorage);
 
     static DirectoryInfo CreateTemporarySnapshotFileDirectory(DirectoryInfo raftDir)
     {

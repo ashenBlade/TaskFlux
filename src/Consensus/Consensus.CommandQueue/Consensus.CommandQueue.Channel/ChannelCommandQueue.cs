@@ -2,16 +2,17 @@ using System.Threading.Channels;
 
 namespace Consensus.CommandQueue.Channel;
 
-public class ChannelCommandQueue: ICommandQueue, IDisposable
+public class ChannelCommandQueue : ICommandQueue, IDisposable
 {
-    private readonly Channel<CommandChannelEntry> _channel = System.Threading.Channels.Channel.CreateUnbounded<CommandChannelEntry>(new UnboundedChannelOptions()
-    {
-        SingleReader = true,
-        SingleWriter = false,
-        // Не ставить в true иначе при пустой очереди получим дедлок
-        // 
-        AllowSynchronousContinuations = false
-    });
+    private readonly Channel<CommandChannelEntry> _channel =
+        System.Threading.Channels.Channel.CreateUnbounded<CommandChannelEntry>(new UnboundedChannelOptions()
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            // Не ставить в true иначе при пустой очереди получим дедлок
+            // 
+            AllowSynchronousContinuations = false
+        });
 
     private IDisposable BeginScope()
     {
@@ -27,12 +28,6 @@ public class ChannelCommandQueue: ICommandQueue, IDisposable
             scope.Cancel();
             throw;
         }
-    }
-    
-    public void Enqueue(ICommand command)
-    {
-        using var _ = BeginScope();
-        command.Execute();
     }
 
     public T Enqueue<T>(ICommand<T> command)
@@ -64,7 +59,8 @@ public class ChannelCommandQueue: ICommandQueue, IDisposable
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
-        { }
+        {
+        }
     }
 
     public virtual void Dispose()

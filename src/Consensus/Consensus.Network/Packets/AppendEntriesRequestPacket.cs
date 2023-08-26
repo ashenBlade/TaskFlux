@@ -1,12 +1,12 @@
-using System.Buffers;
-using Consensus.Core.Commands.AppendEntries;
+using Consensus.Raft.Commands.AppendEntries;
 using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Network.Packets;
 
-public class AppendEntriesRequestPacket: RaftPacket
+public class AppendEntriesRequestPacket : RaftPacket
 {
     public override RaftPacketType PacketType => RaftPacketType.AppendEntriesRequest;
+
     protected override int EstimatePacketSize()
     {
         const int baseSize = 1  // Маркер
@@ -24,21 +24,21 @@ public class AppendEntriesRequestPacket: RaftPacket
             return baseSize;
         }
 
-        return baseSize + entries.Sum(entry => 4 // Term
-                                             + 4 // Размер
-                                             + entry.Data.Length);
+        return baseSize
+             + entries.Sum(entry => 4 // Term
+                                  + 4 // Размер
+                                  + entry.Data.Length);
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write((byte)RaftPacketType.AppendEntriesRequest);
-        writer.Write(buffer.Length - 
-                     (
+        writer.Write(( byte ) RaftPacketType.AppendEntriesRequest);
+        writer.Write(buffer.Length
+                   - (
                          sizeof(RaftPacketType) // Packet Type 
                        + sizeof(int)            // Length
-                     )
-            );
+                     ));
 
         writer.Write(Request.Term.Value);
         writer.Write(Request.LeaderId.Value);
@@ -50,7 +50,7 @@ public class AppendEntriesRequestPacket: RaftPacket
         {
             return;
         }
-        
+
         foreach (var entry in Request.Entries)
         {
             writer.Write(entry.Term.Value);
@@ -59,7 +59,8 @@ public class AppendEntriesRequestPacket: RaftPacket
     }
 
     public AppendEntriesRequest Request { get; }
-    public AppendEntriesRequestPacket(AppendEntriesRequest request) 
+
+    public AppendEntriesRequestPacket(AppendEntriesRequest request)
     {
         Request = request;
     }

@@ -1,7 +1,7 @@
 ﻿using System.Net;
 using System.Net.Sockets;
+using Consensus.Raft;
 using Microsoft.Extensions.Options;
-using Consensus.Core;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Core;
@@ -35,7 +35,8 @@ public class BinaryRequestModule
         var port = _options.CurrentValue.Port;
         var listener = new TcpListener(IPAddress.Any, port);
         var backlogSize = _options.CurrentValue.BacklogSize;
-        _logger.Debug("Инициализирую сокет сервера на порту {Port} с размером бэклога {BacklogSize}", port, backlogSize);
+        _logger.Debug("Инициализирую сокет сервера на порту {Port} с размером бэклога {BacklogSize}", port,
+            backlogSize);
         listener.Start(backlogSize);
         _logger.Information("Инициализация модуля закончилась. Начинаю принимать входящие запросы");
         try
@@ -43,14 +44,16 @@ public class BinaryRequestModule
             while (token.IsCancellationRequested is false)
             {
                 var client = await listener.AcceptTcpClientAsync(token);
-                var processor = new RequestProcessor(client, _consensusModule, _options, _applicationInfo, _clusterInfo, Log.ForContext<RequestProcessor>());
+                var processor = new RequestProcessor(client, _consensusModule, _options, _applicationInfo, _clusterInfo,
+                    Log.ForContext<RequestProcessor>());
                 // MAYBE: может лучше свой пул потоков для обработки клиентов?
                 _ = processor.ProcessAsync(token);
             }
         }
-        catch (OperationCanceledException) 
-            when (token.IsCancellationRequested) 
-        { }
+        catch (OperationCanceledException)
+            when (token.IsCancellationRequested)
+        {
+        }
         catch (Exception e)
         {
             _logger.Error(e, "Необработанное исключение во время работы модуля запросов");

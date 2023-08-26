@@ -1,5 +1,5 @@
 ﻿using System.Timers;
-using Consensus.Core;
+using Consensus.Raft;
 
 namespace Consensus.Timers;
 

@@ -1,4 +1,4 @@
-using Consensus.Core.Commands.RequestVote;
+using Consensus.Raft.Commands.RequestVote;
 using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Network.Packets;

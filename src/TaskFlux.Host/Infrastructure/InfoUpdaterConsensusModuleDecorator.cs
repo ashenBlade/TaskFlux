@@ -1,12 +1,10 @@
-using Consensus.CommandQueue;
-using Consensus.Core;
-using Consensus.Core.Commands.AppendEntries;
-using Consensus.Core.Commands.InstallSnapshot;
-using Consensus.Core.Commands.RequestVote;
-using Consensus.Core.Commands.Submit;
-using Consensus.Core.Log;
-using Consensus.Core.State;
-using Consensus.Core.State.LeaderState;
+using Consensus.Raft;
+using Consensus.Raft.Commands.AppendEntries;
+using Consensus.Raft.Commands.InstallSnapshot;
+using Consensus.Raft.Commands.RequestVote;
+using Consensus.Raft.Commands.Submit;
+using Consensus.Raft.Persistence;
+using Consensus.Raft.State;
 using TaskFlux.Core;
 using TaskFlux.Node;
 
@@ -47,14 +45,10 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
     public NodeId? VotedFor =>
         _module.VotedFor;
 
-    public ConsensusModuleState<TCommand, TResult> CurrentState
-    {
-        get => _module.CurrentState;
-        set => _module.CurrentState = value;
-    }
+    public State<TCommand, TResult> CurrentState => _module.CurrentState;
 
-    public bool TryUpdateState(ConsensusModuleState<TCommand, TResult> newState,
-                               ConsensusModuleState<TCommand, TResult> oldState)
+    public bool TryUpdateState(State<TCommand, TResult> newState,
+                               State<TCommand, TResult> oldState)
     {
         return _module.TryUpdateState(newState, oldState);
     }
@@ -68,11 +62,8 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
     public IBackgroundJobQueue BackgroundJobQueue =>
         _module.BackgroundJobQueue;
 
-    public ICommandQueue CommandQueue =>
-        _module.CommandQueue;
-
-    public IPersistenceManager PersistenceManager =>
-        _module.PersistenceManager;
+    public StoragePersistenceFacade PersistenceFacade =>
+        _module.PersistenceFacade;
 
     public PeerGroup PeerGroup =>
         _module.PeerGroup;
@@ -82,13 +73,7 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
         get => _module.StateMachine;
         set => _module.StateMachine = value;
     }
-
-    public IStateMachineFactory<TCommand, TResult> StateMachineFactory =>
-        _module.StateMachineFactory;
-
-    public ISerializer<TCommand> CommandSerializer =>
-        _module.CommandSerializer;
-
+    
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {
         return _module.Handle(request);
@@ -121,17 +106,17 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
         remove => _module.RoleChanged -= value;
     }
 
-    public FollowerState<TCommand, TResult> CreateFollowerState()
+    public State<TCommand, TResult> CreateFollowerState()
     {
         return _module.CreateFollowerState();
     }
 
-    public LeaderState<TCommand, TResult> CreateLeaderState()
+    public State<TCommand, TResult> CreateLeaderState()
     {
         return _module.CreateLeaderState();
     }
 
-    public CandidateState<TCommand, TResult> CreateCandidateState()
+    public State<TCommand, TResult> CreateCandidateState()
     {
         return _module.CreateCandidateState();
     }

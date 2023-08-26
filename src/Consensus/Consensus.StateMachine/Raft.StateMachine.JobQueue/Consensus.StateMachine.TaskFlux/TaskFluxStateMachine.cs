@@ -1,5 +1,5 @@
-using Consensus.Core;
-using Consensus.Core.Persistence;
+using Consensus.Raft;
+using Consensus.Raft.Persistence;
 using Consensus.StateMachine.TaskFlux.Serialization;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Visitors;

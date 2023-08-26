@@ -22,7 +22,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\src\Consensus\Consensus.Core\Consensus.Core.csproj" />
+      <ProjectReference Include="..\..\src\Consensus\Consensus.Raft\Consensus.Raft.csproj"/>
       <ProjectReference Include="..\..\src\Consensus\Consensus.Peer\Consensus.Peer.csproj" />
     </ItemGroup>
 
