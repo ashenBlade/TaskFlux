@@ -30,7 +30,7 @@ public class FileMetadataStorageTests
         var expected = new Term(term);
         var storage = new FileMetadataStorage(memory, expected, null);
 
-        var actual = storage.ReadTerm();
+        var actual = storage.Term;
         Assert.Equal(expected, actual);
     }
 
@@ -51,7 +51,7 @@ public class FileMetadataStorageTests
                                : new NodeId(votedFor.Value);
         var storage = new FileMetadataStorage(memory, Term.Start, expected);
 
-        var actual = storage.ReadVotedFor();
+        var actual = storage.VotedFor;
         Assert.Equal(expected, actual);
     }
 
@@ -70,7 +70,7 @@ public class FileMetadataStorageTests
 
         storage.Update(expected, null);
 
-        var actual = storage.ReadTerm();
+        var actual = storage.Term;
         Assert.Equal(expected, actual);
     }
 
@@ -95,7 +95,7 @@ public class FileMetadataStorageTests
 
         storage.Update(Term.Start, expected);
 
-        var actual = storage.ReadVotedFor();
+        var actual = storage.VotedFor;
         Assert.Equal(expected, actual);
     }
 
@@ -114,9 +114,9 @@ public class FileMetadataStorageTests
         var expected = GetTerm(defaultTerm);
         var oldStorage = new FileMetadataStorage(memory, expected, null);
 
-        var _ = oldStorage.ReadTerm();
+        var _ = oldStorage.Term;
         var newStorage = new FileMetadataStorage(memory, GetTerm(newDefaultTerm), null);
-        var actual = newStorage.ReadTerm();
+        var actual = newStorage.Term;
 
         Assert.Equal(expected, actual);
     }
@@ -142,9 +142,9 @@ public class FileMetadataStorageTests
         var expected = GetNodeId(defaultVotedFor);
         var oldStorage = new FileMetadataStorage(memory, Term.Start, expected);
 
-        var _ = oldStorage.ReadVotedFor();
+        var _ = oldStorage.VotedFor;
         var newStorage = new FileMetadataStorage(memory, Term.Start, GetNodeId(newDefaultVotedFor));
-        var actual = newStorage.ReadVotedFor();
+        var actual = newStorage.VotedFor;
 
         Assert.Equal(expected, actual);
     }
@@ -176,7 +176,7 @@ public class FileMetadataStorageTests
 
         oldStorage.Update(expected, null);
         var newStorage = new FileMetadataStorage(memory, GetTerm(newDefaultTerm), null);
-        var actual = newStorage.ReadTerm();
+        var actual = newStorage.Term;
 
         Assert.Equal(expected, actual);
     }

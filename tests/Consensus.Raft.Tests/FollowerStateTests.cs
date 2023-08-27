@@ -1,5 +1,4 @@
 using System.IO.Abstractions;
-using System.Text.Json.Serialization;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
@@ -13,7 +12,6 @@ using Consensus.Raft.Tests.Infrastructure;
 using Moq;
 using Serilog.Core;
 using TaskFlux.Core;
-using Range = Moq.Range;
 
 namespace Consensus.Raft.Tests;
 
@@ -31,11 +29,11 @@ public class FollowerStateTests
     {
         var fs = Helpers.CreateFileSystem();
         electionTimer ??= Helpers.NullTimer;
-        
+
         var backgroundJobQueue = jobQueue ?? Helpers.NullBackgroundJobQueue;
-        
-        var persistence = new StoragePersistenceFacade(new FileLogStorage(fs.Log.Open(FileMode.OpenOrCreate)), 
-            new FileMetadataStorage(fs.Metadata.Open(FileMode.OpenOrCreate), currentTerm, votedFor), 
+
+        var persistence = new StoragePersistenceFacade(new FileLogStorage(fs.Log.Open(FileMode.OpenOrCreate)),
+            new FileMetadataStorage(fs.Metadata.Open(FileMode.OpenOrCreate), currentTerm, votedFor),
             new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory));
 
         var node = new RaftConsensusModule(NodeId,
@@ -44,17 +42,18 @@ public class FollowerStateTests
             electionTimer,
             Helpers.NullTimer,
             backgroundJobQueue,
-            persistence, 
+            persistence,
             Helpers.NullCommandQueue,
             Helpers.NullStateMachine,
             Helpers.NullCommandSerializer,
             Helpers.NullRequestQueueFactory,
             Helpers.NullStateMachineFactory);
-        node.SetStateTest(new FollowerState<int, int>(node, Helpers.NullStateMachineFactory, Helpers.NullCommandSerializer, Logger.None));
-        
+        node.SetStateTest(new FollowerState<int, int>(node, Helpers.NullStateMachineFactory,
+            Helpers.NullCommandSerializer, Logger.None));
+
         return node;
     }
-    
+
     [Fact]
     public void RequestVote__СБолееВысокимТермом()
     {
@@ -153,7 +152,7 @@ public class FollowerStateTests
         var response = node.Handle(request);
 
         Assert.False(response.VoteGranted);
-        
+
         // Проверка, что состояние не изменилось
         Assert.Equal(term, node.CurrentTerm);
         Assert.Null(node.VotedFor);
@@ -183,12 +182,12 @@ public class FollowerStateTests
         Assert.Equal(expectedTerm, node.CurrentTerm);
         Assert.Null(node.VotedFor);
     }
-    
+
     [Fact]
     public void RequestVote__ДолженПерезапуститьElectionTimeout()
     {
         var timer = new Mock<ITimer>();
-        timer.Setup(x => x.Reset()) .Verifiable();
+        timer.Setup(x => x.Reset()).Verifiable();
         var stateMachine = CreateFollowerNode(new Term(1), null, electionTimer: timer.Object);
 
         stateMachine.Handle(new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: new Term(1),
@@ -196,7 +195,7 @@ public class FollowerStateTests
 
         timer.Verify(x => x.Reset(), Times.Once());
     }
-    
+
     [Fact]
     public void ElectionTimeout__ДолженПерейтиВСостояниеCandidate()
     {
@@ -228,7 +227,7 @@ public class FollowerStateTests
         var oldTerm = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
         using var stateMachine = CreateFollowerNode(oldTerm, null, timer.Object);
-        
+
         timer.Raise(x => x.Timeout += null);
 
         Assert.Equal(stateMachine.Id, stateMachine.VotedFor);
@@ -243,13 +242,13 @@ public class FollowerStateTests
     {
         var oldTerm = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
-        
+
         timer.Setup(x => x.Reset()).Verifiable();
-        
+
         using var node = CreateFollowerNode(oldTerm, null, electionTimer: timer.Object);
 
         var request = AppendEntriesRequest.Heartbeat(new Term(term), 0,
-            new NodeId(Value: NodeId.Value + 1), new LogEntryInfo(new Term(term), 0));
+            new NodeId(value: NodeId.Value + 1), new LogEntryInfo(new Term(term), 0));
 
         node.Handle(request);
 
@@ -260,20 +259,20 @@ public class FollowerStateTests
     public void Heartbeat__СОдинаковымТермомИОдинаковойПоследнейЗаписью__ДолженОтдатьГолос()
     {
         var term = new Term(3);
-        
+
         var node = CreateFollowerNode(term, null);
-        
-        node.PersistenceFacade.InsertRange(new LogEntry[]
-        {
-            new(new(1), Array.Empty<byte>()),
-            new(new(2), Array.Empty<byte>()),
-            new(new(4), Array.Empty<byte>()),
-        }, 0);
+
+        node.PersistenceFacade.InsertRange(
+            new LogEntry[]
+            {
+                new(new(1), Array.Empty<byte>()), new(new(2), Array.Empty<byte>()),
+                new(new(4), Array.Empty<byte>()),
+            }, 0);
 
         // Наша последняя запись - (4, 2)
         // Последняя запись кандидата - (4, 2)
         var request = AppendEntriesRequest.Heartbeat(term, 2,
-            new NodeId(Value: NodeId.Value + 1), new LogEntryInfo(new Term(4), 2));
+            new NodeId(value: NodeId.Value + 1), new LogEntryInfo(new Term(4), 2));
 
         var response = node.Handle(request);
 
@@ -333,10 +332,12 @@ public class FollowerStateTests
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
     }
 
-    
+
     private record ConsensusFileSystem(IFileInfo LogFile, IFileInfo MetadataFile, IFileInfo SnapshotFile);
-    
-    private record NodeCreateResult(RaftConsensusModule Module, StoragePersistenceFacade Persistence, ConsensusFileSystem FileSystem);
+
+    private record NodeCreateResult(RaftConsensusModule Module,
+                                    StoragePersistenceFacade Persistence,
+                                    ConsensusFileSystem FileSystem);
 
     private static NodeCreateResult CreateFollowerNodeNew()
     {
@@ -345,26 +346,27 @@ public class FollowerStateTests
 
         // Follower не использует фоновые задачи - это только для Candidate/Leader
         var backgroundJobQueue = Mock.Of<IBackgroundJobQueue>();
-        
+
         // Follower не использует Heartbeat - это только для Leader
         var heartbeatTimer = Mock.Of<ITimer>();
-        
+
         // Очередь команд - абстракция только для синхронного выполнения команд (потом может вынесу выше)
         var commandQueue = new SimpleCommandQueue();
-        
+
         // Нужно только лидеру
         var requestQueueFactory = Mock.Of<IRequestQueueFactory>();
-        
-        
+
+
         var electionTimer = Mock.Of<ITimer>();
-        var commandSerializer = Mock.Of<ICommandSerializer<int>>(x => x.Serialize(It.IsAny<int>()) == Array.Empty<byte>());
+        var commandSerializer =
+            Mock.Of<ICommandSerializer<int>>(x => x.Serialize(It.IsAny<int>()) == Array.Empty<byte>());
 
         var (persistenceFacade, fileSystem) = CreateStorage();
-        
+
         var node = new RaftConsensusModule(NodeId, peers, Logger.None, electionTimer, heartbeatTimer,
             backgroundJobQueue,
-            persistenceFacade, 
-            commandQueue, 
+            persistenceFacade,
+            commandQueue,
             Helpers.NullStateMachine,
             commandSerializer,
             requestQueueFactory,
@@ -373,7 +375,7 @@ public class FollowerStateTests
         node.SetStateTest(new FollowerState<int, int>(node, node.StateMachineFactory, commandSerializer, Logger.None));
 
         return new NodeCreateResult(node, persistenceFacade, fileSystem);
-        
+
         (StoragePersistenceFacade, ConsensusFileSystem) CreateStorage()
         {
             var (_, log, metadata, snapshot, tempDir) = Helpers.CreateFileSystem();
@@ -384,17 +386,18 @@ public class FollowerStateTests
                      new ConsensusFileSystem(log, metadata, snapshot) );
         }
     }
-    
+
     [Fact]
     public void InstallSnapshot__ДолженСоздатьНовыйФайлСнапшота()
     {
         var (node, persistence, fs) = CreateFollowerNodeNew();
         fs.SnapshotFile.Delete();
-        
+
         var lastIncludedIndex = 10;
         var lastIncludedTerm = new Term(2);
         var snapshotData = new byte[] {1, 2, 3};
-        var request = new InstallSnapshotRequest(new Term(2), new NodeId(1), lastIncludedIndex, lastIncludedTerm, new StubSnapshot(snapshotData));
+        var request = new InstallSnapshotRequest(new Term(2), new NodeId(1), lastIncludedIndex, lastIncludedTerm,
+            new StubSnapshot(snapshotData));
         node.Handle(request);
 
 
@@ -408,13 +411,14 @@ public class FollowerStateTests
     public void InstallSnapshot__СуществующийПустойФайлСнапшотаДолженПерезаписаться()
     {
         var (node, persistence, _) = CreateFollowerNodeNew();
-        
+
         var lastIncludedIndex = 10;
         var lastIncludedTerm = new Term(2);
         var snapshotData = new byte[] {1, 2, 3};
-        var request = new InstallSnapshotRequest(new Term(2), new NodeId(1), lastIncludedIndex, lastIncludedTerm, new StubSnapshot(snapshotData));
+        var request = new InstallSnapshotRequest(new Term(2), new NodeId(1), lastIncludedIndex, lastIncludedTerm,
+            new StubSnapshot(snapshotData));
         node.Handle(request);
-        
+
         var (index, term, data) = persistence.ReadSnapshotFileTest();
         Assert.Equal(lastIncludedIndex, index);
         Assert.Equal(lastIncludedTerm, term);
@@ -427,20 +431,21 @@ public class FollowerStateTests
         var (node, persistence, _) = CreateFollowerNodeNew();
         persistence.SnapshotStorage.WriteSnapshotDataTest(new Term(123), 876,
             new StubSnapshot(new byte[] {9, 5, 234, 1, 6, 2, 44, 2, 7, 45, 52, 97}));
-        
+
         var lastIncludedIndex = 10;
         var lastIncludedTerm = new Term(2);
         var snapshotData = new byte[] {1, 2, 3};
-        var request = new InstallSnapshotRequest(new Term(2), new NodeId(1), lastIncludedIndex, lastIncludedTerm, new StubSnapshot(snapshotData));
+        var request = new InstallSnapshotRequest(new Term(2), new NodeId(1), lastIncludedIndex, lastIncludedTerm,
+            new StubSnapshot(snapshotData));
         node.Handle(request);
-        
+
         var (index, term, data) = persistence.ReadSnapshotFileTest();
         Assert.Equal(lastIncludedIndex, index);
         Assert.Equal(lastIncludedTerm, term);
         Assert.Equal(snapshotData, data);
     }
 
-    private static readonly NodeId AnotherNodeId = NodeId + 1;
+    private static readonly NodeId AnotherNodeId = new NodeId(NodeId.Value + 1);
 
     [Theory]
     [InlineData(1)]
@@ -451,9 +456,9 @@ public class FollowerStateTests
     {
         var term = new Term(2);
         var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => new LogEntry(term, new[] {(byte)i}))
+                                .Select(i => new LogEntry(term, new[] {( byte ) i}))
                                 .ToArray();
-        
+
         // Лог изначально был пуст и у нас, и у лидера
         // Причем, еще ничего не закомичено
         var node = CreateFollowerNode(term, null);
@@ -472,30 +477,21 @@ public class FollowerStateTests
     {
         var term = new Term(2);
         var node = CreateFollowerNode(term, null);
-        
+
         // 3 закоммиченные записи с индексами
         var committedEntries = new LogEntry[]
         {
-            new(new(1), new byte[] {1}),
-            new(new(2), new byte[] {2}),
-            new(new(2), new byte[] {3}),
+            new(new(1), new byte[] {1}), new(new(2), new byte[] {2}), new(new(2), new byte[] {3}),
         };
         node.PersistenceFacade.LogStorage.AppendRange(committedEntries);
-        
+
         // Добавляем 2 незакоммиченные записи
-        node.PersistenceFacade.InsertRange(new LogEntry[]
-        {
-            new(new(3), new byte[] {4}),
-            new(new(3), new byte[] {5}),
-        }, 3);
+        node.PersistenceFacade.InsertRange(new LogEntry[] {new(new(3), new byte[] {4}), new(new(3), new byte[] {5}),},
+            3);
 
         // В запросе передается 1 запись (идет сразу после наших закоммиченных) 
         var leaderCommit = 2;
-        var newEntries = new LogEntry[]
-        {
-            new(new(3), new byte[] {6}),
-            new(new(3), new byte[] {7}),
-        };
+        var newEntries = new LogEntry[] {new(new(3), new byte[] {6}), new(new(3), new byte[] {7}),};
         var prevLogEntryInfo = new LogEntryInfo(committedEntries[^1].Term, committedEntries.Length - 1);
         var request = new AppendEntriesRequest(term, leaderCommit, AnotherNodeId, prevLogEntryInfo, newEntries);
 

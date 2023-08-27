@@ -1,10 +1,10 @@
 using System.Runtime.CompilerServices;
-using Moq;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.State.LeaderState;
 using Consensus.Raft.Tests.Infrastructure;
+using Moq;
 using TaskFlux.Core;
 
 namespace Consensus.Raft.Tests;
@@ -12,7 +12,14 @@ namespace Consensus.Raft.Tests;
 [Trait("Category", "Raft")]
 public class LeaderStateTests
 {
-    private static RaftConsensusModule<int, int> CreateLeaderNode(Term currentTerm, NodeId? votedFor, IEnumerable<IPeer>? peers = null, ITimer? electionTimer = null, ITimer? heartbeatTimer = null, IBackgroundJobQueue? jobQueue = null, IPersistenceFacade? log = null, IRequestQueueFactory? requestQueueFactory = null)
+    private static RaftConsensusModule<int, int> CreateLeaderNode(Term currentTerm,
+                                                                  NodeId? votedFor,
+                                                                  IEnumerable<IPeer>? peers = null,
+                                                                  ITimer? electionTimer = null,
+                                                                  ITimer? heartbeatTimer = null,
+                                                                  IBackgroundJobQueue? jobQueue = null,
+                                                                  IPersistenceFacade? log = null,
+                                                                  IRequestQueueFactory? requestQueueFactory = null)
     {
         throw new NotImplementedException();
         // var node = Helpers.CreateNode(
@@ -54,27 +61,29 @@ public class LeaderStateTests
                                                .ReturnsAsync(new AppendEntriesResponse(term, true))
                                                .Verifiable()))
                               .ToList();
-        
+
         var log = new Mock<IPersistenceFacade>().Apply(l =>
         {
             l.Setup(x => x.GetFrom(It.IsAny<int>())).Returns(Array.Empty<LogEntry>());
         });
-        
-        using var node = CreateLeaderNode(term, 
+
+        using var node = CreateLeaderNode(term,
             null,
             peers.Select(x => x.Object),
             heartbeatTimer: heartbeatTimer.Object,
             jobQueue: jobQueue,
             log: log.Object,
             requestQueueFactory: new SingleHeartbeatRequestQueueFactory(0));
-        
+
         heartbeatTimer.Raise(x => x.Timeout += null);
 
         await jobQueue.Run();
-        
-        peers.ForEach(p => p.Verify(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()), Times.Once()));
+
+        peers.ForEach(p =>
+            p.Verify(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()),
+                Times.Once()));
     }
-    
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -97,12 +106,16 @@ public class LeaderStateTests
                                                .ReturnsAsync(new AppendEntriesResponse(term, true))
                                                .Verifiable()))
                               .ToList();
-        using var stateMachine = CreateLeaderNode(term, null, peers.Select(x => x.Object), heartbeatTimer: heartbeatTimer.Object);
-        
+        using var stateMachine =
+            CreateLeaderNode(term, null, peers.Select(x => x.Object), heartbeatTimer: heartbeatTimer.Object);
+
         heartbeatTimer.Raise(x => x.Timeout += null);
 
         heartbeatTimer.Verify(x => x.Start(), Times.Once());
     }
+
+    private static readonly NodeId NodeId = new NodeId(1);
+    private static readonly NodeId AnotherNodeId = new NodeId(NodeId.Value + 1);
 
     [Fact]
     public void ПриОбрабаткеЗапросаRequestVote__СБолееВысокимТермом__ДолженПерейтиВFollower()
@@ -111,16 +124,17 @@ public class LeaderStateTests
 
         using var node = CreateLeaderNode(term, null);
 
-        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: term.Increment(),
+        var request = new RequestVoteRequest(CandidateId: AnotherNodeId, CandidateTerm: term.Increment(),
             LastLogEntryInfo: node.PersistenceFacade.LastEntry);
 
         node.Handle(request);
-        
+
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
     }
-    
+
     [Fact]
-    public void ПриОбрабаткеЗапросаRequestVote__СБолееВысокимТермом__ПослеПереходаВFollowerДолженСброситьHeartbeatТаймер()
+    public void
+        ПриОбрабаткеЗапросаRequestVote__СБолееВысокимТермом__ПослеПереходаВFollowerДолженСброситьHeartbeatТаймер()
     {
         var term = new Term(1);
         var heartbeatTimer = new Mock<ITimer>().Apply(t =>
@@ -131,33 +145,35 @@ public class LeaderStateTests
 
         using var node = CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object);
 
-        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: term.Increment(),
+        var request = new RequestVoteRequest(CandidateId: AnotherNodeId, CandidateTerm: term.Increment(),
             LastLogEntryInfo: node.PersistenceFacade.LastEntry);
 
         node.Handle(request);
-        
+
         heartbeatTimer.Verify(x => x.Stop(), Times.Once());
     }
-    
+
     [Theory]
     [InlineData(2, 1)]
     [InlineData(5, 1)]
     [InlineData(5, 3)]
     [InlineData(5, 4)]
-    public void ПриОбрабаткеЗапросаRequestVote__СТермомНеБольшеСвоего__ДолженОтветитьОтрицательно(int myTerm, int otherTerm)
+    public void ПриОбрабаткеЗапросаRequestVote__СТермомНеБольшеСвоего__ДолженОтветитьОтрицательно(
+        int myTerm,
+        int otherTerm)
     {
         var term = new Term(myTerm);
 
         using var node = CreateLeaderNode(term, null);
 
-        var request = new RequestVoteRequest(CandidateId: node.Id + 1, CandidateTerm: new(otherTerm),
+        var request = new RequestVoteRequest(CandidateId: AnotherNodeId, CandidateTerm: new(otherTerm),
             LastLogEntryInfo: node.PersistenceFacade.LastEntry);
 
         var response = node.Handle(request);
-        
+
         Assert.False(response.VoteGranted);
     }
-    
+
     [Theory]
     [InlineData(2, 1)]
     [InlineData(5, 1)]
@@ -174,10 +190,11 @@ public class LeaderStateTests
 
         using var node = CreateLeaderNode(term, null);
 
-        var request = AppendEntriesRequest.Heartbeat( new(otherTerm), node.PersistenceFacade.CommitIndex, node.Id + 1, node.PersistenceFacade.LastEntry);
+        var request = AppendEntriesRequest.Heartbeat(new(otherTerm), node.PersistenceFacade.CommitIndex, AnotherNodeId,
+            node.PersistenceFacade.LastEntry);
 
         var response = node.Handle(request);
-        
+
         Assert.False(response.Success);
     }
 
@@ -194,16 +211,15 @@ public class LeaderStateTests
         var log = new Mock<IPersistenceFacade>().Apply(l =>
         {
             throw new NotImplementedException();
-            // l.Setup(x => x.ReadLog()).Returns(Array.Empty<LogEntry>());
-            // l.Setup(x => x.Contains(It.IsAny<LogEntryInfo>())).Returns(true);
         });
 
         using var node = CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object, log: log.Object);
 
-        var request = AppendEntriesRequest.Heartbeat(term.Increment(), node.PersistenceFacade.CommitIndex, new NodeId(2), node.PersistenceFacade.LastEntry);
+        var request = AppendEntriesRequest.Heartbeat(term.Increment(), node.PersistenceFacade.CommitIndex,
+            new NodeId(2), node.PersistenceFacade.LastEntry);
 
         node.Handle(request);
-        
+
         heartbeatTimer.Verify(x => x.Stop(), Times.Once());
     }
 
@@ -212,16 +228,17 @@ public class LeaderStateTests
         private readonly int _lastLogIndex;
         private readonly TaskCompletionSource _tcs = new();
         private bool _isFirstRequest = true;
-        
+
         public SingleHeartbeatRequestQueue(int lastLogIndex)
         {
             _lastLogIndex = lastLogIndex;
         }
-        public async IAsyncEnumerable<AppendEntriesRequestSynchronizer> ReadAllRequestsAsync([EnumeratorCancellation] CancellationToken token)
+
+        public async IAsyncEnumerable<AppendEntriesRequestSynchronizer> ReadAllRequestsAsync(
+            [EnumeratorCancellation] CancellationToken token)
         {
             await _tcs.Task;
-            yield return new AppendEntriesRequestSynchronizer(
-                AlwaysTrueQuorumChecker.Instance, _lastLogIndex);
+            yield return new AppendEntriesRequestSynchronizer(AlwaysTrueQuorumChecker.Instance, _lastLogIndex);
         }
 
         public void AddHeartbeatIfEmpty()
@@ -231,14 +248,16 @@ public class LeaderStateTests
                 _isFirstRequest = false;
                 return;
             }
+
             _tcs.SetResult();
         }
 
         public void AddAppendEntries(AppendEntriesRequestSynchronizer synchronizer)
-        { }
+        {
+        }
     }
-    
-    private class SingleHeartbeatRequestQueueFactory: IRequestQueueFactory
+
+    private class SingleHeartbeatRequestQueueFactory : IRequestQueueFactory
     {
         private readonly int _lastLogEntry;
 
@@ -246,6 +265,7 @@ public class LeaderStateTests
         {
             _lastLogEntry = lastLogEntry;
         }
+
         public IRequestQueue CreateQueue()
         {
             return new SingleHeartbeatRequestQueue(_lastLogEntry);
@@ -269,20 +289,19 @@ public class LeaderStateTests
                         .ReturnsAsync(new AppendEntriesResponse(peerTerm.Increment(), false))
                         .Verifiable());
 
-        using var node = CreateLeaderNode(term, 
+        using var node = CreateLeaderNode(term,
             null,
             new[] {peer.Object},
             heartbeatTimer: heartbeatTimer.Object,
             jobQueue: jobQueue,
-            
             requestQueueFactory: new SingleHeartbeatRequestQueueFactory(0));
-        
+
         var task = jobQueue.Run();
-        
+
         heartbeatTimer.Raise(x => x.Timeout += null);
 
         await task;
-        
+
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
     }
 }

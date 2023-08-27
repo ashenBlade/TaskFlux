@@ -10,12 +10,12 @@ public interface IMetadataStorage
     /// <summary>
     /// Последний сохраненный терм
     /// </summary>
-    public Term ReadTerm();
+    public Term Term { get; }
 
     /// <summary>
     /// Последний отданный голос
     /// </summary>
-    public NodeId? ReadVotedFor();
+    public NodeId? VotedFor { get; }
 
     /// <summary>
     /// Атомарно обновить метаданные узла

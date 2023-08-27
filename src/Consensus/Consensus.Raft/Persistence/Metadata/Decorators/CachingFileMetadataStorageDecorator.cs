@@ -11,19 +11,15 @@ public class CachingFileMetadataStorageDecorator : IMetadataStorage
     public CachingFileMetadataStorageDecorator(IMetadataStorage storage)
     {
         _storage = storage;
-        _term = storage.ReadTerm();
-        _votedFor = storage.ReadVotedFor();
+        _term = storage.Term;
+        _votedFor = storage.VotedFor;
     }
 
-    public Term ReadTerm()
-    {
-        return _term;
-    }
+    public Term Term =>
+        _term;
 
-    public NodeId? ReadVotedFor()
-    {
-        return _votedFor;
-    }
+    public NodeId? VotedFor =>
+        _votedFor;
 
     public void Update(Term term, NodeId? votedFor)
     {

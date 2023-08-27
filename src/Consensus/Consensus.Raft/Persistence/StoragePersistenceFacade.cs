@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.Metadata;
@@ -45,8 +43,8 @@ public class StoragePersistenceFacade : IPersistenceFacade
                                            : GetLogEntryInfoAtIndex(LastAppliedIndex);
 
     // TODO: кэшировать
-    public Term CurrentTerm => _metadataStorage.ReadTerm();
-    public NodeId? VotedFor => _metadataStorage.ReadVotedFor();
+    public Term CurrentTerm => _metadataStorage.Term;
+    public NodeId? VotedFor => _metadataStorage.VotedFor;
     internal FileSystemSnapshotStorage SnapshotStorage => _snapshotStorage;
     internal FileLogStorage LogStorage => _logStorage;
 
@@ -97,13 +95,13 @@ public class StoragePersistenceFacade : IPersistenceFacade
             throw new ArgumentOutOfRangeException(nameof(startIndex), startIndex,
                 "Нельзя перезаписать закоммиченные записи");
         }
-        
+
         // Сколько элементов в буфере нужно удалить
         var removeCount = _buffer.Count - bufferStartIndex;
-        
+
         // Удаляем срез
         _buffer.RemoveRange(bufferStartIndex, removeCount);
-        
+
         // Вставляем в это место новые записи
         _buffer.AddRange(entries);
     }
@@ -175,6 +173,39 @@ public class StoragePersistenceFacade : IPersistenceFacade
         // Индекс неверный
         throw new ArgumentOutOfRangeException(nameof(index), index,
             "Указанный индекс больше чем последний индекс лога");
+    }
+
+    public bool TryGetFrom(int index, out IReadOnlyList<LogEntry> entries)
+    {
+        // TODO: подогнать к индексу последней записи у снапшота
+        if (index < _logStorage.Count)
+        {
+            // Читаем часть из диска
+            var logEntries = _logStorage.ReadFrom(index);
+            var result = new List<LogEntry>(logEntries.Count + _buffer.Count);
+            result.AddRange(logEntries);
+            // Прибаляем весь лог в памяти
+            result.AddRange(_buffer);
+            // Конкатенируем
+            entries = result;
+            return true;
+        }
+
+        // Требуемые записи только в буфере (незакоммичены)
+        var bufferStartIndex = index - _logStorage.Count;
+        if (bufferStartIndex <= _buffer.Count)
+        {
+            // Берем часть из лога
+            var logPart = _buffer.GetRange(bufferStartIndex, _buffer.Count - bufferStartIndex);
+
+            // Возвращаем
+            entries = logPart;
+            return true;
+        }
+
+        // Индекс неверный
+        entries = Array.Empty<LogEntry>();
+        return false;
     }
 
     public void Commit(int index)
@@ -285,7 +316,7 @@ public class StoragePersistenceFacade : IPersistenceFacade
 
     public bool TryGetSnapshot(out ISnapshot snapshot)
     {
-        if (( (ISnapshotStorage) _snapshotStorage ).HasSnapshot)
+        if (( ( ISnapshotStorage ) _snapshotStorage ).HasSnapshot)
         {
             snapshot = _snapshotStorage.GetSnapshot();
             return true;
@@ -305,25 +336,15 @@ public class StoragePersistenceFacade : IPersistenceFacade
     {
         return _snapshotStorage.ReadAllData();
     }
-    
+
     /// <summary>
     /// Прочитать все записи лога команд: из файла и памяти.
     /// Используется для тестов
     /// </summary>
     /// <returns>Записи лога</returns>
-    internal IReadOnlyList<LogEntry> ReadLogFull() => _logStorage.ReadAll() // Файл
+    internal IReadOnlyList<LogEntry> ReadLogFull() => _logStorage.ReadAll()       // Файл
                                                                  .Concat(_buffer) // Не закоммиченные в памяти
                                                                  .ToList();
-    internal StoragePersistenceFacade(FileLogStorage logStorage,
-                                      FileSystemSnapshotStorage snapshotStorage,
-                                      List<LogEntry> buffer,
-                                      IMetadataStorage metadataStorage)
-    {
-        _logStorage = logStorage;
-        _snapshotStorage = snapshotStorage;
-        _buffer = buffer;
-        _metadataStorage = metadataStorage;
-    }
 
     /// <summary>
     /// Прочитать все записи в буфере записей команд.
@@ -351,6 +372,7 @@ public class StoragePersistenceFacade : IPersistenceFacade
             // если будет использоваться какой-нибудь Null паттерн
             throw new InvalidOperationException("Буфер не пустой");
         }
+
         _buffer.AddRange(buffer);
     }
 

@@ -12,36 +12,42 @@ public class ExclusiveAccessMetadataStorageDecorator : IMetadataStorage
         _storage = storage;
     }
 
-    public Term ReadTerm()
+    public Term Term
     {
-        var acquired = false;
-        try
+        get
         {
-            _lock.Enter(ref acquired);
-            return _storage.ReadTerm();
-        }
-        finally
-        {
-            if (acquired)
+            var acquired = false;
+            try
             {
-                _lock.Exit();
+                _lock.Enter(ref acquired);
+                return _storage.Term;
+            }
+            finally
+            {
+                if (acquired)
+                {
+                    _lock.Exit();
+                }
             }
         }
     }
 
-    public NodeId? ReadVotedFor()
+    public NodeId? VotedFor
     {
-        var acquired = false;
-        try
+        get
         {
-            _lock.Enter(ref acquired);
-            return _storage.ReadVotedFor();
-        }
-        finally
-        {
-            if (acquired)
+            var acquired = false;
+            try
             {
-                _lock.Exit();
+                _lock.Enter(ref acquired);
+                return _storage.VotedFor;
+            }
+            finally
+            {
+                if (acquired)
+                {
+                    _lock.Exit();
+                }
             }
         }
     }

@@ -4,6 +4,8 @@ using System.Net;
 using System.Net.Sockets;
 using Consensus.CommandQueue;
 using Consensus.CommandQueue.Channel;
+using Consensus.JobQueue;
+using Consensus.Peer;
 using Consensus.Raft;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.Persistence.Log;
@@ -11,8 +13,6 @@ using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Metadata.Decorators;
 using Consensus.Raft.Persistence.Snapshot;
 using Consensus.Raft.State.LeaderState;
-using Consensus.JobQueue;
-using Consensus.Peer;
 using Consensus.StateMachine.TaskFlux;
 using Consensus.Timers;
 using JobQueue.Core;
@@ -244,7 +244,7 @@ FileLogStorage CreateLogStorage()
         throw;
     }
 
-    
+
     return fileStorage;
 
 
@@ -274,7 +274,7 @@ FileStream OpenMetadataFile(RaftServerOptions options)
     FileMetadataStorage fileStorage;
     try
     {
-        fileStorage = FileMetadataStorage.Initialize(stream, new Term(1), null);
+        fileStorage = new FileMetadataStorage(stream, new Term(1), null);
     }
     catch (InvalidDataException invalidDataException)
     {
