@@ -35,6 +35,12 @@ public struct MemoryBinaryWriter
         _index += sizeof(long);
     }
 
+    public void Write(uint value)
+    {
+        BinaryPrimitives.WriteUInt32BigEndian(_buffer[_index..].Span, value);
+        _index += sizeof(uint);
+    }
+
     /// <summary>
     /// Сериализовать переданный буфер как самостоятельную единицу.
     /// Сериализуется как длина массива, так и сами значения

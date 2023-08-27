@@ -28,11 +28,11 @@ public class BinaryPacketSerializerTests
     [InlineData(1, 1, 1, 1)]
     [InlineData(1, 2, 1, 4)]
     [InlineData(int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue)]
-    [InlineData(0, 123123, 123, int.MaxValue)]
-    [InlineData(0, 53, 1, 0)]
-    [InlineData(0, 3523, 222, 0)]
+    [InlineData(87654, 123123, 123, int.MaxValue)]
+    [InlineData(345724, 53, 1, 0)]
+    [InlineData(2, 3523, 222, 0)]
     [InlineData(1, 23, 20, 0)]
-    [InlineData(1, 1234, 45, 90)]
+    [InlineData(3, 1234, 45, 90)]
     public async Task ПриСериализацииRequestVoteRequest__ДолженДесериализоватьИдентичныйОбъект(
         int peerId,
         int term,
@@ -50,8 +50,8 @@ public class BinaryPacketSerializerTests
     [InlineData(int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue)]
     [InlineData(1, int.MaxValue, int.MaxValue, int.MaxValue, int.MinValue)]
     [InlineData(321, 1364, 76, 3673, 7754)]
-    [InlineData(76, 0, 1, 333, 35624)]
-    [InlineData(134, 0, 1, 3, 1)]
+    [InlineData(76, 222222, 1, 333, 35624)]
+    [InlineData(134, 987654, 1, 3, 1)]
     [InlineData(98765, 1234, 45, 90, 124)]
     public async Task ПриСериализацииAppendEntriesRequest__СПустымМассивомКоманд__ДолженДесериализоватьИдентичныйОбъект(
         int term,
@@ -174,12 +174,9 @@ public class BinaryPacketSerializerTests
     }
 
     [Theory]
-    [InlineData(0)]
     [InlineData(1)]
-    [InlineData(-1)]
     [InlineData(1000)]
     [InlineData(int.MaxValue)]
-    [InlineData(int.MinValue)]
     [InlineData(87654)]
     [InlineData(2)]
     [InlineData(3)]

@@ -248,7 +248,7 @@ public class FollowerStateTests
         using var node = CreateFollowerNode(oldTerm, null, electionTimer: timer.Object);
 
         var request = AppendEntriesRequest.Heartbeat(new Term(term), 0,
-            new NodeId(value: NodeId.Value + 1), new LogEntryInfo(new Term(term), 0));
+            new NodeId(nodeId: NodeId.Value + 1), new LogEntryInfo(new Term(term), 0));
 
         node.Handle(request);
 
@@ -272,7 +272,7 @@ public class FollowerStateTests
         // Наша последняя запись - (4, 2)
         // Последняя запись кандидата - (4, 2)
         var request = AppendEntriesRequest.Heartbeat(term, 2,
-            new NodeId(value: NodeId.Value + 1), new LogEntryInfo(new Term(4), 2));
+            new NodeId(nodeId: NodeId.Value + 1), new LogEntryInfo(new Term(4), 2));
 
         var response = node.Handle(request);
 

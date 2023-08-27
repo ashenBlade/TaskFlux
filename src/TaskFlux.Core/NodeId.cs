@@ -6,16 +6,17 @@ public readonly struct NodeId : IEquatable<NodeId>
     /// Стандартный конструктор для Id узла.
     /// Принимает числовое значение.
     /// </summary>
-    /// <param name="value">Числовое значение ID узла. Должен быть положительным</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="value"/> - не положительный</exception>
-    public NodeId(int value)
+    /// <param name="nodeId">Числовое значение ID узла. Должен быть положительным</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="nodeId"/> - 0 или отрицательный</exception>
+    public NodeId(int nodeId)
     {
-        if (value < 1)
+        if (nodeId < 1)
         {
-            throw new ArgumentOutOfRangeException(nameof(value), value, "Id узла должно быть положительным значением");
+            throw new ArgumentOutOfRangeException(nameof(nodeId), nodeId,
+                "Id узла должно быть положительным значением");
         }
 
-        Value = value;
+        Value = nodeId;
     }
 
     public const int StartId = 1;
