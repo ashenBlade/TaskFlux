@@ -16,8 +16,6 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
     /// <inheritdoc cref="Constants.Marker"/>
     public const int Marker = Constants.Marker;
 
-    private LogEntryInfo? _lastLogEntryInfo;
-
     public FileSystemSnapshotStorage(IFileInfo snapshotFile, IDirectoryInfo temporarySnapshotFileDirectory)
     {
         ArgumentNullException.ThrowIfNull(snapshotFile);
@@ -31,37 +29,30 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         return new FileSystemSnapshotFileWriter(this);
     }
 
-    public LogEntryInfo? LastLogEntry => _snapshotFile.Exists
-                                             ? _lastLogEntryInfo is null
-                                                   ? null
-                                                   : _lastLogEntryInfo = ReadLogEntryInfo()
-                                             : null;
+    /// <summary>
+    /// Информация о последней записи лога, которая была применена к снапшоту
+    /// </summary>
+    /// <remarks><see cref="LogEntryInfo.Tomb"/> - означает отсуствие снапшота</remarks>
+    public LogEntryInfo LastLogEntry { get; private set; } = LogEntryInfo.Tomb;
 
+    /// <summary>
+    /// Получить снапшот, хранящийся в файле на диске
+    /// </summary>
+    /// <returns>Объект снапшота</returns>
+    /// <exception cref="InvalidOperationException">Файла снапшота не существует</exception>
     public ISnapshot GetSnapshot()
     {
-        var fs = _snapshotFile.OpenRead();
-        fs.Position = SnapshotStartPosition;
-        return new FileSnapshot(fs);
+        if (!_snapshotFile.Exists)
+        {
+            throw new InvalidOperationException("Файла снапшота не существует");
+        }
+
+        return new FileSystemSnapshot(_snapshotFile);
     }
 
     private const long SnapshotStartPosition = sizeof(int)  // Маркер
                                              + sizeof(int)  // Терм
                                              + sizeof(int); // Индекс
-
-    private LogEntryInfo ReadLogEntryInfo()
-    {
-        Debug.Assert(_snapshotFile.Exists,
-            "Вызван метод чтения последней записи из снапшота, но он файл не существует");
-        using var fs = _snapshotFile.OpenRead();
-        // Выставляем позицию сразу после маркера
-        fs.Position = sizeof(int);
-        var reader = new StreamBinaryReader(fs);
-
-        var index = reader.ReadInt32();
-        var term = reader.ReadInt32();
-
-        return new LogEntryInfo(new Term(term), index);
-    }
 
     private class FileSystemSnapshotFileWriter : ISnapshotFileWriter
     {
@@ -201,7 +192,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
 
             _temporarySnapshotFileStream.Close();
 
-            _parent._lastLogEntryInfo = _writtenLogEntry;
+            _parent.LastLogEntry = _writtenLogEntry.Value;
 
             _state = SnapshotFileState.Finished;
         }
@@ -251,18 +242,35 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         }
     }
 
+    private class FileSystemSnapshot : ISnapshot
+    {
+        private readonly IFileInfo _snapshotFile;
+
+        public FileSystemSnapshot(IFileInfo snapshotFile)
+        {
+            _snapshotFile = snapshotFile;
+        }
+
+        public void WriteTo(Stream destination, CancellationToken token = default)
+        {
+            using var fileStream = _snapshotFile.OpenRead();
+            fileStream.Position = SnapshotStartPosition;
+            destination.CopyTo(destination);
+        }
+    }
+
     // Для тестов
     internal (int LastIndex, Term LastTerm, byte[] SnapshotData) ReadAllData()
     {
         var stream = _snapshotFile.OpenRead();
         var reader = new StreamBinaryReader(stream);
-        
+
         var marker = reader.ReadInt32();
         Debug.Assert(marker == Marker);
 
         var index = reader.ReadInt32();
         var term = new Term(reader.ReadInt32());
-        
+
         // Читаем до конца
         var memory = new MemoryStream();
         stream.CopyTo(memory);
@@ -273,10 +281,12 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
     {
         using var stream = _snapshotFile.OpenWrite();
         var writer = new StreamBinaryWriter(stream);
-        
+
         writer.Write(Marker);
         writer.Write(lastIndex);
         writer.Write(lastTerm.Value);
         snapshot.WriteTo(stream);
+
+        LastLogEntry = new LogEntryInfo(lastTerm, lastIndex);
     }
 }

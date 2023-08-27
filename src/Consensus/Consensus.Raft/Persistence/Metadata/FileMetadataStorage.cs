@@ -83,14 +83,17 @@ public class FileMetadataStorage : IMetadataStorage
         Debug.Assert(_file.Length > 0, "Файл должен быть инициализирован на момент вызова Update");
 
         const int size = sizeof(int)  // Маркер 
+                       + sizeof(int)  // Версия
                        + sizeof(int)  // Терм
                        + sizeof(int); // Голос
+
         Span<byte> span = stackalloc byte[size];
 
         var writer = new SpanBinaryWriter(span);
         // Сначала записываем во внутренний буфер терм и голос,
         // потом быстро сбрасываем полученные данные на диск
         writer.Write(Marker);
+        writer.Write(CurrentVersion);
         writer.Write(term.Value);
         writer.Write(votedFor is {Value: var value}
                          ? value
@@ -118,11 +121,7 @@ public class FileMetadataStorage : IMetadataStorage
     {
         if (_file.Length == 0)
         {
-            const int size = sizeof(int)  // Маркер 
-                           + sizeof(int)  // Версия
-                           + sizeof(int)  // Терм
-                           + sizeof(int); // Голос
-            Span<byte> span = stackalloc byte[size];
+            Span<byte> span = stackalloc byte[FileSize];
 
             var writer = new SpanBinaryWriter(span);
             // Сначала записываем во внутренний буфер терм и голос,
@@ -134,7 +133,7 @@ public class FileMetadataStorage : IMetadataStorage
                              ? value
                              : NoVotedFor);
 
-            _file.Position = 0;
+            _file.Seek(0, SeekOrigin.Begin);
             _file.Write(span);
             _file.Flush();
 
@@ -153,6 +152,7 @@ public class FileMetadataStorage : IMetadataStorage
                 $"Файл может быть либо пустым, либо не меньше фиксированной длины. Размер файла: {_file.Length}. Минимальный размер: {FileSize}");
         }
 
+        // Проверяем валидность данных на файле
         _file.Seek(0, SeekOrigin.Begin);
         var reader = new StreamBinaryReader(_file);
         var marker = reader.ReadInt32();

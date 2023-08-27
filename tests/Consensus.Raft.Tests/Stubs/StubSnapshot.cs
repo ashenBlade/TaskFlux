@@ -14,9 +14,9 @@ public class StubSnapshot : ISnapshot
 
     public StubSnapshot(IEnumerable<byte> data) => _data = data.ToArray();
 
-    public void WriteTo(Stream stream, CancellationToken token = default)
+    public void WriteTo(Stream destination, CancellationToken token = default)
     {
-        var writer = new StreamBinaryWriter(stream);
+        var writer = new StreamBinaryWriter(destination);
         writer.Write(_data);
     }
 }

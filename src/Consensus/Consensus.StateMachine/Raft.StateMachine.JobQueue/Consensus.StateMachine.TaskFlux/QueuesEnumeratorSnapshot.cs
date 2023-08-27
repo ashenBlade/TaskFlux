@@ -18,9 +18,9 @@ public class QueuesEnumeratorSnapshot : ISnapshot
         _serializer = serializer;
     }
 
-    public void WriteTo(Stream stream, CancellationToken token = default)
+    public void WriteTo(Stream destination, CancellationToken token = default)
     {
         var queues = _manager.GetAllQueues();
-        _serializer.Serialize(stream, queues, token);
+        _serializer.Serialize(destination, queues, token);
     }
 }

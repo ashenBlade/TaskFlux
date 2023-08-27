@@ -225,24 +225,33 @@ public class StoragePersistenceManagerTests
     }
 
     [Fact]
-    public void GetFrom__КогдаЗаписиВПамяти__ДолженВернутьХранившиесяЗаписиВБуфере()
+    public void TryGetFrom__КогдаЗаписиВПамяти__ДолженВернутьТребуемыеЗаписи()
     {
-        var (facade, fs) = CreateFacade(5);
-        var entries = new[] {RandomDataEntry(1), RandomDataEntry(2), RandomDataEntry(3), RandomDataEntry(4),};
+        var (facade, _) = CreateFacade(5);
+        // 4 записи в буфере с указанными индексами (глобальными)
+        var bufferEntries = new[]
+        {
+            RandomDataEntry(1), // 0
+            RandomDataEntry(2), // 1
+            RandomDataEntry(3), // 2
+            RandomDataEntry(4), // 3
+        };
 
-        facade.SetupBufferTest(entries);
+        facade.SetupBufferTest(bufferEntries);
+
         var index = 2;
-        var expected = entries[index..];
+        var expected = bufferEntries[index..];
 
-        var actual = facade.GetFrom(index);
+        var success = facade.TryGetFrom(index, out var actual);
 
+        Assert.True(success);
         Assert.Equal(expected, actual, Comparer);
     }
 
     [Theory]
     [InlineData(10, 5, 4)] // Часть в файле, часть в памяти
     [InlineData(10, 5, 6)] // Все из памяти
-    [InlineData(5, 1, 2)]  // Все из памяти 
+    [InlineData(5, 1, 2)]
     [InlineData(1, 0, 0)]  // Все записи в файле
     [InlineData(2, 0, 0)]  // Одна в файле, одна в памяти, нужны все
     [InlineData(2, 0, 1)]  // Одна в файле, одна в памяти, нужна только из памяти
@@ -250,7 +259,7 @@ public class StoragePersistenceManagerTests
     [InlineData(10, 9, 9)] // Все в файле, только 1 запись нужна
     [InlineData(10, 9, 0)] // Все в файле, все записи нужны
     [InlineData(10, 9, 5)] // Все в файле, читаем с середины
-    public void GetFrom__КогдаЧастьЗаписейВБуфереЧастьВLogStorage__ДолженВернутьТребуемыеЗаписи(
+    public void TryGetFrom__КогдаЧастьЗаписейВБуфереЧастьВФайле__ДолженВернутьТребуемыеЗаписи(
         int entriesCount,
         int logEndIndex,
         int index)
@@ -259,14 +268,17 @@ public class StoragePersistenceManagerTests
                                 .Select(RandomDataEntry)
                                 .ToArray();
         var (log, buffer) = Split(entries, logEndIndex);
-        var (facade, fs) = CreateFacade(entriesCount);
+        var (facade, _) = CreateFacade(entriesCount);
 
         facade.SetupBufferTest(buffer);
         facade.LogStorage.AppendRange(log);
+
+        // Глобальный и локальный индексы совпадают, если снапшота еще нет
         var expected = entries[index..];
 
-        var actual = facade.GetFrom(index);
+        var success = facade.TryGetFrom(index, out var actual);
 
+        Assert.True(success);
         Assert.Equal(expected, actual, Comparer);
     }
 
@@ -524,27 +536,167 @@ public class StoragePersistenceManagerTests
         Assert.Equal(entry, facade.SnapshotStorage.LastLogEntry);
     }
 
-    // TODO: тесты с учетом снапшота (индекс начинается с него)
+    [Theory]
+    [InlineData(1, 1, 1)]
+    [InlineData(1, 1, 2)]
+    [InlineData(5, 5, 1)]
+    [InlineData(5, 5, 5)]
+    [InlineData(10, 10, 1)]
+    [InlineData(10, 10, 5)]
+    [InlineData(10, 10, 9)]
+    [InlineData(10, 10, 10)]
+    [InlineData(10, 10, 11)]
+    [InlineData(10, 10, 15)]
+    [InlineData(10, 10, 21)]
+    public void TryGetFrom__КогдаИндексСнапшота0__ДолженВернутьПравильныеЗаписи(
+        int fileCommandsCount,
+        int bufferCommandsCount,
+        int globalIndex)
+    {
+        TryGetFromBaseTest(0, fileCommandsCount, bufferCommandsCount, globalIndex);
+    }
+
 
     [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(5)]
-    [InlineData(10)]
-    public void TryGetFrom__КогдаЕстьЗаписиСнапшота__ДолженВернутьПравильныеЗаписи(int snapshotCommandsCount)
+    [InlineData(1, 1, 2)]
+    [InlineData(1, 1, 3)]
+    [InlineData(1, 1, 4)]
+    [InlineData(5, 5, 2)]
+    [InlineData(5, 5, 5)]
+    [InlineData(10, 10, 2)]
+    [InlineData(10, 10, 5)]
+    [InlineData(10, 10, 9)]
+    [InlineData(10, 10, 10)]
+    [InlineData(10, 10, 11)]
+    [InlineData(10, 10, 15)]
+    [InlineData(10, 10, 21)]
+    [InlineData(10, 10, 22)]
+    public void TryGetFrom__КогдаИндексСнапшота1__ДолженВернутьПравильныеЗаписи(
+        int fileCommandsCount,
+        int bufferCommandsCount,
+        int globalIndex)
     {
-        var (facade, fs) = CreateFacade(5);
-        var entries = new[] {RandomDataEntry(1), RandomDataEntry(2), RandomDataEntry(3), RandomDataEntry(4),};
+        TryGetFromBaseTest(1, fileCommandsCount, bufferCommandsCount, globalIndex);
+    }
 
-        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(snapshotCommandsCount + 1), snapshotCommandsCount,
+    [Theory]
+    [InlineData(10, 10, 10)]
+    [InlineData(0, 0, 0)]
+    [InlineData(1, 0, 0)]
+    [InlineData(2, 0, 0)]
+    [InlineData(100, 0, 0)]
+    [InlineData(50, 1, 1)]
+    [InlineData(50, 1, 0)]
+    [InlineData(50, 0, 1)]
+    [InlineData(50, 2, 1)]
+    [InlineData(50, 1, 2)]
+    public void TryGetFrom__КогдаУказанныйИндексЯвляетсяСледующимПослеПоследнего__ДолженУспешноВернутьПустойМассив(
+        int snapshotLastIndex,
+        int fileCommandsCount,
+        int bufferCommandsCount)
+    {
+        var term = new Term(1);
+        var (facade, _) = CreateFacade(term.Value);
+        var fileEntries = Enumerable.Range(0, fileCommandsCount)
+                                    .Select(_ => RandomDataEntry(term.Value))
+                                    .ToArray();
+
+        var bufferEntries = Enumerable.Range(0, bufferCommandsCount)
+                                      .Select(_ => RandomDataEntry(term.Value))
+                                      .ToArray();
+
+        facade.SnapshotStorage.WriteSnapshotDataTest(term,
+            snapshotLastIndex,
             new StubSnapshot(Array.Empty<byte>()));
 
-        facade.SetupBufferTest(entries);
-        var index = 2;
-        var expected = entries[index..];
+        facade.LogStorage.SetFileTest(fileEntries);
+        facade.SetupBufferTest(bufferEntries);
 
-        var actual = facade.GetFrom(index);
+        var success = facade.TryGetFrom(snapshotLastIndex + fileCommandsCount + bufferCommandsCount + 1,
+            out var actual);
 
+        Assert.True(success);
+        Assert.Empty(actual);
+    }
+
+    [Theory]
+    [InlineData(100, 1, 1, 101)]
+    [InlineData(100, 1, 1, 102)]
+    [InlineData(123, 5, 5, 124)]
+    [InlineData(999, 5, 5, 1004)]
+    [InlineData(120000, 10, 10, 120001)]
+    [InlineData(456362312, 10, 10, 456362332)]
+    [InlineData(3253, 10, 10, 3260)]
+    [InlineData(987654, 10, 10, 987664)]
+    [InlineData(1423673, 110, 10, 1423784)]
+    [InlineData(543546, 10, 10, 543557)]
+    [InlineData(2147483000, 10, 10, 2147483001)]
+    public void TryGetFrom__КогдаИндексСнапшотаБольшой__ДолженВернутьПравильныеЗаписи(
+        int snapshotLastIndex,
+        int fileCommandsCount,
+        int bufferCommandsCount,
+        int globalIndex)
+    {
+        TryGetFromBaseTest(snapshotLastIndex, fileCommandsCount, bufferCommandsCount, globalIndex);
+    }
+
+    private void TryGetFromBaseTest(
+        int snapshotLastIndex,
+        int fileCommandsCount,
+        int bufferCommandsCount,
+        int globalIndex)
+    {
+        var term = new Term(1);
+        var (facade, _) = CreateFacade(term.Value);
+        var fileEntries = Enumerable.Range(0, fileCommandsCount)
+                                    .Select(_ => RandomDataEntry(term.Value))
+                                    .ToArray();
+
+        var bufferEntries = Enumerable.Range(0, bufferCommandsCount)
+                                      .Select(_ => RandomDataEntry(term.Value))
+                                      .ToArray();
+
+        facade.SnapshotStorage.WriteSnapshotDataTest(term,
+            snapshotLastIndex,
+            new StubSnapshot(Array.Empty<byte>()));
+
+        facade.LogStorage.SetFileTest(fileEntries);
+        facade.SetupBufferTest(bufferEntries);
+
+        var expected = fileEntries
+                      .Concat(bufferEntries)
+                      .Skip(globalIndex - snapshotLastIndex - 1)
+                      .ToArray();
+
+        var success = facade.TryGetFrom(globalIndex, out var actual);
+
+        Assert.True(success);
         Assert.Equal(expected, actual, Comparer);
+    }
+
+    private static readonly ISnapshot NullSnapshot = new StubSnapshot(Array.Empty<byte>());
+
+    [Theory]
+    [InlineData(0, 0)] // Только 1 запись в снапшоте
+    [InlineData(5, 0)] // Нужно с самого начала
+    [InlineData(10, 0)]
+    [InlineData(5, 5)] // Попадаем на последний индекс в снапшоте
+    [InlineData(10, 10)]
+    [InlineData(2, 2)]
+    [InlineData(5, 3)] // Где-то внутри снапшота
+    [InlineData(5, 2)]
+    [InlineData(10, 7)]
+    [InlineData(10, 9)] // Предпоследняя запись
+    [InlineData(5, 4)]
+    [InlineData(2, 1)]
+    public void TryGetFrom__КогдаПереданныйИндексВходитВГраницыСнапшота__ДолженВернутьFalse(
+        int snapshotLastIndex,
+        int index)
+    {
+        var (facade, _) = CreateFacade();
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(1), snapshotLastIndex, NullSnapshot);
+
+        var success = facade.TryGetFrom(index, out _);
+        Assert.False(success);
     }
 }

@@ -1,5 +1,4 @@
 ﻿using System.Buffers;
-using System.Collections;
 using System.IO.Abstractions;
 using TaskFlux.Serialization.Helpers;
 
@@ -402,9 +401,18 @@ public class FileLogStorage : ILogStorage, IDisposable
     /// Метод для чтения всех записей из файла снапшота.
     /// </summary>
     /// <remarks>Используется для тестов</remarks>
-    public IEnumerable<LogEntry> ReadAllTest()
+    internal IEnumerable<LogEntry> ReadAllTest()
     {
         return ReadLogIncrementally(DataStartPosition);
+    }
+
+    /// <summary>
+    /// Записать все переданные записи в файл.
+    /// Метод используется для тестов
+    /// </summary>
+    internal void SetFileTest(IEnumerable<LogEntry> entries)
+    {
+        AppendRange(entries);
     }
 }
 

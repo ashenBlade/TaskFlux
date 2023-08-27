@@ -16,12 +16,7 @@ public interface ISnapshotStorage
     /// Информация о последней записи лога, которая была применена к снапшоту
     /// </summary>
     /// <remarks><c>null</c> - означает отсуствие снапшота</remarks>
-    public LogEntryInfo? LastLogEntry { get; }
-
-    /// <summary>
-    /// Сделан ли для машины состояний снапшот
-    /// </summary>
-    public bool HasSnapshot => LastLogEntry is not null;
+    public LogEntryInfo LastLogEntry { get; }
 
     /// <summary>
     /// Получить снапшот, хранящийся в файле на диске

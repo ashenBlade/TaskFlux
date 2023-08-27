@@ -9,7 +9,7 @@ public interface ISnapshot
     /// Этот метод необходимо вызывать только 1 раз,
     /// так как реализация может высвободить ресурсы после вызова (закрыть файл или сокет)
     /// </remarks>
-    /// <param name="stream">Поток (файл), куда нужно записывать данные снапшота</param>
+    /// <param name="destination">Поток (файл), куда нужно записывать данные снапшота</param>
     /// <param name="token">Токен отмены</param>
-    public void WriteTo(Stream stream, CancellationToken token = default);
+    public void WriteTo(Stream destination, CancellationToken token = default);
 }

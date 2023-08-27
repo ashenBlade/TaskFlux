@@ -42,16 +42,21 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
     {
         while (token.IsCancellationRequested is false)
         {
+            if (!ConsensusModule.PersistenceFacade.TryGetFrom(Info.NextIndex, out var entries))
+            {
+                throw new NotImplementedException("Обработка когда снапшот хранит данные");
+            }
+
             // 1. Отправить запрос
             var request = new AppendEntriesRequest(Term: ConsensusModule.CurrentTerm,
                 LeaderCommit: ConsensusModule.PersistenceFacade.CommitIndex,
                 LeaderId: ConsensusModule.Id,
                 PrevLogEntryInfo: ConsensusModule.PersistenceFacade.GetPrecedingEntryInfo(Info.NextIndex),
-                Entries: ConsensusModule.PersistenceFacade.GetFrom(Info.NextIndex));
+                Entries: entries);
 
             var response = await Peer.SendAppendEntries(request, token);
 
-            // 2. Если ответ не вернулся (null) - соединение было разорвано. Прекратить обработку
+            // 2. Если ответ не вернулся (null) - соединение было разорвано, прекратить обработку
             if (response is null)
             {
                 return true;

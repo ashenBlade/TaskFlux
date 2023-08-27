@@ -144,9 +144,9 @@ public class StoragePersistenceFacade : IPersistenceFacade
         return new LogEntryInfo(bufferEntry.Term, index);
     }
 
+    [Obsolete("Переходи на Try версию", true)]
     public IReadOnlyList<LogEntry> GetFrom(int index)
     {
-        // TODO: добавить Try вариант, чтобы учитывать индекс снапшота
         if (index < _logStorage.Count)
         {
             // Читаем часть из диска
@@ -175,13 +175,20 @@ public class StoragePersistenceFacade : IPersistenceFacade
             "Указанный индекс больше чем последний индекс лога");
     }
 
-    public bool TryGetFrom(int index, out IReadOnlyList<LogEntry> entries)
+    public bool TryGetFrom(int globalIndex, out IReadOnlyList<LogEntry> entries)
     {
-        // TODO: подогнать к индексу последней записи у снапшота
-        if (index < _logStorage.Count)
+        var localIndex = CalculateLocalIndex(globalIndex);
+
+        if (localIndex < 0)
+        {
+            entries = Array.Empty<LogEntry>();
+            return false;
+        }
+
+        if (localIndex < _logStorage.Count)
         {
             // Читаем часть из диска
-            var logEntries = _logStorage.ReadFrom(index);
+            var logEntries = _logStorage.ReadFrom(localIndex);
             var result = new List<LogEntry>(logEntries.Count + _buffer.Count);
             result.AddRange(logEntries);
             // Прибаляем весь лог в памяти
@@ -192,7 +199,7 @@ public class StoragePersistenceFacade : IPersistenceFacade
         }
 
         // Требуемые записи только в буфере (незакоммичены)
-        var bufferStartIndex = index - _logStorage.Count;
+        var bufferStartIndex = localIndex - _logStorage.Count;
         if (bufferStartIndex <= _buffer.Count)
         {
             // Берем часть из лога
@@ -206,6 +213,34 @@ public class StoragePersistenceFacade : IPersistenceFacade
         // Индекс неверный
         entries = Array.Empty<LogEntry>();
         return false;
+
+        int CalculateLocalIndex(int globalIndex)
+        {
+            /*
+             * Я разделяю индекс на 2 типа: локальный и глобальный.
+             * - Глобальный индекс - индекс среди ВСЕХ записей
+             * - Локальный индекс - индекс для поиска записей среди лога и буфера
+             *
+             * Последний индекс в снапшоте является стартовым индексом для локального индекса.
+             * Чтобы получить локальный индекс нужно из глобального индекса вычесть последний индекс снапшота и 1:
+             * localIndex = globalIndex - Snapshot.LastIncludedIndex - 1
+             * Последняя единица вычитается, т.к. индексация начинается с 0:
+             *
+             * Примеры:
+             * Глобальный индекс: 10, Индекс снапшота: 3, Локальный индекс: 6
+             * Глобальный - | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+             *              |Данные снапшота|
+             * Локальный  -                 | 0 | 1 | 2 | 3 | 4 | 5 | 6  | 7  |
+             *
+             * Снапшота еще нет, то локальный и глобальный индексы совпадают
+             */
+            if (SnapshotStorage.LastLogEntry.IsTomb)
+            {
+                return globalIndex;
+            }
+
+            return globalIndex - SnapshotStorage.LastLogEntry.Index - 1;
+        }
     }
 
     public void Commit(int index)
@@ -316,7 +351,7 @@ public class StoragePersistenceFacade : IPersistenceFacade
 
     public bool TryGetSnapshot(out ISnapshot snapshot)
     {
-        if (( ( ISnapshotStorage ) _snapshotStorage ).HasSnapshot)
+        if (!_snapshotStorage.LastLogEntry.IsTomb)
         {
             snapshot = _snapshotStorage.GetSnapshot();
             return true;

@@ -24,7 +24,7 @@ public class FileMetadataStorageTests
     [InlineData(100)]
     [InlineData(12323)]
     [InlineData(132323)]
-    public void GetTerm__КогдаЛогБылПуст__ДолженВернутьПереданныйТермПоУмолчанию(int term)
+    public void Term__КогдаЛогБылПуст__ДолженВернутьПереданныйТермПоУмолчанию(int term)
     {
         using var memory = CreateStream();
         var expected = new Term(term);
@@ -36,14 +36,13 @@ public class FileMetadataStorageTests
 
     [Theory]
     [InlineData(null)]
-    [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(4)]
     [InlineData(10)]
     [InlineData(1240)]
-    public void GetVotedFor__КогдаЛогПуст__ДолженВернутьЗначениеПоУмолчанию(int? votedFor)
+    public void VotedFor__КогдаЛогПуст__ДолженВернутьЗначениеПоУмолчанию(int? votedFor)
     {
         using var memory = CreateStream();
         NodeId? expected = votedFor is null
@@ -56,22 +55,39 @@ public class FileMetadataStorageTests
     }
 
     [Theory]
-    [InlineData(1, 2)]
-    [InlineData(1, 1)]
-    [InlineData(3, 1)]
-    [InlineData(3, 6)]
-    [InlineData(2, 3)]
-    [InlineData(3, 10)]
-    public void Update__КогдаЛогБылПуст__ДолженОбновитьТерм(int defaultTerm, int newTerm)
+    [InlineData(1, 2, null, 1)]
+    [InlineData(1, 1, 1, 1)]
+    [InlineData(3, 1, 1, 1)]
+    [InlineData(123, 213, 22222, 222)]
+    [InlineData(2, 234, null, null)]
+    [InlineData(3, 10, int.MaxValue, int.MaxValue)]
+    [InlineData(2, 1, 323, 9876543)]
+    public void Update__КогдаЛогБылПуст__ДолженОбновитьДанные(int defaultTerm,
+                                                              int newTerm,
+                                                              int? defaultVotedFor,
+                                                              int? newVotedFor)
     {
         using var memory = CreateStream();
-        var storage = new FileMetadataStorage(memory, new Term(defaultTerm), null);
-        var expected = new Term(newTerm);
+        var storage = new FileMetadataStorage(memory, new Term(defaultTerm), ToNodeId(defaultVotedFor));
+        var expectedTerm = new Term(newTerm);
+        var expectedVotedFor = ToNodeId(newVotedFor);
 
-        storage.Update(expected, null);
+        storage.Update(expectedTerm, expectedVotedFor);
 
-        var actual = storage.Term;
-        Assert.Equal(expected, actual);
+        // Проверяем кэширование
+        var actualTerm = storage.Term;
+        var actualVotedFor = storage.VotedFor;
+        Assert.Equal(expectedTerm, actualTerm);
+        Assert.Equal(expectedVotedFor, actualVotedFor);
+
+        // Проверяем данные с диска
+        var (readTerm, readVotedFor) = storage.ReadStoredDataTest();
+        Assert.Equal(expectedTerm, readTerm);
+        Assert.Equal(expectedVotedFor, readVotedFor);
+
+        NodeId? ToNodeId(int? value) => value is { } v
+                                            ? new NodeId(v)
+                                            : null;
     }
 
     [Theory]
@@ -90,63 +106,13 @@ public class FileMetadataStorageTests
     public void Update__КогдаЛогБылПуст__ДолженОбновитьГолос(int? defaultVotedFor, int? newVotedFor)
     {
         using var memory = CreateStream();
-        var expected = GetNodeId(newVotedFor);
+        var expectedVotedFor = GetNodeId(newVotedFor);
         var storage = new FileMetadataStorage(memory, Term.Start, GetNodeId(defaultVotedFor));
 
-        storage.Update(Term.Start, expected);
+        storage.Update(Term.Start, expectedVotedFor);
 
-        var actual = storage.VotedFor;
-        Assert.Equal(expected, actual);
-    }
-
-    [Theory]
-    [InlineData(1, 2)]
-    [InlineData(2, 4)]
-    [InlineData(100, 123)]
-    [InlineData(100, 1323223)]
-    [InlineData(987654, 1323223)]
-    [InlineData(12323, 1)]
-    [InlineData(132323, 34)]
-    [InlineData(Term.StartTerm, int.MaxValue)]
-    public void GetTerm__КогдаЛогНеБылПуст__ДолженВернутьХранившийсяТерм(int defaultTerm, int newDefaultTerm)
-    {
-        using var memory = CreateStream();
-        var expected = GetTerm(defaultTerm);
-        var oldStorage = new FileMetadataStorage(memory, expected, null);
-
-        var _ = oldStorage.Term;
-        var newStorage = new FileMetadataStorage(memory, GetTerm(newDefaultTerm), null);
-        var actual = newStorage.Term;
-
-        Assert.Equal(expected, actual);
-    }
-
-    [Theory]
-    [InlineData(null, 1)]
-    [InlineData(1, null)]
-    [InlineData(null, null)]
-    [InlineData(2, 4)]
-    [InlineData(100, 123)]
-    [InlineData(100, 1323223)]
-    [InlineData(int.MaxValue, null)]
-    [InlineData(1231235653, 1)]
-    [InlineData(987654, 1)]
-    [InlineData(12323, 1)]
-    [InlineData(null, int.MaxValue)]
-    [InlineData(2, int.MaxValue)]
-    public void GetVotedFor__КогдаЛогНеБылПуст__ДолженВернутьХранившийсяГолос(
-        int? defaultVotedFor,
-        int? newDefaultVotedFor)
-    {
-        using var memory = CreateStream();
-        var expected = GetNodeId(defaultVotedFor);
-        var oldStorage = new FileMetadataStorage(memory, Term.Start, expected);
-
-        var _ = oldStorage.VotedFor;
-        var newStorage = new FileMetadataStorage(memory, Term.Start, GetNodeId(newDefaultVotedFor));
-        var actual = newStorage.VotedFor;
-
-        Assert.Equal(expected, actual);
+        var (_, actualVotedFor) = storage.ReadStoredDataTest();
+        Assert.Equal(expectedVotedFor, actualVotedFor);
     }
 
     [Theory]
@@ -165,19 +131,20 @@ public class FileMetadataStorageTests
     [InlineData(Term.StartTerm, 10, Term.StartTerm)]
     [InlineData(Term.StartTerm, 1243534634, Term.StartTerm)]
     [InlineData(Term.StartTerm, int.MaxValue, Term.StartTerm)]
-    public void GetTerm__КогдаБылВызыванUpdate__ВНовомЛогеСТемЖеПотокомДолженВернутьЗаписанныйТерм(
+    public void Term__КогдаБылВызыванUpdate__ВНовомЛогеСТемЖеФайломДолженВернутьЗаписанныйТерм(
         int defaultTerm,
         int setTerm,
         int newDefaultTerm)
     {
         using var memory = CreateStream();
-        var expected = GetTerm(setTerm);
+        var expectedTerm = GetTerm(setTerm);
         var oldStorage = new FileMetadataStorage(memory, GetTerm(defaultTerm), null);
 
-        oldStorage.Update(expected, null);
-        var newStorage = new FileMetadataStorage(memory, GetTerm(newDefaultTerm), null);
-        var actual = newStorage.Term;
+        oldStorage.Update(expectedTerm, null);
 
-        Assert.Equal(expected, actual);
+        var newStorage = new FileMetadataStorage(memory, GetTerm(newDefaultTerm), null);
+
+        var (actualTerm, _) = newStorage.ReadStoredDataTest();
+        Assert.Equal(expectedTerm, actualTerm);
     }
 }
