@@ -95,7 +95,7 @@ public class FileMetadataStorage : IMetadataStorage
         writer.Write(Marker);
         writer.Write(CurrentVersion);
         writer.Write(term.Value);
-        writer.Write(votedFor is {Value: var value}
+        writer.Write(votedFor is {Id: var value}
                          ? value
                          : NoVotedFor);
 
@@ -129,7 +129,7 @@ public class FileMetadataStorage : IMetadataStorage
             writer.Write(Marker);
             writer.Write(CurrentVersion);
             writer.Write(defaultTerm.Value);
-            writer.Write(defaultVotedFor is {Value: var value}
+            writer.Write(defaultVotedFor is {Id: var value}
                              ? value
                              : NoVotedFor);
 

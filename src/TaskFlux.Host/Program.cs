@@ -67,7 +67,7 @@ try
                                       ProtocolType.Tcp));
                                   IPeer peer = new TcpPeer(client, endpoint, id, nodeId,
                                       networkOptions.ConnectionTimeout, networkOptions.RequestTimeout,
-                                      Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
+                                      Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
                                   peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
                                   return peer;
                               })

@@ -18,17 +18,17 @@ using TaskFlux.Core;
 
 namespace TaskFlux.Host.Modules.HttpRequest;
 
-public class SubmitCommandRequestHandler: IRequestHandler
+public class SubmitCommandRequestHandler : IRequestHandler
 {
     private static readonly Encoding Encoding = Encoding.UTF8;
-    
+
     private readonly IClusterInfo _clusterInfo;
     private readonly IApplicationInfo _applicationInfo;
     private readonly IConsensusModule<Command, Result> _consensusModule;
     private readonly ILogger _logger;
 
-    public SubmitCommandRequestHandler(IConsensusModule<Command, Result> consensusModule, 
-                                       IClusterInfo clusterInfo, 
+    public SubmitCommandRequestHandler(IConsensusModule<Command, Result> consensusModule,
+                                       IClusterInfo clusterInfo,
                                        IApplicationInfo applicationInfo,
                                        ILogger logger)
     {
@@ -37,19 +37,21 @@ public class SubmitCommandRequestHandler: IRequestHandler
         _consensusModule = consensusModule;
         _logger = logger;
     }
-    
-    public async Task HandleRequestAsync(HttpListenerRequest request, HttpListenerResponse response, CancellationToken token)
+
+    public async Task HandleRequestAsync(HttpListenerRequest request,
+                                         HttpListenerResponse response,
+                                         CancellationToken token)
     {
         response.KeepAlive = false;
         response.ContentType = "application/json";
-        
+
         if (!request.HasEntityBody)
         {
             _logger.Debug("В теле запроса не было данных");
             await RespondEmptyBodyNotAcceptedAsync(response);
             return;
         }
-        
+
         _logger.Debug("Читаю строку запроса клиента");
         var requestString = await ReadRequestStringAsync(request);
 
@@ -78,7 +80,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         await writer.WriteAsync(body);
         await writer.FlushAsync();
     }
-    
+
     private bool TrySerializeCommandPayload(string requestString, out CommandDescriptor<Command> command)
     {
         if (string.IsNullOrWhiteSpace(requestString))
@@ -86,29 +88,31 @@ public class SubmitCommandRequestHandler: IRequestHandler
             command = default;
             return false;
         }
+
         var tokens = requestString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         // Точно будет хотя бы 1 элемент, т.к. проверяли выше, что строка не пуста
         var commandString = tokens[0];
-        if (commandString.Equals("enqueue", StringComparison.InvariantCultureIgnoreCase) 
+        if (commandString.Equals("enqueue", StringComparison.InvariantCultureIgnoreCase)
          && tokens.Length == 3)
         {
             var key = int.Parse(tokens[1]);
-            var data = Encoding.GetBytes( tokens[2] );
-            command = new CommandDescriptor<Command>( new EnqueueCommand(key, data, _applicationInfo.DefaultQueueName), false );
+            var data = Encoding.GetBytes(tokens[2]);
+            command = new CommandDescriptor<Command>(new EnqueueCommand(key, data, _applicationInfo.DefaultQueueName),
+                false);
             return true;
         }
 
-        if (commandString.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase) 
+        if (commandString.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase)
          && tokens.Length == 1)
         {
-            command = new CommandDescriptor<Command>( new DequeueCommand(_applicationInfo.DefaultQueueName), false );
+            command = new CommandDescriptor<Command>(new DequeueCommand(_applicationInfo.DefaultQueueName), false);
             return true;
         }
 
-        if (commandString.Equals("count", StringComparison.InvariantCultureIgnoreCase) 
+        if (commandString.Equals("count", StringComparison.InvariantCultureIgnoreCase)
          && tokens.Length == 1)
         {
-            command = new CommandDescriptor<Command>( new CountCommand(_applicationInfo.DefaultQueueName), true );
+            command = new CommandDescriptor<Command>(new CountCommand(_applicationInfo.DefaultQueueName), true);
             return true;
         }
 
@@ -119,16 +123,15 @@ public class SubmitCommandRequestHandler: IRequestHandler
     private async Task RespondAsync(HttpListenerResponse httpResponse,
                                     SubmitResponse<Result> submitResponse)
     {
-
         Dictionary<string, object?> resultData;
         HttpStatusCode responseStatus;
         bool success;
-        
+
         if (submitResponse.TryGetResponse(out var result))
         {
             var visitor = new HttpResponseJobQueueResponseVisitor();
             result.Accept(visitor);
-            
+
             success = true;
             resultData = visitor.Payload;
             responseStatus = HttpStatusCode.OK;
@@ -136,10 +139,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         else if (submitResponse.WasLeader)
         {
             responseStatus = HttpStatusCode.InternalServerError;
-            resultData = new Dictionary<string, object?>()
-            {
-                {"message", "Операция не вернула результат"}
-            };
+            resultData = new Dictionary<string, object?>() {{"message", "Операция не вернула результат"}};
             success = false;
         }
         else
@@ -147,12 +147,11 @@ public class SubmitCommandRequestHandler: IRequestHandler
             responseStatus = HttpStatusCode.TemporaryRedirect;
             resultData = new Dictionary<string, object?>()
             {
-                {"message", "Узел не лидер"},
-                {"leaderId", _clusterInfo.LeaderId.Value}
+                {"message", "Узел не лидер"}, {"leaderId", _clusterInfo.LeaderId.Id}
             };
             success = false;
         }
-        
+
         httpResponse.StatusCode = ( int ) responseStatus;
         await using var writer = new StreamWriter(httpResponse.OutputStream, leaveOpen: true);
         await writer.WriteAsync(SerializeResponse(success, resultData));
@@ -191,7 +190,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
         public void Visit(ErrorResult result)
         {
             Payload["type"] = "error";
-            Payload["subtype"] = (byte) result.ErrorType;
+            Payload["subtype"] = ( byte ) result.ErrorType;
             Payload["message"] = result.Message;
         }
 
@@ -206,9 +205,11 @@ public class SubmitCommandRequestHandler: IRequestHandler
             Payload["data"] = result.Metadata.ToDictionary(m => m.QueueName, m => new Dictionary<string, object?>()
             {
                 {"count", m.Count},
-                {"limit", m.HasMaxSize 
-                              ? m.MaxSize
-                              : null}
+                {
+                    "limit", m.HasMaxSize
+                                 ? m.MaxSize
+                                 : null
+                }
             });
         }
     }
@@ -217,7 +218,7 @@ public class SubmitCommandRequestHandler: IRequestHandler
     private async Task RespondEmptyBodyNotAcceptedAsync(HttpListenerResponse response)
     {
         await using var writer = new StreamWriter(response.OutputStream, Encoding, leaveOpen: true);
-        response.StatusCode = (int)HttpStatusCode.UnprocessableEntity;
+        response.StatusCode = ( int ) HttpStatusCode.UnprocessableEntity;
         await writer.WriteAsync(SerializeResponse(false, "В теле запроса не указаны данные"));
     }
 
@@ -234,14 +235,11 @@ public class SubmitCommandRequestHandler: IRequestHandler
 
     private string SerializeResponse(bool success, Dictionary<string, object?>? payload)
     {
-        return JsonSerializer.Serialize(new Response()
-        {
-            Success = success,
-            Payload = payload
-        }, new JsonSerializerOptions(JsonSerializerDefaults.Web)
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-        });
+        return JsonSerializer.Serialize(new Response() {Success = success, Payload = payload},
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)
+            {
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+            });
     }
 
 

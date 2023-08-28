@@ -16,7 +16,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
     private readonly ICommandSerializer<TCommand> _commandCommandSerializer;
     private readonly ILogger _logger;
 
-    internal FollowerState(IConsensusModule<TCommand, TResponse> consensusModule, 
+    internal FollowerState(IConsensusModule<TCommand, TResponse> consensusModule,
                            IStateMachineFactory<TCommand, TResponse> stateMachineFactory,
                            ICommandSerializer<TCommand> commandCommandSerializer,
                            ILogger logger)
@@ -60,18 +60,19 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         {
             _logger.Debug(
                 "Получен RequestVote от узла за которого можем проголосовать. Id узла {NodeId}, Терм узла {Term}. Обновляю состояние",
-                request.CandidateId.Value, request.CandidateTerm.Value);
+                request.CandidateId.Id, request.CandidateTerm.Value);
             ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
 
             if (request.CandidateTerm < CurrentTerm)
             {
-                _logger.Debug("Терм кандидата больше моего: отдаю голос за и перехожу в {Term} терм", request.CandidateTerm);
+                _logger.Debug("Терм кандидата больше моего: отдаю голос за и перехожу в {Term} терм",
+                    request.CandidateTerm);
                 PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
             }
-            
+
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
-        
+
         if (CurrentTerm < request.CandidateTerm)
         {
             _logger.Debug("Терм кандидата больше, но лог конфликтует: обновляю только терм");
@@ -139,7 +140,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         // 2. Эта операция сразу сбрасывает данные на диск (Flush) - дорого
         PersistenceFacade.SetLastApplied(request.LeaderCommit);
 
-        if (MaxLogFileSize < PersistenceFacade.LogFileSize)
+        if (PersistenceFacade.IsLogFileSizeExceeded())
         {
             var snapshot = StateMachine.GetSnapshot();
             var snapshotLastEntryInfo = PersistenceFacade.LastApplied;

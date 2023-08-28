@@ -129,7 +129,7 @@ public class FileLogStorage : ILogStorage, IDisposable
 
     // Очень надеюсь, что такого никогда не произойдет
     // Чтобы такого точно не произошло, надо на уровне выставления максимального размера файла лога ограничение сделать
-    public ulong Size => checked( ( ulong ) _fileStream.Length );
+    public ulong FileSize => checked( ( ulong ) _fileStream.Length );
 
     public LogEntryInfo Append(LogEntry entry)
     {

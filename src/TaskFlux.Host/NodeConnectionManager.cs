@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using Consensus.Raft;
 using Consensus.Network;
 using Consensus.Network.Packets;
 using Consensus.Peer;
+using Consensus.Raft;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Core;
@@ -26,7 +26,7 @@ public class NodeConnectionManager
         _raft = raft;
         _logger = logger;
     }
-    
+
     public void Run(CancellationToken token)
     {
         _logger.Information("Модуль взаимодействия с другими узлами запускается");
@@ -41,24 +41,24 @@ public class NodeConnectionManager
             _logger.Fatal(e, "Не удалось связать адрес {Endpoint} для прослушивания", endpoint.ToString());
             throw;
         }
-        
+
         _logger.Information("Начинаю прослушивать входящие запросы");
         server.Listen();
-        
+
         try
         {
             RunMainLoop(token, server);
         }
         catch (OperationCanceledException)
         {
-            _logger.Information("Запрошено завершение работы. Закрываю все соединения");    
+            _logger.Information("Запрошено завершение работы. Закрываю все соединения");
         }
         finally
         {
             server.Shutdown(SocketShutdown.Receive);
             server.Close();
         }
-        
+
         foreach (var node in _nodes)
         {
             node.Value.Dispose();
@@ -118,8 +118,8 @@ public class NodeConnectionManager
 
     private void BeginNewClientSession(NodeId id, PacketClient client, CancellationToken token)
     {
-        var processor = new NodeConnectionProcessor(id, client, _raft, 
-            _logger.ForContext("SourceContext", $"NodeConnectionProcessor({id.Value})"))
+        var processor = new NodeConnectionProcessor(id, client, _raft,
+            _logger.ForContext("SourceContext", $"NodeConnectionProcessor({id.Id})"))
             {
                 CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(token)
             };
@@ -127,7 +127,8 @@ public class NodeConnectionManager
             _ => processor,
             (_, old) =>
             {
-                _logger.Information("В списке соединений уже было соединение с для текущего Id. Закрываю старое соединение");
+                _logger.Information(
+                    "В списке соединений уже было соединение с для текущего Id. Закрываю старое соединение");
                 old.Dispose();
                 return processor;
             });
@@ -144,9 +145,9 @@ public class NodeConnectionManager
             return request.Id;
         }
 
-        return null; 
+        return null;
     }
-    
+
     private EndPoint GetListenAddress()
     {
         _logger.Debug("Хост: {Host}", _host);
@@ -158,7 +159,7 @@ public class NodeConnectionManager
         var found = Dns.GetHostAddresses(_host)
                        .Where(a => a.AddressFamily == AddressFamily.InterNetwork)
                        .ToArray();
-        
+
         switch (found)
         {
             case []:
@@ -168,7 +169,9 @@ public class NodeConnectionManager
                 _logger.Information("По переданному хосту найден IP адрес {Address}", ip.ToString());
                 return new IPEndPoint(ip, _port);
             default:
-                _logger.Fatal("Для переданного хоста найдено более одного IP адреса. Необходимо указать только 1. {Addresses}", found.Select(x => x.ToString()));
+                _logger.Fatal(
+                    "Для переданного хоста найдено более одного IP адреса. Необходимо указать только 1. {Addresses}",
+                    found.Select(x => x.ToString()));
                 throw new ApplicationException("Для переданного хоста найдено более 1 адреса");
         }
     }

@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Consensus.Raft.Persistence.Log;
+using Consensus.Raft.Persistence.LogFileCheckStrategy;
 using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
 using TaskFlux.Core;
@@ -28,7 +29,13 @@ public class StoragePersistenceFacade : IPersistenceFacade
     /// <summary>
     /// Временный буфер для незакоммиченных записей
     /// </summary>
-    internal readonly List<LogEntry> _buffer = new();
+    private readonly List<LogEntry> _buffer = new();
+
+    /// <summary>
+    /// Метод для проверки превышения размера файла лога.
+    /// Подобная логика нужна для тестов
+    /// </summary>
+    private readonly ILogFileSizeChecker _sizeChecker;
 
     public LogEntryInfo LastEntry => _buffer.Count > 0
                                          ? new LogEntryInfo(_buffer[^1].Term, CommitIndex + _buffer.Count)
@@ -36,13 +43,12 @@ public class StoragePersistenceFacade : IPersistenceFacade
 
     public int CommitIndex => _logStorage.Count - 1;
     public int LastAppliedIndex { get; private set; } = LogEntryInfo.TombIndex;
-    public ulong LogFileSize => _logStorage.Size;
+    public ulong LogFileSize => _logStorage.FileSize;
 
     public LogEntryInfo LastApplied => LastAppliedIndex == LogEntryInfo.TombIndex
                                            ? LogEntryInfo.Tomb
                                            : GetLogEntryInfoAtIndex(LastAppliedIndex);
 
-    // TODO: кэшировать
     public Term CurrentTerm => _metadataStorage.Term;
     public NodeId? VotedFor => _metadataStorage.VotedFor;
     internal FileSystemSnapshotStorage SnapshotStorage => _snapshotStorage;
@@ -55,6 +61,18 @@ public class StoragePersistenceFacade : IPersistenceFacade
         _logStorage = logStorage;
         _metadataStorage = metadataStorage;
         _snapshotStorage = snapshotStorage;
+        _sizeChecker = SizeLogFileSizeChecker.MaxLogFileSize;
+    }
+
+    internal StoragePersistenceFacade(FileLogStorage logStorage,
+                                      IMetadataStorage metadataStorage,
+                                      FileSystemSnapshotStorage snapshotStorage,
+                                      ILogFileSizeChecker sizeChecker)
+    {
+        _logStorage = logStorage;
+        _metadataStorage = metadataStorage;
+        _snapshotStorage = snapshotStorage;
+        _sizeChecker = sizeChecker;
     }
 
 
@@ -177,7 +195,7 @@ public class StoragePersistenceFacade : IPersistenceFacade
 
     public bool TryGetFrom(int globalIndex, out IReadOnlyList<LogEntry> entries)
     {
-        var localIndex = CalculateLocalIndex(globalIndex);
+        var localIndex = CalculateLocalIndex();
 
         if (localIndex < 0)
         {
@@ -214,7 +232,7 @@ public class StoragePersistenceFacade : IPersistenceFacade
         entries = Array.Empty<LogEntry>();
         return false;
 
-        int CalculateLocalIndex(int globalIndex)
+        int CalculateLocalIndex()
         {
             /*
              * Я разделяю индекс на 2 типа: локальный и глобальный.
@@ -364,6 +382,11 @@ public class StoragePersistenceFacade : IPersistenceFacade
     public void UpdateState(Term newTerm, NodeId? votedFor)
     {
         _metadataStorage.Update(newTerm, votedFor);
+    }
+
+    public bool IsLogFileSizeExceeded()
+    {
+        return _sizeChecker.IsLogFileSizeExceeded(_logStorage.FileSize);
     }
 
     // Для тестов

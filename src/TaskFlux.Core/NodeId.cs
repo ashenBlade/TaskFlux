@@ -6,59 +6,59 @@ public readonly struct NodeId : IEquatable<NodeId>
     /// Стандартный конструктор для Id узла.
     /// Принимает числовое значение.
     /// </summary>
-    /// <param name="nodeId">Числовое значение ID узла. Должен быть положительным</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="nodeId"/> - 0 или отрицательный</exception>
-    public NodeId(int nodeId)
+    /// <param name="id">Числовое значение ID узла. Должен быть положительным</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="id"/> - 0 или отрицательный</exception>
+    public NodeId(int id)
     {
-        if (nodeId < 1)
+        if (id < 1)
         {
-            throw new ArgumentOutOfRangeException(nameof(nodeId), nodeId,
+            throw new ArgumentOutOfRangeException(nameof(id), id,
                 "Id узла должно быть положительным значением");
         }
 
-        Value = nodeId;
+        Id = id;
     }
 
     public const int StartId = 1;
 
     public NodeId()
     {
-        Value = StartId;
+        Id = StartId;
     }
 
-    public static explicit operator int(NodeId id) => id.Value;
+    public static explicit operator int(NodeId id) => id.Id;
 
     public static NodeId Start => new(StartId);
-    public int Value { get; }
+    public int Id { get; }
 
     public override string ToString()
     {
-        return $"NodeId({Value})";
+        return $"NodeId({Id})";
     }
 
     public override bool Equals(object? obj)
     {
         return obj is NodeId nodeId
-            && nodeId.Value == Value;
+            && nodeId.Id == Id;
     }
 
     public bool Equals(NodeId other)
     {
-        return Value == other.Value;
+        return Id == other.Id;
     }
 
     public static bool operator ==(NodeId left, NodeId right)
     {
-        return left.Value == right.Value;
+        return left.Id == right.Id;
     }
 
     public static bool operator !=(NodeId left, NodeId right)
     {
-        return left.Value != right.Value;
+        return left.Id != right.Id;
     }
 
     public override int GetHashCode()
     {
-        return Value;
+        return Id;
     }
 }

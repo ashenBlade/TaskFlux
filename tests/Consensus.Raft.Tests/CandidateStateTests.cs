@@ -1,8 +1,17 @@
+using Consensus.CommandQueue;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Persistence;
+using Consensus.Raft.Persistence.Log;
+using Consensus.Raft.Persistence.LogFileCheckStrategy;
+using Consensus.Raft.Persistence.Metadata;
+using Consensus.Raft.Persistence.Snapshot;
+using Consensus.Raft.State;
+using Consensus.Raft.State.LeaderState;
 using Consensus.Raft.Tests.Infrastructure;
+using Consensus.Raft.Tests.Stubs;
 using Moq;
+using Serilog.Core;
 using TaskFlux.Core;
 
 namespace Consensus.Raft.Tests;
@@ -10,167 +19,182 @@ namespace Consensus.Raft.Tests;
 [Trait("Category", "Raft")]
 public class CandidateStateTests
 {
-    private static RaftConsensusModule<int, int> CreateCandidateNode(Term term,
-                                                                     NodeId? votedFor,
-                                                                     IEnumerable<IPeer>? peers = null,
-                                                                     ITimer? electionTimer = null,
-                                                                     IBackgroundJobQueue? jobQueue = null,
-                                                                     IPersistenceFacade? log = null)
+    private static readonly NodeId NodeId = new(1);
+    private static readonly PeerGroup EmptyPeerGroup = new PeerGroup(Array.Empty<IPeer>());
+    private static readonly IStateMachine NullStateMachine = Mock.Of<IStateMachine>();
+    private static readonly IStateMachineFactory NullStateMachineFactory = Mock.Of<IStateMachineFactory>();
+
+    private static readonly ICommandSerializer<int> NullCommandSerializer =
+        new Mock<ICommandSerializer<int>>().Apply(m =>
+                                            {
+                                                m.Setup(x => x.Serialize(It.IsAny<int>())).Returns(Array.Empty<byte>());
+                                                m.Setup(x => x.Deserialize(It.IsAny<byte[]>())).Returns(1);
+                                            })
+                                           .Object;
+
+    private static readonly IRequestQueueFactory NullRequestQueueFactory = Mock.Of<IRequestQueueFactory>();
+
+    private static RaftConsensusModule CreateCandidateNode(Term term,
+                                                           ITimer? electionTimer = null,
+                                                           IBackgroundJobQueue? jobQueue = null,
+                                                           IEnumerable<IPeer>? peers = null,
+                                                           ILogFileSizeChecker? fileSizeChecker = null)
     {
-        throw new NotImplementedException();
-        // var raftStateMachine = Helpers.CreateNode(term, votedFor, peers: peers, electionTimer: electionTimer,
-        //     heartbeatTimer: null, jobQueue: jobQueue, log: log);
-        // raftStateMachine.SetStateTest(new CandidateState<int, int>(raftStateMachine, Helpers.NullLogger));
-        // return raftStateMachine;
+        return CreateCandidateNode(term.Value, electionTimer, jobQueue, peers, fileSizeChecker);
     }
 
-    [Fact]
-    public void ПриСрабатыванииElectionTimer__ДолженПерейтиВСледующийТерм()
+    private static RaftConsensusModule CreateCandidateNode(int term,
+                                                           ITimer? electionTimer = null,
+                                                           IBackgroundJobQueue? jobQueue = null,
+                                                           IEnumerable<IPeer>? peers = null,
+                                                           ILogFileSizeChecker? fileSizeChecker = null)
     {
-        var oldTerm = new Term(1);
+        var facade = CreateStoragePersistenceFacade();
+        electionTimer ??= Mock.Of<ITimer>();
+        jobQueue ??= Mock.Of<IBackgroundJobQueue>();
+        var peerGroup = peers is { } p
+                            ? new PeerGroup(p.ToArray())
+                            : EmptyPeerGroup;
+        var node = new RaftConsensusModule(NodeId, peerGroup,
+            Logger.None, electionTimer,
+            Mock.Of<ITimer>(), jobQueue,
+            facade, Mock.Of<ICommandQueue>(),
+            NullStateMachine, NullCommandSerializer,
+            NullRequestQueueFactory, NullStateMachineFactory);
+        node.SetStateTest(new CandidateState<int, int>(node, Logger.None));
+        return node;
+
+        StoragePersistenceFacade CreateStoragePersistenceFacade()
+        {
+            var fs = Helpers.CreateFileSystem();
+            var logStorage = new FileLogStorage(fs.Log.Open(FileMode.Open));
+            var metadataStorage =
+                new FileMetadataStorage(fs.Metadata.Open(FileMode.Open), new Term(term), NodeId);
+            var snapshotStorage = new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory);
+            if (fileSizeChecker is null)
+            {
+                return new StoragePersistenceFacade(logStorage, metadataStorage, snapshotStorage);
+            }
+
+            return new StoragePersistenceFacade(logStorage, metadataStorage, snapshotStorage, fileSizeChecker);
+        }
+    }
+
+    private const int DefaultTerm = 1;
+
+    [Fact]
+    public void ElectionTimout__ДолженПерейтиВСледующийТермИОстатьсяКандидатом()
+    {
         var electionTimer = new Mock<ITimer>();
-        using var raft = CreateCandidateNode(oldTerm, null, electionTimer: electionTimer.Object);
+        electionTimer.SetupAdd(x => x.Timeout += null);
+        var currentTerm = new Term(1);
+        var expectedTerm = currentTerm.Increment();
+        var node = CreateCandidateNode(DefaultTerm, electionTimer.Object);
 
         electionTimer.Raise(x => x.Timeout += null);
 
-        var nextTerm = oldTerm.Increment();
-        Assert.Equal(nextTerm, raft.CurrentTerm);
+        Assert.Equal(expectedTerm, node.CurrentTerm);
+        Assert.Equal(NodeRole.Candidate, node.CurrentRole);
     }
 
     [Fact]
-    public void ПриСрабатыванииElectionTimer__ДолженОстатьсяВCandidateСостоянии()
-    {
-        var oldTerm = new Term(1);
-        var electionTimer = new Mock<ITimer>();
-        using var raft = CreateCandidateNode(oldTerm, null, electionTimer: electionTimer.Object);
-
-        electionTimer.Raise(x => x.Timeout += null);
-
-        Assert.Equal(NodeRole.Candidate, raft.CurrentRole);
-    }
-
-    [Fact]
-    public async Task КогдаВКластереНетДругихУзлов__ПослеЗапускаКворума__ДолженПерейтиВСостояниеЛидера()
+    public void Кворум__КогдаДругихУзловНет__ДолженСтатьЛидером()
     {
         var oldTerm = new Term(1);
         var jobQueue = new SingleRunBackgroundJobQueue();
-        using var raft = CreateCandidateNode(oldTerm, null, jobQueue: jobQueue);
+        using var node = CreateCandidateNode(oldTerm.Value, jobQueue: jobQueue);
 
-        await jobQueue.Run();
+        jobQueue.Run();
 
-        Assert.Equal(NodeRole.Leader, raft.CurrentRole);
+        Assert.Equal(NodeRole.Leader, node.CurrentRole);
     }
 
     [Fact]
-    public async Task ПослеЗапускаКворумаИПереходаВСостояниеЛидера__ДолженОстановитьElectionTimeout()
+    public void Кворум__ПриДостижении__ДолженОстановитьElectionTimeout()
     {
         var oldTerm = new Term(1);
         var jobQueue = new SingleRunBackgroundJobQueue();
-        var timer = new Mock<ITimer>();
-        timer.Setup(x => x.Stop()).Verifiable();
-        using var raft = CreateCandidateNode(oldTerm, null, jobQueue: jobQueue, electionTimer: timer.Object);
+        var timer = new Mock<ITimer>().Apply(m =>
+        {
+            m.Setup(x => x.Stop()).Verifiable();
+        });
 
-        await jobQueue.Run();
+        _ = CreateCandidateNode(oldTerm.Value, timer.Object, jobQueue);
+
+        jobQueue.Run();
 
         timer.Verify(x => x.Stop(), Times.Once());
     }
 
-    // ReSharper disable once ConvertIfStatementToConditionalTernaryExpression
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task
-        ПриЗапускеКворума__СЕдинственнымДругимУзлом__ДолженСтатьЛидеромТолькоКогдаДругойУзелОтдалСвойГолос(
-        bool voteGranted)
+    [Fact]
+    public void Кворум__КогдаЕдинственныйДругойУзелНеОтдалГолос__ДолженОстатьсяКандидатом()
     {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        var timer = new Mock<ITimer>();
-        timer.Setup(x => x.Stop()).Verifiable();
+        var queue = new SingleRunBackgroundJobQueue();
+        var term = new Term(DefaultTerm);
+        var node = CreateCandidateNode(term, jobQueue: queue,
+            peers: new[] {new StubQuorumPeer(new RequestVoteResponse(term, false))});
 
-        var peer = new Mock<IPeer>();
-        peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: voteGranted));
+        queue.Run();
 
-        using var raft = CreateCandidateNode(oldTerm, null, peers: new[] {peer.Object}, jobQueue: jobQueue,
-            electionTimer: timer.Object);
-
-        await jobQueue.Run();
-
-        if (voteGranted)
-        {
-            Assert.Equal(NodeRole.Leader, raft.CurrentRole);
-        }
-        else
-        {
-            Assert.Equal(NodeRole.Candidate, raft.CurrentRole);
-        }
+        Assert.Equal(NodeRole.Candidate, node.CurrentRole);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task
-        ПриЗапускеКворума__СЕдинственнымДругимУзлом__ДолженПрекратитьОтправлятьЗапросыПослеПолученияОтвета(
-        bool voteGranted)
+    private static readonly NodeId AnotherNodeId = new(NodeId.Id + 1);
+
+    private class StubQuorumPeer : IPeer
     {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        var timer = new Mock<ITimer>();
-        timer.Setup(x => x.Stop()).Verifiable();
+        private readonly RequestVoteResponse? _response;
+        public NodeId Id => AnotherNodeId;
 
-        var peer = new Mock<IPeer>();
-        peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: voteGranted));
+        public StubQuorumPeer(RequestVoteResponse? response)
+        {
+            _response = response;
+        }
 
-        using var raft = CreateCandidateNode(oldTerm, null, peers: new[] {peer.Object}, jobQueue: jobQueue,
-            electionTimer: timer.Object);
+        public StubQuorumPeer(Term term, bool voteGranted)
+        {
+            _response = new RequestVoteResponse(term, voteGranted);
+        }
 
-        await jobQueue.Run();
+        public Task<AppendEntriesResponse?> SendAppendEntries(AppendEntriesRequest request, CancellationToken token)
+        {
+            throw new Exception("Кандидат не должен отсылать AppendEntries");
+        }
 
-        peer.Verify(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()),
-            Times.Once());
+        public Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
+        {
+            return Task.FromResult(_response);
+        }
     }
 
     [Theory]
     [InlineData(1, 0)]
+    [InlineData(1, 1)]
     [InlineData(2, 0)]
+    [InlineData(2, 2)]
     [InlineData(2, 1)]
     [InlineData(3, 1)]
-    [InlineData(5, 5)]
-    [InlineData(1, 1)]
-    [InlineData(2, 2)]
     [InlineData(3, 2)]
     [InlineData(3, 3)]
-    public async Task ПриЗапускеКворума__СНесколькимиУзлами__ДолженСтатьЛидеромКогдаСобралКворум(
+    [InlineData(5, 5)]
+    public void Кворум__СНесколькимиУзлами__ДолженСтатьЛидеромКогдаСобралКворум(
         int grantedVotesCount,
         int nonGrantedVotesCount)
     {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        var timer = new Mock<ITimer>();
-        timer.Setup(x => x.Stop()).Verifiable();
+        // Кворум достигается только если было получено n/2 согласий (округление в нижнюю сторону),
+        // где n - кол-во других узлов (без нас)
+        var term = new Term(2);
+        var peers = Enumerable.Range(0, grantedVotesCount)
+                              .Select(_ => new StubQuorumPeer(term, true))
+                              .Concat(Enumerable.Range(0, nonGrantedVotesCount)
+                                                .Select(_ => new StubQuorumPeer(term, false)));
 
+        var queue = new SingleRunBackgroundJobQueue();
+        var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
 
-        var peers = Random.Shared.Shuffle(Enumerable.Range(0, grantedVotesCount + nonGrantedVotesCount)
-                                                    .Select(i =>
-                                                     {
-                                                         var mock = new Mock<IPeer>();
-                                                         mock.Setup(x => x.SendRequestVote(
-                                                                  It.IsAny<RequestVoteRequest>(),
-                                                                  It.IsAny<CancellationToken>()))
-                                                             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm,
-                                                                  VoteGranted: i < grantedVotesCount));
-                                                         return mock.Object;
-                                                     })
-                                                    .ToArray());
+        queue.Run();
 
-        using var raft =
-            CreateCandidateNode(oldTerm, null, peers: peers, jobQueue: jobQueue, electionTimer: timer.Object);
-
-        await jobQueue.Run();
-
-        Assert.Equal(NodeRole.Leader, raft.CurrentRole);
+        Assert.Equal(NodeRole.Leader, node.CurrentRole);
     }
 
     [Theory]
@@ -183,229 +207,397 @@ public class CandidateStateTests
     [InlineData(1, 4)]
     [InlineData(2, 4)]
     [InlineData(3, 4)]
-    public async Task ПриЗапускеКворума__СНесколькимиУзлами__НеДолженСтатьЛидеромКогдаНеСобралКворум(
+    public void Кворум__СНесколькимиУзлами__ДолженОстатьсяКандидатомЕслиНеСобралКворум(
         int grantedVotesCount,
         int nonGrantedVotesCount)
     {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        var timer = new Mock<ITimer>();
-        timer.Setup(x => x.Stop()).Verifiable();
+        var term = new Term(2);
+        var peers = Enumerable.Range(0, grantedVotesCount)
+                              .Select(_ => new StubQuorumPeer(term, true))
+                              .Concat(Enumerable.Range(0, nonGrantedVotesCount)
+                                                .Select(_ => new StubQuorumPeer(term, false)));
 
+        var queue = new SingleRunBackgroundJobQueue();
+        var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
 
-        var peers = Random.Shared.Shuffle(Enumerable.Range(0, grantedVotesCount + nonGrantedVotesCount)
-                                                    .Select(i =>
-                                                     {
-                                                         var mock = new Mock<IPeer>();
-                                                         mock.Setup(x => x.SendRequestVote(
-                                                                  It.IsAny<RequestVoteRequest>(),
-                                                                  It.IsAny<CancellationToken>()))
-                                                             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm,
-                                                                  VoteGranted: i < grantedVotesCount));
-                                                         return mock.Object;
-                                                     })
-                                                    .ToArray());
+        queue.Run();
 
-        using var raft =
-            CreateCandidateNode(oldTerm, null, peers: peers, jobQueue: jobQueue, electionTimer: timer.Object);
-
-        await jobQueue.Run();
-
-        Assert.Equal(NodeRole.Candidate, raft.CurrentRole);
+        Assert.Equal(NodeRole.Candidate, node.CurrentRole);
     }
 
     [Fact]
-    public async Task ПриЗапускеКворума__СЕдинственнымУзломКоторыйНеОтветил__ДолженСделатьПовторнуюПопытку()
+    public void Кворум__СЕдинственнымУзломКоторыйНеОтветил__ДолженСделатьПовторнуюПопытку()
     {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        var timer = new Mock<ITimer>();
-        timer.Setup(x => x.Stop()).Verifiable();
+        var term = new Term(2);
+        var mock = new Mock<IPeer>(MockBehavior.Strict).Apply(m =>
+        {
+            m.SetupSequence(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+             .ReturnsAsync(( RequestVoteResponse? ) null)
+             .ReturnsAsync(new RequestVoteResponse(term, true));
+        });
+        var queue = new SingleRunBackgroundJobQueue();
+        _ = CreateCandidateNode(term, jobQueue: queue, peers: new[] {mock.Object});
 
-        var mock = new Mock<IPeer>();
-        var calledFirstTime = true;
-        mock.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((RequestVoteRequest _, CancellationToken _) =>
-             {
-                 if (calledFirstTime)
-                 {
-                     calledFirstTime = false;
-                     return null;
-                 }
+        queue.Run();
 
-                 return new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true);
-             });
-
-        using var raft = CreateCandidateNode(oldTerm, null, peers: new[] {mock.Object}, jobQueue: jobQueue,
-            electionTimer: timer.Object);
-
-        await jobQueue.Run();
-
+        // Первый раз ошибка сети, а второй раз соединение установлено
         mock.Verify(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()),
             Times.Exactly(2));
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task
-        ПриЗапускеКворума__СЕдинственнымУзломКоторыйОтветилТолькоНаВторойПопытке__ДолженСтатьЛидеромТолькоЕслиОтдалГолос(
-        bool voteGranted)
+    [Fact]
+    public void Кворум__КогдаУзелОтветилБольшимТермомИНеОтдалГолос__ДолженСтатьFollower()
     {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        var timer = new Mock<ITimer>();
-        timer.Setup(x => x.Stop()).Verifiable();
+        var term = new Term(1);
+        var queue = new SingleRunBackgroundJobQueue();
+        var newTerm = term.Increment();
+        var peer = new StubQuorumPeer(new RequestVoteResponse(newTerm, false));
+        var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer});
 
-        var mock = new Mock<IPeer>();
-        var calledFirstTime = true;
-        mock.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((RequestVoteRequest _, CancellationToken _) =>
-             {
-                 if (calledFirstTime)
-                 {
-                     calledFirstTime = false;
-                     return null;
-                 }
+        queue.Run();
 
-                 return new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: voteGranted);
-             });
-
-        using var raft = CreateCandidateNode(oldTerm, null, peers: new[] {mock.Object}, jobQueue: jobQueue,
-            electionTimer: timer.Object);
-
-        await jobQueue.Run();
-
-        Assert.Equal(voteGranted
-                         ? NodeRole.Leader
-                         : NodeRole.Candidate, raft.CurrentRole);
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
     }
 
     [Fact]
-    public void ПриОбработкеRequestVote__СБолееВысокимТермом__ДолженСтатьFollower()
+    public void Кворум__КогдаУзелОтветилБольшимТермомИНеОтдалГолос__ДолженОбноситьТерм()
     {
-        var oldTerm = new Term(1);
-        using var raft = CreateCandidateNode(oldTerm, null);
+        var term = new Term(1);
+        var queue = new SingleRunBackgroundJobQueue();
+        var newTerm = term.Increment();
+        var peer = new StubQuorumPeer(new RequestVoteResponse(newTerm, false));
+        var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer});
 
-        var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: oldTerm.Increment(),
-            LastLogEntryInfo: raft.PersistenceFacade.LastEntry);
+        queue.Run();
 
-        raft.Handle(request);
-
-        Assert.Equal(NodeRole.Follower, raft.CurrentRole);
+        Assert.Equal(newTerm, node.CurrentTerm);
     }
 
     [Fact]
-    public void ПриОбработкеRequestVote__СБолееВысокимТермом__ДолженОбновитьСвойТерм()
+    public void Кворум__СЕдинственнымУзломКоторыйОтдалГолосНаВторойПопытке__ДолженСтатьЛидером()
     {
-        var oldTerm = new Term(1);
-        using var raft = CreateCandidateNode(oldTerm, null);
+        var term = new Term(1);
+        var queue = new SingleRunBackgroundJobQueue();
+        var peer = new Mock<IPeer>().Apply(m =>
+        {
+            m.SetupSequence(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+             .ReturnsAsync(( RequestVoteResponse? ) null)
+             .ReturnsAsync(new RequestVoteResponse(term, true));
+        });
+        var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer.Object});
 
-        var requestTerm = oldTerm.Increment();
-        var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: requestTerm,
-            LastLogEntryInfo: raft.PersistenceFacade.LastEntry);
+        queue.Run();
 
-        raft.Handle(request);
-
-        Assert.Equal(requestTerm, raft.CurrentTerm);
+        Assert.Equal(NodeRole.Leader, node.CurrentRole);
     }
 
     [Fact]
-    public void ПриОбработкеHeartbeat__СБолееВысокимТермом__ДолженПерейтиВFollower()
+    public void RequestVote__СБолееВысокимТермом__ДолженСтатьFollower()
     {
-        var oldTerm = new Term(1);
-        using var raft = CreateCandidateNode(oldTerm, null, log: CreateLog());
+        var term = new Term(2);
+        var node = CreateCandidateNode(term);
+        var newTerm = term.Increment();
+        var request = new RequestVoteRequest(AnotherNodeId, newTerm, LogEntryInfo.Tomb);
+        var response = node.Handle(request);
 
-        var request = AppendEntriesRequest.Heartbeat(oldTerm.Increment(), raft.PersistenceFacade.CommitIndex,
-            new NodeId(2), raft.PersistenceFacade.LastEntry);
-
-        raft.Handle(request);
-
-        Assert.Equal(NodeRole.Follower, raft.CurrentRole);
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+        Assert.True(response.VoteGranted);
+        Assert.Equal(newTerm, response.CurrentTerm);
     }
 
     [Fact]
-    public void ПриОбработкеHeartbeat__СБолееВысокимТермом__ДолженОбновитьСвойТерм()
+    public void RequestVote__СБолееВысокимТермом__ДолженОбновитьСвойТерм()
     {
-        var oldTerm = new Term(1);
-        using var node = CreateCandidateNode(oldTerm, null, log: CreateLog());
+        var term = new Term(2);
+        var node = CreateCandidateNode(term);
+        var newTerm = term.Increment();
+        var request = new RequestVoteRequest(AnotherNodeId, newTerm, LogEntryInfo.Tomb);
+        var response = node.Handle(request);
 
-        var leaderTerm = oldTerm.Increment();
-        var request = AppendEntriesRequest.Heartbeat(leaderTerm, node.PersistenceFacade.CommitIndex, new NodeId(2),
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+        Assert.True(response.VoteGranted);
+        Assert.Equal(newTerm, response.CurrentTerm);
+        Assert.Equal(newTerm, node.CurrentTerm);
+    }
+
+    [Fact]
+    public void Heartbeat__СБолееВысокимТермом__ДолженПерейтиВFollower()
+    {
+        var term = new Term(2);
+        var node = CreateCandidateNode(term);
+        var newTerm = term.Increment();
+        var request = AppendEntriesRequest.Heartbeat(newTerm, node.PersistenceFacade.CommitIndex, AnotherNodeId,
             node.PersistenceFacade.LastEntry);
-
-        node.Handle(request);
-
-        Assert.Equal(leaderTerm, node.CurrentTerm);
+        var response = node.Handle(request);
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+        Assert.True(response.Success);
+        Assert.Equal(newTerm, response.Term);
+        Assert.Equal(newTerm, node.CurrentTerm);
     }
 
-    private IPersistenceFacade CreateLog(bool isConsistent = true)
+    private static LogEntry RandomDataEntry(Term term)
     {
-        var mock = new Mock<IPersistenceFacade>();
+        var data = new byte[Random.Shared.Next(0, 128)];
+        Random.Shared.NextBytes(data);
+        return new LogEntry(term, data);
+    }
 
-        mock.Setup(x => x.Contains(It.IsAny<LogEntryInfo>())).Returns(isConsistent);
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(5)]
+    public void AppendEntries__ВКонецПустогоЛога__ДолженДобавитьЗаписи(int entriesCount)
+    {
+        var term = new Term(2);
+        var node = CreateCandidateNode(term);
 
-        return mock.Object;
+        var entries = Enumerable.Range(0, entriesCount)
+                                .Select(_ => RandomDataEntry(term))
+                                .ToArray();
+        var request = new AppendEntriesRequest(term, LogEntryInfo.TombIndex, AnotherNodeId, LogEntryInfo.Tomb, entries);
+        var response = node.Handle(request);
+        Assert.True(response.Success);
+
+        var buffer = node.PersistenceFacade.ReadLogBufferTest();
+        Assert.Equal(entries, buffer);
+        Assert.Empty(node.PersistenceFacade.ReadLogFileTest());
+    }
+
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(1, 10)]
+    [InlineData(5, 1)]
+    [InlineData(5, 2)]
+    [InlineData(10, 10)]
+    public void AppendEntries__ВКонецНеПустогоЛога__ДолженДобавитьЗаписи(int logSize, int entriesCount)
+    {
+        var term = new Term(2);
+        var node = CreateCandidateNode(term);
+
+        var entries = Enumerable.Range(0, entriesCount)
+                                .Select(_ => RandomDataEntry(term))
+                                .ToArray();
+        var bufferEntries = Enumerable.Range(0, logSize)
+                                      .Select(_ => RandomDataEntry(term))
+                                      .ToArray();
+        node.PersistenceFacade.SetupBufferTest(bufferEntries);
+        var request = new AppendEntriesRequest(term, LogEntryInfo.TombIndex, AnotherNodeId,
+            node.PersistenceFacade.LastEntry, entries);
+        var expectedBuffer = bufferEntries.Concat(entries);
+
+        var response = node.Handle(request);
+
+        Assert.True(response.Success);
+        var actualBuffer = node.PersistenceFacade.ReadLogBufferTest();
+        Assert.Equal(expectedBuffer, actualBuffer);
+        Assert.Empty(node.PersistenceFacade.ReadLogFileTest());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(9)]
+    public void AppendEntries__КогдаИндексКоммитаВЗапросеБольшеМоего__ДолженЗакоммититьЗаписи(int commitIndex)
+    {
+        // Изначально индекс коммита - -1 (ничего не закоммичено)
+        var term = new Term(2);
+        var bufferEntries = Enumerable.Range(0, 10)
+                                      .Select(_ => RandomDataEntry(term))
+                                      .ToArray();
+
+        var (expectedFile, expectedBuffer) = bufferEntries.Split(commitIndex);
+        var node = CreateCandidateNode(term);
+        node.PersistenceFacade.SetupBufferTest(bufferEntries);
+
+        var request = new AppendEntriesRequest(term, commitIndex, AnotherNodeId, node.PersistenceFacade.LastEntry,
+            Array.Empty<LogEntry>());
+        var response = node.Handle(request);
+
+        Assert.True(response.Success);
+        Assert.Equal(expectedBuffer, node.PersistenceFacade.ReadLogBufferTest());
+        Assert.Equal(expectedFile, node.PersistenceFacade.ReadLogFileTest());
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(0, 5)]
+    [InlineData(5, 2)]
+    public void AppendEntries__КогдаЕстьИндексКоммитаИЗаписиДляДобавления__ДолженЗакоммититьИДобавитьЗаписи(
+        int commitIndex,
+        int enqueueCount)
+    {
+        // Изначально индекс коммита - -1 (ничего не закоммичено)
+        // Изначально есть 10 записей
+        var term = new Term(2);
+        var bufferEntries = Enumerable.Range(0, 10)
+                                      .Select(_ => RandomDataEntry(term))
+                                      .ToArray();
+        var enqueueEntries = Enumerable.Range(0, enqueueCount)
+                                       .Select(_ => RandomDataEntry(term))
+                                       .ToArray();
+        var (expectedFile, expectedBufferEnqueued) = bufferEntries.Split(commitIndex);
+        var expectedBuffer = expectedBufferEnqueued.Concat(enqueueEntries);
+
+        var node = CreateCandidateNode(term);
+        node.PersistenceFacade.SetupBufferTest(bufferEntries);
+
+        var request = new AppendEntriesRequest(term, commitIndex, AnotherNodeId, node.PersistenceFacade.LastEntry,
+            enqueueEntries);
+        var response = node.Handle(request);
+
+        Assert.True(response.Success);
+        Assert.Equal(expectedBuffer, node.PersistenceFacade.ReadLogBufferTest());
+        Assert.Equal(expectedFile, node.PersistenceFacade.ReadLogFileTest());
     }
 
     [Fact]
-    public async Task ПриОбработкеHeartbeat__СБолееВысокимТермомИСобраннымКворумом__ДолженСтатьFollower()
+    public void AppendEntries__КогдаЛогКонфликтует__ДолженОтветитьFalse()
     {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        var peer = new Mock<IPeer>();
-        peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true));
-        using var raft = CreateCandidateNode(oldTerm, null, jobQueue: jobQueue, log: CreateLog());
+        var term = new Term(5);
+        var node = CreateCandidateNode(term);
+        var nodeEntries = new[]
+        {
+            RandomDataEntry(1), // 0
+            RandomDataEntry(2), // 1
+            RandomDataEntry(2), // 2
+            RandomDataEntry(3), // 3
+            RandomDataEntry(3), // 4
+            RandomDataEntry(4), // 5
+        };
+        node.PersistenceFacade.SetupBufferTest(nodeEntries);
+        /*
+         * Конфликт на 5 записи (индекс 4).
+         * Наш терм: 3
+         * Терм узла: 4
+         */
+        var prevLogEntry = new LogEntryInfo(new Term(4), 4);
+        var enqueueEntries = new[]
+        {
+            RandomDataEntry(new Term(4)), RandomDataEntry(new Term(4)), RandomDataEntry(new Term(5)),
+        };
+        var request = new AppendEntriesRequest(term, 0, AnotherNodeId, prevLogEntry, enqueueEntries);
 
-        var leaderTerm = oldTerm.Increment();
-        var request = AppendEntriesRequest.Heartbeat(leaderTerm, raft.PersistenceFacade.CommitIndex, new NodeId(2),
-            raft.PersistenceFacade.LastEntry);
+        var response = node.Handle(request);
 
-        raft.Handle(request);
-        await jobQueue.Run();
-
-        Assert.Equal(NodeRole.Follower, raft.CurrentRole);
+        Assert.False(response.Success);
+        Assert.Equal(nodeEntries, node.PersistenceFacade.ReadLogFull());
     }
 
     [Fact]
-    public async Task ПриОбработкеRequestVote__СБолееВысокимТермомИСобраннымКворумом__ДолженСтатьFollower()
+    public void AppendEntries__КогдаРазмерЛогаПревысилМаксимальный__ДолженСоздатьСнапшот()
     {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        var peer = new Mock<IPeer>();
-        peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true));
-        using var raft = CreateCandidateNode(oldTerm, null, jobQueue: jobQueue);
+        var term = new Term(5);
+        var existingEntries = new[]
+        {
+            RandomDataEntry(1), // 0
+            RandomDataEntry(2), // 1
+            RandomDataEntry(2), // 2
+            RandomDataEntry(3), // 3
+            RandomDataEntry(5), // 4
+        };
+        var node = CreateCandidateNode(term, fileSizeChecker: StubFileSizeChecker.Exceeded);
+        node.PersistenceFacade.LogStorage.SetFileTest(existingEntries);
+        var expectedLastIndex = 4;
+        var expectedLastTerm = 5;
 
-        var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: oldTerm.Increment(),
-            LastLogEntryInfo: raft.PersistenceFacade.LastEntry);
+        // Этим запросом закоммитим сразу все записи
+        var request = new AppendEntriesRequest(term, 4, AnotherNodeId, node.PersistenceFacade.LastEntry,
+            Array.Empty<LogEntry>());
+        var response = node.Handle(request);
 
-        raft.Handle(request);
-        await jobQueue.Run();
-
-        Assert.Equal(NodeRole.Follower, raft.CurrentRole);
+        Assert.True(response.Success);
+        var (actualIndex, actualTerm, _) = node.PersistenceFacade.SnapshotStorage.ReadAllData();
+        Assert.Equal(expectedLastIndex, actualIndex);
+        Assert.Equal(new Term(expectedLastTerm), actualTerm);
+        Assert.Empty(node.PersistenceFacade.ReadLogFull());
     }
 
+    private LogEntry RandomDataEntry(int term) => RandomDataEntry(new Term(term));
 
     [Fact]
-    public async Task ПриОбработкеRequestVote__СБолееВысокимТермомИСобраннымКворумом__ДолженОбновитьСвойТерм()
+    public void RequestVote__СБолееВысокимТермомНоКонфликтующимЛогом__ДолженПерейтиВНовыйТермИНеОтдатьГолос()
     {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        var peer = new Mock<IPeer>();
-        var leaderTerm = oldTerm.Increment();
-        peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true));
-        using var raft = CreateCandidateNode(oldTerm, null, jobQueue: jobQueue);
+        var currentTerm = new Term(2);
+        var queue = new SingleRunBackgroundJobQueue();
+        var node = CreateCandidateNode(currentTerm, jobQueue: queue);
+        var nodeEntries = new[] {RandomDataEntry(1), RandomDataEntry(2), RandomDataEntry(2), RandomDataEntry(2),};
+        node.PersistenceFacade.SetupBufferTest(nodeEntries);
+        var newTerm = currentTerm.Increment();
 
-        var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: leaderTerm,
-            LastLogEntryInfo: raft.PersistenceFacade.LastEntry);
+        // Конфликт на 1 индексе (2 запись) - наш терм = 2, его терм = 1
+        var request = new RequestVoteRequest(AnotherNodeId, newTerm, new LogEntryInfo(new Term(1), 1));
+        var response = node.Handle(request);
 
-        raft.Handle(request);
-        await jobQueue.Run();
+        Assert.False(response.VoteGranted);
+        Assert.Equal(newTerm, node.CurrentTerm);
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+    }
 
-        Assert.Equal(NodeRole.Follower, raft.CurrentRole);
+    [Fact]
+    public void Heartbeat__СБолееВысокимТермомИСобраннымКворумом__ДолженСтатьFollower()
+    {
+        /*
+         * Когда сначала вызываю Handle (после которого становлюсь Follower),
+         * а потом начинаю кворум (собирая при этом большинство голосов),
+         * должен остаться Follower
+         */
+        var currentTerm = new Term(2);
+        var queue = new SingleRunBackgroundJobQueue();
+        var node = CreateCandidateNode(currentTerm, jobQueue: queue);
+        var newTerm = currentTerm.Increment();
+
+        var request = AppendEntriesRequest.Heartbeat(newTerm, -1, AnotherNodeId, LogEntryInfo.Tomb);
+        var response = node.Handle(request);
+        queue.Run();
+
+        Assert.True(response.Success);
+        Assert.Equal(newTerm, response.Term);
+
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+        Assert.Equal(newTerm, node.CurrentTerm);
+    }
+
+    [Fact]
+    public void RequestVote__СОдинаковымТермом__ДолженВернутьFalse()
+    {
+        var currentTerm = new Term(2);
+        var queue = new SingleRunBackgroundJobQueue();
+        var node = CreateCandidateNode(currentTerm, jobQueue: queue);
+
+        var request = new RequestVoteRequest(AnotherNodeId, currentTerm, LogEntryInfo.Tomb);
+        var response = node.Handle(request);
+
+        Assert.True(response.VoteGranted);
+        Assert.Equal(currentTerm, response.CurrentTerm);
+
+        Assert.Equal(NodeRole.Candidate, node.CurrentRole);
+        Assert.Equal(currentTerm, node.CurrentTerm);
+    }
+
+    [Fact]
+    public void RequestVote__СБолееВысокимТермомИСобраннымКворумом__ДолженСтатьFollower()
+    {
+        /*
+         * Когда сначала вызываю Handle (после которого становлюсь Follower),
+         * а потом начинаю кворум (собирая при этом большинство голосов),
+         * должен остаться Follower
+         */
+        var currentTerm = new Term(2);
+        var queue = new SingleRunBackgroundJobQueue();
+        var node = CreateCandidateNode(currentTerm, jobQueue: queue);
+        var newTerm = currentTerm.Increment();
+
+        var request = new RequestVoteRequest(AnotherNodeId, newTerm, LogEntryInfo.Tomb);
+        var response = node.Handle(request);
+        queue.Run();
+
+        Assert.True(response.VoteGranted);
+        Assert.Equal(newTerm, response.CurrentTerm);
+
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+        Assert.Equal(newTerm, node.CurrentTerm);
     }
 
     [Theory]
@@ -413,116 +605,62 @@ public class CandidateStateTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(5)]
-    public async Task ПослеПереходаВLeader__КогдаКворумСобран__ДолженОстановитьElectionТаймер(int votes)
+    public void ПослеПереходаВLeader__КогдаКворумСобран__ДолженОстановитьElectionТаймер(int votes)
     {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
+        var term = new Term(1);
+        var queue = new SingleRunBackgroundJobQueue();
 
         var peer = new Mock<IPeer>();
         peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm, VoteGranted: true));
+            .ReturnsAsync(new RequestVoteResponse(CurrentTerm: term, VoteGranted: true));
 
         var electionTimer = new Mock<ITimer>().Apply(t =>
         {
-            t.Setup(x => x.Stop()).Verifiable();
+            t.Setup(x => x.Stop())
+             .Verifiable();
         });
 
-
         var peers = Enumerable.Range(0, votes)
-                              .Select(_ => new Mock<IPeer>()
-                                          .Apply(t => t.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(),
-                                                            It.IsAny<CancellationToken>()))
-                                                       .ReturnsAsync(new RequestVoteResponse(CurrentTerm: oldTerm,
-                                                            VoteGranted: true)))
-                                          .Object)
+                              .Select(_ => new StubQuorumPeer(term, true))
                               .ToArray();
-        using var raft =
-            CreateCandidateNode(oldTerm, null, peers, electionTimer: electionTimer.Object, jobQueue: jobQueue);
 
-        await jobQueue.Run();
+        _ = CreateCandidateNode(term, jobQueue: queue, peers: peers);
+
+        queue.Run();
 
         electionTimer.Verify(x => x.Stop(), Times.Once());
     }
 
     [Theory]
-    [InlineData(2, 1)]
     [InlineData(1, 1)]
+    [InlineData(2, 1)]
+    [InlineData(2, 2)]
     [InlineData(3, 1)]
     [InlineData(3, 2)]
+    [InlineData(3, 3)]
     [InlineData(4, 2)]
     [InlineData(5, 1)]
     [InlineData(5, 2)]
     [InlineData(5, 3)]
     [InlineData(5, 4)]
-    public async Task ПослеОтправкиЗапросов__КворумДостигнутНоНекоторыеУзлыНеОтветили__ДолженПерейтиВСостояниеLeader(
+    [InlineData(5, 5)]
+    public void Кворум__КогдаБольшинствоГолосовОтданоДругиеНеОтветили__ДолженПерейтиВLeader(
         int successResponses,
         int notResponded)
     {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        var timer = new Mock<ITimer>();
-        timer.Setup(x => x.Stop()).Verifiable();
+        var term = new Term(1);
+        var queue = new SingleRunBackgroundJobQueue();
 
-        var peers = Random.Shared.Shuffle(Enumerable.Range(0, successResponses + notResponded)
-                                                    .Select(i =>
-                                                     {
-                                                         var mock = new Mock<IPeer>();
-                                                         mock.Setup(x => x.SendRequestVote(
-                                                                  It.IsAny<RequestVoteRequest>(),
-                                                                  It.IsAny<CancellationToken>()))
-                                                             .ReturnsAsync(i < successResponses
-                                                                               ? new RequestVoteResponse(
-                                                                                   CurrentTerm: oldTerm,
-                                                                                   VoteGranted: true)
-                                                                               : null);
-                                                         return mock.Object;
-                                                     })
-                                                    .ToArray());
+        var peers = Enumerable.Range(0, successResponses)
+                              .Select(_ => new StubQuorumPeer(term, true))
+                              .Concat(Enumerable.Range(0, notResponded)
+                                                .Select(_ => new StubQuorumPeer(null)))
+                              .ToArray();
 
-        using var raft =
-            CreateCandidateNode(oldTerm, null, peers: peers, jobQueue: jobQueue, electionTimer: timer.Object);
+        var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
 
-        await jobQueue.Run();
+        queue.Run();
 
-        Assert.Equal(NodeRole.Leader, raft.CurrentRole);
-    }
-
-    [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(5)]
-    [InlineData(123)]
-    public void ПриОбработкеRequestVote__СТакимЖеТермом__ДолженСтатьFollower(int term)
-    {
-        var currentTerm = new Term(term);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        using var raft = CreateCandidateNode(currentTerm, null, jobQueue: jobQueue);
-
-        var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: currentTerm,
-            LastLogEntryInfo: raft.PersistenceFacade.LastEntry);
-
-        raft.Handle(request);
-
-        Assert.Equal(NodeRole.Follower, raft.CurrentRole);
-    }
-
-    [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(5)]
-    [InlineData(123)]
-    public void ПриОбработкеRequestVote__СТакимЖеТермом__ДолженОставитьПрежднийТерм(int term)
-    {
-        var currentTerm = new Term(term);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        using var node = CreateCandidateNode(currentTerm, null, jobQueue: jobQueue);
-
-        var request = new RequestVoteRequest(CandidateId: new NodeId(2),
-            CandidateTerm: currentTerm,
-            LastLogEntryInfo: node.PersistenceFacade.LastEntry);
-
-        node.Handle(request);
-
-        Assert.Equal(node.CurrentTerm, currentTerm);
+        Assert.Equal(NodeRole.Leader, node.CurrentRole);
     }
 }

@@ -22,4 +22,11 @@ public class Constants
     /// Название файла снапшота
     /// </summary>
     public const string SnapshotFileName = "raft.snapshot";
+
+    /// <summary>
+    /// Максимальный размер файла лога по умолчанию
+    /// </summary>
+    public const ulong MaxLogFileSize = 16    // Мб
+                                      * 1024  // Кб
+                                      * 1024; // б
 }

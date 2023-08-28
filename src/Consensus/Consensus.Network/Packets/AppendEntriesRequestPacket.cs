@@ -41,7 +41,7 @@ public class AppendEntriesRequestPacket : RaftPacket
                      ));
 
         writer.Write(Request.Term.Value);
-        writer.Write(Request.LeaderId.Value);
+        writer.Write(Request.LeaderId.Id);
         writer.Write(Request.LeaderCommit);
         writer.Write(Request.PrevLogEntryInfo.Term.Value);
         writer.Write(Request.PrevLogEntryInfo.Index);

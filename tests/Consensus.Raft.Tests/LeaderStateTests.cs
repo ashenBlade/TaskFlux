@@ -4,6 +4,7 @@ using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.State.LeaderState;
 using Consensus.Raft.Tests.Infrastructure;
+using Consensus.Raft.Tests.Stubs;
 using Moq;
 using TaskFlux.Core;
 
@@ -77,7 +78,7 @@ public class LeaderStateTests
 
         heartbeatTimer.Raise(x => x.Timeout += null);
 
-        await jobQueue.Run();
+        jobQueue.Run();
 
         peers.ForEach(p =>
             p.Verify(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()),
@@ -115,7 +116,7 @@ public class LeaderStateTests
     }
 
     private static readonly NodeId NodeId = new NodeId(1);
-    private static readonly NodeId AnotherNodeId = new NodeId(NodeId.Value + 1);
+    private static readonly NodeId AnotherNodeId = new NodeId(NodeId.Id + 1);
 
     [Fact]
     public void ПриОбрабаткеЗапросаRequestVote__СБолееВысокимТермом__ДолженПерейтиВFollower()
@@ -275,6 +276,7 @@ public class LeaderStateTests
     [Fact]
     public async Task ПриОтправкеHeartbeat__КогдаУзелОтветилОтрицательноИЕгоТермБольше__ДолженПерейтиВFollower()
     {
+        throw new NotImplementedException();
         var term = new Term(1);
         var heartbeatTimer = new Mock<ITimer>().Apply(t =>
         {
@@ -296,11 +298,9 @@ public class LeaderStateTests
             jobQueue: jobQueue,
             requestQueueFactory: new SingleHeartbeatRequestQueueFactory(0));
 
-        var task = jobQueue.Run();
+        jobQueue.Run();
 
         heartbeatTimer.Raise(x => x.Timeout += null);
-
-        await task;
 
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
     }

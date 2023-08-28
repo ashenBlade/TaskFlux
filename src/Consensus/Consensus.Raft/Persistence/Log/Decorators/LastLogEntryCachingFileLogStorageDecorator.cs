@@ -16,7 +16,7 @@ public class LastLogEntryCachingFileLogStorageDecorator : ILogStorage
     }
 
     public int Count => _storage.Count;
-    public ulong Size => _storage.Size;
+    public ulong FileSize => _storage.FileSize;
 
     public LogEntryInfo Append(LogEntry entry)
     {

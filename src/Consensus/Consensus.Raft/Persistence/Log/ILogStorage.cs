@@ -13,7 +13,7 @@ public interface ILogStorage
     /// <summary>
     /// Размер файла лога
     /// </summary>
-    ulong Size { get; }
+    ulong FileSize { get; }
 
     /// <summary>
     /// Добавить одну запись в конец лога

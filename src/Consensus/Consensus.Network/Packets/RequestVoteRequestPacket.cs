@@ -3,10 +3,11 @@ using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Network.Packets;
 
-public class RequestVoteRequestPacket: RaftPacket
+public class RequestVoteRequestPacket : RaftPacket
 {
     public RequestVoteRequest Request { get; }
     public override RaftPacketType PacketType => RaftPacketType.RequestVoteRequest;
+
     public RequestVoteRequestPacket(RequestVoteRequest request)
     {
         Request = request;
@@ -24,8 +25,8 @@ public class RequestVoteRequestPacket: RaftPacket
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write((byte)RaftPacketType.RequestVoteRequest);
-        writer.Write(Request.CandidateId.Value);
+        writer.Write(( byte ) RaftPacketType.RequestVoteRequest);
+        writer.Write(Request.CandidateId.Id);
         writer.Write(Request.CandidateTerm.Value);
         writer.Write(Request.LastLogEntryInfo.Term.Value);
         writer.Write(Request.LastLogEntryInfo.Index);

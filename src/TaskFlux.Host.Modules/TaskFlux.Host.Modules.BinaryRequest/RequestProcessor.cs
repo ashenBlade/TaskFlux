@@ -30,7 +30,7 @@ internal class RequestProcessor
     private CommandSerializer CommandSerializer { get; } = CommandSerializer.Instance;
     private ResultSerializer ResultSerializer { get; } = ResultSerializer.Instance;
 
-    public RequestProcessor(TcpClient client, 
+    public RequestProcessor(TcpClient client,
                             IConsensusModule<Command, Result> consensusModule,
                             IOptionsMonitor<BinaryRequestModuleOptions> options,
                             IApplicationInfo applicationInfo,
@@ -54,12 +54,12 @@ internal class RequestProcessor
         {
             var success = await AcceptClientAsync(serializer, token)
                              .ConfigureAwait(false);
-            
+
             if (!success)
             {
                 return;
             }
-            
+
             await ProcessClientMain(serializer, token);
         }
         catch (Exception e)
@@ -95,9 +95,9 @@ internal class RequestProcessor
                 Logger.Information(canceled, "Превышен таймаут ожидания пакета от клиента. Завершаю обработку");
                 return;
             }
-        
+
             await packet.AcceptAsync(clientRequestPacketVisitor, token);
-        
+
             if (clientRequestPacketVisitor.ShouldClose)
             {
                 break;
@@ -131,7 +131,7 @@ internal class RequestProcessor
             Logger.Warning(e, "Неизвестная ошибка во время авторизации клиента");
             return false;
         }
-        
+
         try
         {
             var success = await BootstrapClientAsync(serializer, token);
@@ -145,15 +145,16 @@ internal class RequestProcessor
             Logger.Warning(e, "Во время настроки клиента поймано необработанное исключение");
             return false;
         }
-        
+
         return true;
     }
-    
+
     /// <summary>
     /// Метод для запуска процесса настройки клиента и сервера
     /// </summary>
     /// <returns><c>true</c> - клиент успешно настроен<br/> <c>false</c> - во время настройки возникла ошибка</returns>
-    private async ValueTask<bool> BootstrapClientAsync(PoolingNetworkPacketSerializer serializer, CancellationToken token)
+    private async ValueTask<bool> BootstrapClientAsync(PoolingNetworkPacketSerializer serializer,
+                                                       CancellationToken token)
     {
         Logger.Debug("Начинаю процесс настройки клиента");
         var packet = await serializer.DeserializeAsync(token);
@@ -174,6 +175,7 @@ internal class RequestProcessor
             _serializer = serializer;
             _applicationInfo = applicationInfo;
         }
+
         public ValueTask VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
         {
             return ReturnThrowUnexpectedPacket(PacketType.CommandRequest);
@@ -218,8 +220,10 @@ internal class RequestProcessor
                 return;
             }
 
-            await _serializer.SerializeAsync(BootstrapResponsePacket.Error(
-                $"Версия клиента несовместима с версией сервера. Версия сервера: {_applicationInfo.Version}. Версия клиента: {clientVersion}"), token);
+            await _serializer.SerializeAsync(
+                BootstrapResponsePacket.Error(
+                    $"Версия клиента несовместима с версией сервера. Версия сервера: {_applicationInfo.Version}. Версия клиента: {clientVersion}"),
+                token);
             ShouldClose = true;
         }
 
@@ -253,7 +257,7 @@ internal class RequestProcessor
         {
             _serializer = serializer;
         }
-        
+
         public ValueTask VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
         {
             return ReturnThrowUnexpectedPacket(PacketType.CommandRequest);
@@ -303,14 +307,14 @@ internal class RequestProcessor
             {
                 _serializer = serializer;
             }
-            
+
             public async ValueTask VisitAsync(NoneAuthorizationMethod noneAuthorizationMethod, CancellationToken token)
             {
                 await _serializer.SerializeAsync(AuthorizationResponsePacket.Ok, token);
             }
         }
     }
-    
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static ValueTask ReturnThrowUnexpectedPacket(PacketType actualType)
     {
@@ -323,7 +327,7 @@ internal class RequestProcessor
         private readonly PoolingNetworkPacketSerializer _serializer;
         private ILogger Logger => _processor.Logger;
         public bool ShouldClose { get; private set; }
-        
+
         public ClientCommandRequestPacketVisitor(RequestProcessor processor,
                                                  PoolingNetworkPacketSerializer serializer)
         {
@@ -344,9 +348,11 @@ internal class RequestProcessor
             {
                 // Это ошибка бизнес-логики, поэтому соединение не разрывается
                 // PERF: в статическое поле для оптимизации выделить
-                _processor.Logger.Debug(invalidName, "Ошибка при десериализации команды, включающей название очереди, полученной от клиента");
-                    await _serializer.SerializeAsync(
-                    new CommandResponsePacket(_processor.ResultSerializer.Serialize(DefaultErrors.InvalidQueueName)), token);
+                _processor.Logger.Debug(invalidName,
+                    "Ошибка при десериализации команды, включающей название очереди, полученной от клиента");
+                await _serializer.SerializeAsync(
+                    new CommandResponsePacket(_processor.ResultSerializer.Serialize(DefaultErrors.InvalidQueueName)),
+                    token);
                 return;
             }
             catch (SerializationException e)
@@ -356,7 +362,7 @@ internal class RequestProcessor
                 return;
             }
 
-            var result = _processor.Module.Handle( 
+            var result = _processor.Module.Handle(
                 new SubmitRequest<Command>(command.Accept(CommandDescriptorBuilderCommandVisitor.Instance)));
 
             Packet responsePacket;
@@ -370,7 +376,7 @@ internal class RequestProcessor
             }
             else
             {
-                responsePacket = new NotLeaderPacket(_processor.ClusterInfo.LeaderId.Value);
+                responsePacket = new NotLeaderPacket(_processor.ClusterInfo.LeaderId.Id);
             }
 
             await responsePacket.AcceptAsync(_serializer, token);
@@ -387,7 +393,7 @@ internal class RequestProcessor
         {
             Logger.Warning("От клиента пришел неожиданный пакет: DataResponsePacket");
             ShouldClose = true;
-            return ValueTask.CompletedTask;        
+            return ValueTask.CompletedTask;
         }
 
         public ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default)

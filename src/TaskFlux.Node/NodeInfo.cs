@@ -15,6 +15,6 @@ public class NodeInfo : INodeInfo
 
     public override string ToString()
     {
-        return$"PocoNodeInfo(NodeId = {NodeId.Value}, CurrentRole = {CurrentRole})";
+        return $"PocoNodeInfo(NodeId = {NodeId.Id}, CurrentRole = {CurrentRole})";
     }
 }

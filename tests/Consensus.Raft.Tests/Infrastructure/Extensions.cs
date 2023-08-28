@@ -1,3 +1,5 @@
+using TaskFlux.Core;
+
 namespace Consensus.Raft.Tests.Infrastructure;
 
 public static class Extensions
@@ -6,5 +8,29 @@ public static class Extensions
     {
         apply(obj);
         return obj;
+    }
+
+    public static NodeId? ToNodeId(this int? nodeId) => nodeId is { } ni
+                                                            ? new NodeId(ni)
+                                                            : null;
+
+    public static (T[] Left, T[] Right) Split<T>(this IReadOnlyList<T> array, int index)
+    {
+        var leftLength = index + 1;
+        var left = new T[leftLength];
+        var rightLength = array.Count - index - 1;
+
+        var right = new T[rightLength];
+        for (int i = 0; i <= index; i++)
+        {
+            left[i] = array[i];
+        }
+
+        for (int i = index + 1, j = 0; i < array.Count; i++, j++)
+        {
+            right[j] = array[i];
+        }
+
+        return ( left, right );
     }
 }

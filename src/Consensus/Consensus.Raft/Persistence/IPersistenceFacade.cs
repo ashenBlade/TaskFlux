@@ -68,7 +68,7 @@ public interface IPersistenceFacade
     /// Терм, сохраненный в файле метаданных
     /// </summary>
     public Term CurrentTerm { get; }
-    
+
     /// <summary>
     /// Отданный голос, сохраненный в файле метаданных
     /// </summary>
@@ -145,4 +145,10 @@ public interface IPersistenceFacade
     /// <param name="newTerm">Новый терм</param>
     /// <param name="votedFor">Id узла, за который отдали голос</param>
     public void UpdateState(Term newTerm, NodeId? votedFor);
+
+    /// <summary>
+    /// Проверить превышает файл лога максимальный размер
+    /// </summary>
+    /// <returns><c>true</c> - размер превышен, <c>false</c> - иначе</returns>
+    public bool IsLogFileSizeExceeded();
 }
