@@ -1,22 +1,53 @@
+using System.Threading.Channels;
 using Consensus.Raft.Commands.AppendEntries;
 
 namespace Consensus.Raft.State.LeaderState;
 
 internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TResponse> State,
-                                                   IPeer Peer,
-                                                   IRequestQueue Queue)
+                                                   IPeer Peer)
 {
+    // Вначале инициализируем индекс на следующий после последнего.
+    // Используем этот индекс, чтобы делать срез лога через него (это первый индекс среза).
     private PeerInfo Info { get; } = new(State.ConsensusModule.PersistenceFacade.LastEntry.Index + 1);
 
     /// <summary>
-    /// Метод для обработки узла
+    /// Очередь для входящих команд.
+    /// Используется <see cref="Channel"/>, причем ограниченный. 
+    /// </summary>
+    /// <remarks>
+    /// Размер этой очереди - 2 элемента.
+    /// </remarks>
+    private Channel<LogReplicationRequest> Queue { get; } =
+        Channel.CreateBounded<LogReplicationRequest>(new BoundedChannelOptions(2) {SingleReader = true});
+
+    /// <summary>
+    /// Метод для начала обработки узла
     /// </summary>
     /// <param name="token">Токен отмены</param>
     /// <remarks><paramref name="token"/> может быть отменен, когда переходим в новое состояние</remarks>
     public async Task StartServingAsync(CancellationToken token)
     {
-        await foreach (var rs in Queue.ReadAllRequestsAsync(token))
+        // Ебать какая неоптимальная хуйня
+        var reader = Queue.Reader;
+        /*
+         * В любой момент времени в очереди не может быть более 2 элементов:
+         * - 1 Heartbeat - это просто сигнал к действию, много не нужно
+         * - 1 Submit - только 1 максимум, т.к. приложение однопоточное
+         */
+
+        await foreach (var rs in reader.ReadAllAsync(token))
         {
+            // Не проверять валидность индекса здесь (перед отправкой запроса)
+            // Может случиться так, что обработчик только инициализировался и индекс отображает неверные данные
+
+            if (token.IsCancellationRequested)
+            {
+                // При отменене асинхронного потока он считывает все данные до конца (не кидает исключения)
+                // Этот момент нужно обработать самим
+                rs.NotifyComplete();
+                continue;
+            }
+
             var success = await ProcessRequestAsync(rs, token);
             rs.NotifyComplete();
             if (!success)
@@ -27,9 +58,9 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
     }
 
     /// <summary>
-    /// Метод для обработки полученного запроса из очереди <see cref="Queue"/>.
+    /// Метод для обработки полученного запроса из очереди <see cref="Queue{T}"/>.
     /// </summary>
-    /// <param name="synchronizer">Полученный из очереди <see cref="AppendEntriesRequestSynchronizer"/></param>
+    /// <param name="synchronizer">Полученный из очереди <see cref="LogReplicationRequest"/></param>
     /// <param name="token">Токен отмены</param>
     /// <remarks>Содержит логику повторных попыток при инконсистентности лога</remarks>
     /// <returns>
@@ -38,7 +69,7 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
     /// В этом случае прекращаем работу.
     /// Например, узел вернул терм больше нашего и мы должны перейти в Follower
     /// </returns>
-    private async Task<bool> ProcessRequestAsync(AppendEntriesRequestSynchronizer synchronizer, CancellationToken token)
+    private async Task<bool> ProcessRequestAsync(LogReplicationRequest synchronizer, CancellationToken token)
     {
         while (token.IsCancellationRequested is false)
         {
@@ -47,7 +78,7 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
                 throw new NotImplementedException("Обработка когда снапшот хранит данные");
             }
 
-            // 1. Отправить запрос
+            // 1. Отправляем запрос с текущим отслеживаемым индексом узла
             var request = new AppendEntriesRequest(Term: ConsensusModule.CurrentTerm,
                 LeaderCommit: ConsensusModule.PersistenceFacade.CommitIndex,
                 LeaderId: ConsensusModule.Id,
@@ -56,10 +87,10 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
 
             var response = await Peer.SendAppendEntries(request, token);
 
-            // 2. Если ответ не вернулся (null) - соединение было разорвано, прекратить обработку
+            // 2. Если ответ не вернулся (null) - соединение было разорвано - делаем повторную попытку с переподключением
             if (response is null)
             {
-                return true;
+                throw new NotImplementedException("Переподключиться и попытаться заново");
             }
 
             // 3. Если ответ успешный 
@@ -70,7 +101,7 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
                 Info.Update(request.Entries.Count);
 
                 // 3.3. Если лог не до конца был синхронизирован
-                if (Info.NextIndex < synchronizer.LogEntryIndex)
+                if (Info.NextIndex < synchronizer.LogIndex)
                 {
                     // Заходим на новый круг и отправляем заново
                     continue;
@@ -112,11 +143,15 @@ internal record PeerProcessor<TCommand, TResponse>(LeaderState<TCommand, TRespon
 
     public void NotifyHeartbeatTimeout()
     {
-        Queue.AddHeartbeatIfEmpty();
+        throw new NotImplementedException();
     }
 
-    public void NotifyAppendEntries(AppendEntriesRequestSynchronizer synchronizer)
+    public void NotifyAppendEntries(LogReplicationRequest synchronizer)
     {
-        Queue.AddAppendEntries(synchronizer);
+        // Можно не проверять возвращаемое значение -
+        // для Unbounded канала всегда возвращает true
+        Queue.Writer.TryWrite(synchronizer);
     }
+
+    private record RequestSynchronizer();
 }

@@ -78,7 +78,7 @@ public class StoragePersistenceManagerTests
         var (facade, _) = CreateFacade();
         var entry = new LogEntry(new Term(2), Array.Empty<byte>());
 
-        facade.Append(entry);
+        facade.AppendBuffer(entry);
 
         var buffer = facade.ReadLogBufferTest();
         var actualEntry = buffer.Single();
@@ -91,7 +91,7 @@ public class StoragePersistenceManagerTests
         var (facade, _) = CreateFacade();
         var entry = new LogEntry(new Term(2), Array.Empty<byte>());
 
-        facade.Append(entry);
+        facade.AppendBuffer(entry);
 
         Assert.Empty(facade.LogStorage.ReadAllTest());
     }
@@ -104,7 +104,7 @@ public class StoragePersistenceManagerTests
         // Индексирование начинается с 0
         var expected = new LogEntryInfo(entry.Term, 0);
 
-        var actual = facade.Append(entry);
+        var actual = facade.AppendBuffer(entry);
 
         Assert.Equal(actual, expected);
         Assert.Equal(expected, facade.LastEntry);
@@ -122,7 +122,7 @@ public class StoragePersistenceManagerTests
         var entry = new LogEntry(new Term(3), new byte[] {7, 8, 9});
         var expected = new LogEntryInfo(entry.Term, 2);
 
-        var actual = facade.Append(entry);
+        var actual = facade.AppendBuffer(entry);
 
         Assert.Equal(expected, actual);
         Assert.Equal(expected, facade.LastEntry);
@@ -141,7 +141,7 @@ public class StoragePersistenceManagerTests
         var entry = Entry(2, 4, 1, 34);
         var expected = new LogEntryInfo(entry.Term, 3);
 
-        var actual = facade.Append(entry);
+        var actual = facade.AppendBuffer(entry);
 
         Assert.Equal(expected, actual);
         Assert.Equal(expected, facade.LastEntry);
@@ -161,7 +161,7 @@ public class StoragePersistenceManagerTests
         var entry = Entry(3, "data");
         var expected = new LogEntryInfo(entry.Term, 4);
 
-        var actual = facade.Append(entry);
+        var actual = facade.AppendBuffer(entry);
 
         Assert.Equal(expected, actual);
         Assert.Equal(expected, facade.LastEntry);

@@ -12,7 +12,6 @@ using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Metadata.Decorators;
 using Consensus.Raft.Persistence.Snapshot;
-using Consensus.Raft.State.LeaderState;
 using Consensus.StateMachine.TaskFlux;
 using Consensus.Timers;
 using JobQueue.Core;
@@ -321,14 +320,12 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
     var logger = Log.ForContext("SourceContext", "Raft");
     var commandSerializer = new ProxyCommandCommandSerializer();
-    var requestQueueFactory = new ChannelRequestQueueFactory(storage);
     var peerGroup = new PeerGroup(peers);
     var stateMachineFactory = new TaskFluxStateMachineFactory(nodeInfo, appInfo, clusterInfo);
 
     return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, randomizedTimer, systemTimersTimer,
         jobQueue, storage, channelCommandQueue, stateMachine, stateMachineFactory,
-        commandSerializer,
-        requestQueueFactory);
+        commandSerializer);
 }
 
 void RestoreState(StoragePersistenceFacade storageLog, FileLogStorage fileLogStorage, ICommandContext context)

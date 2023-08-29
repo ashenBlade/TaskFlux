@@ -7,7 +7,6 @@ using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
 using Consensus.Raft.State;
-using Consensus.Raft.State.LeaderState;
 using Consensus.Raft.Tests.Infrastructure;
 using Moq;
 using Serilog.Core;
@@ -46,7 +45,6 @@ public class FollowerStateTests
             Helpers.NullCommandQueue,
             Helpers.NullStateMachine,
             Helpers.NullCommandSerializer,
-            Helpers.NullRequestQueueFactory,
             Helpers.NullStateMachineFactory);
         node.SetStateTest(new FollowerState<int, int>(node, Helpers.NullStateMachineFactory,
             Helpers.NullCommandSerializer, Logger.None));
@@ -353,10 +351,6 @@ public class FollowerStateTests
         // Очередь команд - абстракция только для синхронного выполнения команд (потом может вынесу выше)
         var commandQueue = new SimpleCommandQueue();
 
-        // Нужно только лидеру
-        var requestQueueFactory = Mock.Of<IRequestQueueFactory>();
-
-
         var electionTimer = Mock.Of<ITimer>();
         var commandSerializer =
             Mock.Of<ICommandSerializer<int>>(x => x.Serialize(It.IsAny<int>()) == Array.Empty<byte>());
@@ -369,7 +363,6 @@ public class FollowerStateTests
             commandQueue,
             Helpers.NullStateMachine,
             commandSerializer,
-            requestQueueFactory,
             Helpers.NullStateMachineFactory);
 
         node.SetStateTest(new FollowerState<int, int>(node, node.StateMachineFactory, commandSerializer, Logger.None));

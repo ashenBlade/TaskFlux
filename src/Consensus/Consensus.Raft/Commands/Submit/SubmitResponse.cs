@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace Consensus.Raft.Commands.Submit;
 
 /// <summary>
@@ -8,8 +6,6 @@ namespace Consensus.Raft.Commands.Submit;
 /// <remarks>Если узел не был лидером, то <see cref="Response"/> равен <see cref="NullResponse"/></remarks>
 public class SubmitResponse<TResponse>
 {
-    public static readonly SubmitResponse<TResponse> NotALeader = new(default, false, false);
-
     /// <summary>
     /// Передать узлу команду на применение команды
     /// </summary>
@@ -38,7 +34,7 @@ public class SubmitResponse<TResponse>
         response = default!;
         return false;
     }
-    
+
     public bool WasLeader { get; init; }
     public bool HasValue { get; init; }
 

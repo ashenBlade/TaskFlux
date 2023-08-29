@@ -1,5 +1,6 @@
 using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
+using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
 using TaskFlux.Core;
 
@@ -8,7 +9,7 @@ namespace TaskFlux.Host.Infrastructure;
 /// <summary>
 /// Используется при тестах на одной машине, чтобы не грузить бесконечными запросами соединения
 /// </summary>
-public class NetworkExceptionDelayPeerDecorator: IPeer
+public class NetworkExceptionDelayPeerDecorator : IPeer
 {
     private readonly IPeer _peer;
     private readonly TimeSpan _delay;
@@ -29,6 +30,7 @@ public class NetworkExceptionDelayPeerDecorator: IPeer
         {
             await Task.Delay(_delay, token);
         }
+
         return response;
     }
 
@@ -39,6 +41,18 @@ public class NetworkExceptionDelayPeerDecorator: IPeer
         {
             await Task.Delay(_delay, token);
         }
+
+        return response;
+    }
+
+    public InstallSnapshotResponse? SendInstallSnapshot(InstallSnapshotRequest request, CancellationToken token)
+    {
+        var response = _peer.SendInstallSnapshot(request, token);
+        if (response is null)
+        {
+            Thread.Sleep(_delay);
+        }
+
         return response;
     }
 }

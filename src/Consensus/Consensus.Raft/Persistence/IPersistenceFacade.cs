@@ -36,7 +36,7 @@ public interface IPersistenceFacade
     /// </summary>
     /// <param name="entry">Запись лога</param>
     /// <returns>Информация о добавленной записи</returns>
-    public LogEntryInfo Append(LogEntry entry);
+    public LogEntryInfo AppendBuffer(LogEntry entry);
 
     /// <summary>
     /// Последняя запись в логе

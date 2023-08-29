@@ -1,5 +1,6 @@
 using Consensus.CommandQueue;
 using Consensus.Raft.Commands.AppendEntries;
+using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.Persistence.Log;
@@ -7,7 +8,6 @@ using Consensus.Raft.Persistence.LogFileCheckStrategy;
 using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
 using Consensus.Raft.State;
-using Consensus.Raft.State.LeaderState;
 using Consensus.Raft.Tests.Infrastructure;
 using Consensus.Raft.Tests.Stubs;
 using Moq;
@@ -24,6 +24,7 @@ public class CandidateStateTests
     private static readonly IStateMachine NullStateMachine = Mock.Of<IStateMachine>();
     private static readonly IStateMachineFactory NullStateMachineFactory = Mock.Of<IStateMachineFactory>();
 
+    // TODO: тесты на InstallSnapshot
     private static readonly ICommandSerializer<int> NullCommandSerializer =
         new Mock<ICommandSerializer<int>>().Apply(m =>
                                             {
@@ -31,8 +32,6 @@ public class CandidateStateTests
                                                 m.Setup(x => x.Deserialize(It.IsAny<byte[]>())).Returns(1);
                                             })
                                            .Object;
-
-    private static readonly IRequestQueueFactory NullRequestQueueFactory = Mock.Of<IRequestQueueFactory>();
 
     private static RaftConsensusModule CreateCandidateNode(Term term,
                                                            ITimer? electionTimer = null,
@@ -59,8 +58,7 @@ public class CandidateStateTests
             Logger.None, electionTimer,
             Mock.Of<ITimer>(), jobQueue,
             facade, Mock.Of<ICommandQueue>(),
-            NullStateMachine, NullCommandSerializer,
-            NullRequestQueueFactory, NullStateMachineFactory);
+            NullStateMachine, NullCommandSerializer, NullStateMachineFactory);
         node.SetStateTest(new CandidateState<int, int>(node, Logger.None));
         return node;
 
@@ -164,6 +162,11 @@ public class CandidateStateTests
         public Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
         {
             return Task.FromResult(_response);
+        }
+
+        public InstallSnapshotResponse? SendInstallSnapshot(InstallSnapshotRequest request, CancellationToken token)
+        {
+            throw new Exception("Кандидат не должен посылать InstallSnapshot");
         }
     }
 

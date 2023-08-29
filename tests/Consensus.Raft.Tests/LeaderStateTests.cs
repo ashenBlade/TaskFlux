@@ -13,38 +13,13 @@ namespace Consensus.Raft.Tests;
 [Trait("Category", "Raft")]
 public class LeaderStateTests
 {
-    private static RaftConsensusModule<int, int> CreateLeaderNode(Term currentTerm,
-                                                                  NodeId? votedFor,
-                                                                  IEnumerable<IPeer>? peers = null,
-                                                                  ITimer? electionTimer = null,
-                                                                  ITimer? heartbeatTimer = null,
-                                                                  IBackgroundJobQueue? jobQueue = null,
-                                                                  IPersistenceFacade? log = null,
-                                                                  IRequestQueueFactory? requestQueueFactory = null)
-    {
-        throw new NotImplementedException();
-        // var node = Helpers.CreateNode(
-        //     currentTerm,
-        //     votedFor,
-        //     peers: peers,
-        //     electionTimer: electionTimer,
-        //     heartbeatTimer: heartbeatTimer,
-        //     jobQueue: jobQueue,
-        //     log: log);
-        // node.SetStateTest(new LeaderState<int, int>(
-        //     node,
-        //     Helpers.NullLogger, new StubCommandSerializer<int>(),
-        //     requestQueueFactory ?? new SingleHeartbeatRequestQueueFactory(0)));
-        // return node;
-    }
-
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(5)]
-    public async Task ПриСрабатыванииHeartbeatTimer__ДолженОтправитьHeartbeatНаВсеДругиеУзлы(int peersCount)
+    public async Task HeartbeatTimer__ДолженОтправитьHeartbeatНаДругиеУзлы(int peersCount)
     {
         var term = new Term(1);
         var heartbeatTimer = new Mock<ITimer>().Apply(t =>
@@ -235,11 +210,11 @@ public class LeaderStateTests
             _lastLogIndex = lastLogIndex;
         }
 
-        public async IAsyncEnumerable<AppendEntriesRequestSynchronizer> ReadAllRequestsAsync(
+        public async IAsyncEnumerable<LogReplicationRequest> ReadAllRequestsAsync(
             [EnumeratorCancellation] CancellationToken token)
         {
             await _tcs.Task;
-            yield return new AppendEntriesRequestSynchronizer(AlwaysTrueQuorumChecker.Instance, _lastLogIndex);
+            yield return new LogReplicationRequest(AlwaysTrueQuorumChecker.Instance, _lastLogIndex);
         }
 
         public void AddHeartbeatIfEmpty()
@@ -253,7 +228,7 @@ public class LeaderStateTests
             _tcs.SetResult();
         }
 
-        public void AddAppendEntries(AppendEntriesRequestSynchronizer synchronizer)
+        public void AddAppendEntries(LogReplicationRequest synchronizer)
         {
         }
     }

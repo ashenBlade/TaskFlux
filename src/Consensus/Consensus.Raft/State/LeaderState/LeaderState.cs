@@ -8,68 +8,40 @@ using TaskFlux.Core;
 
 namespace Consensus.Raft.State.LeaderState;
 
-public class LeaderState<TCommand, TResponse>: State<TCommand, TResponse>
+public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
+    private readonly ThreadPeerProcessor<TCommand, TResponse>[] _peerProcessors;
     private readonly ICommandSerializer<TCommand> _commandSerializer;
-    private readonly CancellationTokenSource _cts = new();
-    private readonly PeerProcessor<TCommand, TResponse>[] _processors;
 
-    internal LeaderState(IConsensusModule<TCommand, TResponse> consensusModule, 
-                         ILogger logger, 
-                         ICommandSerializer<TCommand> commandSerializer,
-                         IRequestQueueFactory queueFactory)
+    /// <summary>
+    /// Токен отмены отменяющийся при смене роли с лидера на последователя (другого быть не может)
+    /// </summary>
+    private readonly CancellationTokenSource _becomeFollowerTokenSource = new();
+
+    internal LeaderState(IConsensusModule<TCommand, TResponse> consensusModule,
+                         ILogger logger,
+                         ThreadPeerProcessor<TCommand, TResponse>[] peerProcessors,
+                         ICommandSerializer<TCommand> commandSerializer)
         : base(consensusModule)
     {
         _logger = logger;
+        _peerProcessors = peerProcessors;
         _commandSerializer = commandSerializer;
-        _processors = CreatePeerProcessors(this, queueFactory);
     }
-    
+
     public override void Initialize()
     {
-        BackgroundJobQueue.RunInfinite(StartPeersAsync, _cts.Token);
+        Array.ForEach(_peerProcessors, p => p.Start(this, _becomeFollowerTokenSource.Token));
         HeartbeatTimer.Timeout += OnHeartbeatTimer;
-    }
-
-    private static PeerProcessor<TCommand, TResponse>[] CreatePeerProcessors(LeaderState<TCommand, TResponse> state, IRequestQueueFactory queueFactory)
-    {
-        var peers = state.PeerGroup.Peers;
-        var processors = new PeerProcessor<TCommand, TResponse>[peers.Count];
-        for (var i = 0; i < peers.Count; i++)
-        {
-            processors[i] = new PeerProcessor<TCommand, TResponse>(state, peers[i], queueFactory.CreateQueue());
-        }
-
-        return processors;
-    }
-    
-    private void OnHeartbeatTimer()
-    {
-        Array.ForEach(_processors, static p => p.NotifyHeartbeatTimeout());
         HeartbeatTimer.Start();
     }
 
-    private async Task StartPeersAsync()
+    private void OnHeartbeatTimer()
     {
-        _logger.Verbose("Запускаю обработчиков узлов");
-        var tasks = _processors.Select(x => x.StartServingAsync(_cts.Token));
-        
-        // Сразу отправляем всем Heartbeat, чтобы уведомить о том, что мы новый лидер
-        Array.ForEach(_processors, static p => p.NotifyHeartbeatTimeout());
-        try
-        {
-            await Task.WhenAll(tasks);
-        }
-        catch (OperationCanceledException)
-            when (_cts.Token.IsCancellationRequested)
-        { }
-        catch (Exception unhandled)
-        {
-            _logger.Fatal(unhandled, "Во время работы обработчиков узлов возникло необработанное исключение");
-            throw;
-        }
+        Array.ForEach(_peerProcessors, p => p.NotifyHeartbeat());
+        HeartbeatTimer.Start();
     }
 
     public override AppendEntriesResponse Apply(AppendEntriesRequest request)
@@ -80,11 +52,13 @@ public class LeaderState<TCommand, TResponse>: State<TCommand, TResponse>
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
+        // Прийти может только от другого лидера с большим термом
+
         var follower = ConsensusModule.CreateFollowerState();
         ConsensusModule.TryUpdateState(follower, this);
         return ConsensusModule.Handle(request);
     }
-    
+
     public override RequestVoteResponse Apply(RequestVoteRequest request)
     {
         if (request.CandidateTerm < CurrentTerm)
@@ -103,15 +77,17 @@ public class LeaderState<TCommand, TResponse>: State<TCommand, TResponse>
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
-        
-        var canVote = 
+
+        var canVote =
             // Ранее не голосовали
-            VotedFor is null || 
+            VotedFor is null
+          ||
             // В этом терме мы за него уже проголосовали
             VotedFor == request.CandidateId;
-        
+
         // Отдать свободный голос можем только за кандидата 
-        if (canVote &&                                              // За которого можем проголосовать и
+        if (canVote
+&&                                                                  // За которого можем проголосовать и
             !PersistenceFacade.Conflicts(request.LastLogEntryInfo)) // У которого лог не хуже нашего
         {
             var followerState = ConsensusModule.CreateFollowerState();
@@ -120,10 +96,10 @@ public class LeaderState<TCommand, TResponse>: State<TCommand, TResponse>
                 ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
                 ElectionTimer.Start();
             }
-            
+
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
-        
+
         // Кандидат только что проснулся и не знает о текущем состоянии дел. 
         // Обновим его
         return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
@@ -136,13 +112,15 @@ public class LeaderState<TCommand, TResponse>: State<TCommand, TResponse>
         HeartbeatTimer.Timeout -= OnHeartbeatTimer;
     }
 
+
     public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default)
     {
         if (request.Term < CurrentTerm)
         {
             return new InstallSnapshotResponse(CurrentTerm);
         }
-        
+        // TODO: тесты
+
         var followerState = ConsensusModule.CreateFollowerState();
         if (ConsensusModule.TryUpdateState(followerState, this))
         {
@@ -157,38 +135,66 @@ public class LeaderState<TCommand, TResponse>: State<TCommand, TResponse>
         if (request.Descriptor.IsReadonly)
         {
             // Короткий путь для readonly команд
-            return SubmitResponse<TResponse>.Success( StateMachine.Apply(request.Descriptor.Command), true );
+            return SubmitResponse<TResponse>.Success(StateMachine.Apply(request.Descriptor.Command), true);
         }
-        
-        // Добавляем команду в лог
-        var entry = new LogEntry( CurrentTerm, _commandSerializer.Serialize(request.Descriptor.Command) );
-        var appended = PersistenceFacade.Append(entry);
-        
+
+        // Добавляем команду в буфер
+        var newEntry = new LogEntry(CurrentTerm, _commandSerializer.Serialize(request.Descriptor.Command));
+        var appended = PersistenceFacade.AppendBuffer(newEntry);
+
         // Сигнализируем узлам, чтобы принялись реплицировать
-        var synchronizer = new AppendEntriesRequestSynchronizer(PeerGroup, appended.Index);
-        Array.ForEach(_processors, p => p.NotifyAppendEntries(synchronizer));
-        
-        // Ждем достижения кворума
-        // TODO: убрать асинхронность
-        synchronizer.LogReplicated.Wait(_cts.Token);
-        
-        // Применяем команду к машине состояний
+        Replicate(appended.Index);
+
+        /*
+         * Если мы вернулись, то это может значить 2 вещи:
+         *  1. Запись успешно реплицирована
+         *  2. Какой-то узел вернул больший терм и мы перешли в фолловера
+         *  3. Во время отправки запросов нам пришел запрос с большим термом
+         */
+        if (!IsStillLeader)
+        {
+            return SubmitResponse<TResponse>.NotLeader;
+        }
+
+        // Применяем команду к машине состояний.
+        // Лучше сначала применить и, если что не так, упасть,
+        // чем закоммитить, а потом каждый раз валиться при восстановлении
         var response = StateMachine.Apply(request.Descriptor.Command);
-        
-        // Обновляем индекс последней закоммиченной записи
+
+        // Коммитим запись и применяем 
         PersistenceFacade.Commit(appended.Index);
         PersistenceFacade.SetLastApplied(appended.Index);
 
-        
-        if (MaxLogFileSize < PersistenceFacade.LogFileSize)
+        /*
+         * На этом моменте Heartbeat не отправляю,
+         * т.к. он отправится по таймеру (он должен вызываться часто).
+         * Либо придет новый запрос и он отправится вместе с AppendEntries
+         */
+
+        if (PersistenceFacade.IsLogFileSizeExceeded())
         {
+            // Асинхронно это наверно делать не стоит (пока)
             var snapshot = StateMachine.GetSnapshot();
             var snapshotLastEntryInfo = PersistenceFacade.LastApplied;
             PersistenceFacade.SaveSnapshot(snapshotLastEntryInfo, snapshot, CancellationToken.None);
             PersistenceFacade.ClearCommandLog();
         }
-        
+
         // Возвращаем результат
         return SubmitResponse<TResponse>.Success(response, true);
     }
+
+    private void Replicate(int appendedIndex)
+    {
+        using var request = new LogReplicationRequest(PeerGroup, appendedIndex);
+        Array.ForEach(_peerProcessors, p => p.Replicate(request));
+        request.Wait(_becomeFollowerTokenSource.Token);
+    }
+
+    /// <summary>
+    /// Флаг сигнализирующий о том, что я (объект, лидер этого терма) все еще активен,
+    /// т.е. состояние не изменилось
+    /// </summary>
+    private bool IsStillLeader =>
+        !_becomeFollowerTokenSource.IsCancellationRequested;
 }

@@ -124,7 +124,7 @@ public class StoragePersistenceFacade : IPersistenceFacade
         _buffer.AddRange(entries);
     }
 
-    public LogEntryInfo Append(LogEntry entry)
+    public LogEntryInfo AppendBuffer(LogEntry entry)
     {
         var newIndex = _logStorage.Count + _buffer.Count;
         _buffer.Add(entry);

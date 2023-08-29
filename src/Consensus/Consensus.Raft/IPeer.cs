@@ -1,4 +1,5 @@
 using Consensus.Raft.Commands.AppendEntries;
+using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
 using TaskFlux.Core;
 
@@ -14,8 +15,9 @@ public interface IPeer
     /// </summary>
     public NodeId Id { get; }
 
+    // TODO: синхронная реализация
     public Task<AppendEntriesResponse?> SendAppendEntries(AppendEntriesRequest request, CancellationToken token);
-    
+
     /// <summary>
     /// Отправить запрос RequestVote указанному узлу
     /// </summary>
@@ -23,4 +25,6 @@ public interface IPeer
     /// <param name="token">Токен отмены</param>
     /// <returns>Ответ сервера, или <c>null</c> если ответа нет (например, таймаут из-за проблем сети)</returns>
     public Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token);
+
+    public InstallSnapshotResponse? SendInstallSnapshot(InstallSnapshotRequest request, CancellationToken token);
 }

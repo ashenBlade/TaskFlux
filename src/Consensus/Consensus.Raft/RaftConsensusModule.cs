@@ -18,21 +18,13 @@ public class RaftConsensusModule<TCommand, TResponse>
       IDisposable
 {
     private readonly ICommandSerializer<TCommand> _commandSerializer;
-    
-    /// <summary>
-    /// Фабрика для создания очередей команд для отправки другим узлам, когда узел станет лидером. 
-    /// </summary>
-    /// <remarks>
-    /// Нужно только лидеру и вынесено в абстракцию, для тестирования
-    /// </remarks>
-    private readonly IRequestQueueFactory _requestQueueFactory;
 
     public NodeRole CurrentRole =>
         ( ( IConsensusModule<TCommand, TResponse> ) this ).CurrentState.Role;
 
     private ILogger Logger { get; }
     public NodeId Id { get; }
-    
+
     public Term CurrentTerm => PersistenceFacade.CurrentTerm;
     public NodeId? VotedFor => PersistenceFacade.VotedFor;
     public PeerGroup PeerGroup { get; }
@@ -61,7 +53,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         state.Initialize();
         _currentState = state;
     }
-    
+
     public bool TryUpdateState(State<TCommand, TResponse> newState,
                                State<TCommand, TResponse> oldState)
     {
@@ -94,11 +86,9 @@ public class RaftConsensusModule<TCommand, TResponse>
         ICommandQueue commandQueue,
         IStateMachine<TCommand, TResponse> stateMachine,
         ICommandSerializer<TCommand> commandSerializer,
-        IRequestQueueFactory requestQueueFactory,
         IStateMachineFactory<TCommand, TResponse> stateMachineFactory)
     {
         _commandSerializer = commandSerializer;
-        _requestQueueFactory = requestQueueFactory;
         StateMachineFactory = stateMachineFactory;
         Id = id;
         Logger = logger;
@@ -109,7 +99,15 @@ public class RaftConsensusModule<TCommand, TResponse>
         PersistenceFacade = persistenceFacade;
         CommandQueue = commandQueue;
         StateMachine = stateMachine;
+        _peerProcessors = CreatePeerProcessors();
     }
+
+    private ThreadPeerProcessor<TCommand, TResponse>[] CreatePeerProcessors()
+    {
+        throw new NotImplementedException();
+    }
+
+    private readonly ThreadPeerProcessor<TCommand, TResponse>[] _peerProcessors;
 
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {
@@ -135,12 +133,14 @@ public class RaftConsensusModule<TCommand, TResponse>
 
     public State<TCommand, TResponse> CreateFollowerState()
     {
-        return new FollowerState<TCommand, TResponse>(this, StateMachineFactory, _commandSerializer, Logger.ForContext("SourceContext", "Raft(Follower)"));
+        return new FollowerState<TCommand, TResponse>(this, StateMachineFactory, _commandSerializer,
+            Logger.ForContext("SourceContext", "Raft(Follower)"));
     }
 
     public State<TCommand, TResponse> CreateLeaderState()
     {
-        return new LeaderState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Leader)"), _commandSerializer, _requestQueueFactory);
+        return new LeaderState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Leader)"),
+            _peerProcessors, _commandSerializer);
     }
 
     public State<TCommand, TResponse> CreateCandidateState()
@@ -170,12 +170,10 @@ public class RaftConsensusModule<TCommand, TResponse>
         ICommandQueue commandQueue,
         IStateMachine<TCommand, TResponse> stateMachine,
         IStateMachineFactory<TCommand, TResponse> stateMachineFactory,
-        ICommandSerializer<TCommand> commandSerializer,
-        IRequestQueueFactory requestQueueFactory)
+        ICommandSerializer<TCommand> commandSerializer)
     {
         var module = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, electionTimer, heartbeatTimer,
-            backgroundJobQueue, persistenceFacade, commandQueue, stateMachine, commandSerializer,
-            requestQueueFactory, stateMachineFactory);
+            backgroundJobQueue, persistenceFacade, commandQueue, stateMachine, commandSerializer, stateMachineFactory);
         var followerState = module.CreateFollowerState();
         module._currentState = followerState;
         followerState.Initialize();

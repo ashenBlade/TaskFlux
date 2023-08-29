@@ -5,13 +5,14 @@ using Consensus.Network;
 using Consensus.Network.Packets;
 using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
+using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
 using Serilog;
 using TaskFlux.Core;
 
 namespace Consensus.Peer;
 
-public class TcpPeer: IPeer
+public class TcpPeer : IPeer
 {
     private readonly EndPoint _endPoint;
     private readonly NodeId _currentNodeId;
@@ -43,11 +44,11 @@ public class TcpPeer: IPeer
         CancellationToken token)
     {
         using var cts = CreateTimeoutCts(token, _requestTimeout);
-        
+
         await _client.SendAsync(new AppendEntriesRequestPacket(request), cts.Token);
-        
+
         var packet = await _client.ReceiveAsync(cts.Token);
-        
+
         return packet.PacketType switch
                {
                    RaftPacketType.AppendEntriesResponse => ( ( AppendEntriesResponsePacket ) packet ).Response,
@@ -67,9 +68,11 @@ public class TcpPeer: IPeer
                 return await SendAppendEntriesCoreAsync(request, token);
             }
             catch (SocketException)
-            { }
+            {
+            }
             catch (IOException)
-            { }
+            {
+            }
         }
 
         if (await TryEstablishConnectionAsync(token))
@@ -79,25 +82,27 @@ public class TcpPeer: IPeer
                 return await SendAppendEntriesCoreAsync(request, token);
             }
             catch (SocketException)
-            { }
+            {
+            }
             catch (IOException)
-            { }
+            {
+            }
         }
 
         return null;
     }
 
-    private async Task<RequestVoteResponse?> SendRequestVoteCoreAsync
-        (RequestVoteRequest request, CancellationToken token)
+    private async Task<RequestVoteResponse?> SendRequestVoteCoreAsync(RequestVoteRequest request,
+                                                                      CancellationToken token)
     {
         using var cts = CreateTimeoutCts(token, _requestTimeout);
 
         _logger.Debug("Делаю запрос RequestVote");
         await _client.SendAsync(new RequestVoteRequestPacket(request), cts.Token);
-            
+
         _logger.Debug("Запрос отослан. Получаю ответ");
         var response = await _client.ReceiveAsync(cts.Token);
-            
+
         _logger.Debug("Ответ получен: {@Response}", response);
         return response.PacketType switch
                {
@@ -106,8 +111,8 @@ public class TcpPeer: IPeer
                    _ => throw new ArgumentException(
                             $"От узла пришел неожиданный ответ. Ожидался AppendEntriesResponse. Пришел: {response.PacketType}")
                };
-        
     }
+
     public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -120,9 +125,11 @@ public class TcpPeer: IPeer
                 return await SendRequestVoteCoreAsync(request, token);
             }
             catch (SocketException)
-            { }
+            {
+            }
             catch (IOException)
-            { }
+            {
+            }
         }
 
         if (await TryEstablishConnectionAsync(token))
@@ -132,12 +139,19 @@ public class TcpPeer: IPeer
                 return await SendRequestVoteCoreAsync(request, token);
             }
             catch (SocketException)
-            { }
+            {
+            }
             catch (IOException)
-            { }
+            {
+            }
         }
 
         return null;
+    }
+
+    public InstallSnapshotResponse? SendInstallSnapshot(InstallSnapshotRequest request, CancellationToken token)
+    {
+        throw new NotImplementedException();
     }
 
     private async ValueTask<bool> TryEstablishConnectionAsync(CancellationToken token = default)
