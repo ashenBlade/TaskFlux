@@ -1,6 +1,6 @@
 namespace Consensus.Raft;
 
-public class PeerGroup : IQuorumChecker
+public class PeerGroup
 {
     private readonly IPeer[] _peers;
     public IReadOnlyList<IPeer> Peers => _peers;
@@ -17,6 +17,7 @@ public class PeerGroup : IQuorumChecker
     /// <returns>Достигнут ли кворум</returns>
     public bool IsQuorumReached(int votes)
     {
+        // TODO: вроде можно только умножением как-то сделать
         return Peers.Count / 2 + Peers.Count % 2 <= votes;
     }
 }

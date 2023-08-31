@@ -57,7 +57,8 @@ public class TcpPeer : IPeer
                };
     }
 
-    public async Task<AppendEntriesResponse?> SendAppendEntries(AppendEntriesRequest request, CancellationToken token)
+    public async Task<AppendEntriesResponse?> SendAppendEntriesAsync(AppendEntriesRequest request,
+                                                                     CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(request);
 

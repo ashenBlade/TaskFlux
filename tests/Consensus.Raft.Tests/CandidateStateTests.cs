@@ -154,7 +154,8 @@ public class CandidateStateTests
             _response = new RequestVoteResponse(term, voteGranted);
         }
 
-        public Task<AppendEntriesResponse?> SendAppendEntries(AppendEntriesRequest request, CancellationToken token)
+        public Task<AppendEntriesResponse?> SendAppendEntriesAsync(AppendEntriesRequest request,
+                                                                   CancellationToken token)
         {
             throw new Exception("Кандидат не должен отсылать AppendEntries");
         }

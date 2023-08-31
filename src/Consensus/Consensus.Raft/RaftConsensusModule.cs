@@ -99,15 +99,8 @@ public class RaftConsensusModule<TCommand, TResponse>
         PersistenceFacade = persistenceFacade;
         CommandQueue = commandQueue;
         StateMachine = stateMachine;
-        _peerProcessors = CreatePeerProcessors();
     }
 
-    private ThreadPeerProcessor<TCommand, TResponse>[] CreatePeerProcessors()
-    {
-        throw new NotImplementedException();
-    }
-
-    private readonly ThreadPeerProcessor<TCommand, TResponse>[] _peerProcessors;
 
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {
@@ -140,7 +133,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     public State<TCommand, TResponse> CreateLeaderState()
     {
         return new LeaderState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Leader)"),
-            _peerProcessors, _commandSerializer);
+            _commandSerializer);
     }
 
     public State<TCommand, TResponse> CreateCandidateState()
@@ -156,7 +149,7 @@ public class RaftConsensusModule<TCommand, TResponse>
 
     public void Dispose()
     {
-        _currentState?.Dispose();
+        _currentState.Dispose();
     }
 
     public static RaftConsensusModule<TCommand, TResponse> Create(

@@ -16,7 +16,7 @@ public interface IPeer
     public NodeId Id { get; }
 
     // TODO: синхронная реализация
-    public Task<AppendEntriesResponse?> SendAppendEntries(AppendEntriesRequest request, CancellationToken token);
+    public Task<AppendEntriesResponse?> SendAppendEntriesAsync(AppendEntriesRequest request, CancellationToken token);
 
     /// <summary>
     /// Отправить запрос RequestVote указанному узлу

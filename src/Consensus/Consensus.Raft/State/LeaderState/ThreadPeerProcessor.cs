@@ -7,50 +7,53 @@ namespace Consensus.Raft.State.LeaderState;
 
 public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
 {
-    private readonly RaftConsensusModule<TCommand, TResponse> _consensusModule;
+    private volatile bool _disposed;
+    private IConsensusModule<TCommand, TResponse> ConsensusModule => _caller.ConsensusModule;
+    private Term CurrentTerm => ConsensusModule.CurrentTerm;
+    private StoragePersistenceFacade PersistenceFacade => ConsensusModule.PersistenceFacade;
+
+    /// <summary>
+    /// Узел, с которым общаемся
+    /// </summary>
     private readonly IPeer _peer;
-    private Term CurrentTerm => _consensusModule.CurrentTerm;
-    private StoragePersistenceFacade PersistenceFacade => _consensusModule.PersistenceFacade;
-    private Thread? _thread;
+
+    /// <summary>
+    /// Фоновый поток обработчик запросов
+    /// </summary>
+    private readonly Thread _thread;
+
+    /// <summary>
+    /// Очередь команд для потока обработчика
+    /// </summary>
     private readonly RequestQueue _queue;
 
-    private readonly AutoResetEvent _stateChanged;
-    private int _state;
+    /// <summary>
+    /// Объект состояния лидера, который нас создал.
+    /// Работает на него
+    /// </summary>
+    private readonly LeaderState<TCommand, TResponse> _caller;
 
-    // Эти 2 поля обновляются при каждом вызове Start
-    private LeaderState<TCommand, TResponse>? _caller = null;
+    /// <summary>
+    /// Токен отмены, передающийся в момент вызова <see cref="Start"/>
+    /// </summary>
     private CancellationToken _token;
 
-    public ThreadPeerProcessor(IPeer peer,
-                               RaftConsensusModule<TCommand, TResponse> consensusModule)
+    private readonly AutoResetEvent _queueStopEvent;
+
+    public ThreadPeerProcessor(IPeer peer, LeaderState<TCommand, TResponse> caller)
     {
-        _consensusModule = consensusModule;
         _thread = new Thread(ThreadWorker);
         var handle = new AutoResetEvent(false);
         _queue = new RequestQueue(handle);
-        _stateChanged = handle;
-
+        _queueStopEvent = handle;
         _peer = peer;
-    }
-
-    public void Start(LeaderState<TCommand, TResponse> caller, CancellationToken token)
-    {
         _caller = caller;
-        _token = token;
-        if (_thread is null)
-        {
-            _thread = new Thread(ThreadWorker);
-        }
-
-        if (!_thread.IsAlive)
-        {
-            _thread.Start(this);
-        }
     }
 
-    public void NotifyHeartbeat()
+    public void Start(CancellationToken token)
     {
-        _queue.AddHeartbeat();
+        _token = token;
+        _thread.Start();
     }
 
     public void Replicate(LogReplicationRequest request)
@@ -58,77 +61,113 @@ public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
         _queue.Add(request);
     }
 
-    private void ThreadWorker(object? obj)
+    private void ThreadWorker()
     {
-        // Буфер с дескрипторами для ожидания. 
-        // Заполнится потом
-        while (true)
-        {
-            // Ждем, сигнала к работе
-            _stateChanged.WaitOne();
-            if (_state == StateDisposed)
-            {
-                // Работа закончена
-                break;
-            }
+        /*
+         * Обновление состояния нужно делать не через этот поток,
+         * т.к. это вызовет дедлок:
+         * - Вызываем TryUpdateState
+         * - TryUpdateState вызывает Dispose у нашего состояния лидера
+         * - Состояние лидера вызывает Join для каждого потока
+         * - Но т.к. вызвали мы, то получается вызываем Join для самих себя
+         */
 
-            if (_state == StateBecomeLeader)
-            {
-                // Мы стали лидером - начинаем обрабатывать узел
-                StartProcessingPeer();
-            }
-        }
-    }
-
-    private void StartProcessingPeer()
-    {
         var peerInfo = new PeerInfo(PersistenceFacade.LastEntry.Index + 1);
-        foreach (var obj in _queue.ReadAllRequests(_token))
+        Term? foundGreaterTerm = null;
+        foreach (var heartbeatOrRequest in _queue.ReadAllRequests(_token))
         {
-            if (_token.IsCancellationRequested && obj.TryGetRequest(out var r))
+            // На предыдущих шагах нашли больший терм
+            // Дальше узел станет последователем, а пока завершаем все запросы
+            if (foundGreaterTerm is { } term)
             {
-                // Если работа закончена - оповестить всех о конце
-                r.NotifyComplete();
+                // Heartbeat пропускаем
+                if (heartbeatOrRequest.TryGetRequest(out var r))
+                {
+                    // Если работа закончена - оповестить всех о конце (можно не выставлять терм, т.к. приложение закрывается)
+                    r.NotifyFoundGreaterTerm(term);
+                }
+                else if (heartbeatOrRequest.TryGetHeartbeat(out var h))
+                {
+                    h.NotifyFoundGreaterTerm(term);
+                }
+
                 continue;
             }
 
-            if (obj.TryGetRequest(out var request))
+            if (heartbeatOrRequest.TryGetRequest(out var request))
             {
-                ReplicateLog(request.LogIndex, peerInfo);
-                request.NotifyComplete();
+                if (TryReplicateLog(request.LogIndex, peerInfo) is { } greaterTerm)
+                {
+                    request.NotifyFoundGreaterTerm(greaterTerm);
+                    foundGreaterTerm = greaterTerm;
+                }
+                else
+                {
+                    request.NotifyComplete();
+                }
             }
-            else
+            else if (heartbeatOrRequest.TryGetHeartbeat(out var heartbeat))
             {
-                ReplicateLog(peerInfo.NextIndex, peerInfo);
+                // TODO: выставить null для поля Heartbeat синхронизатора после операции
+
+                try
+                {
+                    if (TryReplicateLog(peerInfo.NextIndex, peerInfo) is { } greaterTerm)
+                    {
+                        heartbeat.NotifyFoundGreaterTerm(greaterTerm);
+                        foundGreaterTerm = greaterTerm;
+                    }
+                    else
+                    {
+                        heartbeat.NotifySuccess();
+                    }
+                }
+                finally
+                {
+                    heartbeat.Dispose();
+                }
             }
         }
     }
 
-    private void ReplicateLog(int replicationIndex, PeerInfo info)
+    /// <summary>
+    /// Основной метод для обработки репликации лога.
+    /// Возвращаемое значение - флаг того, что репликация прошла успешно,
+    /// по большей части нужна только если реплицируем для Submit запроса, а не Heartbeat.
+    /// </summary>
+    /// <param name="replicationIndex">
+    /// Индекс, до которого нужно среплицировать лог
+    /// </param>
+    /// <param name="info">Вспомогательная информация про узел - на каком индексе репликации находимся</param>
+    /// <returns>
+    /// <see cref="Term"/> - найденный больший терм, <c>null</c> - репликация прошла успешно
+    /// </returns>
+    /// <exception cref="ApplicationException">
+    /// Для репликации нужна запись с определенным индексом, но ее нет ни в логе, ни в снапшоте (маловероятно)
+    /// </exception>
+    private Term? TryReplicateLog(int replicationIndex, PeerInfo info)
     {
-        while (true)
+        while (!_token.IsCancellationRequested)
         {
             if (!PersistenceFacade.TryGetFrom(info.NextIndex, out var entries))
             {
                 if (PersistenceFacade.TryGetSnapshot(out var snapshot))
                 {
                     var lastEntry = PersistenceFacade.SnapshotStorage.LastLogEntry;
-                    var installSnapshotResponse = _peer.SendInstallSnapshot(
-                        new InstallSnapshotRequest(CurrentTerm, _consensusModule.Id, lastEntry.Index, lastEntry.Term,
-                            snapshot), _token);
-                    // Обновляем только на 1, чтобы начать отдавать уже из лога (текущий индекс находится уже в снапшоте)
+                    var installSnapshotResponse = _peer.SendInstallSnapshot(new InstallSnapshotRequest(CurrentTerm,
+                        ConsensusModule.Id, lastEntry.Index, lastEntry.Term,
+                        snapshot), _token);
+                    if (installSnapshotResponse is null)
+                    {
+                        // Лучше не использовать ISnapshot несколько раз 
+                        // Сделаем еще одну итерацию
+                        continue;
+                    }
+
                     if (CurrentTerm < installSnapshotResponse.CurrentTerm)
                     {
-                        // У узла больший терм - переходим в последователя
-                        var followerState = _consensusModule.CreateFollowerState();
-                        Debug.Assert(_caller != null,
-                            "Поле _caller не может быть null на момент работы внутри функции обработчика");
-                        if (_consensusModule.TryUpdateState(followerState, _caller))
-                        {
-                            _consensusModule.PersistenceFacade.UpdateState(installSnapshotResponse.CurrentTerm, null);
-                        }
-
-                        return;
+                        // У узла больший терм - уведомляем об этом
+                        return installSnapshotResponse.CurrentTerm;
                     }
 
                     info.Update(1);
@@ -139,18 +178,17 @@ public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                     $"Для репликации нужны данные лога с {info.NextIndex} индекса, но ни в логе ни в снапшоте этого лога нет");
             }
 
-
             // 1. Отправляем запрос с текущим отслеживаемым индексом узла
             var appendEntriesRequest = new AppendEntriesRequest(Term: CurrentTerm,
                 LeaderCommit: PersistenceFacade.CommitIndex,
-                LeaderId: _consensusModule.Id,
+                LeaderId: ConsensusModule.Id,
                 PrevLogEntryInfo: PersistenceFacade.GetPrecedingEntryInfo(info.NextIndex),
                 Entries: entries);
 
             AppendEntriesResponse response;
             while (true)
             {
-                var currentResponse = _peer.SendAppendEntries(appendEntriesRequest, _token)
+                var currentResponse = _peer.SendAppendEntriesAsync(appendEntriesRequest, _token)
                                             // TODO: заменить на синхронную версию
                                            .GetAwaiter()
                                            .GetResult();
@@ -181,49 +219,52 @@ public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                 }
 
                 // 3.4. Уведомляем об успешной отправке команды на узел
-                return;
+                return null;
             }
 
             // Дальше узел отказался принимать наш запрос (Success = false)
             // 4. Если вернувшийся терм больше нашего
             if (CurrentTerm < response.Term)
             {
-                // 4.1. Перейти в состояние Follower
-                var followerState = _consensusModule.CreateFollowerState();
-                Debug.Assert(_caller != null,
-                    "Поле _caller не может быть null на момент работы внутри функции обработчика");
-                if (_consensusModule.TryUpdateState(followerState, _caller))
-                {
-                    _consensusModule.PersistenceFacade.UpdateState(response.Term, null);
-                }
-
-                // 4.2. Закончить работу
-                return;
+                // Уведосмляем о большем терме. 
+                // Обновление состояние произойдет позже
+                return response.Term;
             }
 
-            // 5. В противном случае у узла не синхронизирован лог 
-
             // 5.1. Декрементируем последние записи лога
-            // TODO: можно сразу вычислить место с которого нужно отправлять записи (его терм знаем)
             info.Decrement();
 
             // 5.2. Идем на следующий круг
         }
-    }
 
-    private const int StateBecomeLeader = 1;
+        // Единственный случай попадания сюда - токен отменен == мы больше не лидер
+        // Скорее всего терм уже был обновлен
+        return ConsensusModule.CurrentTerm;
+    }
 
     public void Dispose()
     {
-        if (_thread is {IsAlive: true})
+        if (_disposed)
         {
-            _state = StateDisposed;
-            _stateChanged.Set();
-            _thread.Join();
+            return;
         }
 
+        _disposed = true;
+
+        _queueStopEvent.Set();
         _queue.Dispose();
+        _queueStopEvent.Dispose();
+
+        if (_thread is {IsAlive: true})
+        {
+            Debug.Assert(_thread.ManagedThreadId != Environment.CurrentManagedThreadId,
+                "ДОЛБАЕБ!!!! Пытаешься вызвать Join для самого себя!!!");
+            _thread.Join();
+        }
     }
 
-    private const int StateDisposed = int.MinValue;
+    public bool TryNotifyHeartbeat(out HeartbeatSynchronizer o)
+    {
+        return _queue.TryAddHeartbeat(out o);
+    }
 }

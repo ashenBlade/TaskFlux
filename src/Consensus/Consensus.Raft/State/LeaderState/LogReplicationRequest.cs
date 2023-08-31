@@ -10,7 +10,7 @@ namespace Consensus.Raft.State.LeaderState;
 /// Как только кворум собран (высчитывается в <see cref="_peers"/>) то <see cref="_tcs"/> завершается,
 /// а вызывающая сторона сигнализируется о завершении обработки (таска завершена) 
 /// </summary>
-public class LogReplicationRequest : IDisposable
+public sealed class LogReplicationRequest : IDisposable
 {
     /// <summary>
     /// Индекс записи в логе, которая вызвала событие.
@@ -24,35 +24,77 @@ public class LogReplicationRequest : IDisposable
     /// </remarks>
     public int LogIndex { get; }
 
+    /// <summary>
+    /// Количество отданных успешных ответов/репликаций
+    /// </summary>
     private volatile int _votes = 0;
-    private readonly PeerGroup _peers;
 
-    private readonly ManualResetEventSlim _resetEventSlim;
+    private readonly PeerGroup _peers;
+    private readonly ManualResetEvent _signal;
+    private volatile bool _disposed = false;
+    private Term? _greaterTerm;
 
     public LogReplicationRequest(
         PeerGroup peers,
         int logIndex)
     {
-        _resetEventSlim = new ManualResetEventSlim(false);
+        _signal = new ManualResetEvent(false);
         _peers = peers;
         LogIndex = logIndex;
     }
 
+    /// <summary>
+    /// Вызывается, когда на узел был реплицирован лог до требуемого индеса
+    /// </summary>
     public void NotifyComplete()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         var incremented = Interlocked.Increment(ref _votes);
+        // Если у нас кворум большинства, то 
+        // для достижение консенсуса - тот момент,
+        // когда для текущего числа голосов кворум достигнут, а для на один меньше уже нет
         if (Check(incremented) && !Check(incremented - 1))
         {
             try
             {
-                _resetEventSlim.Set();
+                _signal.Set();
             }
-            catch (InvalidOperationException)
+            catch (ObjectDisposedException)
             {
+                // Ситуация говна, ладно
             }
         }
 
         bool Check(int count) => _peers.IsQuorumReached(count);
+    }
+
+    /// <summary>
+    /// Вызывается, когда в ответе от узла обнаружился больший терм
+    /// </summary>
+    public void NotifyFoundGreaterTerm(Term greaterTerm)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        // Проверки на сравнение термов можно не делать -
+        // даже если потом найдется больший терм - сигнал уже будет выставлен
+        // и выполнение продолжится
+        _greaterTerm = greaterTerm;
+
+        try
+        {
+            _signal.Set();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Все равно можем в такую ситуацию попасть
+        }
     }
 
     /// <summary>
@@ -62,15 +104,28 @@ public class LogReplicationRequest : IDisposable
     {
         try
         {
-            _resetEventSlim.Wait(token);
+            WaitHandle.WaitAny(new[] {token.WaitHandle, _signal});
         }
         catch (OperationCanceledException)
         {
         }
     }
 
+    public bool TryGetGreaterTerm(out Term greaterTerm)
+    {
+        if (_greaterTerm is { } term)
+        {
+            greaterTerm = term;
+            return true;
+        }
+
+        greaterTerm = Term.Start;
+        return false;
+    }
+
     public void Dispose()
     {
-        _resetEventSlim.Dispose();
+        _disposed = true;
+        _signal.Dispose();
     }
 }

@@ -7,13 +7,19 @@ internal class RequestQueue : IDisposable
 {
     // Очередь для запросов
     private readonly Queue<HeartbeatOrRequest> _queue = new();
+
+    // Объект синхронизатора для Heartbeat запроса
+    private HeartbeatSynchronizer? _heartbeatSynchronizer = null;
+
+    // Сигнал того, что в очерердь добавили элемент
     private readonly AutoResetEvent _enqueueEvent = new(false);
-    private readonly WaitHandle _processorLife;
 
+    // Сигнал того, что приложение закрывается
+    private readonly WaitHandle _processLife;
 
-    public RequestQueue(WaitHandle processorLife)
+    public RequestQueue(WaitHandle processLife)
     {
-        _processorLife = processorLife;
+        _processLife = processLife;
     }
 
     /// <summary>
@@ -27,42 +33,64 @@ internal class RequestQueue : IDisposable
     /// <returns>Поток объектов запросов, передаваемых от лидера</returns>
     public IEnumerable<HeartbeatOrRequest> ReadAllRequests(CancellationToken token)
     {
-        var buffer = new[] {token.WaitHandle, _processorLife, _enqueueEvent,};
+        var buffer = new[]
+        {
+            token.WaitHandle, // Если его отменят до момента вызова WaitHandle.WaitAny, то мы просто выйдем сразу
+            _processLife, _enqueueEvent,
+        };
 
         while (!token.IsCancellationRequested)
         {
-            var index = WaitHandle.WaitAny(buffer);
+            int index;
+            try
+            {
+                index = WaitHandle.WaitAny(buffer);
+            }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
+
             if (index == 0)
             {
-                // Токен отменен - пусть разберутся с остальным
-                foreach (var i in _queue)
-                {
-                    yield return i;
-                }
-
-                yield break;
+                break;
             }
 
             if (index == 1)
             {
-                // Объект обработчика закрывается.
-                // Нормально такого быть не может - закрыть сначала нужно 
-                yield break;
+                break;
             }
 
-            var hasData = false;
+            var hadData = false;
             while (_queue.TryDequeue(out var data))
             {
                 yield return data;
-                hasData = true;
+                hadData = true;
             }
 
-            if (hasData)
+            if (hadData)
             {
                 continue;
             }
 
-            yield return HeartbeatOrRequest.Heartbeat;
+            if (_heartbeatSynchronizer is { } synchronizer)
+            {
+                yield return HeartbeatOrRequest.Heartbeat(synchronizer);
+                // Эта бебра (после yield return) выполняется после того, как я вернул synchronizer,
+                // так что на этом моменте логика уже была выполнена и мы можем спокойно вызвать Dispose
+                var stored = Interlocked.CompareExchange(ref _heartbeatSynchronizer, null, synchronizer);
+                if (ReferenceEquals(stored, synchronizer))
+                {
+                    synchronizer.Dispose();
+                }
+            }
+        }
+
+        // Вместо сложной проверки отмены токена внутри цикла, 
+        // просто вернем оставшиеся данные
+        while (_queue.TryDequeue(out var data))
+        {
+            yield return data;
         }
     }
 
@@ -81,15 +109,32 @@ internal class RequestQueue : IDisposable
         _enqueueEvent.Set();
     }
 
-    public void AddHeartbeat()
+    public bool TryAddHeartbeat(out HeartbeatSynchronizer synchronizer)
     {
-        if (_queue.Count > 0)
+        if (0 < _queue.Count)
         {
-            // Очередь не пуста - есть элементы
-            return;
+            // Очередь не пуста - есть запросы пользователей
+            synchronizer = default!;
+            return false;
         }
 
-        _enqueueEvent.Set();
+        if (_heartbeatSynchronizer is null)
+        {
+            var sync = new HeartbeatSynchronizer();
+            // Вряд-ли такое случится
+            var stored = Interlocked.CompareExchange(ref _heartbeatSynchronizer, sync, null);
+            if (stored == null)
+            {
+                synchronizer = sync;
+                _enqueueEvent.Set();
+                return true;
+            }
+
+            sync.Dispose();
+        }
+
+        synchronizer = default!;
+        return false;
     }
 
     public void Dispose()

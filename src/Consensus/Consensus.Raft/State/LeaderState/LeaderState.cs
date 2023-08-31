@@ -12,7 +12,10 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
-    private readonly ThreadPeerProcessor<TCommand, TResponse>[] _peerProcessors;
+
+    private (ThreadPeerProcessor<TCommand, TResponse> Processor, HeartbeatTimer Timer)[] _peerProcessors =
+        Array.Empty<(ThreadPeerProcessor<TCommand, TResponse>, HeartbeatTimer)>();
+
     private readonly ICommandSerializer<TCommand> _commandSerializer;
 
     /// <summary>
@@ -22,32 +25,77 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     internal LeaderState(IConsensusModule<TCommand, TResponse> consensusModule,
                          ILogger logger,
-                         ThreadPeerProcessor<TCommand, TResponse>[] peerProcessors,
                          ICommandSerializer<TCommand> commandSerializer)
         : base(consensusModule)
     {
         _logger = logger;
-        _peerProcessors = peerProcessors;
         _commandSerializer = commandSerializer;
     }
 
     public override void Initialize()
     {
-        Array.ForEach(_peerProcessors, p => p.Start(this, _becomeFollowerTokenSource.Token));
-        HeartbeatTimer.Timeout += OnHeartbeatTimer;
-        HeartbeatTimer.Start();
+        _logger.Verbose("Инициализируются потоки обработчиков узлов");
+        _peerProcessors = CreatePeerProcessors();
+        _logger.Verbose("Потоки обработчиков запускаются");
+
+        Array.ForEach(_peerProcessors, p =>
+        {
+            // Вместе с таймером уйдет и остальное
+            p.Timer.Timeout += () =>
+            {
+                // Конкретно здесь нужно обрабатывать обновление состояния
+                if (p.Processor.TryNotifyHeartbeat(out var synchronizer))
+                {
+                    if (synchronizer.TryWaitGreaterTerm(out var greaterTerm))
+                    {
+                        var follower = ConsensusModule.CreateFollowerState();
+                        if (ConsensusModule.TryUpdateState(follower, this))
+                        {
+                            ConsensusModule.PersistenceFacade.UpdateState(greaterTerm, null);
+                        }
+
+                        return;
+                    }
+                }
+
+                // Запускаем таймер заново
+                p.Timer.Start();
+            };
+            p.Processor.Start(_becomeFollowerTokenSource.Token);
+            p.Timer.Start();
+        });
+        _logger.Verbose("Потоки обработчиков узлов запущены");
     }
 
-    private void OnHeartbeatTimer()
+    private (ThreadPeerProcessor<TCommand, TResponse>, HeartbeatTimer)[] CreatePeerProcessors()
     {
-        Array.ForEach(_peerProcessors, p => p.NotifyHeartbeat());
-        HeartbeatTimer.Start();
+        var peers = PeerGroup.Peers;
+        var processors = new (ThreadPeerProcessor<TCommand, TResponse>, HeartbeatTimer)[peers.Count];
+        for (var i = 0; i < processors.Length; i++)
+        {
+            var processor = new ThreadPeerProcessor<TCommand, TResponse>(peers[i], this);
+            var timer = new HeartbeatTimer(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300));
+            processors[i] = ( processor, timer );
+        }
+
+        return processors;
     }
 
     public override AppendEntriesResponse Apply(AppendEntriesRequest request)
     {
         if (request.Term <= CurrentTerm)
         {
+            if (request.Term == CurrentTerm)
+            {
+                _logger.Warning("От узла {NodeId} пришел запрос. Наши термы совпадают: {Term}", request.LeaderId.Id,
+                    request.Term.Value);
+            }
+            else
+            {
+                _logger.Debug("От узла {NodeId} пришел AppendEntries запрос. Его меньше терм меньше моего: {Term}",
+                    request.LeaderId.Id, request.Term.Value);
+            }
+
             // Согласно алгоритму, в каждом терме свой лидер, поэтому ситуации равенства быть не должно
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
@@ -107,11 +155,24 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override void Dispose()
     {
-        // CommandQueue.Enqueue(new StopHeartbeatTimerCommand(this, Node));
-        HeartbeatTimer.Stop();
-        HeartbeatTimer.Timeout -= OnHeartbeatTimer;
-    }
+        Array.ForEach(_peerProcessors, static p =>
+        {
+            p.Timer.Dispose();
+            p.Processor.Dispose();
+        });
 
+        // Сначала отменяем токен - после этого очередь должна разгрестись
+        try
+        {
+            _becomeFollowerTokenSource.Cancel();
+            // _becomeFollowerTokenSource.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Скорее всего это из-за потока обработчика узла,
+            // который получил больший терм и решил нас обновить
+        }
+    }
 
     public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default)
     {
@@ -186,8 +247,13 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     private void Replicate(int appendedIndex)
     {
+        if (_peerProcessors.Length == 0)
+        {
+            return;
+        }
+
         using var request = new LogReplicationRequest(PeerGroup, appendedIndex);
-        Array.ForEach(_peerProcessors, p => p.Replicate(request));
+        Array.ForEach(_peerProcessors, p => p.Processor.Replicate(request));
         request.Wait(_becomeFollowerTokenSource.Token);
     }
 
@@ -195,6 +261,5 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     /// Флаг сигнализирующий о том, что я (объект, лидер этого терма) все еще активен,
     /// т.е. состояние не изменилось
     /// </summary>
-    private bool IsStillLeader =>
-        !_becomeFollowerTokenSource.IsCancellationRequested;
+    private bool IsStillLeader => !_becomeFollowerTokenSource.IsCancellationRequested;
 }

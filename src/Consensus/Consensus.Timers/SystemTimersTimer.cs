@@ -3,23 +3,20 @@ using Consensus.Raft;
 
 namespace Consensus.Timers;
 
-public class SystemTimersTimer: ITimer, IDisposable
+public class SystemTimersTimer : ITimer, IDisposable
 {
     protected readonly System.Timers.Timer Timer;
     protected readonly TimeSpan Interval;
+
     public SystemTimersTimer(TimeSpan timeout)
     {
-        Timer = new System.Timers.Timer()
-        {
-            AutoReset = false, 
-            Enabled = false,
-            Interval = timeout.TotalMilliseconds,
-        };
+        Timer = new System.Timers.Timer() {AutoReset = false, Enabled = false, Interval = timeout.TotalMilliseconds,};
         Interval = timeout;
         Timer.Elapsed += TimerOnElapsed;
     }
 
     public event Action? Timeout;
+
     private void OnTimeout()
     {
         Timeout?.Invoke();

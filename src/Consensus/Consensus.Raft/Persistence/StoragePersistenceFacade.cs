@@ -438,8 +438,9 @@ public class StoragePersistenceFacade : IPersistenceFacade
     /// Прочитать записи из файла лога.
     /// Используется для тестов
     /// </summary>
-    internal IEnumerable<LogEntry> ReadLogFileTest()
+    internal List<LogEntry> ReadLogFileTest()
     {
-        return _logStorage.ReadAllTest();
+        return _logStorage.ReadAllTest()
+                          .ToList();
     }
 }
