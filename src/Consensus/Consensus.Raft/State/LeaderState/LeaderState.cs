@@ -13,10 +13,11 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
 
-    private (ThreadPeerProcessor<TCommand, TResponse> Processor, HeartbeatTimer Timer)[] _peerProcessors =
-        Array.Empty<(ThreadPeerProcessor<TCommand, TResponse>, HeartbeatTimer)>();
+    private (ThreadPeerProcessor<TCommand, TResponse> Processor, ITimer Timer)[] _peerProcessors =
+        Array.Empty<(ThreadPeerProcessor<TCommand, TResponse>, ITimer)>();
 
     private readonly ICommandSerializer<TCommand> _commandSerializer;
+    private readonly ITimerFactory _timerFactory;
 
     /// <summary>
     /// Токен отмены отменяющийся при смене роли с лидера на последователя (другого быть не может)
@@ -25,11 +26,13 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     internal LeaderState(IConsensusModule<TCommand, TResponse> consensusModule,
                          ILogger logger,
-                         ICommandSerializer<TCommand> commandSerializer)
+                         ICommandSerializer<TCommand> commandSerializer,
+                         ITimerFactory timerFactory)
         : base(consensusModule)
     {
         _logger = logger;
         _commandSerializer = commandSerializer;
+        _timerFactory = timerFactory;
     }
 
     public override void Initialize()
@@ -67,14 +70,16 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         _logger.Verbose("Потоки обработчиков узлов запущены");
     }
 
-    private (ThreadPeerProcessor<TCommand, TResponse>, HeartbeatTimer)[] CreatePeerProcessors()
+    private (ThreadPeerProcessor<TCommand, TResponse>, ITimer)[] CreatePeerProcessors()
     {
         var peers = PeerGroup.Peers;
-        var processors = new (ThreadPeerProcessor<TCommand, TResponse>, HeartbeatTimer)[peers.Count];
+        var processors = new (ThreadPeerProcessor<TCommand, TResponse>, ITimer)[peers.Count];
         for (var i = 0; i < processors.Length; i++)
         {
-            var processor = new ThreadPeerProcessor<TCommand, TResponse>(peers[i], this);
-            var timer = new HeartbeatTimer(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300));
+            var peer = peers[i];
+            var processor = new ThreadPeerProcessor<TCommand, TResponse>(peer,
+                _logger.ForContext("SourceContext", $"PeerProcessor({peer.Id.Id})"), this);
+            var timer = _timerFactory.CreateTimer();
             processors[i] = ( processor, timer );
         }
 
@@ -114,16 +119,20 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
         }
 
+        var logConflicts = PersistenceFacade.Conflicts(request.LastLogEntryInfo);
+
         if (CurrentTerm < request.CandidateTerm)
         {
             var followerState = ConsensusModule.CreateFollowerState();
+
             if (ConsensusModule.TryUpdateState(followerState, this))
             {
-                ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
-                ElectionTimer.Start();
+                ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
+                return new RequestVoteResponse(CurrentTerm, !logConflicts);
             }
 
-            return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
+            // Уже есть новое состояние - пусть оно ответит
+            return ConsensusModule.Handle(request);
         }
 
         var canVote =
@@ -135,17 +144,17 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         // Отдать свободный голос можем только за кандидата 
         if (canVote
-&&                                                                  // За которого можем проголосовать и
-            !PersistenceFacade.Conflicts(request.LastLogEntryInfo)) // У которого лог не хуже нашего
+&&                         // За которого можем проголосовать и
+            !logConflicts) // У которого лог не хуже нашего
         {
             var followerState = ConsensusModule.CreateFollowerState();
             if (ConsensusModule.TryUpdateState(followerState, this))
             {
                 ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
-                ElectionTimer.Start();
+                return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
             }
 
-            return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
+            return ConsensusModule.Handle(request);
         }
 
         // Кандидат только что проснулся и не знает о текущем состоянии дел. 
@@ -180,7 +189,6 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         {
             return new InstallSnapshotResponse(CurrentTerm);
         }
-        // TODO: тесты
 
         var followerState = ConsensusModule.CreateFollowerState();
         if (ConsensusModule.TryUpdateState(followerState, this))
@@ -204,7 +212,17 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         var appended = PersistenceFacade.AppendBuffer(newEntry);
 
         // Сигнализируем узлам, чтобы принялись реплицировать
-        Replicate(appended.Index);
+        var success = TryReplicate(appended.Index, out var greaterTerm);
+        if (!success)
+        {
+            if (ConsensusModule.TryUpdateState(ConsensusModule.CreateFollowerState(), this))
+            {
+                PersistenceFacade.UpdateState(greaterTerm, null);
+                return SubmitResponse<TResponse>.NotLeader;
+            }
+
+            return ConsensusModule.Handle(request);
+        }
 
         /*
          * Если мы вернулись, то это может значить 2 вещи:
@@ -245,16 +263,19 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         return SubmitResponse<TResponse>.Success(response, true);
     }
 
-    private void Replicate(int appendedIndex)
+    private bool TryReplicate(int appendedIndex, out Term greaterTerm)
     {
         if (_peerProcessors.Length == 0)
         {
-            return;
+            // Кроме нас в кластере никого нет
+            greaterTerm = Term.Start;
+            return true;
         }
 
         using var request = new LogReplicationRequest(PeerGroup, appendedIndex);
         Array.ForEach(_peerProcessors, p => p.Processor.Replicate(request));
         request.Wait(_becomeFollowerTokenSource.Token);
+        return !request.TryGetGreaterTerm(out greaterTerm);
     }
 
     /// <summary>

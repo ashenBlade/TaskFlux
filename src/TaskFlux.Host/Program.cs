@@ -94,17 +94,16 @@ try
 
     var jobQueueStateMachine = CreateJobQueueStateMachine(commandContext);
 
-    using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
-    using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
     using var commandQueue = new ChannelCommandQueue();
-
-    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, electionTimer, heartbeatTimer, log,
+    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, log,
         commandQueue, jobQueueStateMachine, nodeInfo, appInfo, clusterInfo);
+
     var consensusModule =
         new InfoUpdaterConsensusModuleDecorator<Command, Result>(raftConsensusModule, clusterInfo, nodeInfo);
 
     var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, consensusModule,
         Log.Logger.ForContext<NodeConnectionManager>());
+
     var stateObserver = new NodeStateObserver(consensusModule, Log.Logger.ForContext<NodeStateObserver>());
 
     var httpModule = CreateHttpRequestModule(configuration);
@@ -135,7 +134,6 @@ try
         nodeConnectionThread.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
 
         Log.Logger.Information("Запускаю Election Timer");
-        electionTimer.Start();
 
         Log.Logger.Information("Запукаю фоновые задачи");
         await Task.WhenAll(stateObserver.RunAsync(cts.Token),
@@ -308,8 +306,6 @@ INode CreateNode(IApplicationInfo applicationInfo)
 
 RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
                                                                IPeer[] peers,
-                                                               ITimer randomizedTimer,
-                                                               ITimer systemTimersTimer,
                                                                StoragePersistenceFacade storage,
                                                                ICommandQueue channelCommandQueue,
                                                                IStateMachine<Command, Result> stateMachine,
@@ -322,8 +318,10 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
     var commandSerializer = new ProxyCommandCommandSerializer();
     var peerGroup = new PeerGroup(peers);
     var stateMachineFactory = new TaskFluxStateMachineFactory(nodeInfo, appInfo, clusterInfo);
+    var timerFactory =
+        new RandomizedThreadingTimerFactory(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300));
 
-    return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, randomizedTimer, systemTimersTimer,
+    return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, timerFactory,
         jobQueue, storage, channelCommandQueue, stateMachine, stateMachineFactory,
         commandSerializer);
 }

@@ -33,4 +33,22 @@ public static class Extensions
 
         return ( left, right );
     }
+
+    public static T[] ToArray<T>(this IEnumerable<T> array, int hint = -1)
+    {
+        if (hint == -1)
+        {
+            return array.ToArray();
+        }
+
+        var result = new T[hint];
+        var i = 0;
+        foreach (var item in array)
+        {
+            result[i] = item;
+            i++;
+        }
+
+        return result;
+    }
 }

@@ -2,9 +2,15 @@ using System.Diagnostics;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Persistence;
+using Serilog;
 
 namespace Consensus.Raft.State.LeaderState;
 
+/// <summary>
+/// Реализация коммуникации с другими узлами, использующая потоки.
+/// В первой версии использовался пул потоков и все было на async/await.
+/// Потом отказался для большей управляемости и возможности аварийно завершиться при ошибках.
+/// </summary>
 public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
 {
     private volatile bool _disposed;
@@ -16,6 +22,8 @@ public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
     /// Узел, с которым общаемся
     /// </summary>
     private readonly IPeer _peer;
+
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Фоновый поток обработчик запросов
@@ -40,13 +48,14 @@ public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
 
     private readonly AutoResetEvent _queueStopEvent;
 
-    public ThreadPeerProcessor(IPeer peer, LeaderState<TCommand, TResponse> caller)
+    public ThreadPeerProcessor(IPeer peer, ILogger logger, LeaderState<TCommand, TResponse> caller)
     {
         _thread = new Thread(ThreadWorker);
         var handle = new AutoResetEvent(false);
         _queue = new RequestQueue(handle);
         _queueStopEvent = handle;
         _peer = peer;
+        _logger = logger;
         _caller = caller;
     }
 
@@ -71,62 +80,74 @@ public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
          * - Состояние лидера вызывает Join для каждого потока
          * - Но т.к. вызвали мы, то получается вызываем Join для самих себя
          */
-
-        var peerInfo = new PeerInfo(PersistenceFacade.LastEntry.Index + 1);
-        Term? foundGreaterTerm = null;
-        foreach (var heartbeatOrRequest in _queue.ReadAllRequests(_token))
+        try
         {
-            // На предыдущих шагах нашли больший терм
-            // Дальше узел станет последователем, а пока завершаем все запросы
-            if (foundGreaterTerm is { } term)
+            var peerInfo = new PeerInfo(PersistenceFacade.LastEntry.Index + 1);
+            Term? foundGreaterTerm = null;
+            foreach (var heartbeatOrRequest in _queue.ReadAllRequests(_token))
             {
-                // Heartbeat пропускаем
-                if (heartbeatOrRequest.TryGetRequest(out var r))
+                // На предыдущих шагах нашли больший терм
+                // Дальше узел станет последователем, а пока завершаем все запросы
+                if (foundGreaterTerm is { } term)
                 {
-                    // Если работа закончена - оповестить всех о конце (можно не выставлять терм, т.к. приложение закрывается)
-                    r.NotifyFoundGreaterTerm(term);
-                }
-                else if (heartbeatOrRequest.TryGetHeartbeat(out var h))
-                {
-                    h.NotifyFoundGreaterTerm(term);
-                }
-
-                continue;
-            }
-
-            if (heartbeatOrRequest.TryGetRequest(out var request))
-            {
-                if (TryReplicateLog(request.LogIndex, peerInfo) is { } greaterTerm)
-                {
-                    request.NotifyFoundGreaterTerm(greaterTerm);
-                    foundGreaterTerm = greaterTerm;
-                }
-                else
-                {
-                    request.NotifyComplete();
-                }
-            }
-            else if (heartbeatOrRequest.TryGetHeartbeat(out var heartbeat))
-            {
-                // TODO: выставить null для поля Heartbeat синхронизатора после операции
-
-                try
-                {
-                    if (TryReplicateLog(peerInfo.NextIndex, peerInfo) is { } greaterTerm)
+                    // Heartbeat пропускаем
+                    if (heartbeatOrRequest.TryGetRequest(out var r))
                     {
-                        heartbeat.NotifyFoundGreaterTerm(greaterTerm);
+                        // Если работа закончена - оповестить всех о конце (можно не выставлять терм, т.к. приложение закрывается)
+                        r.NotifyFoundGreaterTerm(term);
+                    }
+                    else if (heartbeatOrRequest.TryGetHeartbeat(out var h))
+                    {
+                        h.NotifyFoundGreaterTerm(term);
+                    }
+
+                    continue;
+                }
+
+                if (heartbeatOrRequest.TryGetRequest(out var request))
+                {
+                    if (TryReplicateLog(request.LogIndex, peerInfo) is { } greaterTerm)
+                    {
+                        _logger.Debug("При отправке AppendEntries узел ответил большим термом. Завершаю работу");
+                        request.NotifyFoundGreaterTerm(greaterTerm);
                         foundGreaterTerm = greaterTerm;
                     }
                     else
                     {
-                        heartbeat.NotifySuccess();
+                        request.NotifyComplete();
                     }
                 }
-                finally
+                else if (heartbeatOrRequest.TryGetHeartbeat(out var heartbeat))
                 {
-                    heartbeat.Dispose();
+                    try
+                    {
+                        if (TryReplicateLog(peerInfo.NextIndex, peerInfo) is { } greaterTerm)
+                        {
+                            _logger.Debug("При отправке Heartbeat запроса узел ответил большим термом");
+                            heartbeat.NotifyFoundGreaterTerm(greaterTerm);
+                            foundGreaterTerm = greaterTerm;
+                        }
+                        else
+                        {
+                            heartbeat.NotifySuccess();
+                        }
+                    }
+                    finally
+                    {
+                        heartbeat.Dispose();
+                    }
+                }
+                else
+                {
+                    Debug.Assert(false,
+                        $"В {nameof(HeartbeatOrRequest)} должен быть либо запрос, либо heartbeat. Ничего не получено");
                 }
             }
+        }
+        catch (Exception e)
+        {
+            _logger.Fatal(e, "Во время работы обработчика возникло необработанное исключение");
+            throw;
         }
     }
 
@@ -235,6 +256,7 @@ public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
             info.Decrement();
 
             // 5.2. Идем на следующий круг
+            // TODO: почему токен отменяется
         }
 
         // Единственный случай попадания сюда - токен отменен == мы больше не лидер
@@ -266,5 +288,55 @@ public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
     public bool TryNotifyHeartbeat(out HeartbeatSynchronizer o)
     {
         return _queue.TryAddHeartbeat(out o);
+    }
+
+    /// <summary>
+    /// Информация об узле, необходимая для взаимодействия с ним в состоянии <see cref="NodeRole.Leader"/>
+    /// </summary>
+    private class PeerInfo
+    {
+        /// <summary>
+        /// Индекс следующей записи в логе, которую необходимо отправить клиенту
+        /// </summary>
+        public int NextIndex { get; private set; }
+
+        /// <summary>
+        /// Индекс последней зафиксированной (реплицированной) записи в логе
+        /// </summary>
+        private int MatchIndex { get; set; }
+
+        public PeerInfo(int nextIndex)
+        {
+            NextIndex = nextIndex;
+            MatchIndex = 0;
+        }
+
+        /// <summary>
+        /// Обновить информацию об имеющися на узле записям
+        /// </summary>
+        /// <param name="appliedCount">Количество успешно отправленных вхождений команд (Entries)</param>
+        public void Update(int appliedCount)
+        {
+            var nextIndex = NextIndex + appliedCount;
+            var matchIndex = nextIndex - 1;
+            MatchIndex = matchIndex;
+            NextIndex = nextIndex;
+        }
+
+        /// <summary>
+        /// Отктиться назад, если узел ответил на AppendEntries <c>false</c>
+        /// </summary>
+        /// <exception cref="InvalidOperationException"><see cref="NextIndex"/> равен 0</exception>
+        public void Decrement()
+        {
+            if (NextIndex is 0)
+            {
+                throw new InvalidOperationException("Нельзя откаться на индекс меньше 0");
+            }
+
+            NextIndex--;
+        }
+
+        public override string ToString() => $"PeerInfo(NextIndex = {NextIndex}, MatchIndex = {MatchIndex})";
     }
 }

@@ -53,12 +53,6 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
         return _module.TryUpdateState(newState, oldState);
     }
 
-    public ITimer ElectionTimer =>
-        _module.ElectionTimer;
-
-    public ITimer HeartbeatTimer =>
-        _module.HeartbeatTimer;
-
     public IBackgroundJobQueue BackgroundJobQueue =>
         _module.BackgroundJobQueue;
 
@@ -73,7 +67,7 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
         get => _module.StateMachine;
         set => _module.StateMachine = value;
     }
-    
+
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {
         return _module.Handle(request);

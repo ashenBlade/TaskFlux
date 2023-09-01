@@ -1,9 +1,8 @@
 namespace Consensus.Raft;
 
-public interface ITimer
+public interface ITimer : IDisposable
 {
     void Start();
-    void Reset();
     void Stop();
     event Action Timeout;
 }

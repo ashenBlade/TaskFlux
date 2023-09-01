@@ -6,8 +6,8 @@ using Consensus.Raft.Persistence;
 using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
-using Consensus.Raft.State;
 using Consensus.Raft.Tests.Infrastructure;
+using Consensus.Raft.Tests.Stubs;
 using Moq;
 using Serilog.Core;
 using TaskFlux.Core;
@@ -27,8 +27,9 @@ public class FollowerStateTests
                                                                     IBackgroundJobQueue? jobQueue = null)
     {
         var fs = Helpers.CreateFileSystem();
-        electionTimer ??= Helpers.NullTimer;
-
+        var timerFactory = electionTimer != null
+                               ? new ConstantTimerFactory(electionTimer)
+                               : Helpers.NullTimerFactory;
         var backgroundJobQueue = jobQueue ?? Helpers.NullBackgroundJobQueue;
 
         var persistence = new StoragePersistenceFacade(new FileLogStorage(fs.Log.Open(FileMode.OpenOrCreate)),
@@ -38,16 +39,15 @@ public class FollowerStateTests
         var node = new RaftConsensusModule(NodeId,
             EmptyPeerGroup,
             Logger.None,
-            electionTimer,
-            Helpers.NullTimer,
+            timerFactory,
             backgroundJobQueue,
             persistence,
             Helpers.NullCommandQueue,
             Helpers.NullStateMachine,
             Helpers.NullCommandSerializer,
             Helpers.NullStateMachineFactory);
-        node.SetStateTest(new FollowerState<int, int>(node, Helpers.NullStateMachineFactory,
-            Helpers.NullCommandSerializer, Logger.None));
+
+        node.SetStateTest(node.CreateFollowerState());
 
         return node;
     }
@@ -182,19 +182,6 @@ public class FollowerStateTests
     }
 
     [Fact]
-    public void RequestVote__ДолженПерезапуститьElectionTimeout()
-    {
-        var timer = new Mock<ITimer>();
-        timer.Setup(x => x.Reset()).Verifiable();
-        var stateMachine = CreateFollowerNode(new Term(1), null, electionTimer: timer.Object);
-
-        stateMachine.Handle(new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: new Term(1),
-            LastLogEntryInfo: new LogEntryInfo(new(1), 0)));
-
-        timer.Verify(x => x.Reset(), Times.Once());
-    }
-
-    [Fact]
     public void ElectionTimeout__ДолженПерейтиВСостояниеCandidate()
     {
         var timer = new Mock<ITimer>(MockBehavior.Loose);
@@ -231,26 +218,26 @@ public class FollowerStateTests
         Assert.Equal(stateMachine.Id, stateMachine.VotedFor);
     }
 
-    [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    public void Heartbeat__ДолженСбрасыватьElectionTimeout(int term)
+    [Fact]
+    public void AppendEntries__ДолженПерезапуститьElectionTimeout()
     {
-        var oldTerm = new Term(1);
+        var term = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
+        timer.Setup(x => x.Stop())
+             .Verifiable();
+        timer.Setup(x => x.Start())
+             .Verifiable();
 
-        timer.Setup(x => x.Reset()).Verifiable();
+        using var node = CreateFollowerNode(term, null, electionTimer: timer.Object);
 
-        using var node = CreateFollowerNode(oldTerm, null, electionTimer: timer.Object);
-
-        var request = AppendEntriesRequest.Heartbeat(new Term(term), 0,
-            new NodeId(id: NodeId.Id + 1), new LogEntryInfo(new Term(term), 0));
+        var request = AppendEntriesRequest.Heartbeat(term, 0,
+            new NodeId(id: NodeId.Id + 1), new LogEntryInfo(term, 0));
 
         node.Handle(request);
 
-        timer.Verify(x => x.Reset(), Times.Once());
+        timer.Verify(x => x.Stop(), Times.Once());
+        // Считаем еще самый первый запуск
+        timer.Verify(x => x.Start(), Times.Exactly(2));
     }
 
     [Fact]
@@ -282,14 +269,13 @@ public class FollowerStateTests
     public void RequestVote__СБолееВысокимТермом__ДолженОтдатьГолосЗаКандидата()
     {
         var oldTerm = new Term(1);
-        var timer = new Mock<ITimer>(MockBehavior.Loose);
-        timer.Setup(x => x.Reset()).Verifiable();
-        using var raft = CreateFollowerNode(oldTerm, null, electionTimer: timer.Object);
+        using var raft = CreateFollowerNode(oldTerm, null);
 
         var candidateId = new NodeId(2);
         var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: oldTerm.Increment(),
             LastLogEntryInfo: raft.PersistenceFacade.LastEntry);
         raft.Handle(request);
+
         Assert.Equal(candidateId, raft.VotedFor);
     }
 
@@ -331,7 +317,7 @@ public class FollowerStateTests
     }
 
 
-    private record ConsensusFileSystem(IFileInfo LogFile, IFileInfo MetadataFile, IFileInfo SnapshotFile);
+    private record ConsensusFileSystem(IFileInfo SnapshotFile);
 
     private record NodeCreateResult(RaftConsensusModule Module,
                                     StoragePersistenceFacade Persistence,
@@ -345,19 +331,16 @@ public class FollowerStateTests
         // Follower не использует фоновые задачи - это только для Candidate/Leader
         var backgroundJobQueue = Mock.Of<IBackgroundJobQueue>();
 
-        // Follower не использует Heartbeat - это только для Leader
-        var heartbeatTimer = Mock.Of<ITimer>();
-
         // Очередь команд - абстракция только для синхронного выполнения команд (потом может вынесу выше)
         var commandQueue = new SimpleCommandQueue();
 
-        var electionTimer = Mock.Of<ITimer>();
         var commandSerializer =
             Mock.Of<ICommandSerializer<int>>(x => x.Serialize(It.IsAny<int>()) == Array.Empty<byte>());
 
         var (persistenceFacade, fileSystem) = CreateStorage();
 
-        var node = new RaftConsensusModule(NodeId, peers, Logger.None, electionTimer, heartbeatTimer,
+        var node = new RaftConsensusModule(NodeId, peers, Logger.None,
+            Helpers.NullTimerFactory,
             backgroundJobQueue,
             persistenceFacade,
             commandQueue,
@@ -365,7 +348,7 @@ public class FollowerStateTests
             commandSerializer,
             Helpers.NullStateMachineFactory);
 
-        node.SetStateTest(new FollowerState<int, int>(node, node.StateMachineFactory, commandSerializer, Logger.None));
+        node.SetStateTest(node.CreateFollowerState());
 
         return new NodeCreateResult(node, persistenceFacade, fileSystem);
 
@@ -376,7 +359,7 @@ public class FollowerStateTests
             var metadataFile = new FileMetadataStorage(metadata.Open(FileMode.OpenOrCreate), new Term(1), null);
             var snapshotFile = new FileSystemSnapshotStorage(snapshot, tempDir);
             return ( new StoragePersistenceFacade(logFile, metadataFile, snapshotFile),
-                     new ConsensusFileSystem(log, metadata, snapshot) );
+                     new ConsensusFileSystem(snapshot) );
         }
     }
 

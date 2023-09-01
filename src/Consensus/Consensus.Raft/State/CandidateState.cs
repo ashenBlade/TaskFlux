@@ -10,20 +10,24 @@ namespace Consensus.Raft.State;
 public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Candidate;
+    private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;
 
-    internal CandidateState(IConsensusModule<TCommand, TResponse> consensusModule, ILogger logger)
+    internal CandidateState(IConsensusModule<TCommand, TResponse> consensusModule, ITimer electionTimer, ILogger logger)
         : base(consensusModule)
     {
+        _electionTimer = electionTimer;
         _logger = logger;
         _cts = new();
     }
 
     public override void Initialize()
     {
-        ElectionTimer.Timeout += OnElectionTimerTimeout;
         BackgroundJobQueue.RunInfinite(RunQuorum, _cts.Token);
+
+        _electionTimer.Timeout += OnElectionTimerTimeout;
+        _electionTimer.Start();
     }
 
     private async Task<RequestVoteResponse?[]> SendRequestVotes(List<IPeer> peers, CancellationToken token)
@@ -122,7 +126,6 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
                     var followerState = ConsensusModule.CreateFollowerState();
                     if (ConsensusModule.TryUpdateState(followerState, this))
                     {
-                        ConsensusModule.ElectionTimer.Start();
                         ConsensusModule.PersistenceFacade.UpdateState(response.CurrentTerm, null);
                     }
 
@@ -155,11 +158,7 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
         }
 
         var leaderState = ConsensusModule.CreateLeaderState();
-        if (ConsensusModule.TryUpdateState(leaderState, this))
-        {
-            ConsensusModule.HeartbeatTimer.Start();
-            ConsensusModule.ElectionTimer.Stop();
-        }
+        ConsensusModule.TryUpdateState(leaderState, this);
 
         bool QuorumReached()
         {
@@ -169,16 +168,13 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
 
     private void OnElectionTimerTimeout()
     {
-        ElectionTimer.Timeout -= OnElectionTimerTimeout;
-
-        _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
+        _electionTimer.Timeout -= OnElectionTimerTimeout;
 
         var candidateState = ConsensusModule.CreateCandidateState();
         if (ConsensusModule.TryUpdateState(candidateState, this))
         {
-            ConsensusModule.ElectionTimer.Stop();
+            _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
             ConsensusModule.PersistenceFacade.UpdateState(ConsensusModule.CurrentTerm.Increment(), ConsensusModule.Id);
-            ConsensusModule.ElectionTimer.Start();
         }
     }
 
@@ -213,8 +209,8 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
             if (ConsensusModule.TryUpdateState(followerState, this))
             {
                 ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
-                ElectionTimer.Start();
             }
+            // TODO: проверять лог, даже если голос больше
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -235,7 +231,6 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
             var followerState = ConsensusModule.CreateFollowerState();
             if (ConsensusModule.TryUpdateState(followerState, this))
             {
-                ElectionTimer.Start();
                 ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
             }
 
@@ -249,19 +244,14 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override void Dispose()
     {
-        try
-        {
-            _cts.Cancel();
-            _cts.Dispose();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
+        _cts.Cancel();
+        _cts.Dispose();
 
-        ElectionTimer.Timeout -= OnElectionTimerTimeout;
+        _electionTimer.Timeout -= OnElectionTimerTimeout;
+        _electionTimer.Dispose();
     }
 
-    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token)
+    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default)
     {
         if (request.Term < CurrentTerm)
         {

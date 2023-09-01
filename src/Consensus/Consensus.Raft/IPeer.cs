@@ -15,7 +15,6 @@ public interface IPeer
     /// </summary>
     public NodeId Id { get; }
 
-    // TODO: синхронная реализация
     public Task<AppendEntriesResponse?> SendAppendEntriesAsync(AppendEntriesRequest request, CancellationToken token);
 
     /// <summary>

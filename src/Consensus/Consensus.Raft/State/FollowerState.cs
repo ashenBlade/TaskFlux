@@ -14,28 +14,30 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
     public override NodeRole Role => NodeRole.Follower;
     private readonly IStateMachineFactory<TCommand, TResponse> _stateMachineFactory;
     private readonly ICommandSerializer<TCommand> _commandCommandSerializer;
+    private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
 
     internal FollowerState(IConsensusModule<TCommand, TResponse> consensusModule,
                            IStateMachineFactory<TCommand, TResponse> stateMachineFactory,
                            ICommandSerializer<TCommand> commandCommandSerializer,
+                           ITimer electionTimer,
                            ILogger logger)
         : base(consensusModule)
     {
         _stateMachineFactory = stateMachineFactory;
         _commandCommandSerializer = commandCommandSerializer;
+        _electionTimer = electionTimer;
         _logger = logger;
     }
 
     public override void Initialize()
     {
-        ElectionTimer.Timeout += OnElectionTimerTimeout;
+        _electionTimer.Timeout += OnElectionTimerTimeout;
+        _electionTimer.Start();
     }
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)
     {
-        ElectionTimer.Reset();
-
         // Мы в более актуальном Term'е
         if (request.CandidateTerm < CurrentTerm)
         {
@@ -63,13 +65,6 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
                 request.CandidateId.Id, request.CandidateTerm.Value);
             ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
 
-            if (request.CandidateTerm < CurrentTerm)
-            {
-                _logger.Debug("Терм кандидата больше моего: отдаю голос за и перехожу в {Term} терм",
-                    request.CandidateTerm);
-                PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
-            }
-
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
 
@@ -79,18 +74,18 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             PersistenceFacade.UpdateState(request.CandidateTerm, null);
         }
 
-        // Кандидат только что проснулся и не знает о текущем состоянии дел. 
-        // Обновим его
         return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
     }
 
     public override AppendEntriesResponse Apply(AppendEntriesRequest request)
     {
-        ElectionTimer.Reset();
+        // TODO: проверять, что запрос сделан от лидера
 
+        _electionTimer.Stop();
         if (request.Term < CurrentTerm)
         {
             // Лидер устрел
+            _electionTimer.Start();
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
@@ -103,6 +98,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         if (PersistenceFacade.Contains(request.PrevLogEntryInfo) is false)
         {
             // Префиксы закомиченных записей лога не совпадают 
+            _electionTimer.Start();
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
@@ -117,6 +113,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (PersistenceFacade.CommitIndex == request.LeaderCommit)
         {
+            _electionTimer.Start();
             return AppendEntriesResponse.Ok(CurrentTerm);
         }
 
@@ -148,6 +145,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             PersistenceFacade.ClearCommandLog();
         }
 
+        _electionTimer.Start();
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
 
@@ -168,20 +166,20 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         var candidateState = ConsensusModule.CreateCandidateState();
         if (ConsensusModule.TryUpdateState(candidateState, this))
         {
-            ConsensusModule.ElectionTimer.Stop();
             // Голосуем за себя и переходим в следующий терм
             ConsensusModule.PersistenceFacade.UpdateState(ConsensusModule.CurrentTerm.Increment(), ConsensusModule.Id);
-            ConsensusModule.ElectionTimer.Start();
         }
     }
 
     public override void Dispose()
     {
-        ElectionTimer.Timeout -= OnElectionTimerTimeout;
+        _electionTimer.Timeout -= OnElectionTimerTimeout;
+        _electionTimer.Dispose();
     }
 
     public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default)
     {
+        // FIXME: надо обновлять Election таймер, иначе стану лидером
         if (request.Term < CurrentTerm)
         {
             return new InstallSnapshotResponse(CurrentTerm);

@@ -1,4 +1,3 @@
-using Consensus.CommandQueue;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
@@ -16,27 +15,14 @@ namespace Consensus.Raft.State;
 /// </remarks>
 public abstract class State<TCommand, TResponse>
 {
-    /// <summary>
-    /// Максимальный размер лога
-    /// </summary>
-    /// <remarks>16 Мб</remarks>
-    protected const int MaxLogFileSize = 16    // Мб
-                                       * 1024  // Кб
-                                       * 1024; // б
-
     internal IConsensusModule<TCommand, TResponse> ConsensusModule { get; }
-    protected IPersistenceFacade PersistenceFacade => ConsensusModule.PersistenceFacade;
+    protected StoragePersistenceFacade PersistenceFacade => ConsensusModule.PersistenceFacade;
     protected Term CurrentTerm => ConsensusModule.CurrentTerm;
     protected NodeId? VotedFor => ConsensusModule.VotedFor;
     protected IStateMachine<TCommand, TResponse> StateMachine => ConsensusModule.StateMachine;
     protected NodeId Id => ConsensusModule.Id;
-    protected ITimer ElectionTimer => ConsensusModule.ElectionTimer;
-    protected ITimer HeartbeatTimer => ConsensusModule.HeartbeatTimer;
     protected IBackgroundJobQueue BackgroundJobQueue => ConsensusModule.BackgroundJobQueue;
     protected PeerGroup PeerGroup => ConsensusModule.PeerGroup;
-
-    protected State<TCommand, TResponse> CurrentState =>
-        ConsensusModule.CurrentState;
 
     internal State(IConsensusModule<TCommand, TResponse> consensusModule)
     {

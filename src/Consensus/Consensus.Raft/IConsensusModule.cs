@@ -1,11 +1,9 @@
-using Consensus.CommandQueue;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.State;
-using Consensus.Raft.State.LeaderState;
 using TaskFlux.Core;
 
 namespace Consensus.Raft;
@@ -48,21 +46,10 @@ public interface IConsensusModule<TCommand, TResponse>
     public bool TryUpdateState(State<TCommand, TResponse> newState, State<TCommand, TResponse> oldState);
 
     /// <summary>
-    /// Таймер выборов.
-    /// Используется в Follower и Candidate состояниях
-    /// </summary>
-    ITimer ElectionTimer { get; }
-
-    /// <summary>
-    /// Таймер для отправки Heartbeat запросов
-    /// </summary>
-    ITimer HeartbeatTimer { get; }
-
-    /// <summary>
     /// Очередь задач для выполнения в на заднем фоне
     /// </summary>
     IBackgroundJobQueue BackgroundJobQueue { get; }
-    
+
     /// <summary>
     /// Фасад для работы с файлами
     /// </summary>
@@ -79,9 +66,11 @@ public interface IConsensusModule<TCommand, TResponse>
     public IStateMachine<TCommand, TResponse> StateMachine { get; set; }
 
     public RequestVoteResponse Handle(RequestVoteRequest request) => CurrentState.Apply(request);
-    public AppendEntriesResponse Handle(AppendEntriesRequest request)=> CurrentState.Apply(request);
-    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request)=> CurrentState.Apply(request);
-    public InstallSnapshotResponse Handle(InstallSnapshotRequest request, CancellationToken token)=> CurrentState.Apply(request, token);
+    public AppendEntriesResponse Handle(AppendEntriesRequest request) => CurrentState.Apply(request);
+    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request) => CurrentState.Apply(request);
+
+    public InstallSnapshotResponse Handle(InstallSnapshotRequest request, CancellationToken token) =>
+        CurrentState.Apply(request, token);
 
     /// <summary>
     /// Событие, вызывающееся при обновлении роли узла.

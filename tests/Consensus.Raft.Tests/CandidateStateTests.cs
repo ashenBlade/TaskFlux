@@ -7,7 +7,6 @@ using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.LogFileCheckStrategy;
 using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
-using Consensus.Raft.State;
 using Consensus.Raft.Tests.Infrastructure;
 using Consensus.Raft.Tests.Stubs;
 using Moq;
@@ -19,12 +18,13 @@ namespace Consensus.Raft.Tests;
 [Trait("Category", "Raft")]
 public class CandidateStateTests
 {
+    // TODO: какой-то из тестов не проходит - вечное ожидание
+    // TODO: тесты когда голос уже отдан
     private static readonly NodeId NodeId = new(1);
-    private static readonly PeerGroup EmptyPeerGroup = new PeerGroup(Array.Empty<IPeer>());
+    private static readonly PeerGroup EmptyPeerGroup = new(Array.Empty<IPeer>());
     private static readonly IStateMachine NullStateMachine = Mock.Of<IStateMachine>();
     private static readonly IStateMachineFactory NullStateMachineFactory = Mock.Of<IStateMachineFactory>();
 
-    // TODO: тесты на InstallSnapshot
     private static readonly ICommandSerializer<int> NullCommandSerializer =
         new Mock<ICommandSerializer<int>>().Apply(m =>
                                             {
@@ -50,16 +50,18 @@ public class CandidateStateTests
     {
         var facade = CreateStoragePersistenceFacade();
         electionTimer ??= Mock.Of<ITimer>();
+        var timerFactory = electionTimer is null
+                               ? Helpers.NullTimerFactory
+                               : new ConstantTimerFactory(electionTimer);
         jobQueue ??= Mock.Of<IBackgroundJobQueue>();
         var peerGroup = peers is { } p
                             ? new PeerGroup(p.ToArray())
                             : EmptyPeerGroup;
         var node = new RaftConsensusModule(NodeId, peerGroup,
-            Logger.None, electionTimer,
-            Mock.Of<ITimer>(), jobQueue,
+            Logger.None, timerFactory, jobQueue,
             facade, Mock.Of<ICommandQueue>(),
             NullStateMachine, NullCommandSerializer, NullStateMachineFactory);
-        node.SetStateTest(new CandidateState<int, int>(node, Logger.None));
+        node.SetStateTest(node.CreateCandidateState());
         return node;
 
         StoragePersistenceFacade CreateStoragePersistenceFacade()
@@ -165,7 +167,7 @@ public class CandidateStateTests
             return Task.FromResult(_response);
         }
 
-        public InstallSnapshotResponse? SendInstallSnapshot(InstallSnapshotRequest request, CancellationToken token)
+        public InstallSnapshotResponse SendInstallSnapshot(InstallSnapshotRequest request, CancellationToken token)
         {
             throw new Exception("Кандидат не должен посылать InstallSnapshot");
         }
@@ -420,8 +422,8 @@ public class CandidateStateTests
         var response = node.Handle(request);
 
         Assert.True(response.Success);
-        Assert.Equal(expectedBuffer, node.PersistenceFacade.ReadLogBufferTest());
-        Assert.Equal(expectedFile, node.PersistenceFacade.ReadLogFileTest());
+        Assert.Equal(expectedBuffer, node.PersistenceFacade.ReadLogBufferTest(), LogEntryComparer);
+        Assert.Equal(expectedFile, node.PersistenceFacade.ReadLogFileTest(), LogEntryComparer);
     }
 
     [Theory]
@@ -452,9 +454,11 @@ public class CandidateStateTests
         var response = node.Handle(request);
 
         Assert.True(response.Success);
-        Assert.Equal(expectedBuffer, node.PersistenceFacade.ReadLogBufferTest());
-        Assert.Equal(expectedFile, node.PersistenceFacade.ReadLogFileTest());
+        Assert.Equal(expectedBuffer, node.PersistenceFacade.ReadLogBufferTest(), LogEntryComparer);
+        Assert.Equal(expectedFile, node.PersistenceFacade.ReadLogFileTest(), LogEntryComparer);
     }
+
+    private static readonly LogEntryEqualityComparer LogEntryComparer = new();
 
     [Fact]
     public void AppendEntries__КогдаЛогКонфликтует__ДолженОтветитьFalse()
@@ -573,7 +577,7 @@ public class CandidateStateTests
         var request = new RequestVoteRequest(AnotherNodeId, currentTerm, LogEntryInfo.Tomb);
         var response = node.Handle(request);
 
-        Assert.True(response.VoteGranted);
+        Assert.False(response.VoteGranted);
         Assert.Equal(currentTerm, response.CurrentTerm);
 
         Assert.Equal(NodeRole.Candidate, node.CurrentRole);
@@ -595,6 +599,7 @@ public class CandidateStateTests
 
         var request = new RequestVoteRequest(AnotherNodeId, newTerm, LogEntryInfo.Tomb);
         var response = node.Handle(request);
+
         queue.Run();
 
         Assert.True(response.VoteGranted);
@@ -666,5 +671,11 @@ public class CandidateStateTests
         queue.Run();
 
         Assert.Equal(NodeRole.Leader, node.CurrentRole);
+    }
+
+    [Fact(Skip = "Не готово")]
+    public void RequestVote__КогдаТермБольшеНоЛогХуже__НеДолженОтдатьГолосИОбновитьТерм()
+    {
+        Assert.True(false);
     }
 }

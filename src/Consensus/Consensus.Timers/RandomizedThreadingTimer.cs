@@ -1,27 +1,37 @@
 using System.Diagnostics;
+using Consensus.Raft;
 
-namespace Consensus.Raft.State.LeaderState;
+namespace Consensus.Timers;
 
-public class HeartbeatTimer : IDisposable
+public class RandomizedThreadingTimer : ITimer
 {
+    private const int Infinite = System.Threading.Timeout.Infinite;
     private readonly TimeSpan _lower;
     private readonly TimeSpan _upper;
     private readonly Timer _timer;
     private readonly Random _random;
+    public event Action? Timeout;
 
-    public HeartbeatTimer(TimeSpan lower, TimeSpan upper)
+    public RandomizedThreadingTimer(TimeSpan lower, TimeSpan upper)
     {
         _lower = lower;
         _upper = upper;
-        _random = new();
         _timer = new Timer(OnTimeout);
+        // Не думаю, что нужен сид
+        // Под капотом, он все равно задается случайным образом
+        _random = new();
     }
 
     public void Start()
     {
         var sleepTime = GetNextSleepTime();
-        var success = _timer.Change(sleepTime, System.Threading.Timeout.Infinite);
+        var success = _timer.Change(sleepTime, Infinite);
         Debug.Assert(success, "Таймер не удалось настроить");
+    }
+
+    public void Stop()
+    {
+        _timer.Change(Infinite, Infinite);
     }
 
     private void OnTimeout(object? state)
@@ -38,9 +48,6 @@ public class HeartbeatTimer : IDisposable
 
     public void Dispose()
     {
-        // _timer.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
         _timer.Dispose();
     }
-
-    public event Action? Timeout;
 }

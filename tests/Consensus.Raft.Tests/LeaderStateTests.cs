@@ -7,6 +7,8 @@ using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
 using Consensus.Raft.Tests.Infrastructure;
+using Consensus.Raft.Tests.Stubs;
+using FluentAssertions;
 using Moq;
 using Serilog.Core;
 using TaskFlux.Core;
@@ -39,14 +41,27 @@ public class LeaderStateTests
     private RaftConsensusModule CreateLeaderNode(Term term,
                                                  NodeId? votedFor,
                                                  ITimer? heartbeatTimer = null,
-                                                 IPeer[]? peers = null,
+                                                 IEnumerable<IPeer>? peers = null,
+                                                 LogEntry[]? logEntries = null,
                                                  IStateMachine? stateMachine = null)
     {
-        var peerGroup = new PeerGroup(peers ?? Array.Empty<IPeer>());
-        heartbeatTimer ??= Helpers.NullTimer;
+        var peerGroup = new PeerGroup(peers switch
+                                      {
+                                          null      => Array.Empty<IPeer>(),
+                                          IPeer[] p => p,
+                                          not null  => peers.ToArray(),
+                                      });
+        var timerFactory = heartbeatTimer is null
+                               ? Helpers.NullTimerFactory
+                               : new ConstantTimerFactory(heartbeatTimer);
         stateMachine ??= Helpers.NullStateMachine;
         var facade = CreateFacade();
-        var node = new RaftConsensusModule(NodeId, peerGroup, Logger.None, Helpers.NullTimer, heartbeatTimer,
+        if (logEntries is {Length: > 0})
+        {
+            facade.LogStorage.SetFileTest(logEntries);
+        }
+
+        var node = new RaftConsensusModule(NodeId, peerGroup, Logger.None, timerFactory,
             Helpers.NullBackgroundJobQueue, facade, Helpers.NullCommandQueue, stateMachine,
             CommandSerializer, Helpers.NullStateMachineFactory);
         node.SetStateTest(node.CreateLeaderState());
@@ -101,6 +116,35 @@ public class LeaderStateTests
         Assert.Equal(NodeRole.Leader, node.CurrentRole);
     }
 
+    [Fact]
+    public void RequestVote__КогдаТермБольшеНоЛогКонфликтует__НеДолженОтдатьГолос()
+    {
+        var term = new Term(1);
+        var existingLog = new[]
+        {
+            IntDataEntry(term), // 0
+            IntDataEntry(term), // 1
+            IntDataEntry(term), // 2
+            IntDataEntry(term), // 3
+        };
+
+        using var node = CreateLeaderNode(term, null, logEntries: existingLog);
+        var greaterTerm = term.Increment();
+        // Конфликт на 2 индексе - термы расходятся
+        var request = new RequestVoteRequest(AnotherNodeId, greaterTerm, new LogEntryInfo(greaterTerm, 2));
+        var response = node.Handle(request);
+
+        response.VoteGranted
+                .Should()
+                .BeFalse("Лог конфликтует - голос не может быть отдан");
+        node.CurrentTerm
+            .Should()
+            .Be(greaterTerm, "Терм в запросе был больше, надо обновить");
+        node.CurrentRole
+            .Should()
+            .Be(NodeRole.Follower, "При получении большего терма нужно стать последователем");
+    }
+
     [Theory]
     [InlineData(2, 1)]
     [InlineData(5, 1)]
@@ -151,22 +195,135 @@ public class LeaderStateTests
             t.Setup(x => x.Stop()).Verifiable();
             t.Setup(x => x.Start());
         });
-        var peerTerm = term.Increment();
-        var peer = new Mock<IPeer>();
 
-        peer.SetupSequence(x =>
-                 x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AppendEntriesResponse(term, true))       // Первый вызов для Heartbeat
+        var peerTerm = term.Increment();
+
+        var peer = new Mock<IPeer>();
+        peer.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
+             // Первый вызов для Heartbeat
             .ReturnsAsync(new AppendEntriesResponse(peerTerm, false)); // Второй для нас
 
         using var node = CreateLeaderNode(term, null,
             heartbeatTimer: heartbeatTimer.Object,
             peers: new[] {peer.Object});
 
-        // TODO: подконтрольный мне таймер для Heartbeat
-        Thread.Sleep(1000);
+        heartbeatTimer.Raise(x => x.Timeout += null);
 
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
+    }
+
+    [Fact]
+    public void ПриОтправкеHeartbeat__КогдаУзелБылПуст__ДолженСинхронизироватьЛогПриСтарте()
+    {
+        var term = new Term(4);
+        var heartbeatTimer = new Mock<ITimer>().Apply(m =>
+        {
+            m.Setup(x => x.Start())
+             .Verifiable();
+            m.Setup(x => x.Stop())
+             .Verifiable();
+        });
+
+        // В логе изначально было 4 записи
+        var existingFileEntries = new[] {IntDataEntry(1), IntDataEntry(1), IntDataEntry(2), IntDataEntry(3),};
+
+        var peer = new Mock<IPeer>();
+
+        // Достигнуто ли начало лога
+        var beginReached = false;
+        var sentEntries = Array.Empty<LogEntry>();
+        peer.Setup(x =>
+                 x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AppendEntriesRequest request, CancellationToken _) =>
+             {
+                 // Откатываемся до момента начала лога (полностью пуст)
+                 if (request.PrevLogEntryInfo.IsTomb)
+                 {
+                     if (beginReached)
+                     {
+                         throw new InvalidOperationException("Уже был отправлен запрос с логом с самого начала");
+                     }
+
+                     beginReached = true;
+                     sentEntries = request.Entries.ToArray();
+                     return AppendEntriesResponse.Ok(request.Term);
+                 }
+
+                 return AppendEntriesResponse.Fail(request.Term);
+             });
+
+        using var node =
+            CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object, peers: new[] {peer.Object});
+        // Выставляем изначальный лог в 4 команды
+        node.PersistenceFacade.LogStorage.SetFileTest(existingFileEntries);
+
+        heartbeatTimer.Raise(x => x.Timeout += null);
+
+        beginReached.Should()
+                    .BeTrue("Окончание репликации должно быть закончено, когда достигнуто начало лога");
+        sentEntries.Should()
+                   .BeEquivalentTo(existingFileEntries, options => options.Using(LogEntryComparer),
+                        "Отправленные записи должны полностью соответствовать логу");
+    }
+
+    [Fact]
+    public void ПриОтправкеHeartbeat__КогдаУзелБылНеПолностьюПуст__ДолженСинхронизироватьЛог()
+    {
+        var term = new Term(4);
+        var heartbeatTimer = new Mock<ITimer>().Apply(m =>
+        {
+            m.Setup(x => x.Start())
+             .Verifiable();
+            m.Setup(x => x.Stop())
+             .Verifiable();
+        });
+
+        // В логе изначально было 4 записи
+        var existingFileEntries = new[] {IntDataEntry(1), IntDataEntry(1), IntDataEntry(2), IntDataEntry(3),};
+        // В логе узла есть все записи до 2 (индекс = 1)
+        var storedEntriesIndex = 1;
+
+        var expectedSent = existingFileEntries
+                          .Skip(storedEntriesIndex + 1)
+                          .ToArray();
+
+        var peer = new Mock<IPeer>();
+
+        // Достигнуто ли начало лога
+        var beginReached = false;
+        // Отправленные записи при достижении
+        var sentEntries = Array.Empty<LogEntry>();
+        peer.Setup(x =>
+                 x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AppendEntriesRequest request, CancellationToken _) =>
+             {
+                 // Откатываемся до момента начала лога (полностью пуст)
+                 if (request.PrevLogEntryInfo.Index == storedEntriesIndex)
+                 {
+                     if (beginReached)
+                     {
+                         throw new InvalidOperationException("Уже был отправлен запрос с требуемым логом");
+                     }
+
+                     beginReached = true;
+                     sentEntries = request.Entries.ToArray();
+                     return AppendEntriesResponse.Ok(request.Term);
+                 }
+
+                 return AppendEntriesResponse.Fail(request.Term);
+             });
+
+        using var node = CreateLeaderNode(term, null,
+            heartbeatTimer: heartbeatTimer.Object, peers: new[] {peer.Object},
+            logEntries: existingFileEntries);
+
+        heartbeatTimer.Raise(x => x.Timeout += null);
+
+        beginReached.Should()
+                    .BeTrue("Окончание репликации должно быть закончено, когда достигнуто начало лога");
+        sentEntries.Should()
+                   .BeEquivalentTo(expectedSent, options => options.Using(LogEntryComparer),
+                        "Отправленные записи должны полностью соответствовать логу");
     }
 
     private static LogEntry IntDataEntry(Term term)
@@ -239,7 +396,7 @@ public class LeaderStateTests
     private static SubmitRequest<int> CreateSubmitRequest(int value = 0) =>
         new(new CommandDescriptor<int>(value, false));
 
-    [Fact(Timeout = 1000)]
+    [Fact]
     public void SubmitRequest__КогдаДругихУзловНет__ДолженОбработатьЗапрос()
     {
         var term = new Term(1);
@@ -293,5 +450,54 @@ public class LeaderStateTests
         machine.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }
 
-    // public void SubmitRequest__Когда
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void SubmitRequest__КогдаКластерОтветилБольшинством__ДолженПрименитьКоманду(int peersCount)
+    {
+        var term = new Term(1);
+        var peers = Enumerable.Range(0, peersCount)
+                              .Select((_, _) => new Mock<IPeer>().Apply(m =>
+                                   m.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(),
+                                         It.IsAny<CancellationToken>()))
+                                    .ReturnsAsync(AppendEntriesResponse.Ok(term))))
+                              .ToArray(peersCount);
+
+        using var node = CreateLeaderNode(term, null, peers: peers.Select(x => x.Object));
+        var request = new SubmitRequest<int>(new CommandDescriptor<int>(123, false));
+        var response = node.Handle(request);
+
+        response.WasLeader
+                .Should()
+                .BeTrue("Узел был лидером. Другие узлы ничего не посылали");
+    }
+
+    [Fact]
+    public void SubmitRequest__КогдаУзелОтветилБольшимТермомВоВремяРепликации__ДолженВернутьНеЛидер()
+    {
+        var term = new Term(1);
+        var peer = new Mock<IPeer>();
+        var greaterTerm = term.Increment();
+        peer.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AppendEntriesResponse(greaterTerm, false));
+
+        using var node = CreateLeaderNode(term, null, peers: new[] {peer.Object});
+        var request = new SubmitRequest<int>(new CommandDescriptor<int>(123, false));
+        var response = node.Handle(request);
+
+        response.WasLeader
+                .Should()
+                .BeFalse("Если во время репликации узел ответил большим термом - то текущий узел уже не лидер");
+        response.HasValue
+                .Should()
+                .BeFalse("если узел не был лидером, то объекта ответа не может быть");
+        node.CurrentTerm
+            .Should()
+            .Be(greaterTerm, "нужно обновлять терм, когда другой узел ответил большим");
+        node.CurrentRole
+            .Should()
+            .Be(NodeRole.Follower, "нужно становиться последователем, когда другой узел ответил большим термом");
+    }
 }

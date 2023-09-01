@@ -17,6 +17,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     : IConsensusModule<TCommand, TResponse>,
       IDisposable
 {
+    private readonly ITimerFactory _timerFactory;
     private readonly ICommandSerializer<TCommand> _commandSerializer;
 
     public NodeRole CurrentRole =>
@@ -69,8 +70,6 @@ public class RaftConsensusModule<TCommand, TResponse>
         return false;
     }
 
-    public ITimer ElectionTimer { get; }
-    public ITimer HeartbeatTimer { get; }
     public IBackgroundJobQueue BackgroundJobQueue { get; }
     public ICommandQueue CommandQueue { get; }
     public StoragePersistenceFacade PersistenceFacade { get; }
@@ -79,8 +78,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         NodeId id,
         PeerGroup peerGroup,
         ILogger logger,
-        ITimer electionTimer,
-        ITimer heartbeatTimer,
+        ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         StoragePersistenceFacade persistenceFacade,
         ICommandQueue commandQueue,
@@ -88,13 +86,12 @@ public class RaftConsensusModule<TCommand, TResponse>
         ICommandSerializer<TCommand> commandSerializer,
         IStateMachineFactory<TCommand, TResponse> stateMachineFactory)
     {
+        _timerFactory = timerFactory;
         _commandSerializer = commandSerializer;
         StateMachineFactory = stateMachineFactory;
         Id = id;
         Logger = logger;
         PeerGroup = peerGroup;
-        ElectionTimer = electionTimer;
-        HeartbeatTimer = heartbeatTimer;
         BackgroundJobQueue = backgroundJobQueue;
         PersistenceFacade = persistenceFacade;
         CommandQueue = commandQueue;
@@ -127,18 +124,20 @@ public class RaftConsensusModule<TCommand, TResponse>
     public State<TCommand, TResponse> CreateFollowerState()
     {
         return new FollowerState<TCommand, TResponse>(this, StateMachineFactory, _commandSerializer,
+            _timerFactory.CreateTimer(),
             Logger.ForContext("SourceContext", "Raft(Follower)"));
     }
 
     public State<TCommand, TResponse> CreateLeaderState()
     {
         return new LeaderState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Leader)"),
-            _commandSerializer);
+            _commandSerializer, _timerFactory);
     }
 
     public State<TCommand, TResponse> CreateCandidateState()
     {
-        return new CandidateState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Candidate)"));
+        return new CandidateState<TCommand, TResponse>(this, _timerFactory.CreateTimer(),
+            Logger.ForContext("SourceContext", "Raft(Candidate)"));
     }
 
     public override string ToString()
@@ -156,8 +155,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         NodeId id,
         PeerGroup peerGroup,
         ILogger logger,
-        ITimer electionTimer,
-        ITimer heartbeatTimer,
+        ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         StoragePersistenceFacade persistenceFacade,
         ICommandQueue commandQueue,
@@ -165,7 +163,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         IStateMachineFactory<TCommand, TResponse> stateMachineFactory,
         ICommandSerializer<TCommand> commandSerializer)
     {
-        var module = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, electionTimer, heartbeatTimer,
+        var module = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, timerFactory,
             backgroundJobQueue, persistenceFacade, commandQueue, stateMachine, commandSerializer, stateMachineFactory);
         var followerState = module.CreateFollowerState();
         module._currentState = followerState;

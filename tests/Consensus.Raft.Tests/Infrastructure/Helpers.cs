@@ -14,6 +14,15 @@ public static class Helpers
     public static readonly IStateMachineFactory NullStateMachineFactory = CreateNullStateMachineFactory();
     public static readonly ICommandQueue NullCommandQueue = Mock.Of<ICommandQueue>();
     public static readonly ICommandSerializer<int> NullCommandSerializer = new StubCommandSerializer<int>();
+    public static readonly ITimerFactory NullTimerFactory = CreateNullTimerFactory();
+
+    private static ITimerFactory CreateNullTimerFactory()
+    {
+        var mock = new Mock<ITimerFactory>();
+        mock.Setup(x => x.CreateTimer())
+            .Returns(NullTimer);
+        return mock.Object;
+    }
 
     private static IStateMachineFactory CreateNullStateMachineFactory()
     {

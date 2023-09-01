@@ -9,8 +9,15 @@ using TaskFlux.Core;
 
 namespace Consensus.Raft.Persistence;
 
-public class StoragePersistenceFacade : IPersistenceFacade
+public class StoragePersistenceFacade
 {
+    /// <summary>
+    /// Объект для синхронизации работы.
+    /// Необходима для синхронизации работы между обработчиками узлов (когда лидер),
+    /// или когда параллельно будут приходить запросы от других узлов
+    /// </summary>
+    private readonly object _lock = new();
+
     /// <summary>
     /// Файл лога команд - `consensus/raft.log`
     /// </summary>
@@ -37,20 +44,119 @@ public class StoragePersistenceFacade : IPersistenceFacade
     /// </summary>
     private readonly ILogFileSizeChecker _sizeChecker;
 
-    public LogEntryInfo LastEntry => _buffer.Count > 0
-                                         ? new LogEntryInfo(_buffer[^1].Term, CommitIndex + _buffer.Count)
-                                         : _logStorage.GetLastLogEntry();
+    /// <summary>
+    /// Последняя запись в логе
+    /// </summary>
+    public LogEntryInfo LastEntry
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _buffer is [_, ..]
+                           ? new LogEntryInfo(_buffer[^1].Term, CommitIndex + _buffer.Count)
+                           : _logStorage.GetLastLogEntry();
+            }
+        }
+    }
 
-    public int CommitIndex => _logStorage.Count - 1;
-    public int LastAppliedIndex { get; private set; } = LogEntryInfo.TombIndex;
-    public ulong LogFileSize => _logStorage.FileSize;
+    /// <summary>
+    /// Индекс последней закомиченной записи
+    /// </summary>
+    public int CommitIndex
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _logStorage.Count - 1;
+            }
+        }
+    }
 
-    public LogEntryInfo LastApplied => LastAppliedIndex == LogEntryInfo.TombIndex
-                                           ? LogEntryInfo.Tomb
-                                           : GetLogEntryInfoAtIndex(LastAppliedIndex);
 
-    public Term CurrentTerm => _metadataStorage.Term;
-    public NodeId? VotedFor => _metadataStorage.VotedFor;
+    private int _lastAppliedIndex = LogEntryInfo.TombIndex;
+
+    /// <summary>
+    /// Индекс последней применной записи журнала.
+    /// Обновляется после успешного коммита 
+    /// </summary>
+    public int LastAppliedIndex
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _lastAppliedIndex;
+            }
+        }
+        private set
+        {
+            lock (_lock)
+            {
+                _lastAppliedIndex = value;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Размер файла лога, включая заголовки
+    /// </summary>
+    public ulong LogFileSize
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _logStorage.FileSize;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Последняя примененная запись из лога
+    /// </summary>
+    public LogEntryInfo LastApplied
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return LastAppliedIndex == LogEntryInfo.TombIndex
+                           ? LogEntryInfo.Tomb
+                           : GetLogEntryInfoAtIndex(LastAppliedIndex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Терм, сохраненный в файле метаданных
+    /// </summary>
+    public Term CurrentTerm
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _metadataStorage.Term;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Отданный голос, сохраненный в файле метаданных
+    /// </summary>
+    public NodeId? VotedFor
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _metadataStorage.VotedFor;
+            }
+        }
+    }
+
     internal FileSystemSnapshotStorage SnapshotStorage => _snapshotStorage;
     internal FileLogStorage LogStorage => _logStorage;
 
@@ -75,7 +181,12 @@ public class StoragePersistenceFacade : IPersistenceFacade
         _sizeChecker = sizeChecker;
     }
 
-
+    /// <summary>
+    /// Конфликтует ли текущий лог с переданным (используется префикс)
+    /// </summary>
+    /// <param name="prefix">Последний элемент сравниваемого лога</param>
+    /// <returns><c>true</c> - конфликтует, <c>false</c> - иначе</returns>
+    /// <remarks>Вызывается в RequestVote для проверки актуальности лога</remarks>
     public bool Conflicts(LogEntryInfo prefix)
     {
         // Неважно на каком индексе последний элемент.
@@ -86,7 +197,7 @@ public class StoragePersistenceFacade : IPersistenceFacade
         // Другой 2: | 1 | 5 | 
         if (LastEntry.Term < prefix.Term)
         {
-            return false;
+            return true;
         }
 
         // В противном случае голос отдает только за тех,
@@ -103,34 +214,57 @@ public class StoragePersistenceFacade : IPersistenceFacade
         return true;
     }
 
+    /// <summary>
+    /// Добавить в лог переданные записи, начиная с <see cref="startIndex"/> индекса.
+    /// Возможно перезатирание 
+    /// </summary>
+    /// <param name="entries">Записи, которые необходимо добавить</param>
+    /// <param name="startIndex">Индекс, начиная с которого необходимо добавить записи</param>
     public void InsertRange(IEnumerable<LogEntry> entries, int startIndex)
     {
-        // Индекс, с которого начинаются записи в буфере
-        var bufferStartIndex = startIndex - _logStorage.Count;
-
-        if (bufferStartIndex < 0)
+        lock (_lock)
         {
-            throw new ArgumentOutOfRangeException(nameof(startIndex), startIndex,
-                "Нельзя перезаписать закоммиченные записи");
+            // Индекс, с которого начинаются записи в буфере
+            var bufferStartIndex = startIndex - _logStorage.Count;
+
+            if (bufferStartIndex < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(startIndex), startIndex,
+                    "Нельзя перезаписать закоммиченные записи");
+            }
+
+            // Сколько элементов в буфере нужно удалить
+            var removeCount = _buffer.Count - bufferStartIndex;
+
+            // Удаляем срез
+            _buffer.RemoveRange(bufferStartIndex, removeCount);
+
+            // Вставляем в это место новые записи
+            _buffer.AddRange(entries);
         }
-
-        // Сколько элементов в буфере нужно удалить
-        var removeCount = _buffer.Count - bufferStartIndex;
-
-        // Удаляем срез
-        _buffer.RemoveRange(bufferStartIndex, removeCount);
-
-        // Вставляем в это место новые записи
-        _buffer.AddRange(entries);
     }
 
+    /// <summary>
+    /// Добавить в лог одну запись
+    /// </summary>
+    /// <param name="entry">Запись лога</param>
+    /// <returns>Информация о добавленной записи</returns>
     public LogEntryInfo AppendBuffer(LogEntry entry)
     {
-        var newIndex = _logStorage.Count + _buffer.Count;
-        _buffer.Add(entry);
-        return new LogEntryInfo(entry.Term, newIndex);
+        lock (_lock)
+        {
+            var newIndex = _logStorage.Count + _buffer.Count;
+            _buffer.Add(entry);
+            return new LogEntryInfo(entry.Term, newIndex);
+        }
     }
 
+    /// <summary>
+    /// Содержит ли текущий лог все элементы до указанного индекса включительно
+    /// </summary>
+    /// <param name="prefix">Информация о записи в другом логе</param>
+    /// <returns><c>true</c> - префиксы логов совпадают, <c>false</c> - иначе</returns>
+    /// <remarks>Вызывается в AppendEntries для проверки возможности добавления новых записей</remarks>
     public bool Contains(LogEntryInfo prefix)
     {
         if (prefix.IsTomb)
@@ -138,7 +272,6 @@ public class StoragePersistenceFacade : IPersistenceFacade
             // Лог отправителя был изначально пуст
             return true;
         }
-
 
         if (prefix.Index <= LastEntry.Index
          && // Наш лог не меньше (используется PrevLogEntry, поэтому нет +1)
@@ -162,75 +295,55 @@ public class StoragePersistenceFacade : IPersistenceFacade
         return new LogEntryInfo(bufferEntry.Term, index);
     }
 
-    [Obsolete("Переходи на Try версию", true)]
-    public IReadOnlyList<LogEntry> GetFrom(int index)
-    {
-        if (index < _logStorage.Count)
-        {
-            // Читаем часть из диска
-            var logEntries = _logStorage.ReadFrom(index);
-            var result = new List<LogEntry>(logEntries.Count + _buffer.Count);
-            result.AddRange(logEntries);
-            // Прибаляем весь лог в памяти
-            result.AddRange(_buffer);
-            // Конкатенируем
-            return result;
-        }
-
-        // Требуемые записи только в буфере (незакоммичены)
-        var bufferStartIndex = index - _logStorage.Count;
-        if (bufferStartIndex <= _buffer.Count)
-        {
-            // Берем часть из лога
-            var logPart = _buffer.GetRange(bufferStartIndex, _buffer.Count - bufferStartIndex);
-
-            // Возвращаем
-            return logPart;
-        }
-
-        // Индекс неверный
-        throw new ArgumentOutOfRangeException(nameof(index), index,
-            "Указанный индекс больше чем последний индекс лога");
-    }
-
+    /// <summary>
+    /// Получить все записи, начиная с указанного индекса
+    /// </summary>
+    /// <param name="globalIndex">Индекс, начиная с которого нужно вернуть записи</param>
+    /// <param name="entries">Хранившиеся записи, начиная с указанного индекса</param>
+    /// <returns>Список записей из лога</returns>
+    /// <remarks>При выходе за границы, может вернуть пустой массив</remarks>
+    /// <remarks>Используется 0-based индекс, а в оригинальном RAFT - 1-based</remarks>
     public bool TryGetFrom(int globalIndex, out IReadOnlyList<LogEntry> entries)
     {
-        var localIndex = CalculateLocalIndex();
-
-        if (localIndex < 0)
+        lock (_lock)
         {
+            var localIndex = CalculateLocalIndex();
+
+            if (localIndex < 0)
+            {
+                entries = Array.Empty<LogEntry>();
+                return false;
+            }
+
+            if (localIndex < _logStorage.Count)
+            {
+                // Читаем часть из диска
+                var logEntries = _logStorage.ReadFrom(localIndex);
+                var result = new List<LogEntry>(logEntries.Count + _buffer.Count);
+                result.AddRange(logEntries);
+                // Прибаляем весь лог в памяти
+                result.AddRange(_buffer);
+                // Конкатенируем
+                entries = result;
+                return true;
+            }
+
+            // Требуемые записи только в буфере (незакоммичены)
+            var bufferStartIndex = localIndex - _logStorage.Count;
+            if (bufferStartIndex <= _buffer.Count)
+            {
+                // Берем часть из лога
+                var logPart = _buffer.GetRange(bufferStartIndex, _buffer.Count - bufferStartIndex);
+
+                // Возвращаем
+                entries = logPart;
+                return true;
+            }
+
+            // Индекс неверный
             entries = Array.Empty<LogEntry>();
             return false;
         }
-
-        if (localIndex < _logStorage.Count)
-        {
-            // Читаем часть из диска
-            var logEntries = _logStorage.ReadFrom(localIndex);
-            var result = new List<LogEntry>(logEntries.Count + _buffer.Count);
-            result.AddRange(logEntries);
-            // Прибаляем весь лог в памяти
-            result.AddRange(_buffer);
-            // Конкатенируем
-            entries = result;
-            return true;
-        }
-
-        // Требуемые записи только в буфере (незакоммичены)
-        var bufferStartIndex = localIndex - _logStorage.Count;
-        if (bufferStartIndex <= _buffer.Count)
-        {
-            // Берем часть из лога
-            var logPart = _buffer.GetRange(bufferStartIndex, _buffer.Count - bufferStartIndex);
-
-            // Возвращаем
-            entries = logPart;
-            return true;
-        }
-
-        // Индекс неверный
-        entries = Array.Empty<LogEntry>();
-        return false;
 
         int CalculateLocalIndex()
         {
@@ -261,25 +374,39 @@ public class StoragePersistenceFacade : IPersistenceFacade
         }
     }
 
+    /// <summary>
+    /// Закоммитить лог по переданному индексу
+    /// </summary>
+    /// <param name="index">Индекс новой закомиченной записи</param>
+    /// <returns>Результат коммита лога</returns>
     public void Commit(int index)
     {
-        var removeCount = index - _logStorage.Count + 1;
-        if (removeCount == 0)
+        lock (_lock)
         {
-            return;
-        }
+            var removeCount = index - _logStorage.Count + 1;
+            if (removeCount == 0)
+            {
+                return;
+            }
 
-        if (_buffer.Count < removeCount)
-        {
-            throw new ArgumentOutOfRangeException(nameof(index), index,
-                "Указанный индекс больше количества записей в логе");
-        }
+            if (_buffer.Count < removeCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index), index,
+                    "Указанный индекс больше количества записей в логе");
+            }
 
-        var notCommitted = _buffer.GetRange(0, removeCount);
-        _logStorage.AppendRange(notCommitted);
-        _buffer.RemoveRange(0, removeCount);
+            var notCommitted = _buffer.GetRange(0, removeCount);
+            _logStorage.AppendRange(notCommitted);
+            _buffer.RemoveRange(0, removeCount);
+        }
     }
 
+    /// <summary>
+    /// Получить информацию о записи, предшествующей указанной
+    /// </summary>
+    /// <param name="nextIndex">Индекс следующей записи</param>
+    /// <returns>Информацию о следующей записи в логе</returns>
+    /// <remarks>Если указанный индекс 0, то вернется <see cref="LogEntryInfo.Tomb"/></remarks>
     public LogEntryInfo GetPrecedingEntryInfo(int nextIndex)
     {
         if (nextIndex < 0)
@@ -288,40 +415,56 @@ public class StoragePersistenceFacade : IPersistenceFacade
                 "Следующий индекс лога не может быть отрицательным");
         }
 
-        if (_logStorage.Count + _buffer.Count + 1 < nextIndex)
+        lock (_lock)
         {
-            throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
-                "Следующий индекс лога не может быть больше числа записей в логе + 1");
+            if (_logStorage.Count + _buffer.Count + 1 < nextIndex)
+            {
+                throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
+                    "Следующий индекс лога не может быть больше числа записей в логе + 1");
+            }
+
+            if (nextIndex == 0)
+            {
+                return LogEntryInfo.Tomb;
+            }
+
+            var index = nextIndex - 1;
+
+            // Запись находится в логе
+            if (_logStorage.Count <= index)
+            {
+                var bufferIndex = index - _logStorage.Count;
+                var bufferEntry = _buffer[bufferIndex];
+                return new LogEntryInfo(bufferEntry.Term, index);
+            }
+
+            return _logStorage.GetInfoAt(index);
         }
-
-        if (nextIndex == 0)
-        {
-            return LogEntryInfo.Tomb;
-        }
-
-        var index = nextIndex - 1;
-
-        // Запись находится в логе
-        if (_logStorage.Count <= index)
-        {
-            var bufferIndex = index - _logStorage.Count;
-            var bufferEntry = _buffer[bufferIndex];
-            return new LogEntryInfo(bufferEntry.Term, index);
-        }
-
-        return _logStorage.GetInfoAt(index);
     }
 
+    /// <summary>
+    /// Получить закомиченные, но еще не примененные записи из лога.
+    /// Это записи, индекс которых находится между индексом последней применненной записи (<see cref="LastAppliedIndex"/>) и
+    /// последней закоммиченной записи (<see cref="CommitIndex"/>) 
+    /// </summary>
+    /// <returns>Записи, которые были закомичены, но еще не применены</returns>
     public IReadOnlyList<LogEntry> GetNotApplied()
     {
-        if (CommitIndex <= LastAppliedIndex || CommitIndex == LogEntryInfo.TombIndex)
+        lock (_lock)
         {
-            return Array.Empty<LogEntry>();
-        }
+            if (CommitIndex <= LastAppliedIndex || CommitIndex == LogEntryInfo.TombIndex)
+            {
+                return Array.Empty<LogEntry>();
+            }
 
-        return _logStorage.ReadFrom(LastAppliedIndex + 1);
+            return _logStorage.ReadFrom(LastAppliedIndex + 1);
+        }
     }
 
+    /// <summary>
+    /// Указать новый индекс последней примененной записи
+    /// </summary>
+    /// <param name="index">Индекс записи в логе</param>
     public void SetLastApplied(int index)
     {
         if (index < LogEntryInfo.TombIndex)
@@ -329,9 +472,22 @@ public class StoragePersistenceFacade : IPersistenceFacade
             throw new ArgumentOutOfRangeException(nameof(index), index, "Переданный индекс меньше TombIndex");
         }
 
-        LastAppliedIndex = index;
+        lock (_lock)
+        {
+            LastAppliedIndex = index;
+        }
     }
 
+    /// <summary>
+    /// Перезаписать старый снапшот новым и обновить файл лога (удалить старые записи)
+    /// </summary>
+    /// <param name="lastLogEntry">
+    /// Информация о последней примененной команде в <paramref name="snapshot"/>.
+    /// Этот метод только сохраняет новый файл снапшота, без очищения или удаления лога команд
+    /// </param>
+    /// <param name="snapshot">Слепок системы</param>
+    /// <param name="token">Токен отмены</param>
+    /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
     public void SaveSnapshot(LogEntryInfo lastLogEntry, ISnapshot snapshot, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
@@ -358,15 +514,27 @@ public class StoragePersistenceFacade : IPersistenceFacade
         tempFile.Save();
     }
 
+    /// <summary>
+    /// Очистить файл лога команд.
+    /// Выполняется после создания нового снапшота.
+    /// </summary>
     public void ClearCommandLog()
     {
-        // Очищаем непримененные команды
-        _buffer.Clear();
-        // Очищаем сам файл лога
-        _logStorage.ClearCommandLog();
-        LastAppliedIndex = 0;
+        lock (_lock)
+        {
+            // Очищаем непримененные команды
+            _buffer.Clear();
+            // Очищаем сам файл лога
+            _logStorage.ClearCommandLog();
+            LastAppliedIndex = 0;
+        }
     }
 
+    /// <summary>
+    /// Получить снапшот состояния, если файл существовал
+    /// </summary>
+    /// <param name="snapshot">Хранившийся файл снапшота</param>
+    /// <returns><c>true</c> - файл снапшота существовал, <c>false</c> - файл снапшота не существовал</returns>
     public bool TryGetSnapshot(out ISnapshot snapshot)
     {
         if (!_snapshotStorage.LastLogEntry.IsTomb)
@@ -379,11 +547,25 @@ public class StoragePersistenceFacade : IPersistenceFacade
         return false;
     }
 
+    /// <summary>
+    /// Обновить состояние узла.
+    /// Вызывается когда состояние (роль) узла меняется и
+    /// нужно обновить голос/терм.
+    /// </summary>
+    /// <param name="newTerm">Новый терм</param>
+    /// <param name="votedFor">Id узла, за который отдали голос</param>
     public void UpdateState(Term newTerm, NodeId? votedFor)
     {
-        _metadataStorage.Update(newTerm, votedFor);
+        lock (_lock)
+        {
+            _metadataStorage.Update(newTerm, votedFor);
+        }
     }
 
+    /// <summary>
+    /// Проверить превышает файл лога максимальный размер
+    /// </summary>
+    /// <returns><c>true</c> - размер превышен, <c>false</c> - иначе</returns>
     public bool IsLogFileSizeExceeded()
     {
         return _sizeChecker.IsLogFileSizeExceeded(_logStorage.FileSize);
