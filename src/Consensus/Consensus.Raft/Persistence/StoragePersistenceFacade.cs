@@ -265,7 +265,7 @@ public class StoragePersistenceFacade
     /// <param name="prefix">Информация о записи в другом логе</param>
     /// <returns><c>true</c> - префиксы логов совпадают, <c>false</c> - иначе</returns>
     /// <remarks>Вызывается в AppendEntries для проверки возможности добавления новых записей</remarks>
-    public bool Contains(LogEntryInfo prefix)
+    public bool PrefixMatch(LogEntryInfo prefix)
     {
         if (prefix.IsTomb)
         {
@@ -574,7 +574,7 @@ public class StoragePersistenceFacade
     // Для тестов
     internal (int LastIndex, Term LastTerm, byte[] SnapshotData) ReadSnapshotFileTest()
     {
-        return _snapshotStorage.ReadAllData();
+        return _snapshotStorage.ReadAllDataTest();
     }
 
     /// <summary>
@@ -582,9 +582,9 @@ public class StoragePersistenceFacade
     /// Используется для тестов
     /// </summary>
     /// <returns>Записи лога</returns>
-    internal IReadOnlyList<LogEntry> ReadLogFull() => _logStorage.ReadAll()       // Файл
-                                                                 .Concat(_buffer) // Не закоммиченные в памяти
-                                                                 .ToList();
+    internal IReadOnlyList<LogEntry> ReadLogFullTest() => _logStorage.ReadAll()       // Файл
+                                                                     .Concat(_buffer) // Не закоммиченные в памяти
+                                                                     .ToList();
 
     /// <summary>
     /// Прочитать все записи в буфере записей команд.

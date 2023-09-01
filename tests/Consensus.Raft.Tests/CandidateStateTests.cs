@@ -9,6 +9,7 @@ using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
 using Consensus.Raft.Tests.Infrastructure;
 using Consensus.Raft.Tests.Stubs;
+using FluentAssertions;
 using Moq;
 using Serilog.Core;
 using TaskFlux.Core;
@@ -35,15 +36,17 @@ public class CandidateStateTests
 
     private static RaftConsensusModule CreateCandidateNode(Term term,
                                                            ITimer? electionTimer = null,
+                                                           IStateMachine? stateMachine = null,
                                                            IBackgroundJobQueue? jobQueue = null,
                                                            IEnumerable<IPeer>? peers = null,
                                                            ILogFileSizeChecker? fileSizeChecker = null)
     {
-        return CreateCandidateNode(term.Value, electionTimer, jobQueue, peers, fileSizeChecker);
+        return CreateCandidateNode(term.Value, electionTimer, stateMachine, jobQueue, peers, fileSizeChecker);
     }
 
     private static RaftConsensusModule CreateCandidateNode(int term,
                                                            ITimer? electionTimer = null,
+                                                           IStateMachine? stateMachine = null,
                                                            IBackgroundJobQueue? jobQueue = null,
                                                            IEnumerable<IPeer>? peers = null,
                                                            ILogFileSizeChecker? fileSizeChecker = null)
@@ -57,10 +60,11 @@ public class CandidateStateTests
         var peerGroup = peers is { } p
                             ? new PeerGroup(p.ToArray())
                             : EmptyPeerGroup;
+        stateMachine ??= NullStateMachine;
         var node = new RaftConsensusModule(NodeId, peerGroup,
             Logger.None, timerFactory, jobQueue,
             facade, Mock.Of<ICommandQueue>(),
-            NullStateMachine, NullCommandSerializer, NullStateMachineFactory);
+            stateMachine, NullCommandSerializer, NullStateMachineFactory);
         node.SetStateTest(node.CreateCandidateState());
         return node;
 
@@ -119,7 +123,7 @@ public class CandidateStateTests
             m.Setup(x => x.Stop()).Verifiable();
         });
 
-        _ = CreateCandidateNode(oldTerm.Value, timer.Object, jobQueue);
+        _ = CreateCandidateNode(oldTerm.Value, electionTimer: timer.Object, jobQueue: jobQueue);
 
         jobQueue.Run();
 
@@ -235,8 +239,9 @@ public class CandidateStateTests
     public void Кворум__СЕдинственнымУзломКоторыйНеОтветил__ДолженСделатьПовторнуюПопытку()
     {
         var term = new Term(2);
-        var mock = new Mock<IPeer>(MockBehavior.Strict).Apply(m =>
+        var mock = new Mock<IPeer>().Apply(m =>
         {
+            m.SetupGet(x => x.Id).Returns(AnotherNodeId);
             m.SetupSequence(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
              .ReturnsAsync(( RequestVoteResponse? ) null)
              .ReturnsAsync(new RequestVoteResponse(term, true));
@@ -490,7 +495,7 @@ public class CandidateStateTests
         var response = node.Handle(request);
 
         Assert.False(response.Success);
-        Assert.Equal(nodeEntries, node.PersistenceFacade.ReadLogFull());
+        Assert.Equal(nodeEntries, node.PersistenceFacade.ReadLogFullTest());
     }
 
     [Fact]
@@ -505,21 +510,45 @@ public class CandidateStateTests
             RandomDataEntry(3), // 3
             RandomDataEntry(5), // 4
         };
-        var node = CreateCandidateNode(term, fileSizeChecker: StubFileSizeChecker.Exceeded);
-        node.PersistenceFacade.LogStorage.SetFileTest(existingEntries);
+
+        var snapshotData = new byte[100].Apply(arr => Random.Shared.NextBytes(arr));
+        var stateMachine = new Mock<IStateMachine>();
+        stateMachine.Setup(x => x.GetSnapshot())
+                    .Returns(new StubSnapshot(snapshotData));
+        var node = CreateCandidateNode(term,
+            fileSizeChecker: StubFileSizeChecker.Exceeded,
+            stateMachine: stateMachine.Object);
+        node.PersistenceFacade.SetupBufferTest(existingEntries);
         var expectedLastIndex = 4;
         var expectedLastTerm = 5;
 
         // Этим запросом закоммитим сразу все записи
         var request = new AppendEntriesRequest(term, 4, AnotherNodeId, node.PersistenceFacade.LastEntry,
             Array.Empty<LogEntry>());
+
         var response = node.Handle(request);
 
-        Assert.True(response.Success);
-        var (actualIndex, actualTerm, _) = node.PersistenceFacade.SnapshotStorage.ReadAllData();
-        Assert.Equal(expectedLastIndex, actualIndex);
-        Assert.Equal(new Term(expectedLastTerm), actualTerm);
-        Assert.Empty(node.PersistenceFacade.ReadLogFull());
+        response.Success
+                .Should()
+                .BeTrue("Команда полностью допустима - она должна быть применена");
+
+        var (actualIndex, actualTerm, storedData) = node.PersistenceFacade.SnapshotStorage.ReadAllDataTest();
+
+        actualIndex.Should()
+                   .Be(expectedLastIndex,
+                        "Последний индекс команды снапшота должен равняться последнему индексу примененной команды");
+        actualTerm.Value
+                  .Should()
+                  .Be(expectedLastTerm,
+                       "Последний терм команды снапшота должен равняться последнему терму примененной команды");
+        node.PersistenceFacade
+            .ReadLogFullTest()
+            .Should()
+            .BeEmpty("После создания снапшота лог должен быть пуст");
+
+        storedData.Should()
+                  .BeEquivalentTo(snapshotData,
+                       "Данные из файла снапшота должны быть идентичны тем, что передает снапшот");
     }
 
     private LogEntry RandomDataEntry(int term) => RandomDataEntry(new Term(term));
@@ -585,7 +614,7 @@ public class CandidateStateTests
     }
 
     [Fact]
-    public void RequestVote__СБолееВысокимТермомИСобраннымКворумом__ДолженСтатьFollower()
+    public void СобранныйКворумПослеПолученногоRequestVoteСБольшимТермом__ДолженОстатьсяFollower()
     {
         /*
          * Когда сначала вызываю Handle (после которого становлюсь Follower),
@@ -623,9 +652,9 @@ public class CandidateStateTests
         peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: term, VoteGranted: true));
 
-        var electionTimer = new Mock<ITimer>().Apply(t =>
+        var electionTimer = new Mock<ITimer>().Apply(m =>
         {
-            t.Setup(x => x.Stop())
+            m.Setup(x => x.Stop())
              .Verifiable();
         });
 
@@ -633,7 +662,8 @@ public class CandidateStateTests
                               .Select(_ => new StubQuorumPeer(term, true))
                               .ToArray();
 
-        _ = CreateCandidateNode(term, jobQueue: queue, peers: peers);
+        _ = CreateCandidateNode(term, electionTimer: electionTimer.Object,
+            jobQueue: queue, peers: peers);
 
         queue.Run();
 
@@ -671,11 +701,5 @@ public class CandidateStateTests
         queue.Run();
 
         Assert.Equal(NodeRole.Leader, node.CurrentRole);
-    }
-
-    [Fact(Skip = "Не готово")]
-    public void RequestVote__КогдаТермБольшеНоЛогХуже__НеДолженОтдатьГолосИОбновитьТерм()
-    {
-        Assert.True(false);
     }
 }

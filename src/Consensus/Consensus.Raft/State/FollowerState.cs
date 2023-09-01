@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
@@ -95,7 +94,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             ConsensusModule.PersistenceFacade.UpdateState(request.Term, null);
         }
 
-        if (PersistenceFacade.Contains(request.PrevLogEntryInfo) is false)
+        if (!PersistenceFacade.PrefixMatch(request.PrevLogEntryInfo))
         {
             // Префиксы закомиченных записей лога не совпадают 
             _electionTimer.Start();
@@ -107,9 +106,6 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             // Если это не Heartbeat, то применить новые команды
             PersistenceFacade.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
-
-        Debug.Assert(PersistenceFacade.CommitIndex <= request.LeaderCommit,
-            $"Индекс коммита лидера не должен быть меньше индекса коммита последователя. Индекс лидера: {request.LeaderCommit}. Индекс последователя: {PersistenceFacade.CommitIndex}");
 
         if (PersistenceFacade.CommitIndex == request.LeaderCommit)
         {

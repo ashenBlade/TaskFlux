@@ -57,12 +57,11 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
     /// </remarks>
     private async Task RunQuorum()
     {
-        var token = _cts.Token;
         try
         {
-            await RunQuorumInner(token);
+            await RunQuorumInner(_cts.Token);
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
             _logger.Debug("Сбор кворума прерван - задача отменена");
         }
@@ -187,7 +186,7 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
 
         var followerState = ConsensusModule.CreateFollowerState();
         ConsensusModule.TryUpdateState(followerState, this);
-        return followerState.Apply(request);
+        return ConsensusModule.Handle(request);
     }
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
@@ -203,16 +202,17 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
         }
 
+        var logConflicts = PersistenceFacade.Conflicts(request.LastLogEntryInfo);
+
         if (CurrentTerm < request.CandidateTerm)
         {
             var followerState = ConsensusModule.CreateFollowerState();
             if (ConsensusModule.TryUpdateState(followerState, this))
             {
-                ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
+                ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
             }
-            // TODO: проверять лог, даже если голос больше
 
-            return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
+            return new RequestVoteResponse(CurrentTerm, !logConflicts);
         }
 
         var canVote =
@@ -226,15 +226,16 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
         if (canVote
           &&
             // У которого лог в консистентном с нашим состоянием
-            !PersistenceFacade.Conflicts(request.LastLogEntryInfo))
+            !logConflicts)
         {
             var followerState = ConsensusModule.CreateFollowerState();
             if (ConsensusModule.TryUpdateState(followerState, this))
             {
-                ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
+                ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
+                return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
             }
 
-            return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
+            return ConsensusModule.Handle(request);
         }
 
         // Кандидат только что проснулся и не знает о текущем состоянии дел. 
@@ -244,10 +245,11 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override void Dispose()
     {
+        _electionTimer.Stop();
         _cts.Cancel();
-        _cts.Dispose();
-
         _electionTimer.Timeout -= OnElectionTimerTimeout;
+
+        _cts.Dispose();
         _electionTimer.Dispose();
     }
 

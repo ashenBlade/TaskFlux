@@ -444,7 +444,7 @@ public class FollowerStateTests
         var response = node.Handle(request);
 
         Assert.True(response.Success);
-        var actualEntries = node.PersistenceFacade.ReadLogFull();
+        var actualEntries = node.PersistenceFacade.ReadLogFullTest();
         Assert.Equal(entries, actualEntries, LogEntryEqualityComparer.Instance);
     }
 
@@ -474,7 +474,7 @@ public class FollowerStateTests
         var response = node.Handle(request);
 
         Assert.True(response.Success);
-        var actualEntries = node.PersistenceFacade.ReadLogFull();
+        var actualEntries = node.PersistenceFacade.ReadLogFullTest();
         Assert.Equal(committedEntries.Concat(newEntries), actualEntries, LogEntryEqualityComparer.Instance);
         Assert.Equal(request.Term, response.Term);
         Assert.Equal(node.CurrentTerm, response.Term);

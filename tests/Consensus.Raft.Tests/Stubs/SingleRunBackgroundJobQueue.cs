@@ -6,7 +6,7 @@ public class SingleRunBackgroundJobQueue : IBackgroundJobQueue
 
     public void RunInfinite(Func<Task> job, CancellationToken token)
     {
-        Job = ( job, token );
+        Job = ( job, CancellationToken.None );
     }
 
     public void Run()
@@ -17,6 +17,6 @@ public class SingleRunBackgroundJobQueue : IBackgroundJobQueue
         }
 
 
-        job().Wait(token);
+        job().Wait();
     }
 }

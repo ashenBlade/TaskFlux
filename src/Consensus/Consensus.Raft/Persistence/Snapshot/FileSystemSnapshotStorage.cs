@@ -260,7 +260,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
     }
 
     // Для тестов
-    internal (int LastIndex, Term LastTerm, byte[] SnapshotData) ReadAllData()
+    internal (int LastIndex, Term LastTerm, byte[] SnapshotData) ReadAllDataTest()
     {
         var stream = _snapshotFile.OpenRead();
         var reader = new StreamBinaryReader(stream);

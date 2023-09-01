@@ -487,7 +487,7 @@ public class StoragePersistenceManagerTests
 
         facade.SaveSnapshot(entry, new StubSnapshot(data));
 
-        var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllData();
+        var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllDataTest();
         Assert.True(fs.SnapshotFile.Exists);
         Assert.Equal(entry.Index, actualIndex);
         Assert.Equal(entry.Term, actualTerm);
@@ -505,7 +505,7 @@ public class StoragePersistenceManagerTests
         var (facade, _) = CreateFacade();
         facade.SaveSnapshot(entry, new StubSnapshot(data));
 
-        var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllData();
+        var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllDataTest();
         Assert.Equal(entry.Index, actualIndex);
         Assert.Equal(entry.Term, actualTerm);
         Assert.Equal(data, actualData);
@@ -529,7 +529,7 @@ public class StoragePersistenceManagerTests
 
         facade.SaveSnapshot(entry, new StubSnapshot(data));
 
-        var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllData();
+        var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllDataTest();
         Assert.Equal(entry.Index, actualIndex);
         Assert.Equal(entry.Term, actualTerm);
         Assert.Equal(data, actualData);
