@@ -15,6 +15,53 @@ public class BinaryPacketDeserializer
 {
     public static readonly BinaryPacketDeserializer Instance = new();
 
+    public RaftPacket Deserialize(Stream stream, CancellationToken token = default)
+    {
+        Span<byte> array = stackalloc byte[1];
+        var read = stream.Read(array);
+        if (read == 0)
+        {
+            throw new SocketException(( int ) SocketError.Shutdown);
+        }
+
+        var packetType = ( RaftPacketType ) array[0];
+        return packetType switch
+               {
+                   RaftPacketType.ConnectRequest        => DeserializeConnectRequestPacket(stream, token),
+                   RaftPacketType.ConnectResponse       => DeserializeConnectResponsePacket(stream, token),
+                   RaftPacketType.RequestVoteRequest    => DeserializeRequestVoteRequestPacket(stream, token),
+                   RaftPacketType.RequestVoteResponse   => DeserializeRequestVoteResponsePacket(stream, token),
+                   RaftPacketType.AppendEntriesRequest  => DeserializeAppendEntriesRequestPacket(stream, token),
+                   RaftPacketType.AppendEntriesResponse => DeserializeAppendEntriesResponsePacket(stream, token),
+                   _                                    => throw new ArgumentOutOfRangeException()
+               };
+    }
+
+    private AppendEntriesResponsePacket DeserializeAppendEntriesResponsePacket(Stream stream, CancellationToken token)
+    {
+        return DeserializeAppendEntriesResponsePacketAsync(stream, token).GetAwaiter().GetResult();
+    }
+
+    private AppendEntriesRequestPacket DeserializeAppendEntriesRequestPacket(Stream stream, CancellationToken token)
+    {
+        return DeserializeAppendEntriesRequestPacketAsync(stream, token).GetAwaiter().GetResult();
+    }
+
+    private RequestVoteResponsePacket DeserializeRequestVoteResponsePacket(Stream stream, CancellationToken token)
+    {
+        return DeserializeRequestVoteResponsePacketAsync(stream, token).GetAwaiter().GetResult();
+    }
+
+    private RequestVoteRequestPacket DeserializeRequestVoteRequestPacket(Stream stream, CancellationToken token)
+    {
+        return DeserializeRequestVoteRequestPacketAsync(stream, token).GetAwaiter().GetResult();
+    }
+
+    private ConnectResponsePacket DeserializeConnectResponsePacket(Stream stream, CancellationToken token)
+    {
+        return DeserializeConnectResponsePacketAsync(stream, token).GetAwaiter().GetResult();
+    }
+
     public async ValueTask<RaftPacket> DeserializeAsync(Stream stream, CancellationToken token = default)
     {
         var array = ArrayPool<byte>.Shared.Rent(1);
@@ -36,17 +83,19 @@ public class BinaryPacketDeserializer
 
         return packetType switch
                {
-                   RaftPacketType.ConnectRequest => await DeserializeConnectRequestPacketAsync(stream, token),
-                   RaftPacketType.ConnectResponse => await DeserializeConnectResponsePacketAsync(stream, token),
-                   RaftPacketType.RequestVoteRequest => await DeserializeRequestVoteRequestPacketAsync(stream, token),
-                   RaftPacketType.RequestVoteResponse => await DeserializeRequestVoteResponsePacket(stream, token),
-                   RaftPacketType.AppendEntriesRequest => await DeserializeAppendEntriesRequestPacket(stream, token),
-                   RaftPacketType.AppendEntriesResponse => await DeserializeAppendEntriesResponsePacket(stream, token),
+                   RaftPacketType.ConnectRequest      => await DeserializeConnectRequestPacketAsync(stream, token),
+                   RaftPacketType.ConnectResponse     => await DeserializeConnectResponsePacketAsync(stream, token),
+                   RaftPacketType.RequestVoteRequest  => await DeserializeRequestVoteRequestPacketAsync(stream, token),
+                   RaftPacketType.RequestVoteResponse => await DeserializeRequestVoteResponsePacketAsync(stream, token),
+                   RaftPacketType.AppendEntriesRequest => await DeserializeAppendEntriesRequestPacketAsync(stream,
+                                                              token),
+                   RaftPacketType.AppendEntriesResponse => await DeserializeAppendEntriesResponsePacketAsync(stream,
+                                                               token),
                    _ => throw new ArgumentOutOfRangeException()
                };
     }
 
-    private static async ValueTask<AppendEntriesResponsePacket> DeserializeAppendEntriesResponsePacket(
+    private static async ValueTask<AppendEntriesResponsePacket> DeserializeAppendEntriesResponsePacketAsync(
         Stream stream,
         CancellationToken token)
     {
@@ -65,7 +114,7 @@ public class BinaryPacketDeserializer
         }
     }
 
-    private static async ValueTask<AppendEntriesRequestPacket> DeserializeAppendEntriesRequestPacket(
+    private static async ValueTask<AppendEntriesRequestPacket> DeserializeAppendEntriesRequestPacketAsync(
         Stream stream,
         CancellationToken token)
     {
@@ -119,7 +168,7 @@ public class BinaryPacketDeserializer
         }
     }
 
-    private static async ValueTask<RequestVoteResponsePacket> DeserializeRequestVoteResponsePacket(
+    private static async ValueTask<RequestVoteResponsePacket> DeserializeRequestVoteResponsePacketAsync(
         Stream stream,
         CancellationToken token)
     {
@@ -241,5 +290,10 @@ public class BinaryPacketDeserializer
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    private static ConnectRequestPacket DeserializeConnectRequestPacket(Stream stream, CancellationToken token)
+    {
+        return DeserializeConnectRequestPacketAsync(stream, token).GetAwaiter().GetResult();
     }
 }

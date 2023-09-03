@@ -23,4 +23,14 @@ public class QueuesEnumeratorSnapshot : ISnapshot
         var queues = _manager.GetAllQueues();
         _serializer.Serialize(destination, queues, token);
     }
+
+    public IEnumerable<Memory<byte>> GetAllChunks(CancellationToken token = default)
+    {
+        var queues = _manager.GetAllQueues();
+        foreach (var queue in queues)
+        {
+            var buffer = _serializer.Serialize(queue);
+            yield return buffer;
+        }
+    }
 }

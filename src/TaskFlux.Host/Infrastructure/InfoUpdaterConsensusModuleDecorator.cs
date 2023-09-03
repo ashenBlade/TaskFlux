@@ -1,6 +1,5 @@
 using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
-using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
@@ -87,11 +86,6 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
     public SubmitResponse<TResult> Handle(SubmitRequest<TCommand> request)
     {
         return _module.Handle(request);
-    }
-
-    public InstallSnapshotResponse Handle(InstallSnapshotRequest request, CancellationToken token)
-    {
-        return _module.Handle(request, token);
     }
 
     public event RoleChangedEventHandler? RoleChanged

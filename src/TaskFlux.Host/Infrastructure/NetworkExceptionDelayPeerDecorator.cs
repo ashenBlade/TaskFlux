@@ -20,8 +20,7 @@ public class NetworkExceptionDelayPeerDecorator : IPeer
         _delay = delay;
     }
 
-    public NodeId Id =>
-        _peer.Id;
+    public NodeId Id => _peer.Id;
 
     public async Task<AppendEntriesResponse?> SendAppendEntriesAsync(AppendEntriesRequest request,
                                                                      CancellationToken token)
@@ -46,14 +45,17 @@ public class NetworkExceptionDelayPeerDecorator : IPeer
         return response;
     }
 
-    public InstallSnapshotResponse? SendInstallSnapshot(InstallSnapshotRequest request, CancellationToken token)
+    public IEnumerable<InstallSnapshotResponse?> SendInstallSnapshot(InstallSnapshotRequest request,
+                                                                     CancellationToken token)
     {
-        var response = _peer.SendInstallSnapshot(request, token);
-        if (response is null)
+        foreach (var installSnapshotResponse in _peer.SendInstallSnapshot(request, token))
         {
-            Thread.Sleep(_delay);
-        }
+            if (installSnapshotResponse is null)
+            {
+                Thread.Sleep(_delay);
+            }
 
-        return response;
+            yield return installSnapshotResponse;
+        }
     }
 }

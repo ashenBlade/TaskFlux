@@ -14,6 +14,31 @@ public class FileJobQueueSnapshotSerializer : IJobQueueSnapshotSerializer
         _factory = factory;
     }
 
+    public byte[] Serialize(IJobQueue queue)
+    {
+        var memory = new MemoryStream();
+        var writer = new StreamBinaryWriter(memory);
+        // Заголовок
+        var metadata = queue.Metadata;
+        writer.Write(metadata.QueueName);
+        writer.Write(metadata.MaxSize);
+        var count = metadata.Count;
+        writer.Write(count);
+
+        if (count == 0)
+        {
+            return memory.ToArray();
+        }
+
+        foreach (var (priority, payload) in queue.GetAllData())
+        {
+            writer.Write(priority);
+            writer.WriteBuffer(payload);
+        }
+
+        return memory.ToArray();
+    }
+
     /// <summary>
     /// Сериализовать все переданные очереди в поток (файл) снапшота
     /// </summary>

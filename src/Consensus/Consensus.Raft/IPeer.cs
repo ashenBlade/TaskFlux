@@ -25,5 +25,6 @@ public interface IPeer
     /// <returns>Ответ сервера, или <c>null</c> если ответа нет (например, таймаут из-за проблем сети)</returns>
     public Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token);
 
-    public InstallSnapshotResponse? SendInstallSnapshot(InstallSnapshotRequest request, CancellationToken token);
+    public IEnumerable<InstallSnapshotResponse?> SendInstallSnapshot(InstallSnapshotRequest request,
+                                                                     CancellationToken token);
 }

@@ -253,14 +253,16 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
         _electionTimer.Dispose();
     }
 
-    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default)
+    public override IEnumerable<InstallSnapshotResponse> Apply(InstallSnapshotRequest request,
+                                                               CancellationToken token = default)
     {
         if (request.Term < CurrentTerm)
         {
-            return new InstallSnapshotResponse(CurrentTerm);
+            return new[] {new InstallSnapshotResponse(CurrentTerm)};
         }
 
-        var followerState = ConsensusModule.CreateFollowerState();
-        return followerState.Apply(request, token);
+        var state = ConsensusModule.CreateFollowerState();
+        ConsensusModule.TryUpdateState(state, this);
+        return ConsensusModule.Handle(request, token);
     }
 }

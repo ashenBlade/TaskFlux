@@ -3,13 +3,13 @@ namespace Consensus.Raft.Persistence;
 public interface ISnapshot
 {
     /// <summary>
-    /// Записать данные снапшота в переданный поток
+    /// Получить все чанки из снапшота
     /// </summary>
-    /// <remarks>
-    /// Этот метод необходимо вызывать только 1 раз,
-    /// так как реализация может высвободить ресурсы после вызова (закрыть файл или сокет)
-    /// </remarks>
-    /// <param name="destination">Поток (файл), куда нужно записывать данные снапшота</param>
     /// <param name="token">Токен отмены</param>
-    public void WriteTo(Stream destination, CancellationToken token = default);
+    /// <returns>Поток чанков данных файла снапшота</returns>
+    /// <remarks>
+    /// Полученные объекты следует использовать только в области одной итерации,
+    /// т.к. может использоваться пулинг. 
+    /// </remarks>
+    public IEnumerable<Memory<byte>> GetAllChunks(CancellationToken token = default);
 }

@@ -485,7 +485,7 @@ public class StoragePersistenceManagerTests
         var entry = new LogEntryInfo(new Term(1), 1);
         var data = new byte[] {1, 2, 3};
 
-        facade.SaveSnapshot(entry, new StubSnapshot(data));
+        facade.SaveSnapshot(new StubSnapshot(data));
 
         var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllDataTest();
         Assert.True(fs.SnapshotFile.Exists);
@@ -503,7 +503,7 @@ public class StoragePersistenceManagerTests
         Random.Shared.NextBytes(data);
 
         var (facade, _) = CreateFacade();
-        facade.SaveSnapshot(entry, new StubSnapshot(data));
+        facade.SaveSnapshot(new StubSnapshot(data));
 
         var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllDataTest();
         Assert.Equal(entry.Index, actualIndex);
@@ -511,6 +511,8 @@ public class StoragePersistenceManagerTests
         Assert.Equal(data, actualData);
         Assert.Equal(entry, facade.SnapshotStorage.LastLogEntry);
     }
+
+    // TODO: тесты на InstallSnapshot
 
     [Fact]
     public void SaveSnapshot__КогдаФайлСнапшотаСуществовалСДанными__ДолженПерезаписатьСтарыйФайл()
@@ -527,7 +529,7 @@ public class StoragePersistenceManagerTests
         Random.Shared.NextBytes(oldData);
         facade.SnapshotStorage.WriteSnapshotDataTest(new Term(123), 222, new StubSnapshot(oldData));
 
-        facade.SaveSnapshot(entry, new StubSnapshot(data));
+        facade.SaveSnapshot(new StubSnapshot(data));
 
         var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllDataTest();
         Assert.Equal(entry.Index, actualIndex);

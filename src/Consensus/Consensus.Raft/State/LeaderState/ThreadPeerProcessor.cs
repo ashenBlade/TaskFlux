@@ -175,20 +175,39 @@ public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                 if (PersistenceFacade.TryGetSnapshot(out var snapshot))
                 {
                     var lastEntry = PersistenceFacade.SnapshotStorage.LastLogEntry;
-                    var installSnapshotResponse = _peer.SendInstallSnapshot(new InstallSnapshotRequest(CurrentTerm,
+                    var installSnapshotResponses = _peer.SendInstallSnapshot(new InstallSnapshotRequest(CurrentTerm,
                         ConsensusModule.Id, lastEntry.Index, lastEntry.Term,
                         snapshot), _token);
-                    if (installSnapshotResponse is null)
+
+                    var nullFound = false;
+                    foreach (var installSnapshotResponse in installSnapshotResponses)
                     {
-                        // Лучше не использовать ISnapshot несколько раз 
-                        // Сделаем еще одну итерацию
-                        continue;
+                        if (installSnapshotResponse is null)
+                        {
+                            nullFound = true;
+                            continue;
+                        }
+
+                        if (CurrentTerm < installSnapshotResponse.CurrentTerm)
+                        {
+                            // Найден больший терм/лидер.
+                            // Переходим в новый терм и закрываем все обработчики запросов
+                            var follower = ConsensusModule.CreateFollowerState();
+                            if (ConsensusModule.TryUpdateState(follower, _caller))
+                            {
+                                continue;
+                            }
+
+                            break;
+                        }
+
+                        // Продолжаем отправлять запросы
                     }
 
-                    if (CurrentTerm < installSnapshotResponse.CurrentTerm)
+                    if (nullFound)
                     {
-                        // У узла больший терм - уведомляем об этом
-                        return installSnapshotResponse.CurrentTerm;
+                        // Делаем повторную попытку отправки
+                        continue;
                     }
 
                     info.Update(1);
@@ -256,7 +275,6 @@ public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
             info.Decrement();
 
             // 5.2. Идем на следующий круг
-            // TODO: почему токен отменяется
         }
 
         // Единственный случай попадания сюда - токен отменен == мы больше не лидер

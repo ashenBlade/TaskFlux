@@ -1,5 +1,4 @@
 using Consensus.Raft.Persistence;
-using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Raft.Tests;
 
@@ -14,9 +13,8 @@ public class StubSnapshot : ISnapshot
 
     public StubSnapshot(IEnumerable<byte> data) => _data = data.ToArray();
 
-    public void WriteTo(Stream destination, CancellationToken token = default)
+    public IEnumerable<Memory<byte>> GetAllChunks(CancellationToken token = default)
     {
-        var writer = new StreamBinaryWriter(destination);
-        writer.Write(_data);
+        yield return _data;
     }
 }

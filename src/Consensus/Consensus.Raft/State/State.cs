@@ -69,10 +69,17 @@ public abstract class State<TCommand, TResponse>
     public abstract void Dispose();
 
     /// <summary>
-    /// Применить команду InstallSnapshot для создания нового снапшота, принятого от лидера
+    /// Применить команду InstallSnapshot для создания нового снапшота, принятого от лидера.
     /// </summary>
     /// <param name="request"><see cref="InstallSnapshotRequest"/></param>
     /// <param name="token">Токен отмены</param>
     /// <returns><see cref="InstallSnapshotResponse"/></returns>
-    public abstract InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default);
+    public abstract IEnumerable<InstallSnapshotResponse> Apply(InstallSnapshotRequest request,
+                                                               CancellationToken token = default);
 }
+
+// TODO: колбэк для написанного чанка
+/// <summary>
+/// Колбэк, вызываемый при записи очередного чанка в файл снапшота
+/// </summary>
+public delegate void ChunkWrittenCallback(int chunkNumber, long written, CancellationToken token = default);

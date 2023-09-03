@@ -144,7 +144,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         // Отдать свободный голос можем только за кандидата 
         if (canVote
-&&                         // За которого можем проголосовать и
+         &&                // За которого можем проголосовать и
             !logConflicts) // У которого лог не хуже нашего
         {
             var followerState = ConsensusModule.CreateFollowerState();
@@ -183,20 +183,17 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         }
     }
 
-    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default)
+    public override IEnumerable<InstallSnapshotResponse> Apply(InstallSnapshotRequest request,
+                                                               CancellationToken token = default)
     {
         if (request.Term < CurrentTerm)
         {
-            return new InstallSnapshotResponse(CurrentTerm);
+            return new[] {new InstallSnapshotResponse(CurrentTerm)};
         }
 
-        var followerState = ConsensusModule.CreateFollowerState();
-        if (ConsensusModule.TryUpdateState(followerState, this))
-        {
-            return ConsensusModule.Handle(request, token);
-        }
-
-        return new InstallSnapshotResponse(CurrentTerm);
+        var state = ConsensusModule.CreateFollowerState();
+        ConsensusModule.TryUpdateState(state, this);
+        return ConsensusModule.Handle(request, token);
     }
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
@@ -252,11 +249,10 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (PersistenceFacade.IsLogFileSizeExceeded())
         {
+            _logger.Debug("Размер файла лога превышен. Создаю снапшот");
             // Асинхронно это наверно делать не стоит (пока)
             var snapshot = StateMachine.GetSnapshot();
-            var snapshotLastEntryInfo = PersistenceFacade.LastApplied;
-            PersistenceFacade.SaveSnapshot(snapshotLastEntryInfo, snapshot, CancellationToken.None);
-            PersistenceFacade.ClearCommandLog();
+            PersistenceFacade.SaveSnapshot(snapshot);
         }
 
         // Возвращаем результат

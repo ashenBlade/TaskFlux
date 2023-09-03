@@ -7,19 +7,20 @@ using JobQueue.InMemory;
 using JobQueue.PriorityQueue.StandardLibrary;
 using JobQueue.Serialization;
 using TaskFlux.Commands;
-using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 using TaskFlux.Host.Helpers;
 using TaskFlux.Node;
 
 namespace TaskFlux.Host.Infrastructure;
 
-public class TaskFluxStateMachineFactory: IStateMachineFactory<Command, Result>
+public class TaskFluxStateMachineFactory : IStateMachineFactory<Command, Result>
 {
     private readonly INodeInfo _nodeInfo;
     private readonly IApplicationInfo _appInfo;
     private readonly IClusterInfo _clusterInfo;
-    private readonly IJobQueueSnapshotSerializer _fileJobQueueSnapshotSerializer = new FileJobQueueSnapshotSerializer(PrioritizedJobQueueFactory.Instance);
+
+    private readonly IJobQueueSnapshotSerializer _fileJobQueueSnapshotSerializer =
+        new FileJobQueueSnapshotSerializer(PrioritizedJobQueueFactory.Instance);
 
     public TaskFluxStateMachineFactory(INodeInfo nodeInfo, IApplicationInfo appInfo, IClusterInfo clusterInfo)
     {
@@ -27,10 +28,11 @@ public class TaskFluxStateMachineFactory: IStateMachineFactory<Command, Result>
         _appInfo = appInfo;
         _clusterInfo = clusterInfo;
     }
-    
+
     public IStateMachine<Command, Result> CreateEmpty()
     {
-        var node = new TaskFluxNode(new SimpleJobQueueManager(new PrioritizedJobQueue(QueueName.Default, 0, new StandardLibraryPriorityQueue<long, byte[]>())));
+        var node = new TaskFluxNode(new SimpleJobQueueManager(new PrioritizedJobQueue(QueueName.Default, 0,
+            new StandardLibraryPriorityQueue<long, byte[]>())));
         var commandContext = new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo);
         var serializer = _fileJobQueueSnapshotSerializer;
         return new TaskFluxStateMachine(commandContext, serializer);
@@ -39,12 +41,16 @@ public class TaskFluxStateMachineFactory: IStateMachineFactory<Command, Result>
     public IStateMachine<Command, Result> Restore(ISnapshot snapshot)
     {
         var memoryStream = new MemoryStream();
-        snapshot.WriteTo(memoryStream);
+        foreach (var chunk in snapshot.GetAllChunks())
+        {
+            memoryStream.Write(chunk.Span);
+        }
+
         var queues = _fileJobQueueSnapshotSerializer.Deserialize(memoryStream)
                                                     .ToList();
 
         var node = new TaskFluxNode(new SimpleJobQueueManager(queues));
-        return new TaskFluxStateMachine(new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo), 
+        return new TaskFluxStateMachine(new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo),
             _fileJobQueueSnapshotSerializer);
     }
 }

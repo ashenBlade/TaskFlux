@@ -1,13 +1,17 @@
 namespace Consensus.Network;
 
-public enum RaftPacketType: byte
+public enum RaftPacketType : byte
 {
-    ConnectRequest,
-    ConnectResponse,
-    
-    RequestVoteRequest,
-    RequestVoteResponse,
-    
-    AppendEntriesRequest,
-    AppendEntriesResponse,
+    AppendEntriesRequest = ( byte ) 'A',
+    AppendEntriesResponse = ( byte ) 'a',
+
+    ConnectRequest = ( byte ) 'C',
+    ConnectResponse = ( byte ) 'c',
+
+    RequestVoteRequest = ( byte ) 'V',
+    RequestVoteResponse = ( byte ) 'v',
+
+    InstallSnapshotRequest = ( byte ) 'S',
+    InstallSnapshotChunk = ( byte ) 'b',
+    InstallSnapshotResponse = ( byte ) 's',
 }

@@ -78,8 +78,6 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override AppendEntriesResponse Apply(AppendEntriesRequest request)
     {
-        // TODO: проверять, что запрос сделан от лидера
-
         _electionTimer.Stop();
         if (request.Term < CurrentTerm)
         {
@@ -136,9 +134,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         if (PersistenceFacade.IsLogFileSizeExceeded())
         {
             var snapshot = StateMachine.GetSnapshot();
-            var snapshotLastEntryInfo = PersistenceFacade.LastApplied;
-            PersistenceFacade.SaveSnapshot(snapshotLastEntryInfo, snapshot, CancellationToken.None);
-            PersistenceFacade.ClearCommandLog();
+            PersistenceFacade.SaveSnapshot(snapshot);
         }
 
         _electionTimer.Start();
@@ -172,24 +168,45 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         _electionTimer.Timeout -= OnElectionTimerTimeout;
         _electionTimer.Dispose();
     }
+    // TODO: тест на очищение TEMP когда из лидера в фолловера
 
-    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default)
+    public override IEnumerable<InstallSnapshotResponse> Apply(InstallSnapshotRequest request,
+                                                               CancellationToken token = default)
     {
-        // FIXME: надо обновлять Election таймер, иначе стану лидером
         if (request.Term < CurrentTerm)
         {
-            return new InstallSnapshotResponse(CurrentTerm);
+            yield return new InstallSnapshotResponse(CurrentTerm);
+            yield break;
         }
 
         // 1. Обновляем файл снапшота
-        PersistenceFacade.SaveSnapshot(new LogEntryInfo(request.LastIncludedTerm, request.LastIncludedIndex),
-            request.Snapshot, token);
-        // 2. Очищаем лог (лучше будет перезаписать данные полностью)
-        PersistenceFacade.ClearCommandLog();
+        foreach (var success in PersistenceFacade.InstallSnapshot(
+                     new LogEntryInfo(request.LastIncludedTerm, request.LastIncludedIndex),
+                     request.Snapshot, _electionTimer, token))
+        {
+            yield return new InstallSnapshotResponse(CurrentTerm);
+            if (!success)
+            {
+                yield break;
+            }
+        }
 
-        // 3. Восстановить состояние из снапшота
-        RestoreState();
-        return new InstallSnapshotResponse(CurrentTerm);
+        _electionTimer.Stop();
+
+        // 2. Очищаем лог (лучше будет перезаписать данные полностью)
+        try
+        {
+            PersistenceFacade.ClearCommandLog();
+
+            // 3. Восстановить состояние из снапшота
+            RestoreState();
+        }
+        finally
+        {
+            _electionTimer.Start();
+        }
+
+        yield return new InstallSnapshotResponse(CurrentTerm);
     }
 
     private void RestoreState()

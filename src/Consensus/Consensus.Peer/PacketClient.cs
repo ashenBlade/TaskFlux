@@ -4,7 +4,7 @@ using Consensus.Network;
 
 namespace Consensus.Peer;
 
-public class PacketClient: IDisposable
+public class PacketClient : IDisposable
 {
     private readonly BinaryPacketDeserializer _deserializer = BinaryPacketDeserializer.Instance;
     public Socket Socket { get; }
@@ -16,16 +16,21 @@ public class PacketClient: IDisposable
         Socket = socket;
         _lazyStream = new Lazy<NetworkStream>(() => new NetworkStream(socket));
     }
-    
+
     public ValueTask SendAsync(RaftPacket requestPacket, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
         return SendCore(requestPacket, token);
     }
 
+    public void Send(RaftPacket packet, CancellationToken token)
+    {
+        packet.Serialize(Stream, token);
+    }
+
     private async ValueTask SendCore(RaftPacket packet, CancellationToken token)
     {
-        await packet.Serialize(Stream, token);
+        await packet.SerializeAsync(Stream, token);
     }
 
     public async ValueTask<RaftPacket> ReceiveAsync(CancellationToken token = default)
@@ -39,33 +44,13 @@ public class PacketClient: IDisposable
         return await _deserializer.DeserializeAsync(Stream, token);
     }
 
-    private static bool IsNetworkError(SocketError error)
-    {
-        return error is 
-                   SocketError.Shutdown or 
-                   SocketError.NotConnected or 
-                   SocketError.Disconnecting or 
-                   
-                   SocketError.ConnectionReset or 
-                   SocketError.ConnectionAborted or 
-                   SocketError.ConnectionRefused or 
-                   
-                   SocketError.NetworkDown or 
-                   SocketError.NetworkReset or 
-                   SocketError.NetworkUnreachable or 
-                   
-                   SocketError.HostDown or 
-                   SocketError.HostUnreachable or 
-                   SocketError.HostNotFound;
-    }
-
     public async ValueTask<bool> ConnectAsync(EndPoint endPoint, TimeSpan timeout, CancellationToken token = default)
     {
         if (Socket.Connected)
         {
             return true;
         }
-        
+
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -77,7 +62,7 @@ public class PacketClient: IDisposable
         {
             return false;
         }
-        catch (IOException io) 
+        catch (IOException io)
             when (io.GetBaseException() is SocketException)
         {
             return false;
@@ -86,7 +71,6 @@ public class PacketClient: IDisposable
         {
             return false;
         }
-        
     }
 
     public async ValueTask DisconnectAsync(CancellationToken token = default)
@@ -103,5 +87,28 @@ public class PacketClient: IDisposable
         {
             _lazyStream.Value.Flush();
         }
+    }
+
+    public RaftPacket Receive(CancellationToken token = default)
+    {
+        return _deserializer.Deserialize(Stream, token);
+    }
+
+    public bool Connect(EndPoint endPoint)
+    {
+        try
+        {
+            Socket.Connect(endPoint);
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+
+        return true;
     }
 }

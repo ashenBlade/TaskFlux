@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
@@ -150,9 +151,139 @@ public class TcpPeer : IPeer
         return null;
     }
 
-    public InstallSnapshotResponse? SendInstallSnapshot(InstallSnapshotRequest request, CancellationToken token)
+    public IEnumerable<InstallSnapshotResponse?> SendInstallSnapshot(InstallSnapshotRequest request,
+                                                                     CancellationToken token)
     {
-        throw new NotImplementedException();
+        _logger.Debug("Отправляю снапшот на узел {NodeId}", Id);
+        // 1. Отправляем заголовок
+        var requestPacket = new InstallSnapshotRequestPacket(request);
+        var requestResponse = SendPacketReturning(requestPacket, token);
+        if (requestResponse is null)
+        {
+            if (!TryEstablishConnection(token))
+            {
+                yield return null;
+                yield break;
+            }
+
+            requestResponse = SendPacketReturning(requestPacket, token);
+            if (requestResponse is null)
+            {
+                yield return null;
+                yield break;
+            }
+        }
+
+        yield return GetInstallSnapshotResponse(requestResponse);
+
+        // 2. Поочередно отправляем чанки
+        foreach (var chunk in request.Snapshot.GetAllChunks(token))
+        {
+            var chunkResponse = SendPacketReturning(new InstallSnapshotChunkPacket(chunk), token);
+            if (chunkResponse is null)
+            {
+                yield return null;
+                yield break;
+            }
+
+            yield return GetInstallSnapshotResponse(chunkResponse);
+        }
+
+        yield break;
+
+        static InstallSnapshotResponse GetInstallSnapshotResponse(RaftPacket packet)
+        {
+            if (packet is not {PacketType: RaftPacketType.InstallSnapshotResponse})
+            {
+                throw new Exception(
+                    $"Неожиданный пакет получен от узла. Ожидался {RaftPacketType.InstallSnapshotResponse}. Получен: {packet.PacketType}");
+            }
+
+            if (packet is InstallSnapshotResponsePacket responsePacket)
+            {
+                return responsePacket.Response;
+            }
+
+            Debug.Assert(false,
+                $"Тип пакета {RaftPacketType.InstallSnapshotResponse}, но тип объекта не {nameof(InstallSnapshotResponsePacket)}");
+            throw new Exception(
+                $"Тип пакета {RaftPacketType.InstallSnapshotResponse}, но тип объекта не {nameof(InstallSnapshotResponsePacket)}");
+        }
+    }
+
+    private RaftPacket? SendPacketReturning(RaftPacket request, CancellationToken token)
+    {
+        try
+        {
+            _client.Send(request, token);
+            return _client.Receive(token);
+        }
+        catch (SocketException)
+        {
+            return null;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+    }
+
+    private bool TryEstablishConnection(CancellationToken token)
+    {
+        _logger.Debug("Начинаю устанавливать соединение");
+        var connected = _client.Connect(_endPoint);
+        if (!connected)
+        {
+            return false;
+        }
+
+        using var cts = CreateTimeoutCts(token, _requestTimeout);
+        try
+        {
+            _logger.Debug("Отправляю пакет авторизации");
+            _client.Send(new ConnectRequestPacket(_currentNodeId), cts.Token);
+
+            _logger.Debug("Начинаю получать ответ от узла");
+            var packet = _client.Receive(cts.Token);
+
+            switch (packet.PacketType)
+            {
+                case RaftPacketType.ConnectResponse:
+
+                    var response = ( ConnectResponsePacket ) packet;
+                    if (response.Success)
+                    {
+                        _logger.Debug("Авторизация прошла успшено");
+                        return true;
+                    }
+
+                    throw new AuthenticationException("Ошибка при попытке авторизации на узле");
+
+                case RaftPacketType.ConnectRequest:
+                case RaftPacketType.RequestVoteRequest:
+                case RaftPacketType.RequestVoteResponse:
+                case RaftPacketType.AppendEntriesRequest:
+                case RaftPacketType.AppendEntriesResponse:
+                    throw new InvalidOperationException(
+                        $"От узла пришел неожиданный ответ: PacketType: {packet.PacketType}");
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+        }
+        catch (SocketException)
+        {
+            _client.Socket.Disconnect(true);
+        }
+        catch (IOException)
+        {
+            _client.Socket.Disconnect(true);
+        }
+        catch (OperationCanceledException)
+        {
+            _client.Socket.Disconnect(true);
+        }
+
+        return false;
     }
 
     private async ValueTask<bool> TryEstablishConnectionAsync(CancellationToken token = default)

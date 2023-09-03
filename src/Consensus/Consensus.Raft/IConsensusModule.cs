@@ -69,7 +69,7 @@ public interface IConsensusModule<TCommand, TResponse>
     public AppendEntriesResponse Handle(AppendEntriesRequest request) => CurrentState.Apply(request);
     public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request) => CurrentState.Apply(request);
 
-    public InstallSnapshotResponse Handle(InstallSnapshotRequest request, CancellationToken token) =>
+    public IEnumerable<InstallSnapshotResponse> Handle(InstallSnapshotRequest request, CancellationToken token) =>
         CurrentState.Apply(request, token);
 
     /// <summary>

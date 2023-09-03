@@ -19,7 +19,6 @@ namespace Consensus.Raft.Tests;
 [Trait("Category", "Raft")]
 public class CandidateStateTests
 {
-    // TODO: какой-то из тестов не проходит - вечное ожидание
     // TODO: тесты когда голос уже отдан
     private static readonly NodeId NodeId = new(1);
     private static readonly PeerGroup EmptyPeerGroup = new(Array.Empty<IPeer>());
@@ -171,9 +170,11 @@ public class CandidateStateTests
             return Task.FromResult(_response);
         }
 
-        public InstallSnapshotResponse SendInstallSnapshot(InstallSnapshotRequest request, CancellationToken token)
+        public IEnumerable<InstallSnapshotResponse?> SendInstallSnapshot(
+            InstallSnapshotRequest request,
+            CancellationToken token)
         {
-            throw new Exception("Кандидат не должен посылать InstallSnapshot");
+            throw new Exception("Кандидат не должен отсылать InstallSnapshot");
         }
     }
 

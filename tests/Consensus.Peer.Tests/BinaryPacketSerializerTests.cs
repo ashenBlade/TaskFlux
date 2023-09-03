@@ -18,7 +18,7 @@ public class BinaryPacketSerializerTests
     private static async Task AssertBase(RaftPacket expected)
     {
         var stream = new MemoryStream();
-        await expected.Serialize(stream);
+        await expected.SerializeAsync(stream);
         stream.Position = 0;
         var actual = await Deserializer.DeserializeAsync(stream);
         Assert.Equal(expected, actual, PacketEqualityComparer.Instance);

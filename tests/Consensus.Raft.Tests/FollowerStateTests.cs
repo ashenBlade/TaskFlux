@@ -479,4 +479,6 @@ public class FollowerStateTests
         Assert.Equal(request.Term, response.Term);
         Assert.Equal(node.CurrentTerm, response.Term);
     }
+
+    // TODO: тесты, чтобы буфер не стирался, когда файл лога превышен
 }

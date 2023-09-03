@@ -13,9 +13,9 @@ public interface ISnapshotFileWriter
     /// <summary>
     /// Записать в файл заголовок снапшота
     /// </summary>
-    /// <param name="lastApplied">Информация о последней применной записи снапшота</param>
+    /// <param name="lastIncluded">Информация о последней применной записи снапшота</param>
     /// <exception cref="InvalidOperationException">Методы был вызван повторно, либо уже были вызваны <see cref="Save"/> или <see cref="Discard"/></exception>
-    public void Initialize(LogEntryInfo lastApplied);
+    public void Initialize(LogEntryInfo lastIncluded);
 
     /// <summary>
     /// Сохранить полученный файл в качестве нового файла снапшота
@@ -37,8 +37,11 @@ public interface ISnapshotFileWriter
     /// <summary>
     /// Записать данные снапшота в файл
     /// </summary>
-    /// <param name="snapshot">Объект снапшота</param>
+    /// <param name="chunk">Очередной чанк файла снапшота</param>
     /// <param name="token">Токен отмены</param>
+    /// <returns>
+    /// Поток успешности записи в файл
+    /// </returns>
     /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
-    public void WriteSnapshot(ISnapshot snapshot, CancellationToken token);
+    public void WriteSnapshotChunk(ReadOnlySpan<byte> chunk, CancellationToken token);
 }

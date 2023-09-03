@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Abstractions;
@@ -50,9 +51,41 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         return new FileSystemSnapshot(_snapshotFile);
     }
 
-    private const long SnapshotStartPosition = sizeof(int)  // Маркер
-                                             + sizeof(int)  // Терм
-                                             + sizeof(int); // Индекс
+    private const long SnapshotDataStartPosition = sizeof(int)  // Маркер
+                                                 + sizeof(int)  // Терм
+                                                 + sizeof(int); // Индекс
+
+    private class FileSystemSnapshot : ISnapshot
+    {
+        private readonly IFileInfo _snapshotFile;
+        public const int BufferSize = 4 * 1024; // 4 Кб (размер страницы)
+
+        public FileSystemSnapshot(IFileInfo snapshotFile)
+        {
+            _snapshotFile = snapshotFile;
+        }
+
+        public IEnumerable<Memory<byte>> GetAllChunks(CancellationToken token = default)
+        {
+            using var stream = _snapshotFile.OpenRead();
+            stream.Seek(SnapshotDataStartPosition, SeekOrigin.Begin);
+            var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+            try
+            {
+                var read = stream.Read(buffer);
+                if (read == 0 || token.IsCancellationRequested)
+                {
+                    yield break;
+                }
+
+                yield return buffer.AsMemory(0, read);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+    }
 
     private class FileSystemSnapshotFileWriter : ISnapshotFileWriter
     {
@@ -106,7 +139,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             _parent = parent;
         }
 
-        public void Initialize(LogEntryInfo lastApplied)
+        public void Initialize(LogEntryInfo lastIncluded)
         {
             switch (_state)
             {
@@ -131,14 +164,14 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             writer.Write(Marker);
 
             // 3. Записываем заголовок основной информации
-            writer.Write(lastApplied.Index);
-            writer.Write(lastApplied.Term.Value);
+            writer.Write(lastIncluded.Index);
+            writer.Write(lastIncluded.Term.Value);
 
-            _state = SnapshotFileState.Initialized;
-
-            _writtenLogEntry = lastApplied;
+            _writtenLogEntry = lastIncluded;
             _temporarySnapshotFileStream = stream;
             _temporarySnapshotFile = file;
+
+            _state = SnapshotFileState.Initialized;
         }
 
         private (IFileInfo File, Stream Stream) CreateAndOpenTemporarySnapshotFile()
@@ -221,7 +254,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             _parent = null!;
         }
 
-        public void WriteSnapshot(ISnapshot snapshot, CancellationToken token)
+        public void WriteSnapshotChunk(ReadOnlySpan<byte> chunk, CancellationToken token)
         {
             switch (_state)
             {
@@ -237,27 +270,10 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             }
 
             Debug.Assert(_temporarySnapshotFileStream is not null, "Поток файла снапшота не должен быть null");
-
-            snapshot.WriteTo(_temporarySnapshotFileStream, token);
+            _temporarySnapshotFileStream.Write(chunk);
         }
     }
 
-    private class FileSystemSnapshot : ISnapshot
-    {
-        private readonly IFileInfo _snapshotFile;
-
-        public FileSystemSnapshot(IFileInfo snapshotFile)
-        {
-            _snapshotFile = snapshotFile;
-        }
-
-        public void WriteTo(Stream destination, CancellationToken token = default)
-        {
-            using var fileStream = _snapshotFile.OpenRead();
-            fileStream.Position = SnapshotStartPosition;
-            destination.CopyTo(destination);
-        }
-    }
 
     // Для тестов
     internal (int LastIndex, Term LastTerm, byte[] SnapshotData) ReadAllDataTest()
@@ -277,6 +293,12 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         return ( index, term, memory.ToArray() );
     }
 
+    /// <summary>
+    /// Записать в файл снапшота тестовые данные
+    /// </summary>
+    /// <param name="lastTerm">Терм последней команды снапшота</param>
+    /// <param name="lastIndex">Индекс последней команды снапшота</param>
+    /// <param name="snapshot">Снапшот, который нужно записать</param>
     internal void WriteSnapshotDataTest(Term lastTerm, int lastIndex, ISnapshot snapshot)
     {
         using var stream = _snapshotFile.OpenWrite();
@@ -285,7 +307,11 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         writer.Write(Marker);
         writer.Write(lastIndex);
         writer.Write(lastTerm.Value);
-        snapshot.WriteTo(stream);
+
+        foreach (var chunk in snapshot.GetAllChunks())
+        {
+            writer.Write(chunk.Span);
+        }
 
         LastLogEntry = new LogEntryInfo(lastTerm, lastIndex);
     }

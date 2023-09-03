@@ -100,20 +100,6 @@ public class StoragePersistenceFacade
     }
 
     /// <summary>
-    /// Размер файла лога, включая заголовки
-    /// </summary>
-    public ulong LogFileSize
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _logStorage.FileSize;
-            }
-        }
-    }
-
-    /// <summary>
     /// Последняя примененная запись из лога
     /// </summary>
     public LogEntryInfo LastApplied
@@ -479,39 +465,138 @@ public class StoragePersistenceFacade
     }
 
     /// <summary>
-    /// Перезаписать старый снапшот новым и обновить файл лога (удалить старые записи)
+    /// Перезаписать старый снапшот новым и обновить файл лога (удалить старые записи).
+    /// Используется для ответа на InstallSnapshot запрос.
     /// </summary>
     /// <param name="lastLogEntry">
     /// Информация о последней примененной команде в <paramref name="snapshot"/>.
     /// Этот метод только сохраняет новый файл снапшота, без очищения или удаления лога команд
     /// </param>
     /// <param name="snapshot">Слепок системы</param>
+    /// <param name="electionTimer">Таймер выборов, который должен обновляться каждый раз, после получения нового чанка</param>
     /// <param name="token">Токен отмены</param>
+    /// <returns>
+    /// Поток флагов успешности операции.
+    /// Если возвращен <c>false</c> - токен был отменен.
+    /// Используется для посылания ответов узлу-лидеру, отправляющему снапшот.
+    /// Один <c>true</c> на каждый успешно записанный чанк.
+    /// Если достигнут конец, то значение не возвращается - это нужно, чтобы в конце отправить последний InstallSnapshotResponse
+    /// </returns>
     /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
-    public void SaveSnapshot(LogEntryInfo lastLogEntry, ISnapshot snapshot, CancellationToken token = default)
+    public IEnumerable<bool> InstallSnapshot(LogEntryInfo lastLogEntry,
+                                             ISnapshot snapshot,
+                                             ITimer electionTimer,
+                                             CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
 
         // 1. Создать временный файл
-        var tempFile = _snapshotStorage.CreateTempSnapshotFile();
+        var snapshotTempFile = _snapshotStorage.CreateTempSnapshotFile();
 
         // 2. Записать заголовок: маркер, индекс, терм
-        tempFile.Initialize(lastLogEntry);
-
-        // 3. Записываем сами данные на диск
+        electionTimer.Stop();
         try
         {
-            tempFile.WriteSnapshot(snapshot, token);
+            snapshotTempFile.Initialize(lastLogEntry);
         }
-        catch (OperationCanceledException)
+        catch (Exception)
         {
-            // 3.1. Если роль изменилась/появился новый лидер и т.д. - прекрать создание нового снапшота
-            tempFile.Discard();
-            return;
+            snapshotTempFile.Discard();
+            throw;
+        }
+        finally
+        {
+            electionTimer.Start();
+        }
+
+        // 3. Записываем сами данные на диск
+        foreach (var chunk in snapshot.GetAllChunks(token))
+        {
+            try
+            {
+                snapshotTempFile.WriteSnapshotChunk(chunk.Span, token);
+            }
+            catch (OperationCanceledException)
+            {
+                snapshotTempFile.Discard();
+                yield break;
+            }
+            catch (Exception)
+            {
+                snapshotTempFile.Discard();
+                throw;
+            }
+
+            yield return true;
         }
 
         // 4. Переименовать файл в нужное имя
-        tempFile.Save();
+        snapshotTempFile.Save();
+
+        // 5. Очищаем лог до указанного индекса
+        // TODO: очистить лог
+    }
+
+    /// <summary>
+    /// Метод для создания нового снапшота из существующего состояния при превышении максимального размера лога.
+    /// </summary>
+    /// <param name="snapshot">Слепок текущего состояния приложения</param>
+    /// <param name="token">Токен отмены</param>
+    /// <remarks>
+    /// В качестве последней команды в файле снапшота будет использоваться последняя примененная команда (<see cref="LastApplied"/>),
+    /// поэтому если нужно применить какие-либо команды - делать заранее
+    /// </remarks>
+    /// <remarks>
+    /// Таймер (выборов) не обновляется
+    /// </remarks>
+    public void SaveSnapshot(ISnapshot snapshot, CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+
+        // 1. Создать временный файл
+        var snapshotTempFile = _snapshotStorage.CreateTempSnapshotFile();
+
+        try
+        {
+            snapshotTempFile.Initialize(LastApplied);
+        }
+        catch (Exception)
+        {
+            snapshotTempFile.Discard();
+            throw;
+        }
+
+        // 3. Записываем сами данные на диск
+        foreach (var chunk in snapshot.GetAllChunks(token))
+        {
+            try
+            {
+                snapshotTempFile.WriteSnapshotChunk(chunk.Span, token);
+            }
+            catch (OperationCanceledException)
+            {
+                snapshotTempFile.Discard();
+                return;
+            }
+            catch (Exception)
+            {
+                snapshotTempFile.Discard();
+                throw;
+            }
+        }
+
+        // 4. Переименовать файл в нужное имя
+        try
+        {
+            snapshotTempFile.Save();
+        }
+        catch (Exception)
+        {
+            snapshotTempFile.Discard();
+            throw;
+        }
+
+        ClearCommandLog();
     }
 
     /// <summary>
