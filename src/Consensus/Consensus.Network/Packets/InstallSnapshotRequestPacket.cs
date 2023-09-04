@@ -1,21 +1,28 @@
-using Consensus.Raft.Commands.InstallSnapshot;
+using Consensus.Raft;
+using Consensus.Raft.Persistence;
+using TaskFlux.Core;
 using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Network.Packets;
 
 public class InstallSnapshotRequestPacket : RaftPacket
 {
-    private readonly InstallSnapshotRequest _request;
+    public Term Term { get; }
+    public NodeId LeaderId { get; }
+    public LogEntryInfo LastEntry { get; }
     public override RaftPacketType PacketType => RaftPacketType.InstallSnapshotRequest;
 
-    public InstallSnapshotRequestPacket(InstallSnapshotRequest request)
+    public InstallSnapshotRequestPacket(Term term, NodeId leaderId, LogEntryInfo lastEntry)
     {
-        _request = request;
+        Term = term;
+        LeaderId = leaderId;
+        LastEntry = lastEntry;
     }
 
     protected override int EstimatePacketSize()
     {
         return sizeof(RaftPacketType) // Маркер
+             + sizeof(int)            // Терм
              + sizeof(int)            // Id узла
              + sizeof(uint)           // Последний индекс
              + sizeof(int);           // Последний терм
@@ -25,8 +32,9 @@ public class InstallSnapshotRequestPacket : RaftPacket
     {
         var writer = new SpanBinaryWriter(buffer);
         writer.Write(( byte ) RaftPacketType.InstallSnapshotRequest);
-        writer.Write(_request.LeaderId.Id);
-        writer.Write(_request.LastIncludedIndex);
-        writer.Write(_request.LastIncludedTerm.Value);
+        writer.Write(Term.Value);
+        writer.Write(LeaderId.Id);
+        writer.Write(LastEntry.Index);
+        writer.Write(LastEntry.Term.Value);
     }
 }

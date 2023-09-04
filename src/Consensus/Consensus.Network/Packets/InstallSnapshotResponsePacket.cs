@@ -1,16 +1,16 @@
-using Consensus.Raft.Commands.InstallSnapshot;
+using Consensus.Raft;
 using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Network.Packets;
 
 public class InstallSnapshotResponsePacket : RaftPacket
 {
-    public InstallSnapshotResponse Response { get; }
+    public Term CurrentTerm { get; }
     public override RaftPacketType PacketType => RaftPacketType.InstallSnapshotResponse;
 
-    public InstallSnapshotResponsePacket(InstallSnapshotResponse response)
+    public InstallSnapshotResponsePacket(Term term)
     {
-        Response = response;
+        CurrentTerm = term;
     }
 
     protected override int EstimatePacketSize()
@@ -23,6 +23,6 @@ public class InstallSnapshotResponsePacket : RaftPacket
     {
         var writer = new SpanBinaryWriter(buffer);
         writer.Write(( byte ) RaftPacketType.InstallSnapshotResponse);
-        writer.Write(Response.CurrentTerm.Value);
+        writer.Write(CurrentTerm.Value);
     }
 }

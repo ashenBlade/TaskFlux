@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
@@ -8,6 +7,7 @@ using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
+using Consensus.Raft.Persistence;
 using Serilog;
 using TaskFlux.Core;
 
@@ -156,7 +156,8 @@ public class TcpPeer : IPeer
     {
         _logger.Debug("Отправляю снапшот на узел {NodeId}", Id);
         // 1. Отправляем заголовок
-        var requestPacket = new InstallSnapshotRequestPacket(request);
+        var requestPacket = new InstallSnapshotRequestPacket(request.Term, request.LeaderId,
+            new LogEntryInfo(request.LastIncludedTerm, request.LastIncludedIndex));
         var requestResponse = SendPacketReturning(requestPacket, token);
         if (requestResponse is null)
         {
@@ -199,13 +200,11 @@ public class TcpPeer : IPeer
                     $"Неожиданный пакет получен от узла. Ожидался {RaftPacketType.InstallSnapshotResponse}. Получен: {packet.PacketType}");
             }
 
-            if (packet is InstallSnapshotResponsePacket responsePacket)
+            if (packet is InstallSnapshotResponsePacket {CurrentTerm: var currentTerm})
             {
-                return responsePacket.Response;
+                return new InstallSnapshotResponse(currentTerm);
             }
 
-            Debug.Assert(false,
-                $"Тип пакета {RaftPacketType.InstallSnapshotResponse}, но тип объекта не {nameof(InstallSnapshotResponsePacket)}");
             throw new Exception(
                 $"Тип пакета {RaftPacketType.InstallSnapshotResponse}, но тип объекта не {nameof(InstallSnapshotResponsePacket)}");
         }

@@ -1,13 +1,12 @@
-using System.ComponentModel.Design;
 using Consensus.Network;
 using Consensus.Network.Packets;
 
 namespace Consensus.Peer.Tests;
 
-public class PacketEqualityComparer: IEqualityComparer<RaftPacket>
+public class PacketEqualityComparer : IEqualityComparer<RaftPacket>
 {
     public static readonly PacketEqualityComparer Instance = new();
-    
+
     public bool Equals(RaftPacket x, RaftPacket y)
     {
         return Check(( dynamic ) x, ( dynamic ) y);
@@ -25,8 +24,7 @@ public class PacketEqualityComparer: IEqualityComparer<RaftPacket>
 
     public bool Check(AppendEntriesResponsePacket first, AppendEntriesResponsePacket second)
     {
-        return first.Response.Success == second.Response.Success && 
-               first.Response.Term == second.Response.Term;
+        return first.Response.Success == second.Response.Success && first.Response.Term == second.Response.Term;
     }
 
     public bool Check(RequestVoteRequestPacket first, RequestVoteRequestPacket second)
@@ -51,7 +49,26 @@ public class PacketEqualityComparer: IEqualityComparer<RaftPacket>
     {
         return first.Success == second.Success;
     }
-    
+
+    public bool Check(InstallSnapshotRequestPacket first, InstallSnapshotRequestPacket second)
+    {
+        return first.LeaderId == second.LeaderId
+            && first.Term == second.Term
+            && first.LastEntry == second.LastEntry;
+    }
+
+    public bool Check(InstallSnapshotChunkPacket first, InstallSnapshotChunkPacket second)
+    {
+        return first.Chunk
+                    .ToArray()
+                    .SequenceEqual(second.Chunk.ToArray());
+    }
+
+    public bool Check(InstallSnapshotResponsePacket first, InstallSnapshotResponsePacket second)
+    {
+        return first.CurrentTerm == second.CurrentTerm;
+    }
+
     public int GetHashCode(RaftPacket obj)
     {
         return ( int ) obj.PacketType;

@@ -27,14 +27,47 @@ public class BinaryPacketDeserializer
         var packetType = ( RaftPacketType ) array[0];
         return packetType switch
                {
-                   RaftPacketType.ConnectRequest        => DeserializeConnectRequestPacket(stream, token),
-                   RaftPacketType.ConnectResponse       => DeserializeConnectResponsePacket(stream, token),
-                   RaftPacketType.RequestVoteRequest    => DeserializeRequestVoteRequestPacket(stream, token),
-                   RaftPacketType.RequestVoteResponse   => DeserializeRequestVoteResponsePacket(stream, token),
-                   RaftPacketType.AppendEntriesRequest  => DeserializeAppendEntriesRequestPacket(stream, token),
-                   RaftPacketType.AppendEntriesResponse => DeserializeAppendEntriesResponsePacket(stream, token),
-                   _                                    => throw new ArgumentOutOfRangeException()
+                   RaftPacketType.ConnectRequest          => DeserializeConnectRequestPacket(stream, token),
+                   RaftPacketType.ConnectResponse         => DeserializeConnectResponsePacket(stream, token),
+                   RaftPacketType.RequestVoteRequest      => DeserializeRequestVoteRequestPacket(stream, token),
+                   RaftPacketType.RequestVoteResponse     => DeserializeRequestVoteResponsePacket(stream, token),
+                   RaftPacketType.AppendEntriesRequest    => DeserializeAppendEntriesRequestPacket(stream, token),
+                   RaftPacketType.AppendEntriesResponse   => DeserializeAppendEntriesResponsePacket(stream, token),
+                   RaftPacketType.InstallSnapshotRequest  => DeserializeInstallSnapshotRequestPacket(stream, token),
+                   RaftPacketType.InstallSnapshotChunk    => DeserializeInstallSnapshotChunkPacket(stream, token),
+                   RaftPacketType.InstallSnapshotResponse => DeserializeInstallSnapshotResponsePacket(stream, token),
                };
+    }
+
+    private InstallSnapshotResponsePacket DeserializeInstallSnapshotResponsePacket(
+        Stream stream,
+        CancellationToken token)
+    {
+        var reader = new StreamBinaryReader(stream);
+
+        var term = reader.ReadInt32();
+
+        return new InstallSnapshotResponsePacket(new Term(term));
+    }
+
+    private InstallSnapshotChunkPacket DeserializeInstallSnapshotChunkPacket(Stream stream, CancellationToken token)
+    {
+        var reader = new StreamBinaryReader(stream);
+        var buffer = reader.ReadBuffer();
+        return new InstallSnapshotChunkPacket(buffer);
+    }
+
+    private InstallSnapshotRequestPacket DeserializeInstallSnapshotRequestPacket(Stream stream, CancellationToken token)
+    {
+        var reader = new StreamBinaryReader(stream);
+
+        var term = reader.ReadInt32();
+        var leaderId = reader.ReadInt32();
+        var lastIndex = reader.ReadInt32();
+        var lastTerm = reader.ReadInt32();
+
+        return new InstallSnapshotRequestPacket(new Term(term), new NodeId(leaderId),
+            new LogEntryInfo(new Term(lastTerm), lastIndex));
     }
 
     private AppendEntriesResponsePacket DeserializeAppendEntriesResponsePacket(Stream stream, CancellationToken token)

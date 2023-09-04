@@ -4,25 +4,25 @@ namespace Consensus.Network.Packets;
 
 public class InstallSnapshotChunkPacket : RaftPacket
 {
-    private readonly Memory<byte> _chunk;
+    public ReadOnlyMemory<byte> Chunk { get; }
     public override RaftPacketType PacketType => RaftPacketType.InstallSnapshotChunk;
 
-    public InstallSnapshotChunkPacket(Memory<byte> chunk)
+    public InstallSnapshotChunkPacket(ReadOnlyMemory<byte> chunk)
     {
-        _chunk = chunk;
+        Chunk = chunk;
     }
 
     protected override int EstimatePacketSize()
     {
         return sizeof(RaftPacketType) // Маркер
              + sizeof(uint)           // Размер
-             + _chunk.Length;         // Данные
+             + Chunk.Length;          // Данные
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
         writer.Write(( byte ) RaftPacketType.InstallSnapshotChunk);
-        writer.WriteBuffer(_chunk.Span);
+        writer.WriteBuffer(Chunk.Span);
     }
 }
