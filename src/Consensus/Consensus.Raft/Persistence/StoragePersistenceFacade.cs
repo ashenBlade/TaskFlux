@@ -74,43 +74,27 @@ public class StoragePersistenceFacade
         }
     }
 
-
-    private int _lastAppliedIndex = LogEntryInfo.TombIndex;
-
     /// <summary>
     /// Индекс последней применной записи журнала.
     /// Обновляется после успешного коммита 
     /// </summary>
-    public int LastAppliedIndex
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _lastAppliedIndex;
-            }
-        }
-        private set
-        {
-            lock (_lock)
-            {
-                _lastAppliedIndex = value;
-            }
-        }
-    }
+    private int LastAppliedGlobalIndex { get; set; }
 
     /// <summary>
     /// Последняя примененная запись из лога
     /// </summary>
+    /// <remarks>
+    /// Указанный индекс - глобальный
+    /// </remarks>
     public LogEntryInfo LastApplied
     {
         get
         {
             lock (_lock)
             {
-                return LastAppliedIndex == LogEntryInfo.TombIndex
+                return LastAppliedGlobalIndex == LogEntryInfo.TombIndex
                            ? LogEntryInfo.Tomb
-                           : GetLogEntryInfoAtIndex(LastAppliedIndex);
+                           : GetLogEntryInfoAtIndex(LastAppliedGlobalIndex);
             }
         }
     }
@@ -269,16 +253,21 @@ public class StoragePersistenceFacade
         return false;
     }
 
-    private LogEntryInfo GetLogEntryInfoAtIndex(int index)
+    private LogEntryInfo GetLogEntryInfoAtIndex(int globalIndex)
     {
-        var storageLastEntry = _logStorage.GetLastLogEntry();
-        if (index <= storageLastEntry.Index)
+        var localIndex = CalculateLocalIndex(globalIndex);
+        if (localIndex <= 0)
         {
-            return _logStorage.GetInfoAt(index);
+            throw new ArgumentOutOfRangeException(nameof(globalIndex), globalIndex, "В логе нет указанного индекса");
         }
 
-        var bufferEntry = _buffer[index - _logStorage.Count];
-        return new LogEntryInfo(bufferEntry.Term, index);
+        if (_logStorage.TryGetInfoAt(localIndex, out var lastLogEntry))
+        {
+            return lastLogEntry with {Index = globalIndex};
+        }
+
+        var bufferEntry = _buffer[localIndex - _logStorage.Count];
+        return new LogEntryInfo(bufferEntry.Term, globalIndex);
     }
 
     /// <summary>
@@ -293,7 +282,7 @@ public class StoragePersistenceFacade
     {
         lock (_lock)
         {
-            var localIndex = CalculateLocalIndex();
+            var localIndex = CalculateLocalIndex(globalIndex);
 
             if (localIndex < 0)
             {
@@ -330,34 +319,34 @@ public class StoragePersistenceFacade
             entries = Array.Empty<LogEntry>();
             return false;
         }
+    }
 
-        int CalculateLocalIndex()
+    private int CalculateLocalIndex(int globalIndex)
+    {
+        /*
+         * Я разделяю индекс на 2 типа: локальный и глобальный.
+         * - Глобальный индекс - индекс среди ВСЕХ записей
+         * - Локальный индекс - индекс для поиска записей среди лога и буфера
+         *
+         * Последний индекс в снапшоте является стартовым индексом для локального индекса.
+         * Чтобы получить локальный индекс нужно из глобального индекса вычесть последний индекс снапшота и 1:
+         * localIndex = globalIndex - Snapshot.LastIncludedIndex - 1
+         * Последняя единица вычитается, т.к. индексация начинается с 0:
+         *
+         * Примеры:
+         * Глобальный индекс: 10, Индекс снапшота: 3, Локальный индекс: 6
+         * Глобальный - | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+         *              |Данные снапшота|
+         * Локальный  -                 | 0 | 1 | 2 | 3 | 4 | 5 | 6  | 7  |
+         *
+         * Снапшота еще нет, то локальный и глобальный индексы совпадают
+         */
+        if (SnapshotStorage.LastLogEntry.IsTomb)
         {
-            /*
-             * Я разделяю индекс на 2 типа: локальный и глобальный.
-             * - Глобальный индекс - индекс среди ВСЕХ записей
-             * - Локальный индекс - индекс для поиска записей среди лога и буфера
-             *
-             * Последний индекс в снапшоте является стартовым индексом для локального индекса.
-             * Чтобы получить локальный индекс нужно из глобального индекса вычесть последний индекс снапшота и 1:
-             * localIndex = globalIndex - Snapshot.LastIncludedIndex - 1
-             * Последняя единица вычитается, т.к. индексация начинается с 0:
-             *
-             * Примеры:
-             * Глобальный индекс: 10, Индекс снапшота: 3, Локальный индекс: 6
-             * Глобальный - | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
-             *              |Данные снапшота|
-             * Локальный  -                 | 0 | 1 | 2 | 3 | 4 | 5 | 6  | 7  |
-             *
-             * Снапшота еще нет, то локальный и глобальный индексы совпадают
-             */
-            if (SnapshotStorage.LastLogEntry.IsTomb)
-            {
-                return globalIndex;
-            }
-
-            return globalIndex - SnapshotStorage.LastLogEntry.Index - 1;
+            return globalIndex;
         }
+
+        return globalIndex - SnapshotStorage.LastLogEntry.Index - 1;
     }
 
     /// <summary>
@@ -430,7 +419,7 @@ public class StoragePersistenceFacade
 
     /// <summary>
     /// Получить закомиченные, но еще не примененные записи из лога.
-    /// Это записи, индекс которых находится между индексом последней применненной записи (<see cref="LastAppliedIndex"/>) и
+    /// Это записи, индекс которых находится между индексом последней применненной записи (<see cref="LastAppliedGlobalIndex"/>) и
     /// последней закоммиченной записи (<see cref="CommitIndex"/>) 
     /// </summary>
     /// <returns>Записи, которые были закомичены, но еще не применены</returns>
@@ -438,30 +427,35 @@ public class StoragePersistenceFacade
     {
         lock (_lock)
         {
-            if (CommitIndex <= LastAppliedIndex || CommitIndex == LogEntryInfo.TombIndex)
+            if (CommitIndex <= LastAppliedGlobalIndex || CommitIndex == LogEntryInfo.TombIndex)
             {
                 return Array.Empty<LogEntry>();
             }
 
-            return _logStorage.ReadFrom(LastAppliedIndex + 1);
+            return _logStorage.ReadFrom(LastAppliedGlobalIndex + 1);
         }
     }
 
     /// <summary>
     /// Указать новый индекс последней примененной записи
     /// </summary>
-    /// <param name="index">Индекс записи в логе</param>
-    public void SetLastApplied(int index)
+    /// <param name="globalIndex">Индекс записи в логе</param>
+    public void SetLastApplied(int globalIndex)
     {
-        if (index < LogEntryInfo.TombIndex)
+        if (globalIndex < LogEntryInfo.TombIndex)
         {
-            throw new ArgumentOutOfRangeException(nameof(index), index, "Переданный индекс меньше TombIndex");
+            throw new ArgumentOutOfRangeException(nameof(globalIndex), globalIndex,
+                "Переданный индекс меньше TombIndex");
         }
 
-        lock (_lock)
+        // Индекс не меньше последнего из снапшота
+        if (!_snapshotStorage.LastLogEntry.IsTomb && globalIndex <= _snapshotStorage.LastLogEntry.Index)
         {
-            LastAppliedIndex = index;
+            throw new ArgumentOutOfRangeException(nameof(globalIndex), globalIndex,
+                "Указанный индекс входит в пределы снапшота");
         }
+
+        LastAppliedGlobalIndex = globalIndex;
     }
 
     /// <summary>
@@ -611,7 +605,6 @@ public class StoragePersistenceFacade
             _buffer.Clear();
             // Очищаем сам файл лога
             _logStorage.ClearCommandLog();
-            LastAppliedIndex = 0;
         }
     }
 

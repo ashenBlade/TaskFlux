@@ -480,62 +480,133 @@ public class StoragePersistenceManagerTests
     [Fact]
     public void SaveSnapshot__КогдаФайлаСнапшотаНеБыло__ДолженСоздатьНовыйФайлСнапшота()
     {
+        var logEntries = new LogEntry[]
+        {
+            RandomDataEntry(1), // 0
+            RandomDataEntry(4), // 1
+            RandomDataEntry(5), // 2
+            RandomDataEntry(6), // 3
+        };
         var (facade, fs) = CreateFacade();
-
-        var entry = new LogEntryInfo(new Term(1), 1);
+        var expectedLastEntry = new LogEntryInfo(new Term(6), 3);
         var data = new byte[] {1, 2, 3};
+        facade.LogStorage.SetFileTest(logEntries);
+        facade.SetLastApplied(3);
 
         facade.SaveSnapshot(new StubSnapshot(data));
 
         var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllDataTest();
         Assert.True(fs.SnapshotFile.Exists);
-        Assert.Equal(entry.Index, actualIndex);
-        Assert.Equal(entry.Term, actualTerm);
+        Assert.Equal(expectedLastEntry.Index, actualIndex);
+        Assert.Equal(expectedLastEntry.Term, actualTerm);
         Assert.Equal(data, actualData);
-        Assert.Equal(entry, facade.SnapshotStorage.LastLogEntry);
+        Assert.Equal(expectedLastEntry, facade.SnapshotStorage.LastLogEntry);
     }
 
     [Fact]
     public void SaveSnapshot__КогдаФайлСнапшотаСуществовалПустой__ДолженПерезаписатьСтарыйФайл()
     {
-        var entry = new LogEntryInfo(new Term(1), 1);
+        var logEntries = new[]
+        {
+            RandomDataEntry(1), // 0
+            RandomDataEntry(2), // 1
+            RandomDataEntry(3), // 2
+            RandomDataEntry(4), // 3
+            RandomDataEntry(5), // 4
+        };
         var data = new byte[128];
         Random.Shared.NextBytes(data);
 
         var (facade, _) = CreateFacade();
+        facade.LogStorage.SetFileTest(logEntries);
+        facade.SetLastApplied(4);
+
         facade.SaveSnapshot(new StubSnapshot(data));
 
+        var expectedLastEntry = new LogEntryInfo(new Term(5), 4);
         var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllDataTest();
-        Assert.Equal(entry.Index, actualIndex);
-        Assert.Equal(entry.Term, actualTerm);
+        Assert.Equal(expectedLastEntry.Index, actualIndex);
+        Assert.Equal(expectedLastEntry.Term, actualTerm);
         Assert.Equal(data, actualData);
-        Assert.Equal(entry, facade.SnapshotStorage.LastLogEntry);
+        Assert.Equal(expectedLastEntry, facade.SnapshotStorage.LastLogEntry);
     }
 
     // TODO: тесты на InstallSnapshot
 
     [Fact]
-    public void SaveSnapshot__КогдаФайлСнапшотаСуществовалСДанными__ДолженПерезаписатьСтарыйФайл()
+    public void
+        SaveSnapshot__КогдаФайлСнапшотаСуществовалНеПустойИИндексПримененнойКомандыПоследний__ДолженПерезаписатьСтарыйФайл()
     {
-        var entry = new LogEntryInfo(new Term(1), 1);
-
-        var data = new byte[128];
-        Random.Shared.NextBytes(data);
+        var newSnapshotData = new byte[128];
+        Random.Shared.NextBytes(newSnapshotData);
 
         var (facade, _) = CreateFacade();
-
-        // Размер этих данных больше, чем новых
+        // Cуществует старый файл снапшота 
         var oldData = new byte[164];
         Random.Shared.NextBytes(oldData);
-        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(123), 222, new StubSnapshot(oldData));
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(2), 3, new StubSnapshot(oldData));
 
-        facade.SaveSnapshot(new StubSnapshot(data));
+        // У нас в логе 4 команды, причем применены все
+        var lastTerm = new Term(5);
+        var exisingLogData = new[]
+        {
+            RandomDataEntry(3),              // 4
+            RandomDataEntry(3),              // 5
+            RandomDataEntry(4),              // 6
+            RandomDataEntry(lastTerm.Value), // 7
+        };
+        facade.LogStorage.SetFileTest(exisingLogData);
+        // Все команды применены из лога
+        facade.SetLastApplied(7);
+
+        facade.SaveSnapshot(new StubSnapshot(newSnapshotData));
 
         var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllDataTest();
-        Assert.Equal(entry.Index, actualIndex);
-        Assert.Equal(entry.Term, actualTerm);
-        Assert.Equal(data, actualData);
-        Assert.Equal(entry, facade.SnapshotStorage.LastLogEntry);
+        var expectedIndex = 7;
+        var expectedTerm = lastTerm;
+        Assert.Equal(expectedIndex, actualIndex);
+        Assert.Equal(expectedTerm, actualTerm);
+        Assert.Equal(newSnapshotData, actualData);
+        Assert.Equal(new LogEntryInfo(expectedTerm, expectedIndex), facade.SnapshotStorage.LastLogEntry);
+    }
+
+
+    [Fact]
+    public void
+        SaveSnapshot__КогдаФайлСнапшотаСуществовалНеПустойИИндексПримененнойКомандыВСерединеЛога__ДолженПерезаписатьСтарыйФайл()
+    {
+        var newSnapshotData = new byte[128];
+        Random.Shared.NextBytes(newSnapshotData);
+
+        var (facade, _) = CreateFacade();
+        var currentTerm = new Term(5);
+        // Cуществует старый файл снапшота 
+        var oldData = new byte[164];
+        Random.Shared.NextBytes(oldData);
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(2), 3, new StubSnapshot(oldData));
+        facade.UpdateState(currentTerm, null);
+
+        // У нас в логе 4 команды, причем применены все
+        var exisingLogData = new[]
+        {
+            RandomDataEntry(3), // 4
+            RandomDataEntry(3), // 5
+            RandomDataEntry(4), // 6
+            RandomDataEntry(5), // 7
+        };
+        facade.LogStorage.SetFileTest(exisingLogData);
+        // Все команды применены из лога
+        facade.SetLastApplied(5);
+
+        facade.SaveSnapshot(new StubSnapshot(newSnapshotData));
+
+        var (actualIndex, actualTerm, actualData) = facade.SnapshotStorage.ReadAllDataTest();
+        var expectedIndex = 5;
+        var expectedTerm = new Term(3);
+        Assert.Equal(expectedIndex, actualIndex);
+        Assert.Equal(expectedTerm, actualTerm);
+        Assert.Equal(newSnapshotData, actualData);
+        Assert.Equal(new LogEntryInfo(expectedTerm, expectedIndex), facade.SnapshotStorage.LastLogEntry);
     }
 
     [Theory]

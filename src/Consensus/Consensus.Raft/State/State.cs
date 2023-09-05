@@ -77,9 +77,3 @@ public abstract class State<TCommand, TResponse>
     public abstract IEnumerable<InstallSnapshotResponse> Apply(InstallSnapshotRequest request,
                                                                CancellationToken token = default);
 }
-
-// TODO: колбэк для написанного чанка
-/// <summary>
-/// Колбэк, вызываемый при записи очередного чанка в файл снапшота
-/// </summary>
-public delegate void ChunkWrittenCallback(int chunkNumber, long written, CancellationToken token = default);

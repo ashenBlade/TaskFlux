@@ -179,6 +179,11 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             yield break;
         }
 
+        if (CurrentTerm < request.Term)
+        {
+            PersistenceFacade.UpdateState(request.Term, null);
+        }
+
         // 1. Обновляем файл снапшота
         foreach (var success in PersistenceFacade.InstallSnapshot(
                      new LogEntryInfo(request.LastIncludedTerm, request.LastIncludedIndex),

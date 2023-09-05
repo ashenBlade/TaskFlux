@@ -286,6 +286,18 @@ public class FileLogStorage : ILogStorage, IDisposable
         return new LogEntryInfo(_index[index].Term, index);
     }
 
+    public bool TryGetInfoAt(int index, out LogEntryInfo info)
+    {
+        if (index < _index.Count)
+        {
+            info = new LogEntryInfo(_index[index].Term, index);
+            return true;
+        }
+
+        info = default!;
+        return false;
+    }
+
     public IReadOnlyList<LogEntry> GetRange(int start, int end)
     {
         if (_index.Count < end)

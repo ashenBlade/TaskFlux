@@ -8,6 +8,7 @@ using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
 using Consensus.Raft.Tests.Infrastructure;
 using Consensus.Raft.Tests.Stubs;
+using FluentAssertions;
 using Moq;
 using Serilog.Core;
 using TaskFlux.Core;
@@ -372,9 +373,15 @@ public class FollowerStateTests
         var lastIncludedIndex = 10;
         var lastIncludedTerm = new Term(2);
         var snapshotData = new byte[] {1, 2, 3};
-        var request = new InstallSnapshotRequest(new Term(2), new NodeId(1), lastIncludedIndex, lastIncludedTerm,
+        var leaderTerm = new Term(2);
+        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedIndex, lastIncludedTerm,
             new StubSnapshot(snapshotData));
-        node.Handle(request);
+        foreach (var response in node.Handle(request))
+        {
+            response.CurrentTerm
+                    .Should()
+                    .Be(leaderTerm, "отправленный лидером терм больше текущего");
+        }
 
 
         var (index, term, data) = persistence.ReadSnapshotFileTest();
@@ -391,9 +398,14 @@ public class FollowerStateTests
         var lastIncludedIndex = 10;
         var lastIncludedTerm = new Term(2);
         var snapshotData = new byte[] {1, 2, 3};
-        var request = new InstallSnapshotRequest(new Term(2), new NodeId(1), lastIncludedIndex, lastIncludedTerm,
+        var leaderTerm = new Term(2);
+        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedIndex, lastIncludedTerm,
             new StubSnapshot(snapshotData));
-        node.Handle(request);
+
+        foreach (var response in node.Handle(request))
+        {
+            Assert.Equal(leaderTerm, response.CurrentTerm);
+        }
 
         var (index, term, data) = persistence.ReadSnapshotFileTest();
         Assert.Equal(lastIncludedIndex, index);
@@ -411,9 +423,15 @@ public class FollowerStateTests
         var lastIncludedIndex = 10;
         var lastIncludedTerm = new Term(2);
         var snapshotData = new byte[] {1, 2, 3};
-        var request = new InstallSnapshotRequest(new Term(2), new NodeId(1), lastIncludedIndex, lastIncludedTerm,
+        var leaderTerm = new Term(4);
+        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedIndex, lastIncludedTerm,
             new StubSnapshot(snapshotData));
-        node.Handle(request);
+        foreach (var response in node.Handle(request))
+        {
+            response.CurrentTerm
+                    .Should()
+                    .Be(leaderTerm, "терм лидера больше текущего");
+        }
 
         var (index, term, data) = persistence.ReadSnapshotFileTest();
         Assert.Equal(lastIncludedIndex, index);
