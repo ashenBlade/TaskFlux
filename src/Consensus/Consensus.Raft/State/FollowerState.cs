@@ -187,7 +187,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         // 1. Обновляем файл снапшота
         foreach (var success in PersistenceFacade.InstallSnapshot(
                      new LogEntryInfo(request.LastIncludedTerm, request.LastIncludedIndex),
-                     request.Snapshot, _electionTimer, token))
+                     request.Snapshot, token))
         {
             yield return new InstallSnapshotResponse(CurrentTerm);
             if (!success)
@@ -196,21 +196,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             }
         }
 
-        _electionTimer.Stop();
-
-        // 2. Очищаем лог (лучше будет перезаписать данные полностью)
-        try
-        {
-            PersistenceFacade.ClearCommandLog();
-
-            // 3. Восстановить состояние из снапшота
-            RestoreState();
-        }
-        finally
-        {
-            _electionTimer.Start();
-        }
-
+        _electionTimer.Start();
         yield return new InstallSnapshotResponse(CurrentTerm);
     }
 

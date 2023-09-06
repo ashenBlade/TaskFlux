@@ -6,6 +6,7 @@ using Consensus.Raft.Persistence;
 using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
+using FluentAssertions;
 using TaskFlux.Core;
 
 namespace Consensus.Storage.Tests;
@@ -15,8 +16,7 @@ public class StoragePersistenceManagerTests
 {
     private static LogEntry EmptyEntry(int term) => new(new Term(term), Array.Empty<byte>());
 
-    private record ConsensusFileSystem(MockFileSystem Fs,
-                                       IFileInfo LogFile,
+    private record ConsensusFileSystem(IFileInfo LogFile,
                                        IFileInfo MetadataFile,
                                        IFileInfo SnapshotFile,
                                        IDirectoryInfo TemporaryDirectory);
@@ -41,7 +41,7 @@ public class StoragePersistenceManagerTests
         snapshot.Create();
         tempDirectory.Create();
 
-        return new ConsensusFileSystem(fs, log, metadata, snapshot, tempDirectory);
+        return new ConsensusFileSystem(log, metadata, snapshot, tempDirectory);
     }
 
     private static readonly Term DefaultTerm = Term.Start;
@@ -56,8 +56,7 @@ public class StoragePersistenceManagerTests
         NodeId? votedFor = null)
     {
         var fs = CreateFileSystem();
-        var fileLogStream = fs.LogFile.Open(FileMode.OpenOrCreate);
-        var logStorage = new FileLogStorage(fileLogStream);
+        var logStorage = new FileLogStorage(fs.LogFile, fs.TemporaryDirectory);
 
         var term = initialTerm is null
                        ? DefaultTerm
@@ -100,7 +99,7 @@ public class StoragePersistenceManagerTests
     public void Append__СПустымЛогом__ДолженВернутьАктуальнуюИнформациюОЗаписанномЭлементе()
     {
         var entry = new LogEntry(DefaultTerm, new byte[] {123, 4, 56});
-        var (facade, fs) = CreateFacade();
+        var (facade, _) = CreateFacade();
         // Индексирование начинается с 0
         var expected = new LogEntryInfo(entry.Term, 0);
 
@@ -113,7 +112,7 @@ public class StoragePersistenceManagerTests
     [Fact]
     public void Append__КогдаВБуфереЕстьЭлементы__ДолженВернутьПравильнуюЗапись()
     {
-        var (facade, fs) = CreateFacade(2);
+        var (facade, _) = CreateFacade(2);
         var buffer = new List<LogEntry>()
         {
             new(new Term(1), new byte[] {1, 2, 3}), new(new Term(2), new byte[] {4, 5, 6}),
@@ -131,13 +130,13 @@ public class StoragePersistenceManagerTests
     private static LogEntry Entry(int term, params byte[] data) => new LogEntry(new Term(term), data);
 
     private static LogEntry Entry(int term, string data = "") =>
-        new LogEntry(new Term(term), Encoding.UTF8.GetBytes(data));
+        new(new Term(term), Encoding.UTF8.GetBytes(data));
 
     [Fact]
     public void Append__КогдаБуферПустНоВХранилищеЕстьЭлементы__ДолженВернутьПравильнуюЗапись()
     {
-        var (facade, fs) = CreateFacade(2);
-        facade.LogStorage.AppendRange(new LogEntry[] {Entry(1, 99, 76, 33), Entry(1, 9), Entry(2, 94, 22, 48)});
+        var (facade, _) = CreateFacade(2);
+        facade.LogStorage.AppendRange(new[] {Entry(1, 99, 76, 33), Entry(1, 9), Entry(2, 94, 22, 48)});
         var entry = Entry(2, 4, 1, 34);
         var expected = new LogEntryInfo(entry.Term, 3);
 
@@ -153,7 +152,7 @@ public class StoragePersistenceManagerTests
     [Fact]
     public void Append__КогдаВБуфереИХранилищеЕстьЭлементы__ДолженВернутьПравильнуюЗапись()
     {
-        var (facade, fs) = CreateFacade(3);
+        var (facade, _) = CreateFacade(3);
         facade.LogStorage.AppendRange(new[] {Entry(1, "adfasfas"), Entry(2, "aaaa"), Entry(2, "aegqer89987")});
 
         facade.SetupBufferTest(new List<LogEntry>() {Entry(3, "asdf"),});
@@ -209,7 +208,7 @@ public class StoragePersistenceManagerTests
     public void Commit__СЭлементамиВБуфере__ДолженЗаписатьЗаписиВLogStorage(int entriesCount, int commitIndex)
     {
         // На всякий случай выставим терм в количество элементов (термы инкрементируются)
-        var (facade, fs) = CreateFacade(entriesCount);
+        var (facade, _) = CreateFacade(entriesCount);
         var bufferElements = Enumerable.Range(1, entriesCount)
                                        .Select(RandomDataEntry)
                                        .ToList();
@@ -392,7 +391,7 @@ public class StoragePersistenceManagerTests
     [InlineData(10)]
     public void InsertRange__СПустымБуфером__ДолженДобавитьЗаписиВБуфер(int elementsCount)
     {
-        var (facade, fs) = CreateFacade(elementsCount + 1);
+        var (facade, _) = CreateFacade(elementsCount + 1);
         var entries = Enumerable.Range(1, elementsCount)
                                 .Select(RandomDataEntry)
                                 .ToArray();
@@ -480,7 +479,7 @@ public class StoragePersistenceManagerTests
     [Fact]
     public void SaveSnapshot__КогдаФайлаСнапшотаНеБыло__ДолженСоздатьНовыйФайлСнапшота()
     {
-        var logEntries = new LogEntry[]
+        var logEntries = new[]
         {
             RandomDataEntry(1), // 0
             RandomDataEntry(4), // 1
@@ -531,7 +530,239 @@ public class StoragePersistenceManagerTests
         Assert.Equal(expectedLastEntry, facade.SnapshotStorage.LastLogEntry);
     }
 
-    // TODO: тесты на InstallSnapshot
+    [Fact]
+    public void InstallSnapshot__КогдаЛогБылПустым__ДолженОбновитьИндексПоследнейПримененнойКоманды()
+    {
+        var (facade, _) = CreateFacade();
+        var lastLogEntry = new LogEntryInfo(new Term(7), 10);
+        var snapshotData = RandomBytes(0);
+
+        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
+              .EnumerateAll();
+
+        var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
+
+        actualLastIndex
+           .Should()
+           .Be(lastLogEntry.Index, "указанный индекс должен сохраниться в файл снапшота");
+        actualLastTerm
+           .Should()
+           .Be(lastLogEntry.Term, "указанный терм должен сохранитсья в файл снапшота");
+        actualData
+           .Should()
+           .Equal(snapshotData, "записанные данные должны быть равны передаваемым");
+        facade.SnapshotStorage.LastLogEntry
+              .Should()
+              .Be(lastLogEntry, "свойство должно быть равным такому же как и в снапшоте");
+
+        facade.GetLastAppliedIndexTest()
+              .Should()
+              .Be(lastLogEntry.Index, "лог был пустым и новый снапшот установлен");
+    }
+
+    [Fact]
+    public void InstallSnapshot__КогдаВЛогеБылиКоманды__ДолженВернутьПравильныеНепримененныеКоманды()
+    {
+        var (facade, _) = CreateFacade();
+        var lastLogEntry = new LogEntryInfo(new Term(7), 10);
+        var snapshotData = RandomBytes(0);
+
+        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
+              .EnumerateAll();
+
+        var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
+
+        actualLastIndex
+           .Should()
+           .Be(lastLogEntry.Index, "указанный индекс должен сохраниться в файл снапшота");
+        actualLastTerm
+           .Should()
+           .Be(lastLogEntry.Term, "указанный терм должен сохранитсья в файл снапшота");
+        actualData
+           .Should()
+           .Equal(snapshotData, "записанные данные должны быть равны передаваемым");
+        facade.SnapshotStorage.LastLogEntry
+              .Should()
+              .Be(lastLogEntry, "свойство должно быть равным такому же как и в снапшоте");
+
+        facade.GetLastAppliedIndexTest()
+              .Should()
+              .Be(lastLogEntry.Index, "лог был пустым и новый снапшот установлен");
+    }
+
+    [Fact]
+    public void InstallSnapshot__КогдаФайлСнапшотаСуществовалНеПустой__ДолженСохранитьДанныеСнапшота()
+    {
+        var (facade, _) = CreateFacade();
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(4), 3, new StubSnapshot(new byte[] {1, 2, 3}));
+        var lastLogEntry = new LogEntryInfo(new Term(7), 10);
+        var snapshotData = RandomBytes(123);
+
+        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
+              .EnumerateAll();
+
+        var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
+
+        actualLastIndex
+           .Should()
+           .Be(lastLogEntry.Index, "указанный индекс должен сохраниться в файл снапшота");
+        actualLastTerm
+           .Should()
+           .Be(lastLogEntry.Term, "указанный терм должен сохранитсья в файл снапшота");
+        actualData
+           .Should()
+           .Equal(snapshotData, "записанные данные должны быть равны передаваемым");
+        facade.SnapshotStorage.LastLogEntry
+              .Should()
+              .Be(lastLogEntry, "свойство должно быть равным такому же как и в снапшоте");
+    }
+
+    [Fact]
+    public void InstallSnapshot__КогдаФайлаСнапшотаНеСуществовало__ДолженСохранитьДанныеСнапшота()
+    {
+        // Должен удалить предшествующие записи в логе
+        var (facade, _) = CreateFacade();
+
+        var lastLogEntry = new LogEntryInfo(new Term(1), 10);
+        var snapshotData = RandomBytes(123);
+        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
+              .EnumerateAll();
+
+        var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
+
+        actualLastIndex
+           .Should()
+           .Be(lastLogEntry.Index, "указанный индекс должен сохраниться в файл снапшота");
+        actualLastTerm
+           .Should()
+           .Be(lastLogEntry.Term, "указанный терм должен сохранитсья в файл снапшота");
+        actualData
+           .Should()
+           .Equal(snapshotData, "записанные данные должны быть равны передаваемым");
+        facade.SnapshotStorage.LastLogEntry
+              .Should()
+              .Be(lastLogEntry, "свойство должно быть равным такому же как и в снапшоте");
+    }
+
+    [Fact]
+    public void InstallSnapshot__КогдаВФайлеЛогаБылиПересекающиесяКоманды__ДолженОчиститьЛогДоУказанныхВСнапшотеКоманд()
+    {
+        // Должен удалить предшествующие записи в логе
+        var (facade, _) = CreateFacade();
+
+        var snapshotData = RandomBytes(123);
+
+        // Снапшота нет, поэтому индексирование с 0
+        var existingLog = new[]
+        {
+            RandomDataEntry(1), // 0
+            RandomDataEntry(2), // 1
+            RandomDataEntry(3), // 2
+            RandomDataEntry(3), // 3
+            RandomDataEntry(3), // 4
+        };
+        facade.LogStorage.SetFileTest(existingLog);
+        // В снапшоте - все команды до 4-ой (индекс 3)
+        var lastLogEntry = new LogEntryInfo(new Term(3), 3);
+        var expectedLog = existingLog[4..];
+
+        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
+              .EnumerateAll();
+
+        // Проверка корректности общей работы
+        var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
+        actualLastIndex
+           .Should()
+           .Be(lastLogEntry.Index, "указанный индекс должен сохраниться в файл снапшота");
+        actualLastTerm
+           .Should()
+           .Be(lastLogEntry.Term, "указанный терм должен сохранитсья в файл снапшота");
+        actualData
+           .Should()
+           .Equal(snapshotData, "записанные данные должны быть равны передаваемым");
+        facade.SnapshotStorage.LastLogEntry
+              .Should()
+              .Be(lastLogEntry, "свойство должно быть равным такому же как и в снапшоте");
+
+        // Проверка корректности обновления лога
+        var actualLog = facade.ReadLogFileTest();
+        actualLog
+           .Should()
+           .Equal(expectedLog, LogEntryComparisonFunc, "файл лога должен очиститься, до указанной команды");
+    }
+
+    [Fact]
+    public void InstallSnapshot__КогдаВБуфереКомандБылиПересекающиесяКоманды__ДолженОчиститьБуферДоТребуемогоИндекса()
+    {
+        // Должен удалить предшествующие записи в логе
+        var (facade, _) = CreateFacade();
+
+        var snapshotData = RandomBytes(123);
+
+        // Снапшота нет, поэтому индексирование с 0
+        var existingLog = new[]
+        {
+            RandomDataEntry(1), // 0
+            RandomDataEntry(2), // 1
+            RandomDataEntry(3), // 2
+            RandomDataEntry(3), // 3
+            RandomDataEntry(3), // 4
+        };
+
+        var existingBuffer = new[]
+        {
+            RandomDataEntry(3), // 5
+            RandomDataEntry(4), // 6
+            RandomDataEntry(5), // 7
+            RandomDataEntry(5), // 8
+            RandomDataEntry(5), // 9
+        };
+        facade.LogStorage.SetFileTest(existingLog);
+        facade.SetupBufferTest(existingBuffer);
+        // В снапшоте - все команды до 4-ой (индекс 3)
+        var lastLogEntry = new LogEntryInfo(new Term(5), 8);
+        // Индексирование в буфере будет с 3
+        var expectedBuffer = existingBuffer[3..];
+
+        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
+              .EnumerateAll();
+
+        // Проверка корректности общей работы
+        var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
+        actualLastIndex
+           .Should()
+           .Be(lastLogEntry.Index, "указанный индекс должен сохраниться в файл снапшота");
+        actualLastTerm
+           .Should()
+           .Be(lastLogEntry.Term, "указанный терм должен сохранитсья в файл снапшота");
+        actualData
+           .Should()
+           .Equal(snapshotData, "записанные данные должны быть равны передаваемым");
+        facade.SnapshotStorage.LastLogEntry
+              .Should()
+              .Be(lastLogEntry, "свойство должно быть равным такому же как и в снапшоте");
+
+        // Проверка корректности обновления лога
+        var actualLog = facade.ReadLogFileTest();
+        actualLog
+           .Should()
+           .BeEmpty("все команды в логе должны удалиться");
+        var actualBuffer = facade.ReadLogBufferTest();
+        actualBuffer
+           .Should()
+           .Equal(expectedBuffer, LogEntryComparisonFunc, "команды в буфере должны удалиться до нужного количества");
+    }
+
+    // TODO: тесты на применение оставшихся команд
+    // TODO: тесты на обновление состояния после установки снапшота
+    // TODO: тесты на очищение лога для SaveSnapshot
+
+    private static byte[] RandomBytes(int size)
+    {
+        var bytes = new byte[size];
+        Random.Shared.NextBytes(bytes);
+        return bytes;
+    }
 
     [Fact]
     public void
@@ -749,6 +980,9 @@ public class StoragePersistenceManagerTests
 
     private static readonly ISnapshot NullSnapshot = new StubSnapshot(Array.Empty<byte>());
 
+    private static readonly Func<LogEntry, LogEntry, bool> LogEntryComparisonFunc = (entry, logEntry) =>
+        Comparer.Equals(entry, logEntry);
+
     [Theory]
     [InlineData(0, 0)] // Только 1 запись в снапшоте
     [InlineData(5, 0)] // Нужно с самого начала
@@ -771,5 +1005,16 @@ public class StoragePersistenceManagerTests
 
         var success = facade.TryGetFrom(index, out _);
         Assert.False(success);
+    }
+}
+
+file static class EnumerableExtensions
+{
+    public static void EnumerateAll<T>(this IEnumerable<T> data)
+    {
+        foreach (var _ in data)
+        {
+            /*  */
+        }
     }
 }

@@ -228,7 +228,11 @@ FileLogStorage CreateLogStorage()
 
     try
     {
-        fileStorage = FileLogStorage.InitializeFromFileSystem(GetConsensusDirectory());
+        var consensusDirectory = GetConsensusDirectory();
+        var temporaryDirectory =
+            consensusDirectory.FileSystem.DirectoryInfo.New(Path.Combine(consensusDirectory.FullName, "temporary"));
+        temporaryDirectory.Create();
+        fileStorage = FileLogStorage.InitializeFromFileSystem(consensusDirectory, temporaryDirectory);
     }
     catch (InvalidDataException invalidDataException)
     {

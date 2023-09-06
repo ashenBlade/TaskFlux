@@ -22,42 +22,32 @@ public class FileLogStorage : ILogStorage, IDisposable
     private const int DataStartPosition = HeaderSizeBytes;
 
     /// <summary>
+    /// Файл лога команд
+    /// </summary>
+    private readonly IFileInfo _logFile;
+
+    /// <summary>
     /// Поток, представляющий файл
     /// </summary>
     /// <remarks>
     /// Используется базовый <see cref="Stream"/> вместо <see cref="FileStream"/> для тестирования
     /// </remarks>
-    private readonly Stream _fileStream;
+    private FileSystemStream _fileStream = null!;
 
-    private StreamBinaryReader _reader;
-    private StreamBinaryWriter _writer;
+    /// <summary>
+    /// Директория для временных файлов
+    /// </summary>
+    private readonly IDirectoryInfo _temporaryDirectory;
 
     /// <summary>
     /// Список отображений: индекс записи - позиция в файле (потоке)
     /// </summary>
     private List<PositionTerm> _index = null!;
 
-    internal FileLogStorage(Stream fileStream)
+    internal FileLogStorage(IFileInfo logFile, IDirectoryInfo temporaryDirectory)
     {
-        if (!fileStream.CanRead)
-        {
-            throw new ArgumentException("Переданный поток не поддерживает чтение", nameof(fileStream));
-        }
-
-        if (!fileStream.CanSeek)
-        {
-            throw new ArgumentException("Переданный поток не поддерживает позиционирование", nameof(fileStream));
-        }
-
-        if (!fileStream.CanWrite)
-        {
-            throw new ArgumentException("Переданный поток не поддерживает запись", nameof(fileStream));
-        }
-
-        _fileStream = fileStream;
-
-        _writer = new StreamBinaryWriter(fileStream);
-        _reader = new StreamBinaryReader(fileStream);
+        _logFile = logFile;
+        _temporaryDirectory = temporaryDirectory;
 
         Initialize();
     }
@@ -68,61 +58,109 @@ public class FileLogStorage : ILogStorage, IDisposable
     /// </summary>
     private void Initialize()
     {
-        if (_fileStream.Length == 0)
+        if (!_logFile.Exists)
         {
-            _fileStream.Seek(0, SeekOrigin.Begin);
-            _writer.Write(Marker);
-            _writer.Write(CurrentVersion);
-            // _writer.Flush();
-
-            _index = new List<PositionTerm>();
-            return;
-        }
-
-        if (_fileStream.Length < HeaderSizeBytes)
-        {
-            throw new InvalidDataException(
-                $"Минимальный размер файла должен быть {HeaderSizeBytes}. Длина файла оказалась {_fileStream.Length}");
-        }
-
-        _fileStream.Seek(0, SeekOrigin.Begin);
-
-        // Валидируем заголовок
-        var marker = _reader.ReadInt32();
-        if (marker != Marker)
-        {
-            throw new InvalidDataException(
-                $"Считанный из файла маркер не равен требуемому. Ожидалось: {Marker}. Получено: {marker}");
-        }
-
-        var version = _reader.ReadInt32();
-        if (CurrentVersion < version)
-        {
-            throw new InvalidDataException(
-                $"Указанная версия файла больше текущей версии программы. Текущая версия: {CurrentVersion}. Указанная версия: {version}");
-        }
-
-        var index = new List<PositionTerm>();
-
-        // Воссоздаем индекс
-        try
-        {
-            long filePosition;
-            while (( filePosition = _fileStream.Position ) < _fileStream.Length)
+            try
             {
-                var term = _reader.ReadInt32();
-                var dataLength = _reader.ReadInt32();
-                _fileStream.Seek(dataLength, SeekOrigin.Current);
-                index.Add(new PositionTerm(new Term(term), filePosition));
+                _fileStream = _logFile.Create();
+            }
+            catch (UnauthorizedAccessException uae)
+            {
+                throw new IOException(
+                    "Не удалось создать новый файл лога команд для рафта: нет прав для создания файла", uae);
+            }
+            catch (IOException e)
+            {
+                throw new IOException("Не удалось создать новый файл лога команд для рафта", e);
             }
         }
-        catch (EndOfStreamException e)
+        else
         {
-            throw new InvalidDataException(
-                "Ошибка при воссоздании индекса из файла лога. Не удалось прочитать указанное количество данных", e);
+            try
+            {
+                _fileStream = _logFile.Open(FileMode.Open);
+            }
+            catch (UnauthorizedAccessException uae)
+            {
+                throw new IOException("Не удалось открыть файл лога команд: ошибка доступа к файлу", uae);
+            }
+            catch (IOException e)
+            {
+                throw new IOException("Не удалось открыть файл лога команд: файл уже открыт", e);
+            }
         }
 
-        _index = index;
+        try
+        {
+            var reader = new StreamBinaryReader(_fileStream);
+
+            if (_fileStream.Length == 0)
+            {
+                WriteHeader(_fileStream);
+                _index = new List<PositionTerm>();
+                return;
+            }
+
+            if (_fileStream.Length < HeaderSizeBytes)
+            {
+                throw new InvalidDataException(
+                    $"Минимальный размер файла должен быть {HeaderSizeBytes}. Длина файла оказалась {_fileStream.Length}");
+            }
+
+            _fileStream.Seek(0, SeekOrigin.Begin);
+
+            // Валидируем заголовок
+            var marker = reader.ReadInt32();
+            if (marker != Marker)
+            {
+                throw new InvalidDataException(
+                    $"Считанный из файла маркер не равен требуемому. Ожидалось: {Marker}. Получено: {marker}");
+            }
+
+            var version = reader.ReadInt32();
+            if (CurrentVersion < version)
+            {
+                throw new InvalidDataException(
+                    $"Указанная версия файла больше текущей версии программы. Текущая версия: {CurrentVersion}. Указанная версия: {version}");
+            }
+
+            var index = new List<PositionTerm>();
+
+            // Воссоздаем индекс
+            try
+            {
+                long filePosition;
+                while (( filePosition = _fileStream.Position ) < _fileStream.Length)
+                {
+                    var term = reader.ReadInt32();
+                    var dataLength = reader.ReadInt32();
+                    _fileStream.Seek(dataLength, SeekOrigin.Current);
+                    index.Add(new PositionTerm(new Term(term), filePosition));
+                }
+            }
+            catch (EndOfStreamException e)
+            {
+                throw new InvalidDataException(
+                    "Ошибка при воссоздании индекса из файла лога. Не удалось прочитать указанное количество данных",
+                    e);
+            }
+
+            _index = index;
+        }
+        catch (Exception)
+        {
+            _fileStream.Close();
+            throw;
+        }
+    }
+
+    private void WriteHeader(FileSystemStream stream)
+    {
+        var writer = new StreamBinaryWriter(stream);
+        stream.Seek(0, SeekOrigin.Begin);
+        writer.Write(Marker);
+        writer.Write(CurrentVersion);
+        stream.Flush(true);
     }
 
     public int Count => _index.Count;
@@ -134,7 +172,8 @@ public class FileLogStorage : ILogStorage, IDisposable
     public LogEntryInfo Append(LogEntry entry)
     {
         var savedLastPosition = _fileStream.Seek(0, SeekOrigin.End);
-        _writer.Write(entry);
+        new StreamBinaryWriter(_fileStream).Write(entry);
+        _fileStream.Flush(true);
         _index.Add(new PositionTerm(entry.Term, savedLastPosition));
         return new LogEntryInfo(entry.Term, _index.Count - 1);
     }
@@ -162,8 +201,8 @@ public class FileLogStorage : ILogStorage, IDisposable
             }
 
             _fileStream.Seek(0, SeekOrigin.End);
-            _writer.Write(buffer.AsSpan(0, size));
-            _writer.Flush();
+            new StreamBinaryWriter(_fileStream).Write(buffer.AsSpan(0, size));
+            _fileStream.Flush(true);
 
             _index.AddRange(newIndexes);
 
@@ -265,8 +304,9 @@ public class FileLogStorage : ILogStorage, IDisposable
         {
             try
             {
-                var term = new Term(_reader.ReadInt32());
-                var buffer = _reader.ReadBuffer();
+                var reader = new StreamBinaryReader(_fileStream);
+                var term = new Term(reader.ReadInt32());
+                var buffer = reader.ReadBuffer();
                 return new LogEntry(term, buffer);
             }
             catch (EndOfStreamException e)
@@ -328,7 +368,7 @@ public class FileLogStorage : ILogStorage, IDisposable
         return entries;
     }
 
-    public void ClearCommandLog()
+    public void Clear()
     {
         _fileStream.SetLength(DataStartPosition);
         _index.Clear();
@@ -343,6 +383,10 @@ public class FileLogStorage : ILogStorage, IDisposable
     /// В базовой директории - это `{BASE}/consensus`.
     /// В ней должен лежать файл с логом - `raft.log`
     /// </param>
+    /// <param name="temporaryDirectory">
+    /// Директория для временных файлов.
+    /// Должна существовать на момент вызова функции
+    /// </param>
     /// <returns>Новый, иницилизированный <see cref="FileLogStorage"/></returns>
     /// <exception cref="InvalidDataException">
     /// Обнаружены ошибки во время инициализации файла (потока) данных: <br/>
@@ -350,61 +394,36 @@ public class FileLogStorage : ILogStorage, IDisposable
     ///    - Полученное магическое число не соответствует требуемому <br/>
     ///    - Указанная в файле версия несовместима с текущей <br/>\
     /// </exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="temporaryDirectory"/> - не существует
+    /// </exception>
     /// <exception cref="IOException">
     /// - Ошибка во время создания нового файла лога, либо <br/>
     /// - Ошибка во время открытия сущесвтующего файла лога, либо <br/>
     /// </exception>
-    public static FileLogStorage InitializeFromFileSystem(IDirectoryInfo consensusDirectory)
+    public static FileLogStorage InitializeFromFileSystem(IDirectoryInfo consensusDirectory,
+                                                          IDirectoryInfo temporaryDirectory)
     {
         var fileStream = OpenOrCreateLogFile();
+        if (!temporaryDirectory.Exists)
+        {
+            throw new ArgumentException(
+                $"Директории для временных файлов не существует. Директория: {temporaryDirectory.FullName}");
+        }
 
-        return new FileLogStorage(fileStream);
+        return new FileLogStorage(fileStream, temporaryDirectory);
 
-        FileSystemStream OpenOrCreateLogFile()
+        IFileInfo OpenOrCreateLogFile()
         {
             var file = consensusDirectory.FileSystem.FileInfo.New(Path.Combine(consensusDirectory.FullName,
                 Constants.LogFileName));
-            FileSystemStream stream;
-
-            if (!file.Exists)
-            {
-                try
-                {
-                    stream = file.Create();
-                }
-                catch (UnauthorizedAccessException uae)
-                {
-                    throw new IOException(
-                        "Не удалось создать новый файл лога команд для рафта: нет прав для создания файла", uae);
-                }
-                catch (IOException e)
-                {
-                    throw new IOException("Не удалось создать новый файл лога команд для рафта", e);
-                }
-            }
-            else
-            {
-                try
-                {
-                    stream = file.Open(FileMode.Open);
-                }
-                catch (UnauthorizedAccessException uae)
-                {
-                    throw new IOException("Не удалось открыть файл лога команд: ошибка доступа к файлу", uae);
-                }
-                catch (IOException e)
-                {
-                    throw new IOException("Не удалось открыть файл лога команд: файл уже открыт", e);
-                }
-            }
-
-            return stream;
+            return file;
         }
     }
 
     public void Dispose()
     {
-        _fileStream.Flush();
+        _fileStream.Flush(true);
         _fileStream.Close();
         _fileStream.Dispose();
     }
@@ -425,6 +444,71 @@ public class FileLogStorage : ILogStorage, IDisposable
     internal void SetFileTest(IEnumerable<LogEntry> entries)
     {
         AppendRange(entries);
+    }
+
+
+    /// <summary>
+    /// Очистить лог команд до указанного индекса включительно.
+    /// После этой операции, из файла лога будут удалены все записи до указанной включительно
+    /// </summary>
+    /// <param name="index">Индекс последней записи, которую нужно удалить</param>
+    public void RemoveUntil(int index)
+    {
+        if (index == _index.Count - 1)
+        {
+            // По факту надо очистить весь файл
+            _fileStream.SetLength(DataStartPosition);
+            _index.Clear();
+            return;
+        }
+
+        // 1. Создаем временный файл
+        var (file, stream) = CreateTempFile();
+        try
+        {
+            // 2. Записываем туда заголовок
+            WriteHeader(stream);
+
+            // 3. Копируем данные с исходного файла лога
+            var copyStartPosition = _index[index + 1]; // Копировать начинаем со следующего после index
+            _fileStream.Seek(copyStartPosition.Position, SeekOrigin.Begin);
+            _fileStream.CopyTo(stream);
+            stream.Flush(true);
+
+            // 4. Переименовываем
+            _fileStream.Close();
+            file.MoveTo(_logFile.FullName, true);
+        }
+        catch (Exception)
+        {
+            stream.Close();
+            stream.Dispose();
+            throw;
+        }
+
+        // 5. Обновляем индекс и поток файла лога
+        _index.RemoveRange(0, index + 1);
+        _fileStream.Dispose();
+        _fileStream = stream;
+        return;
+
+        (IFileInfo, FileSystemStream) CreateTempFile()
+        {
+            while (true)
+            {
+                var tempName = Path.GetRandomFileName();
+                var fullPath = Path.Combine(_temporaryDirectory.FullName, tempName);
+                var tempFile = _temporaryDirectory.FileSystem.FileInfo.New(fullPath);
+                try
+                {
+                    return ( tempFile, tempFile.Open(FileMode.CreateNew) );
+                }
+                catch (IOException io)
+                {
+                    Console.WriteLine(io);
+                }
+            }
+        }
     }
 }
 

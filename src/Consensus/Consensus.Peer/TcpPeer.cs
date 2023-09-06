@@ -161,6 +161,7 @@ public class TcpPeer : IPeer
         var requestResponse = SendPacketReturning(requestPacket, token);
         if (requestResponse is null)
         {
+            // Если соединение было оборвано - сделать повторную попытку
             if (!TryEstablishConnection(token))
             {
                 yield return null;
@@ -190,6 +191,7 @@ public class TcpPeer : IPeer
             yield return GetInstallSnapshotResponse(chunkResponse);
         }
 
+        // Это для явного разделения конца метода и локальной функции
         yield break;
 
         static InstallSnapshotResponse GetInstallSnapshotResponse(RaftPacket packet)

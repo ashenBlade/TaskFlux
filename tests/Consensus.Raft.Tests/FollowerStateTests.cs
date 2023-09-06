@@ -33,7 +33,7 @@ public class FollowerStateTests
                                : Helpers.NullTimerFactory;
         var backgroundJobQueue = jobQueue ?? Helpers.NullBackgroundJobQueue;
 
-        var persistence = new StoragePersistenceFacade(new FileLogStorage(fs.Log.Open(FileMode.OpenOrCreate)),
+        var persistence = new StoragePersistenceFacade(new FileLogStorage(fs.Log, fs.TemporaryDirectory),
             new FileMetadataStorage(fs.Metadata.Open(FileMode.OpenOrCreate), currentTerm, votedFor),
             new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory));
 
@@ -356,7 +356,7 @@ public class FollowerStateTests
         (StoragePersistenceFacade, ConsensusFileSystem) CreateStorage()
         {
             var (_, log, metadata, snapshot, tempDir) = Helpers.CreateFileSystem();
-            var logFile = new FileLogStorage(log.Open(FileMode.OpenOrCreate));
+            var logFile = new FileLogStorage(log, tempDir);
             var metadataFile = new FileMetadataStorage(metadata.Open(FileMode.OpenOrCreate), new Term(1), null);
             var snapshotFile = new FileSystemSnapshotStorage(snapshot, tempDir);
             return ( new StoragePersistenceFacade(logFile, metadataFile, snapshotFile),
@@ -497,6 +497,4 @@ public class FollowerStateTests
         Assert.Equal(request.Term, response.Term);
         Assert.Equal(node.CurrentTerm, response.Term);
     }
-
-    // TODO: тесты, чтобы буфер не стирался, когда файл лога превышен
 }

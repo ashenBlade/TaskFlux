@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.LogFileCheckStrategy;
@@ -86,7 +87,7 @@ public class StoragePersistenceFacade
     /// <remarks>
     /// Указанный индекс - глобальный
     /// </remarks>
-    public LogEntryInfo LastApplied
+    private LogEntryInfo LastApplied
     {
         get
         {
@@ -462,12 +463,11 @@ public class StoragePersistenceFacade
     /// Перезаписать старый снапшот новым и обновить файл лога (удалить старые записи).
     /// Используется для ответа на InstallSnapshot запрос.
     /// </summary>
-    /// <param name="lastLogEntry">
+    /// <param name="lastIncludedEntry">
     /// Информация о последней примененной команде в <paramref name="snapshot"/>.
     /// Этот метод только сохраняет новый файл снапшота, без очищения или удаления лога команд
     /// </param>
     /// <param name="snapshot">Слепок системы</param>
-    /// <param name="electionTimer">Таймер выборов, который должен обновляться каждый раз, после получения нового чанка</param>
     /// <param name="token">Токен отмены</param>
     /// <returns>
     /// Поток флагов успешности операции.
@@ -477,30 +477,32 @@ public class StoragePersistenceFacade
     /// Если достигнут конец, то значение не возвращается - это нужно, чтобы в конце отправить последний InstallSnapshotResponse
     /// </returns>
     /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
-    public IEnumerable<bool> InstallSnapshot(LogEntryInfo lastLogEntry,
+    /// <remarks>
+    /// После установки нового снапшота, лог корректируется - удаляются предшествующие записи
+    /// </remarks>
+    public IEnumerable<bool> InstallSnapshot(LogEntryInfo lastIncludedEntry,
                                              ISnapshot snapshot,
-                                             ITimer electionTimer,
                                              CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
+
+        // Сохраним индекс, чтобы потом могли очистить лог
+        var lastLocalIndex = CalculateLocalIndex(lastIncludedEntry.Index);
+        Debug.Assert(lastLocalIndex >= 0, "Последний индекс в снапшоте меньше индекса первой моей команды в логе",
+            "Нельзя установить снапшот, когда последний индекс команды в логе меньше нашей первой команды");
 
         // 1. Создать временный файл
         var snapshotTempFile = _snapshotStorage.CreateTempSnapshotFile();
 
         // 2. Записать заголовок: маркер, индекс, терм
-        electionTimer.Stop();
         try
         {
-            snapshotTempFile.Initialize(lastLogEntry);
+            snapshotTempFile.Initialize(lastIncludedEntry);
         }
         catch (Exception)
         {
             snapshotTempFile.Discard();
             throw;
-        }
-        finally
-        {
-            electionTimer.Start();
         }
 
         // 3. Записываем сами данные на диск
@@ -528,7 +530,51 @@ public class StoragePersistenceFacade
         snapshotTempFile.Save();
 
         // 5. Очищаем лог до указанного индекса
-        // TODO: очистить лог
+
+        if (lastLocalIndex < _logStorage.Count)
+        {
+            // Индекс находится в самом файле лога
+            if (lastLocalIndex == _logStorage.Count - 1)
+            {
+                _logStorage.Clear();
+            }
+            else
+            {
+                _logStorage.RemoveUntil(lastLocalIndex);
+            }
+        }
+        else if (lastLocalIndex - _logStorage.Count < _buffer.Count)
+        {
+            var bufferIndex = lastLocalIndex - _logStorage.Count;
+            if (bufferIndex == _buffer.Count - 1)
+            {
+                // Очищаем буфер полностью
+                _buffer.Clear();
+            }
+            else
+            {
+                // Очищаем буфер до указанного индекса
+                _buffer.RemoveRange(0, bufferIndex);
+            }
+
+            // Полностью очищаем лог
+            _logStorage.Clear();
+        }
+        else
+        {
+            // Очищаем лог и буфер
+            _logStorage.Clear();
+            _buffer.Clear();
+        }
+
+        LastAppliedGlobalIndex = lastIncludedEntry.Index;
+
+        /*
+         * Ситуации:
+         *   - Последний индекс снапшота среди файла лога
+         *   - Последний индекс снапшота среди буфера
+         *   - Последний индекс снапшота больше всех индексов
+         */
     }
 
     /// <summary>
@@ -604,7 +650,7 @@ public class StoragePersistenceFacade
             // Очищаем непримененные команды
             _buffer.Clear();
             // Очищаем сам файл лога
-            _logStorage.ClearCommandLog();
+            _logStorage.Clear();
         }
     }
 
@@ -703,4 +749,6 @@ public class StoragePersistenceFacade
         return _logStorage.ReadAllTest()
                           .ToList();
     }
+
+    internal int GetLastAppliedIndexTest() => LastAppliedGlobalIndex;
 }

@@ -1,3 +1,5 @@
+using System.IO.Abstractions;
+using System.IO.Abstractions.TestingHelpers;
 using System.Text;
 using Consensus.Raft;
 using Consensus.Raft.Persistence;
@@ -8,15 +10,31 @@ namespace Consensus.Storage.Tests;
 [Trait("Category", "Raft")]
 public class FileLogStorageTests
 {
-    public static LogEntry Entry(int term, string data)
+    private static LogEntry Entry(int term, string data)
         => new(new Term(term), Encoding.UTF8.GetBytes(data));
 
+    private record MockFiles(IFileInfo LogFile, IDirectoryInfo TemporaryDirectory);
+
+    private static (FileLogStorage Log, MockFiles Mock) CreateFileLogStorage()
+    {
+        var temporaryDirectoryName = "temporary";
+        var logFileName = "log.file";
+
+        var fs = new MockFileSystem(files: new Dictionary<string, MockFileData>()
+        {
+            {logFileName, new MockFileData(Array.Empty<byte>())}, {temporaryDirectoryName, new MockDirectoryData()}
+        });
+
+
+        var fileInfo = new MockFileInfo(fs, logFileName);
+        var temporaryDirectory = fs.DirectoryInfo.New(temporaryDirectoryName);
+        return ( new FileLogStorage(fileInfo, temporaryDirectory), new MockFiles(fileInfo, temporaryDirectory) );
+    }
 
     [Fact]
     public void ReadLog__КогдаЛогПуст__ДолженВернутьПустойСписок()
     {
-        using var memory = new MemoryStream();
-        var storage = new FileLogStorage(memory);
+        var (storage, _) = CreateFileLogStorage();
 
         var log = storage.ReadAll();
 
@@ -31,8 +49,7 @@ public class FileLogStorageTests
     [InlineData(20)]
     public void ReadLog__КогдаЛогПустИОперацияПовториласьНесколькоРаз__ДолженВернутьПустойСписок(int operationsCount)
     {
-        using var memory = new MemoryStream();
-        var storage = new FileLogStorage(memory);
+        var (storage, _) = CreateFileLogStorage();
 
         for (int i = 0; i < operationsCount; i++)
         {
@@ -45,8 +62,7 @@ public class FileLogStorageTests
     [Fact]
     public void ReadLogПослеAppend__КогдаЛогПуст__ДолженВернутьСписокИзЕдинственнойЗаписи()
     {
-        using var memory = new MemoryStream();
-        var storage = new FileLogStorage(memory);
+        var (storage, _) = CreateFileLogStorage();
 
         var entry = Entry(1, "some data");
         storage.Append(entry);
@@ -60,8 +76,7 @@ public class FileLogStorageTests
     [Fact]
     public void ReadLogПослеAppend__КогдаЛогПуст__ДолженВернутьСписокИзТойЖеЗаписи()
     {
-        using var memory = new MemoryStream();
-        var storage = new FileLogStorage(memory);
+        var (storage, _) = CreateFileLogStorage();
 
         var expected = Entry(1, "some data");
         storage.Append(expected);
@@ -79,8 +94,7 @@ public class FileLogStorageTests
     public void ReadLogПослеНесколькихAppend__КогдаЛогПуст__ДолженВернутьСписокСТакимЖеКоличествомДобавленныхЗаписей(
         int entriesCount)
     {
-        using var memory = new MemoryStream();
-        var storage = new FileLogStorage(memory);
+        var (storage, _) = CreateFileLogStorage();
 
         for (int i = 1; i <= entriesCount; i++)
         {
@@ -100,8 +114,7 @@ public class FileLogStorageTests
     [InlineData(20)]
     public void ReadLogПослеНесколькихAppend__КогдаЛогПуст__ДолженВернутьСписокСДобавленнымиЗаписями(int entriesCount)
     {
-        using var memory = new MemoryStream();
-        var storage = new FileLogStorage(memory);
+        var (storage, _) = CreateFileLogStorage();
 
         var expected = Enumerable.Range(1, entriesCount)
                                  .Select(i => Entry(i, $"data{i}"))
@@ -125,8 +138,7 @@ public class FileLogStorageTests
     public void ReadLogПослеAppendRange__КогдаЛогПуст__ДолженВернутьСписокСТакимЖеКоличествомДобавленныхЗаписей(
         int entriesCount)
     {
-        using var memory = new MemoryStream();
-        var storage = new FileLogStorage(memory);
+        var (storage, _) = CreateFileLogStorage();
 
         var expected = Enumerable.Range(1, entriesCount)
                                  .Select(i => Entry(i, $"data{i}"))
@@ -141,8 +153,7 @@ public class FileLogStorageTests
     [Fact]
     public void ReadFrom__КогдаЛогПустИИндекс0__ДолженВернутьПустойСписок()
     {
-        using var memory = new MemoryStream();
-        var storage = new FileLogStorage(memory);
+        var (storage, _) = CreateFileLogStorage();
 
         var actual = storage.ReadFrom(0);
         Assert.Empty(actual);
@@ -151,8 +162,7 @@ public class FileLogStorageTests
     [Fact]
     public void ReadFrom__КогдаВЛоге1ЗаписьИИндекс0__ДолженВернутьСписокИзЭтойЗаписи()
     {
-        using var memory = new MemoryStream();
-        var storage = new FileLogStorage(memory);
+        var (storage, _) = CreateFileLogStorage();
         var expected = Entry(2, "sample data");
 
         storage.Append(expected);
@@ -172,8 +182,7 @@ public class FileLogStorageTests
         int readCount,
         int entriesCount)
     {
-        using var memory = new MemoryStream();
-        var storage = new FileLogStorage(memory);
+        var (storage, _) = CreateFileLogStorage();
 
         var expected = Enumerable.Range(1, entriesCount)
                                  .Select(i => Entry(i, $"data{i}"))
@@ -202,9 +211,9 @@ public class FileLogStorageTests
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
 
-        var firstLog = new FileLogStorage(memory);
+        var (firstLog, fs) = CreateFileLogStorage();
         firstLog.AppendRange(entries);
-        var secondLog = new FileLogStorage(memory);
+        var secondLog = new FileLogStorage(fs.LogFile, fs.TemporaryDirectory);
         var actual = secondLog.ReadAll();
 
         Assert.Equal(entries, actual, Comparer);
@@ -218,7 +227,6 @@ public class FileLogStorageTests
     [InlineData(5, 10)]
     public void AppendRange__СНеПустымЛогомИИндексомКонца__ДолженДобавитьЗаписиВКонец(int initialSize, int appendSize)
     {
-        using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, initialSize)
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
@@ -227,11 +235,11 @@ public class FileLogStorageTests
                                  .ToArray();
         var expected = initial.Concat(appended).ToArray();
 
-        var firstLog = new FileLogStorage(memory);
-        firstLog.AppendRange(initial);
-        firstLog.AppendRange(appended);
+        var (storage, _) = CreateFileLogStorage();
+        storage.AppendRange(initial);
+        storage.AppendRange(appended);
 
-        var actual = firstLog.ReadAll();
+        var actual = storage.ReadAll();
         Assert.Equal(expected, actual, Comparer);
     }
 
@@ -244,12 +252,11 @@ public class FileLogStorageTests
     [InlineData(20)]
     public void GetAt__КогдаЛогНеПустойИндексВалидный__ДолженВернутьТребуемоеЗначение(int logSize)
     {
-        using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, logSize)
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
 
-        var log = new FileLogStorage(memory);
+        var (log, _) = CreateFileLogStorage();
         log.AppendRange(initial);
 
         for (int index = 0; index < logSize; index++)
@@ -263,10 +270,8 @@ public class FileLogStorageTests
     [Fact]
     public void GetPrecedingEntryInfo__КогдаЛогПустИндекс0__ДолженВернутьTomb()
     {
-        using var memory = new MemoryStream();
+        var (log, _) = CreateFileLogStorage();
         var expected = LogEntryInfo.Tomb;
-
-        var log = new FileLogStorage(memory);
 
         var actual = log.GetPrecedingLogEntryInfo(0);
         Assert.Equal(expected, actual);
@@ -279,13 +284,12 @@ public class FileLogStorageTests
     [InlineData(10)]
     public void GetPrecedingEntryInfo__КогдаЛогНеПустИндекс0__ДолженВернутьTomb(int logSize)
     {
-        using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, logSize)
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         var expected = LogEntryInfo.Tomb;
 
-        var log = new FileLogStorage(memory);
+        var (log, _) = CreateFileLogStorage();
         log.AppendRange(initial);
 
         var actual = log.GetPrecedingLogEntryInfo(0);
@@ -301,13 +305,12 @@ public class FileLogStorageTests
     [InlineData(20)]
     public void GetPrecedingEntryInfo__КогдаЛогНеПустИндексРазмерЛога__ДолженВернутьПоследнююЗапись(int logSize)
     {
-        using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, logSize)
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
         var expected = new LogEntryInfo(initial[^1].Term, initial.Length - 1);
 
-        var log = new FileLogStorage(memory);
+        var (log, _) = CreateFileLogStorage();
         log.AppendRange(initial);
 
         var actual = log.GetPrecedingLogEntryInfo(logSize);
@@ -323,12 +326,10 @@ public class FileLogStorageTests
     [InlineData(20)]
     public void GetPrecedingEntryInfo__КогдаЛогНеПустИндексВДиапазонеЛога__ДолженВернутьКорректнуюЗапись(int logSize)
     {
-        using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, logSize)
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
-
-        var log = new FileLogStorage(memory);
+        var (log, _) = CreateFileLogStorage();
         log.AppendRange(initial);
 
         for (int index = 1; index <= logSize; index++)
@@ -343,10 +344,9 @@ public class FileLogStorageTests
     [Fact]
     public void GetLastLogEntry__СПустымЛогом__ДолженВернутьTomb()
     {
-        using var memory = new MemoryStream();
         var expected = LogEntryInfo.Tomb;
 
-        var log = new FileLogStorage(memory);
+        var (log, _) = CreateFileLogStorage();
 
         var actual = log.GetLastLogEntry();
         Assert.Equal(expected, actual);
@@ -362,12 +362,11 @@ public class FileLogStorageTests
     [InlineData(20)]
     public void GetLastLogEntry__СНеПустымЛогом__ДолженВернутьПоследнююЗапись(int logSize)
     {
-        using var memory = new MemoryStream();
         var initial = Enumerable.Range(1, logSize)
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
 
-        var log = new FileLogStorage(memory);
+        var (log, _) = CreateFileLogStorage();
         log.AppendRange(initial);
 
         var expected = new LogEntryInfo(initial[^1].Term, initial.Length - 1);
@@ -378,11 +377,10 @@ public class FileLogStorageTests
     [Fact]
     public void ClearCommandLog__КогдаВЛогеОднаКоманда__ДолженОчиститьЛог()
     {
-        using var memory = new MemoryStream();
-        var log = new FileLogStorage(memory);
+        var (log, _) = CreateFileLogStorage();
         log.AppendRange(new[] {Entry(123, "Hello, world")});
 
-        log.ClearCommandLog();
+        log.Clear();
 
         var stored = log.ReadAll();
         Assert.Empty(stored);
@@ -391,11 +389,10 @@ public class FileLogStorageTests
     [Fact]
     public void ClearCommandLog__КогдаВЛогеОднаКоманда__ДолженУстановитьРазмерВ0()
     {
-        using var memory = new MemoryStream();
-        var log = new FileLogStorage(memory);
+        var (log, _) = CreateFileLogStorage();
         log.AppendRange(new[] {Entry(123, "Hello, world")});
 
-        log.ClearCommandLog();
+        log.Clear();
 
         Assert.Equal(0, log.Count);
     }

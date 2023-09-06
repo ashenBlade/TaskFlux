@@ -55,10 +55,13 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
                                                  + sizeof(int)  // Терм
                                                  + sizeof(int); // Индекс
 
-    private class FileSystemSnapshot : ISnapshot
+    private class FileSystemSnapshot : ISnapshot, IChunkEnumerator
     {
+        private const int BufferSize = 4 * 1024; // 4 Кб (размер страницы)
+
         private readonly IFileInfo _snapshotFile;
-        public const int BufferSize = 4 * 1024; // 4 Кб (размер страницы)
+        private FileSystemStream? _stream;
+        private bool _disposed = false;
 
         public FileSystemSnapshot(IFileInfo snapshotFile)
         {
@@ -67,22 +70,45 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
 
         public IEnumerable<Memory<byte>> GetAllChunks(CancellationToken token = default)
         {
-            using var stream = _snapshotFile.OpenRead();
-            stream.Seek(SnapshotDataStartPosition, SeekOrigin.Begin);
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(FileSystemSnapshot), "Объект снапшота файла уже закрыт");
+            }
+
+            _stream = _snapshotFile.OpenRead();
+            _stream.Seek(SnapshotDataStartPosition, SeekOrigin.Begin);
             var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
             try
             {
-                var read = stream.Read(buffer);
-                if (read == 0 || token.IsCancellationRequested)
+                int read;
+                while (( read = _stream.Read(buffer) ) != 0)
                 {
-                    yield break;
+                    yield return buffer.AsMemory(0, read);
                 }
-
-                yield return buffer.AsMemory(0, read);
             }
             finally
             {
                 ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        public IChunkEnumerator OpenRead()
+        {
+            return this;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            if (_stream is not null)
+            {
+                _stream.Close();
+                _stream.Dispose();
             }
         }
     }
@@ -307,7 +333,6 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         writer.Write(Marker);
         writer.Write(lastIndex);
         writer.Write(lastTerm.Value);
-
         foreach (var chunk in snapshot.GetAllChunks())
         {
             writer.Write(chunk.Span);

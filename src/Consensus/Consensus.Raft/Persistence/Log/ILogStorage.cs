@@ -74,5 +74,5 @@ public interface ILogStorage
     /// Полностью очистить лог команд.
     /// Вызывается когда размер лога превысил максимальный и снашот состояния сброшен на диск 
     /// </summary>
-    public void ClearCommandLog();
+    public void Clear();
 }

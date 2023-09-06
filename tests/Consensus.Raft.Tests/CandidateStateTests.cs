@@ -70,7 +70,7 @@ public class CandidateStateTests
         StoragePersistenceFacade CreateStoragePersistenceFacade()
         {
             var fs = Helpers.CreateFileSystem();
-            var logStorage = new FileLogStorage(fs.Log.Open(FileMode.Open));
+            var logStorage = new FileLogStorage(fs.Log, fs.TemporaryDirectory);
             var metadataStorage =
                 new FileMetadataStorage(fs.Metadata.Open(FileMode.Open), new Term(term), NodeId);
             var snapshotStorage = new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory);

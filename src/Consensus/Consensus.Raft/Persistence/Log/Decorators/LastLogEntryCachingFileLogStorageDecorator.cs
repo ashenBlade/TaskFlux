@@ -72,8 +72,8 @@ public class LastLogEntryCachingFileLogStorageDecorator : ILogStorage
         return _storage.GetRange(start, end);
     }
 
-    public void ClearCommandLog()
+    public void Clear()
     {
-        _storage.ClearCommandLog();
+        _storage.Clear();
     }
 }
