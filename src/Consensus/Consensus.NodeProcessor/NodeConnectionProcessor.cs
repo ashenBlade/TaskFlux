@@ -54,6 +54,8 @@ public class NodeConnectionProcessor : IDisposable
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+            Logger.Information("Соединение с узлом потеряно. Прекращаю обработку");
+            CloseClient();
         }
         catch (Exception e)
         {
@@ -124,8 +126,7 @@ public class NodeConnectionProcessor : IDisposable
     private async Task<bool> ProcessInstallSnapshotAsync(InstallSnapshotRequestPacket packet, CancellationToken token)
     {
         var snapshot = new NetworkSnapshot(Client);
-        var request = new InstallSnapshotRequest(packet.Term, packet.LeaderId, packet.LastEntry.Index,
-            packet.LastEntry.Term, snapshot);
+        var request = new InstallSnapshotRequest(packet.Term, packet.LeaderId, packet.LastEntry, snapshot);
 
         foreach (var response in ConsensusModule.Handle(request, token))
         {

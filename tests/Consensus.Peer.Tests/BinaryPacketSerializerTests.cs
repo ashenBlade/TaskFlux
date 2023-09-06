@@ -208,13 +208,12 @@ public class BinaryPacketSerializerTests
         AssertBase(new InstallSnapshotRequestPacket(new Term(term), new NodeId(leaderId),
             new LogEntryInfo(new Term(lastTerm), lastIndex)));
     }
-    // TODO: тесты на точно количество возвращаемых значений
 
     [Theory]
     [InlineData(new byte[] { })]
     [InlineData(new byte[] {1})]
     [InlineData(new byte[] {0})]
-    [InlineData(new byte[] {byte.MaxValue})]
+    [InlineData(new[] {byte.MaxValue})]
     [InlineData(new byte[] {1, 2})]
     [InlineData(new byte[] {255, 254, 253, 252})]
     [InlineData(new byte[] {1, 1, 2, 44, 128, 88, 33, 2})]

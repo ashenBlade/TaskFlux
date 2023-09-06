@@ -370,11 +370,10 @@ public class FollowerStateTests
         var (node, persistence, fs) = CreateFollowerNodeNew();
         fs.SnapshotFile.Delete();
 
-        var lastIncludedIndex = 10;
-        var lastIncludedTerm = new Term(2);
+        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
         var snapshotData = new byte[] {1, 2, 3};
         var leaderTerm = new Term(2);
-        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedIndex, lastIncludedTerm,
+        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
             new StubSnapshot(snapshotData));
         foreach (var response in node.Handle(request))
         {
@@ -385,8 +384,8 @@ public class FollowerStateTests
 
 
         var (index, term, data) = persistence.ReadSnapshotFileTest();
-        Assert.Equal(lastIncludedIndex, index);
-        Assert.Equal(lastIncludedTerm, term);
+        Assert.Equal(10, index);
+        Assert.Equal(new Term(2), term);
         Assert.Equal(snapshotData, data);
     }
 
@@ -395,11 +394,10 @@ public class FollowerStateTests
     {
         var (node, persistence, _) = CreateFollowerNodeNew();
 
-        var lastIncludedIndex = 10;
-        var lastIncludedTerm = new Term(2);
+        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
         var snapshotData = new byte[] {1, 2, 3};
         var leaderTerm = new Term(2);
-        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedIndex, lastIncludedTerm,
+        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
             new StubSnapshot(snapshotData));
 
         foreach (var response in node.Handle(request))
@@ -408,8 +406,8 @@ public class FollowerStateTests
         }
 
         var (index, term, data) = persistence.ReadSnapshotFileTest();
-        Assert.Equal(lastIncludedIndex, index);
-        Assert.Equal(lastIncludedTerm, term);
+        Assert.Equal(lastIncludedEntry.Index, index);
+        Assert.Equal(lastIncludedEntry.Term, term);
         Assert.Equal(snapshotData, data);
     }
 
@@ -420,11 +418,10 @@ public class FollowerStateTests
         persistence.SnapshotStorage.WriteSnapshotDataTest(new Term(123), 876,
             new StubSnapshot(new byte[] {9, 5, 234, 1, 6, 2, 44, 2, 7, 45, 52, 97}));
 
-        var lastIncludedIndex = 10;
-        var lastIncludedTerm = new Term(2);
+        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
         var snapshotData = new byte[] {1, 2, 3};
         var leaderTerm = new Term(4);
-        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedIndex, lastIncludedTerm,
+        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
             new StubSnapshot(snapshotData));
         foreach (var response in node.Handle(request))
         {
@@ -434,8 +431,33 @@ public class FollowerStateTests
         }
 
         var (index, term, data) = persistence.ReadSnapshotFileTest();
-        Assert.Equal(lastIncludedIndex, index);
-        Assert.Equal(lastIncludedTerm, term);
+        Assert.Equal(10, index);
+        Assert.Equal(new Term(2), term);
+        Assert.Equal(snapshotData, data);
+    }
+
+
+    [Fact]
+    public void InstallSnapshot__КогдаЧанкДанныхОдин__ДолженВернуть2Ответа()
+    {
+        var (node, persistence, _) = CreateFollowerNodeNew();
+
+        var snapshotData = new byte[] {1, 2, 3};
+        var leaderTerm = new Term(4);
+        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
+        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
+            new StubSnapshot(snapshotData));
+
+        foreach (var response in node.Handle(request))
+        {
+            response.CurrentTerm
+                    .Should()
+                    .Be(leaderTerm, "терм лидера больше текущего");
+        }
+
+        var (index, term, data) = persistence.ReadSnapshotFileTest();
+        Assert.Equal(lastIncludedEntry.Index, index);
+        Assert.Equal(lastIncludedEntry.Term, term);
         Assert.Equal(snapshotData, data);
     }
 

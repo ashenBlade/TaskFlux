@@ -9,11 +9,9 @@ namespace Consensus.Raft.Commands.InstallSnapshot;
 /// </summary>
 /// <param name="Term">Терм лидера</param>
 /// <param name="LeaderId">ID лидера (тот кто посылает запрос)</param>
-/// <param name="LastIncludedIndex">Последний индекс команды, которая была применена к передаваемому состоянию</param>
-/// <param name="LastIncludedTerm">Терм, в котором была последняя применная команда</param>
 /// <param name="Snapshot">Снапшот, который передается от лидера</param>
+/// <param name="LastEntry">Последняя команда, примененная в снапшоте</param>
 public record InstallSnapshotRequest(Term Term,
                                      NodeId LeaderId,
-                                     int LastIncludedIndex,
-                                     Term LastIncludedTerm,
+                                     LogEntryInfo LastEntry,
                                      ISnapshot Snapshot);

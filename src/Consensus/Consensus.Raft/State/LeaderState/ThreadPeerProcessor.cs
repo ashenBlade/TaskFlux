@@ -176,7 +176,7 @@ public class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                 {
                     var lastEntry = PersistenceFacade.SnapshotStorage.LastLogEntry;
                     var installSnapshotResponses = _peer.SendInstallSnapshot(new InstallSnapshotRequest(CurrentTerm,
-                        ConsensusModule.Id, lastEntry.Index, lastEntry.Term,
+                        ConsensusModule.Id, lastEntry,
                         snapshot), _token);
 
                     var nullFound = false;
