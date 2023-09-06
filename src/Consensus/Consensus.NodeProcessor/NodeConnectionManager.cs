@@ -9,7 +9,7 @@ using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Core;
 
-namespace TaskFlux.Host;
+namespace Consensus.NodeProcessor;
 
 public class NodeConnectionManager
 {

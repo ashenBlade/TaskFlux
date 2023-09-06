@@ -6,5 +6,5 @@ public interface ISnapshot
     /// Получить все чанки из снапшота
     /// </summary>
     /// <returns>Перечисление чанков снапшота</returns>
-    public IEnumerable<Memory<byte>> GetAllChunks(CancellationToken token = default);
+    public IEnumerable<ReadOnlyMemory<byte>> GetAllChunks(CancellationToken token = default);
 }

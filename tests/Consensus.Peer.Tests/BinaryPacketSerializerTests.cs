@@ -208,16 +208,7 @@ public class BinaryPacketSerializerTests
         AssertBase(new InstallSnapshotRequestPacket(new Term(term), new NodeId(leaderId),
             new LogEntryInfo(new Term(lastTerm), lastIndex)));
     }
-
-    private static readonly ISnapshot NeverUseSnapshot = new NeverShouldUseSnapshot();
-
-    private class NeverShouldUseSnapshot : ISnapshot
-    {
-        public IEnumerable<Memory<byte>> GetAllChunks(CancellationToken token = default)
-        {
-            throw new Exception($"Метод {nameof(GetAllChunks)} не должен использоваться");
-        }
-    }
+    // TODO: тесты на точно количество возвращаемых значений
 
     [Theory]
     [InlineData(new byte[] { })]

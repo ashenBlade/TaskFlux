@@ -55,33 +55,26 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
                                                  + sizeof(int)  // Терм
                                                  + sizeof(int); // Индекс
 
-    private class FileSystemSnapshot : ISnapshot, IChunkEnumerator
+    private class FileSystemSnapshot : ISnapshot
     {
         private const int BufferSize = 4 * 1024; // 4 Кб (размер страницы)
 
         private readonly IFileInfo _snapshotFile;
-        private FileSystemStream? _stream;
-        private bool _disposed = false;
 
         public FileSystemSnapshot(IFileInfo snapshotFile)
         {
             _snapshotFile = snapshotFile;
         }
 
-        public IEnumerable<Memory<byte>> GetAllChunks(CancellationToken token = default)
+        public IEnumerable<ReadOnlyMemory<byte>> GetAllChunks(CancellationToken token = default)
         {
-            if (_disposed)
-            {
-                throw new ObjectDisposedException(nameof(FileSystemSnapshot), "Объект снапшота файла уже закрыт");
-            }
-
-            _stream = _snapshotFile.OpenRead();
-            _stream.Seek(SnapshotDataStartPosition, SeekOrigin.Begin);
+            using var stream = _snapshotFile.OpenRead();
+            stream.Seek(SnapshotDataStartPosition, SeekOrigin.Begin);
             var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
             try
             {
                 int read;
-                while (( read = _stream.Read(buffer) ) != 0)
+                while (( read = stream.Read(buffer) ) != 0)
                 {
                     yield return buffer.AsMemory(0, read);
                 }
@@ -89,26 +82,6 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             finally
             {
                 ArrayPool<byte>.Shared.Return(buffer);
-            }
-        }
-
-        public IChunkEnumerator OpenRead()
-        {
-            return this;
-        }
-
-        public void Dispose()
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _disposed = true;
-            if (_stream is not null)
-            {
-                _stream.Close();
-                _stream.Dispose();
             }
         }
     }

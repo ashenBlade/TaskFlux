@@ -18,13 +18,8 @@ public class QueuesEnumeratorSnapshot : ISnapshot
         _serializer = serializer;
     }
 
-    public void WriteTo(Stream destination, CancellationToken token = default)
-    {
-        var queues = _manager.GetAllQueues();
-        _serializer.Serialize(destination, queues, token);
-    }
 
-    public IEnumerable<Memory<byte>> GetAllChunks(CancellationToken token = default)
+    public IEnumerable<ReadOnlyMemory<byte>> GetAllChunks(CancellationToken token = default)
     {
         var queues = _manager.GetAllQueues();
         foreach (var queue in queues)

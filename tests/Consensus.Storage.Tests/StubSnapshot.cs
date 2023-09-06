@@ -11,9 +11,7 @@ public class StubSnapshot : ISnapshot
         _data = data;
     }
 
-    public StubSnapshot(IEnumerable<byte> data) => _data = data.ToArray();
-
-    public IEnumerable<Memory<byte>> GetAllChunks(CancellationToken token = default)
+    public IEnumerable<ReadOnlyMemory<byte>> GetAllChunks(CancellationToken token = default)
     {
         yield return _data;
     }

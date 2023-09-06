@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using Consensus.CommandQueue;
 using Consensus.CommandQueue.Channel;
 using Consensus.JobQueue;
+using Consensus.NodeProcessor;
 using Consensus.Peer;
 using Consensus.Raft;
 using Consensus.Raft.Persistence;
