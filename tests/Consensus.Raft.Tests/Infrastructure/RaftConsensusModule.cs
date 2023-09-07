@@ -17,7 +17,7 @@ public class RaftConsensusModule : RaftConsensusModule<int, int>
                                  IStateMachine<int, int> stateMachine,
                                  ICommandSerializer<int> commandSerializer,
                                  IStateMachineFactory<int, int> stateMachineFactory)
-        : base(id, peerGroup, logger, timerFactory, backgroundJobQueue, persistenceFacade, commandQueue, stateMachine,
+        : base(id, peerGroup, logger, timerFactory, backgroundJobQueue, persistenceFacade, stateMachine,
             commandSerializer, stateMachineFactory)
     {
     }

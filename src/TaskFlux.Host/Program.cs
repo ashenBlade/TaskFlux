@@ -327,7 +327,7 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
         new RandomizedThreadingTimerFactory(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300));
 
     return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, timerFactory,
-        jobQueue, storage, channelCommandQueue, stateMachine, stateMachineFactory,
+        jobQueue, storage, stateMachine, stateMachineFactory,
         commandSerializer);
 }
 
