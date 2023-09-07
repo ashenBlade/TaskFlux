@@ -9,6 +9,9 @@ using Consensus.Raft.Persistence.Snapshot;
 using FluentAssertions;
 using TaskFlux.Core;
 
+// ReSharper disable UseUtf8StringLiteral
+// ReSharper disable StringLiteralTypo
+
 namespace Consensus.Storage.Tests;
 
 [Trait("Category", "Raft")]

@@ -26,7 +26,6 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\Consensus\Consensus.Raft\Consensus.Raft.csproj"/>
-        <ProjectReference Include="..\..\src\TaskFlux.Serialization.Helpers\TaskFlux.Serialization.Helpers.csproj"/>
     </ItemGroup>
 
 </Project>

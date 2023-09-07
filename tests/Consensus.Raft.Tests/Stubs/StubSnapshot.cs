@@ -1,6 +1,6 @@
 using Consensus.Raft.Persistence;
 
-namespace Consensus.Raft.Tests;
+namespace Consensus.Raft.Tests.Stubs;
 
 public class StubSnapshot : ISnapshot
 {

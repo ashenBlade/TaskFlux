@@ -1,4 +1,4 @@
-namespace Consensus.Raft.Persistence;
+namespace Consensus.Raft.Persistence.Snapshot;
 
 /// <summary>
 /// Интерфейс для записи файла снапшота

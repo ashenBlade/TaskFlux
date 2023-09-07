@@ -6,9 +6,11 @@ public class JobQueueEqualityComparer : IEqualityComparer<IJobQueue>
 {
     public static readonly JobQueueEqualityComparer Instance = new();
 
-    public bool Equals(IJobQueue x, IJobQueue y)
+    public bool Equals(IJobQueue? x, IJobQueue? y)
     {
-        return x.Name.Equals(y.Name)
+        return x is not null
+            && y is not null
+            && x.Name.Equals(y.Name)
             && MetadataEquals(x.Metadata, y.Metadata)
             && StoredDataEquals(x.GetAllData(), y.GetAllData());
     }

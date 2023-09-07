@@ -15,6 +15,7 @@ namespace TaskFlux.Commands.Serialization;
 public class CommandSerializer
 {
     public static readonly CommandSerializer Instance = new();
+
     public byte[] Serialize(Command command)
     {
         var visitor = new CommandSerializerVisitor();
@@ -25,8 +26,10 @@ public class CommandSerializer
     private class CommandSerializerVisitor : ICommandVisitor
     {
         private byte[]? _result;
-        public byte[] Result => _result ?? throw new ArgumentNullException(nameof(_result), "Сериализованное значениеу не выставлено");
-        
+
+        public byte[] Result =>
+            _result ?? throw new ArgumentNullException(nameof(_result), "Сериализованное значениеу не выставлено");
+
         public void Visit(EnqueueCommand command)
         {
             var queueNameSize = MemoryBinaryWriter.EstimateResultSize(command.Queue);
@@ -35,10 +38,10 @@ public class CommandSerializer
                               + sizeof(long)            // Ключ
                               + sizeof(int)             // Длина тела
                               + command.Payload.Length; // Тело
-            
+
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte) CommandType.Enqueue);
+            writer.Write(( byte ) CommandType.Enqueue);
             writer.Write(command.Queue);
             writer.Write(command.Key);
             writer.WriteBuffer(command.Payload);
@@ -52,7 +55,7 @@ public class CommandSerializer
                               + estimatedQueueNameSize; // Очередь
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)CommandType.Dequeue);
+            writer.Write(( byte ) CommandType.Dequeue);
             writer.Write(command.Queue);
             _result = buffer;
         }
@@ -64,7 +67,7 @@ public class CommandSerializer
                               + estimatedQueueNameSize; // Очередь
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)CommandType.Count);
+            writer.Write(( byte ) CommandType.Count);
             writer.Write(command.Queue);
             _result = buffer;
         }
@@ -78,7 +81,7 @@ public class CommandSerializer
 
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)CommandType.CreateQueue);
+            writer.Write(( byte ) CommandType.CreateQueue);
             writer.Write(command.Name);
             writer.Write(command.Size);
             _result = buffer;
@@ -92,7 +95,7 @@ public class CommandSerializer
 
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)CommandType.DeleteQueue);
+            writer.Write(( byte ) CommandType.DeleteQueue);
             writer.Write(command.QueueName);
             _result = buffer;
         }
@@ -102,11 +105,11 @@ public class CommandSerializer
             var estimatedSize = sizeof(CommandType);
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)CommandType.ListQueues);
+            writer.Write(( byte ) CommandType.ListQueues);
             _result = buffer;
         }
     }
-    
+
     /// <summary>
     /// Десериализовать переданный массив байтов в соответствующую команду
     /// </summary>
@@ -122,19 +125,19 @@ public class CommandSerializer
         {
             throw new SerializationException("Переданный буффер был пуст");
         }
-        
+
         var reader = new ArrayBinaryReader(payload);
-        var marker = (CommandType) reader.ReadByte();
+        var marker = ( CommandType ) reader.ReadByte();
         try
         {
             return marker switch
                    {
-                       CommandType.Count   => DeserializeCountCommand(reader),
-                       CommandType.Dequeue => DeserializeDequeueCommand(reader),
-                       CommandType.Enqueue => DeserializeEnqueueCommand(reader),
+                       CommandType.Count       => DeserializeCountCommand(reader),
+                       CommandType.Dequeue     => DeserializeDequeueCommand(reader),
+                       CommandType.Enqueue     => DeserializeEnqueueCommand(reader),
                        CommandType.CreateQueue => DeserializeCreateQueueCommand(reader),
                        CommandType.DeleteQueue => DeserializeDeleteQueueCommand(reader),
-                       CommandType.ListQueues => DeserializeListQueuesCommand(reader),
+                       CommandType.ListQueues  => ListQueuesCommand.Instance,
                    };
         }
         // Ушли за границы буфера - передана не полная информация
@@ -151,38 +154,32 @@ public class CommandSerializer
         }
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private ListQueuesCommand DeserializeListQueuesCommand(ArrayBinaryReader reader)
-    {
-        return ListQueuesCommand.Instance;
-    }
-
-    private DeleteQueueCommand DeserializeDeleteQueueCommand(ArrayBinaryReader reader)
+    private static DeleteQueueCommand DeserializeDeleteQueueCommand(ArrayBinaryReader reader)
     {
         var name = reader.ReadQueueName();
         return new DeleteQueueCommand(name);
     }
 
-    private CreateQueueCommand DeserializeCreateQueueCommand(ArrayBinaryReader reader)
+    private static CreateQueueCommand DeserializeCreateQueueCommand(ArrayBinaryReader reader)
     {
         var queueName = reader.ReadQueueName();
         var limit = reader.ReadUInt32();
         return new CreateQueueCommand(queueName, limit);
     }
 
-    private DequeueCommand DeserializeDequeueCommand(ArrayBinaryReader reader)
+    private static DequeueCommand DeserializeDequeueCommand(ArrayBinaryReader reader)
     {
         var name = reader.ReadQueueName();
         return new DequeueCommand(name);
     }
 
-    private CountCommand DeserializeCountCommand(ArrayBinaryReader reader)
+    private static CountCommand DeserializeCountCommand(ArrayBinaryReader reader)
     {
         var queue = reader.ReadQueueName();
         return new CountCommand(queue);
     }
 
-    private EnqueueCommand DeserializeEnqueueCommand(ArrayBinaryReader reader)
+    private static EnqueueCommand DeserializeEnqueueCommand(ArrayBinaryReader reader)
     {
         var queue = reader.ReadQueueName();
         var key = reader.ReadInt64();

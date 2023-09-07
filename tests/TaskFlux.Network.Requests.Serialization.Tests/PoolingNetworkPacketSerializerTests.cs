@@ -1,11 +1,10 @@
 using System.Buffers;
-using System.ComponentModel;
-using System.Reflection;
 using TaskFlux.Network.Requests.Authorization;
 using TaskFlux.Network.Requests.Packets;
 
 namespace TaskFlux.Network.Requests.Serialization.Tests;
 
+// ReSharper disable StringLiteralTypo
 [Trait("Category", "Serialization")]
 public class PoolingNetworkPacketSerializerTests
 {
@@ -18,7 +17,7 @@ public class PoolingNetworkPacketSerializerTests
         var actual = await serializerVisitor.DeserializeAsync();
         Assert.Equal(expected, actual, PacketEqualityComparer.Instance);
     }
-    
+
     [Theory(Timeout = 50)]
     [InlineData(0)]
     [InlineData(1)]
@@ -107,13 +106,7 @@ public class PoolingNetworkPacketSerializerTests
         await AssertBase(new NotLeaderPacket(id));
     }
 
-    public static IEnumerable<object[]> AuthorizationMethods = new[]
-    {
-        new object[]
-        {
-            new NoneAuthorizationMethod()
-        }
-    };
+    public static IEnumerable<object[]> AuthorizationMethods = new[] {new object[] {new NoneAuthorizationMethod()}};
 
     [Theory]
     [MemberData(nameof(AuthorizationMethods))]

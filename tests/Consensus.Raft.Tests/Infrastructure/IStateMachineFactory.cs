@@ -1,6 +1,5 @@
-namespace Consensus.Raft.Tests;
+namespace Consensus.Raft.Tests.Infrastructure;
 
-public interface IStateMachineFactory: IStateMachineFactory<int, int>
+public interface IStateMachineFactory : IStateMachineFactory<int, int>
 {
-    
 }

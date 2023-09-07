@@ -9,7 +9,7 @@ using TaskFlux.Serialization.Helpers;
 
 namespace TaskFlux.Network.Requests.Serialization;
 
-public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
+public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
 {
     private const int ByteFalse = 0;
     private Stream Stream { get; }
@@ -126,6 +126,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         var authMethod = await DeserializeAuthorizationMethod(token);
         return new AuthorizationRequestPacket(authMethod);
     }
+
     private async Task<AuthorizationMethod> DeserializeAuthorizationMethod(CancellationToken token)
     {
         var authType = await ReadByte(token);
@@ -133,7 +134,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         {
             return ( AuthorizationMethodType ) authType switch
                    {
-                       AuthorizationMethodType.None => await DeserializeNoneAuthorization(token),
+                       AuthorizationMethodType.None => await DeserializeNoneAuthorization(),
                    };
         }
         catch (SwitchExpressionException)
@@ -142,8 +143,8 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
                 $"Неизвестный маркер типа авторизации: {authType}");
         }
     }
-    
-    private Task<NoneAuthorizationMethod> DeserializeNoneAuthorization(CancellationToken token)
+
+    private Task<NoneAuthorizationMethod> DeserializeNoneAuthorization()
     {
         return Task.FromResult(NoneAuthorizationMethod.Instance);
     }
@@ -188,10 +189,11 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
                 {
                     ThrowEndOfStream();
                 }
+
                 left -= read;
                 index += read;
             }
-            
+
             string message;
             try
             {
@@ -199,7 +201,9 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
             }
             catch (DecoderFallbackException fallback)
             {
-                throw new PacketDeserializationException(PacketType.ErrorResponse, $"Ошибка десериализации строки сообщения ошибки из пакета {nameof(PacketType.ErrorResponse)}", fallback);
+                throw new PacketDeserializationException(PacketType.ErrorResponse,
+                    $"Ошибка десериализации строки сообщения ошибки из пакета {nameof(PacketType.ErrorResponse)}",
+                    fallback);
             }
 
             return new ErrorResponsePacket(message);
@@ -209,7 +213,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
             Pool.Return(buffer);
         }
     }
-    
+
     private static void ThrowEndOfStream() => throw new EndOfStreamException("Был достигнут конец потока");
 
     private async Task<CommandResponsePacket> DeserializeDataResponse(CancellationToken token)
@@ -244,6 +248,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
                 {
                     ThrowEndOfStream();
                 }
+
                 index += read;
                 left -= read;
             }
@@ -272,6 +277,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
                 {
                     ThrowEndOfStream();
                 }
+
                 index += read;
                 left -= read;
             }
@@ -292,7 +298,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
             var read = await Stream.ReadAsync(markerBuffer.AsMemory(0, 1), token);
             if (read == 0)
             {
-                ThrowEndOfStream();            
+                ThrowEndOfStream();
             }
 
             return ( PacketType ) markerBuffer[0];
@@ -314,7 +320,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         {
             var buffer = array.AsMemory(0, estimatedSize);
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)PacketType.CommandRequest);
+            writer.Write(( byte ) PacketType.CommandRequest);
             writer.WriteBuffer(packet.Payload);
             await Stream.WriteAsync(buffer, token);
         }
@@ -335,7 +341,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         {
             var buffer = array.AsMemory(0, estimatedSize);
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)PacketType.CommandResponse);
+            writer.Write(( byte ) PacketType.CommandResponse);
             writer.WriteBuffer(packet.Payload);
             await Stream.WriteAsync(buffer, token);
         }
@@ -356,7 +362,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         {
             var buffer = array.AsMemory(0, estimatedSize);
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)PacketType.ErrorResponse);
+            writer.Write(( byte ) PacketType.ErrorResponse);
             writer.Write(packet.Message);
             await Stream.WriteAsync(buffer, token);
         }
@@ -376,7 +382,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         {
             var buffer = array.AsMemory(0, estimatedSize);
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write((byte)PacketType.NotLeader);
+            writer.Write(( byte ) PacketType.NotLeader);
             writer.Write(packet.LeaderId);
             await Stream.WriteAsync(buffer, token);
         }
@@ -407,7 +413,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         }
     }
 
-    private class PayloadSerializerAuthorizationMethodVisitor: IAuthorizationMethodVisitor, IDisposable
+    private class PayloadSerializerAuthorizationMethodVisitor : IAuthorizationMethodVisitor, IDisposable
     {
         private readonly ArrayPool<byte> _pool;
         private byte[]? _buffer;
@@ -421,7 +427,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         {
             _pool = pool;
         }
-        
+
         public void Visit(NoneAuthorizationMethod noneAuthorizationMethod)
         {
             const int size = sizeof(AuthorizationMethodType);
@@ -462,7 +468,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
             {
                 var memory = buffer.AsMemory(0, errorSize);
                 var writer = new MemoryBinaryWriter(memory);
-                writer.Write((byte)PacketType.AuthorizationResponse);
+                writer.Write(( byte ) PacketType.AuthorizationResponse);
                 writer.Write(false);
                 writer.Write(error);
                 await Stream.WriteAsync(memory, token);
@@ -481,7 +487,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
             {
                 var memory = buffer.AsMemory(0, successSize);
                 var writer = new MemoryBinaryWriter(memory);
-                writer.Write((byte)PacketType.AuthorizationResponse);
+                writer.Write(( byte ) PacketType.AuthorizationResponse);
                 writer.Write(true);
                 await Stream.WriteAsync(memory, token);
             }
@@ -505,14 +511,14 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
             {
                 var memory = buffer.AsMemory(0, length);
                 var writer = new MemoryBinaryWriter(memory);
-                writer.Write((byte)PacketType.BootstrapResponse);
+                writer.Write(( byte ) PacketType.BootstrapResponse);
                 writer.Write(false);
                 writer.Write(message);
                 await Stream.WriteAsync(memory, token);
             }
             finally
             {
-                Pool.Return(buffer);   
+                Pool.Return(buffer);
             }
         }
         else
@@ -524,7 +530,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
             {
                 var memory = buffer.AsMemory(0, length);
                 var writer = new MemoryBinaryWriter(memory);
-                writer.Write((byte)PacketType.BootstrapResponse);
+                writer.Write(( byte ) PacketType.BootstrapResponse);
                 writer.Write(true);
                 await Stream.WriteAsync(memory, token);
             }
@@ -546,7 +552,7 @@ public class PoolingNetworkPacketSerializer: IAsyncPacketVisitor
         {
             var memory = buffer.AsMemory(0, length);
             var writer = new MemoryBinaryWriter(memory);
-            writer.Write((byte)PacketType.BootstrapRequest);
+            writer.Write(( byte ) PacketType.BootstrapRequest);
             writer.Write(packet.Major);
             writer.Write(packet.Minor);
             writer.Write(packet.Patch);

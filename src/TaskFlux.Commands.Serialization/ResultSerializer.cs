@@ -208,7 +208,7 @@ public class ResultSerializer
                    ResultType.Dequeue    => DeserializeDequeueResult(reader),
                    ResultType.Enqueue    => DeserializeEnqueueResult(reader),
                    ResultType.Error      => DeserializeErrorResult(reader),
-                   ResultType.Ok         => DeserializeOkResult(reader),
+                   ResultType.Ok         => OkResult.Instance,
                    ResultType.ListQueues => DeserializeListQueuesResult(reader),
                };
     }
@@ -259,19 +259,14 @@ public class ResultSerializer
         return new ListQueuesResult(result);
     }
 
-    private OkResult DeserializeOkResult(ArrayBinaryReader reader)
-    {
-        return OkResult.Instance;
-    }
-
-    private ErrorResult DeserializeErrorResult(ArrayBinaryReader reader)
+    private static ErrorResult DeserializeErrorResult(ArrayBinaryReader reader)
     {
         var subtype = ( ErrorType ) reader.ReadByte();
         var message = reader.ReadString();
         return new ErrorResult(subtype, message);
     }
 
-    private CountResult DeserializeCountResult(ArrayBinaryReader reader)
+    private static CountResult DeserializeCountResult(ArrayBinaryReader reader)
     {
         var count = reader.ReadUInt32();
         if (count == 0)

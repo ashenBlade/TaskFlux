@@ -1,5 +1,4 @@
 ﻿using TaskFlux.Commands.Visitors;
-using TaskFlux.Core;
 
 namespace TaskFlux.Commands;
 
@@ -8,11 +7,13 @@ namespace TaskFlux.Commands;
 /// </summary>
 public abstract class Command
 {
-    protected internal Command() 
-    { }
+    protected internal Command()
+    {
+    }
+
     public abstract CommandType Type { get; }
     public abstract Result Apply(ICommandContext context);
-    
+
     public abstract void ApplyNoResult(ICommandContext context);
     public abstract void Accept(ICommandVisitor visitor);
     public abstract T Accept<T>(IReturningCommandVisitor<T> visitor);

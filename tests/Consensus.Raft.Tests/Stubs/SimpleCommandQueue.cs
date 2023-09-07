@@ -1,9 +1,8 @@
-
 using Consensus.CommandQueue;
 
-namespace Consensus.Raft.Tests;
+namespace Consensus.Raft.Tests.Stubs;
 
-public class SimpleCommandQueue: ICommandQueue
+public class SimpleCommandQueue : ICommandQueue
 {
     public T Enqueue<T>(ICommand<T> command)
     {

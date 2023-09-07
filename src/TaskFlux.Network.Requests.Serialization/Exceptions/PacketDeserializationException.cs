@@ -1,11 +1,9 @@
-using System.IO.Pipes;
-
 namespace TaskFlux.Network.Requests.Serialization.Exceptions;
 
 /// <summary>
 /// Класс исключения при ошибке десериализации сетевого пакета
 /// </summary>
-public class PacketDeserializationException: ApplicationException
+public class PacketDeserializationException : ApplicationException
 {
     public PacketType PacketType { get; }
 
@@ -14,7 +12,8 @@ public class PacketDeserializationException: ApplicationException
         PacketType = packetType;
     }
 
-    public PacketDeserializationException(PacketType packetType, string? message, Exception? innerException) : base(message, innerException)
+    public PacketDeserializationException(PacketType packetType, string? message, Exception? innerException) : base(
+        message, innerException)
     {
         PacketType = packetType;
     }

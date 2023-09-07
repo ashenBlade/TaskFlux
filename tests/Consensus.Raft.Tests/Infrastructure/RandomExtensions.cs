@@ -1,4 +1,4 @@
-namespace Consensus.Raft.Tests;
+namespace Consensus.Raft.Tests.Infrastructure;
 
 public static class RandomExtensions
 {

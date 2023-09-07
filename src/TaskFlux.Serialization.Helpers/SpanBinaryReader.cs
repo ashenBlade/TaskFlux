@@ -5,14 +5,14 @@ namespace TaskFlux.Serialization.Helpers;
 
 public ref struct SpanBinaryReader
 {
-    public readonly Span<byte> _buffer = Span<byte>.Empty;
-    public int _index = 0;
+    private readonly Span<byte> _buffer = Span<byte>.Empty;
+    private int _index = 0;
 
     public SpanBinaryReader(Span<byte> buffer)
     {
         _buffer = buffer;
     }
-    
+
     public byte ReadByte()
     {
         return _buffer[_index++];
@@ -30,7 +30,8 @@ public ref struct SpanBinaryReader
         var leftLength = _buffer.Length - _index;
         if (leftLength < shouldHasLength)
         {
-            throw new InvalidDataException($"В буфере отсутствует указанное количество байт. Требуется: {shouldHasLength}. Оставшееся количество: {leftLength}");
+            throw new InvalidDataException(
+                $"В буфере отсутствует указанное количество байт. Требуется: {shouldHasLength}. Оставшееся количество: {leftLength}");
         }
     }
 

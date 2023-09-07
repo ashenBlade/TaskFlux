@@ -7,7 +7,7 @@ public static class QueueNameHelpers
         var length = Random.Shared.Next(0, QueueNameParser.MaxNameLength);
         return new QueueName(string.Create(length, Random.Shared, (span, random) =>
         {
-            for (int i = 0; i < span.Length; i++)
+            for (var i = 0; i < span.Length; i++)
             {
                 span[i] = QueueNameParser.AllowedCharacters[
                     random.Next(0, QueueNameParser.AllowedCharacters.Length)];

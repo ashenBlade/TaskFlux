@@ -1,9 +1,8 @@
-using JobQueue.Core;
 using TaskFlux.Commands.Visitors;
 
 namespace TaskFlux.Commands.ListQueues;
 
-public class ListQueuesCommand: Command
+public class ListQueuesCommand : Command
 {
     public override CommandType Type => CommandType.ListQueues;
     public static readonly ListQueuesCommand Instance = new();
@@ -16,7 +15,8 @@ public class ListQueuesCommand: Command
     }
 
     public override void ApplyNoResult(ICommandContext context)
-    { }
+    {
+    }
 
     public override void Accept(ICommandVisitor visitor)
     {

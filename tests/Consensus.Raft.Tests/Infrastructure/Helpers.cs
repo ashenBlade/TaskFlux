@@ -2,6 +2,7 @@ using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using Consensus.CommandQueue;
 using Consensus.Raft.Persistence;
+using Consensus.Raft.Tests.Stubs;
 using Moq;
 
 namespace Consensus.Raft.Tests.Infrastructure;

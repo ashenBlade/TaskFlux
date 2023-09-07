@@ -25,7 +25,7 @@ internal class RequestProcessor
     private readonly IOptionsMonitor<BinaryRequestModuleOptions> _options;
     private readonly IApplicationInfo _applicationInfo;
     private IConsensusModule<Command, Result> Module { get; }
-    public IClusterInfo ClusterInfo { get; }
+    private IClusterInfo ClusterInfo { get; }
     private ILogger Logger { get; }
     private CommandSerializer CommandSerializer { get; } = CommandSerializer.Instance;
     private ResultSerializer ResultSerializer { get; } = ResultSerializer.Instance;

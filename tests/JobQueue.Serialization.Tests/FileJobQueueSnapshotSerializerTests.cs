@@ -53,7 +53,7 @@ public class FileJobQueueSnapshotSerializerTests
     [Theory]
     [InlineData(0, new byte[0])]
     [InlineData(1, new byte[] {123})]
-    [InlineData(-1, new byte[] {byte.MaxValue})]
+    [InlineData(-1, new[] {byte.MaxValue})]
     [InlineData(long.MaxValue, new byte[] {byte.MaxValue, 0, 0, 0, 0, 0, 0, 0})]
     [InlineData(long.MinValue, new byte[] {5, 65, 22, 75, 97, 32, 200})]
     [InlineData(123123, new byte[] {byte.MaxValue, 1, 2, 3, 4, 5, 6, byte.MinValue})]
@@ -96,7 +96,7 @@ public class FileJobQueueSnapshotSerializerTests
     public void Serialize__КогдаПереданоНесколькоПустыхОчередей__ДолженПравильноДесериализовать(int count)
     {
         var queues = Enumerable.Range(0, count)
-                               .Select(x =>
+                               .Select(_ =>
                                     new StubJobQueue(QueueNameHelpers.CreateRandomQueueName(), 0,
                                         Array.Empty<(long, byte[])>()));
         AssertBase(queues);

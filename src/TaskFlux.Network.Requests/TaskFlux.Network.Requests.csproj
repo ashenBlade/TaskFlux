@@ -6,9 +6,6 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
-    <ItemGroup>
-      <ProjectReference Include="..\TaskFlux.Core\TaskFlux.Core.csproj" />
-    </ItemGroup>
 
     <PropertyGroup>
         <WarningsAsErrors>CA1069</WarningsAsErrors>

@@ -1,7 +1,7 @@
 using Consensus.Raft.Persistence.Metadata;
 using TaskFlux.Core;
 
-namespace Consensus.Raft.Tests;
+namespace Consensus.Raft.Tests.Stubs;
 
 public class StubMetadataStorage : IMetadataStorage
 {
