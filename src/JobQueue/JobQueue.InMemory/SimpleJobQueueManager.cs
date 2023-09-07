@@ -8,6 +8,23 @@ public class SimpleJobQueueManager : IJobQueueManager
     // Если решим добавить одну очередь, но под разными именами, то такое нужно обрабатывать правильно
     public int QueuesCount => _queues.Count;
 
+    IEnumerable<IReadOnlyJobQueue> IReadOnlyJobQueueManager.GetAllQueues()
+    {
+        return GetAllQueues();
+    }
+
+    public bool TryGetQueue(QueueName name, out IReadOnlyJobQueue jobQueue)
+    {
+        if (_queues.TryGetValue(name, out var queue))
+        {
+            jobQueue = queue;
+            return true;
+        }
+
+        jobQueue = default!;
+        return false;
+    }
+
     public IEnumerable<IJobQueue> GetAllQueues()
     {
         return _queues.Values;
@@ -17,7 +34,7 @@ public class SimpleJobQueueManager : IJobQueueManager
 
     public SimpleJobQueueManager(IJobQueue defaultJobQueue)
     {
-        _queues = new(QueueNameEqualityComparer.Instance)
+        _queues = new Dictionary<QueueName, IJobQueue>(QueueNameEqualityComparer.Instance)
         {
             [defaultJobQueue.Name] = defaultJobQueue
         };
@@ -42,7 +59,7 @@ public class SimpleJobQueueManager : IJobQueueManager
     {
         // Предполагаю правильное исполнение без ошибок - инициализирую словарь сразу нужного размера
         var result = new Dictionary<QueueName, IJobQueue>(jobQueues.Count, QueueNameEqualityComparer.Instance);
-        
+
         var found = false;
         foreach (var jobQueue in jobQueues)
         {
@@ -57,8 +74,7 @@ public class SimpleJobQueueManager : IJobQueueManager
             }
             catch (NullReferenceException)
             {
-                throw new ArgumentNullException(
-                    $"В переданной коллекции очередей {nameof(jobQueues)} обнаружен null");
+                throw new ArgumentNullException($"В переданной коллекции очередей {nameof(jobQueues)} обнаружен null");
             }
         }
 

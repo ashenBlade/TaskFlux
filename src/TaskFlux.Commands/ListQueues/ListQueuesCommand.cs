@@ -2,19 +2,19 @@ using TaskFlux.Commands.Visitors;
 
 namespace TaskFlux.Commands.ListQueues;
 
-public class ListQueuesCommand : Command
+public class ListQueuesCommand : ReadOnlyCommand
 {
     public override CommandType Type => CommandType.ListQueues;
     public static readonly ListQueuesCommand Instance = new();
 
-    public override Result Apply(ICommandContext context)
+    protected override Result Apply(IReadOnlyCommandContext context)
     {
         var manager = context.Node.GetJobQueueManager();
         var result = manager.GetAllQueuesMetadata();
         return new ListQueuesResult(result);
     }
 
-    public override void ApplyNoResult(ICommandContext context)
+    protected override void ApplyNoResult(IReadOnlyCommandContext context)
     {
     }
 

@@ -3,7 +3,7 @@ namespace JobQueue.Core;
 /// <summary>
 /// Менеджер для управления очередями задач
 /// </summary>
-public interface IJobQueueManager
+public interface IJobQueueManager : IReadOnlyJobQueueManager
 {
     /// <summary>
     /// Получить именованную очередь с приоритетом
@@ -33,24 +33,6 @@ public interface IJobQueueManager
     public bool TryDeleteQueue(QueueName name, out IJobQueue deleted);
 
     /// <summary>
-    /// Проверить, что очередь с указанным названием существует
-    /// </summary>
-    /// <param name="name">Название очереди</param>
-    /// <returns><c>true</c> - очередь существует, <c>false</c> - очередь не существует</returns>
-    public bool HasQueue(QueueName name);
-
-    /// <summary>
-    /// Получить метаданные обо всех очередях, находящихся в системе
-    /// </summary>
-    /// <returns>Список из метаданных очередей</returns>
-    public IReadOnlyCollection<IJobQueueMetadata> GetAllQueuesMetadata();
-
-    /// <summary>
-    /// Количество очередей, которыми <see cref="IJobQueueManager"/> управляет
-    /// </summary>
-    public int QueuesCount { get; }
-
-    /// <summary>
     /// Получить список из всех очередей, присутствующих в системе.
     /// </summary>
     /// <remarks>
@@ -58,5 +40,5 @@ public interface IJobQueueManager
     /// Для работы лучше пользоваться другими методами.
     /// </remarks>
     /// <returns>Список из всех очередей</returns>
-    public IEnumerable<IJobQueue> GetAllQueues();
+    public new IEnumerable<IJobQueue> GetAllQueues();
 }

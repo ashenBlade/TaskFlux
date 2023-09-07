@@ -14,6 +14,7 @@ public class CommandContext : ICommandContext
     }
 
     public INode Node { get; }
+
     public INodeInfo NodeInfo { get; }
     public IApplicationInfo ApplicationInfo { get; }
     public IClusterInfo ClusterInfo { get; }

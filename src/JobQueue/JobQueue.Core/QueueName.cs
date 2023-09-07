@@ -8,7 +8,7 @@ namespace JobQueue.Core;
 /// <summary>
 /// Объект представляющий название очереди, удовлетворяющее бизнес-логике
 /// </summary>
-public struct QueueName : IEquatable<QueueName>
+public readonly struct QueueName : IEquatable<QueueName>
 {
     public static QueueName Default => new(DefaultName);
     public const string DefaultName = "";
@@ -49,5 +49,15 @@ public struct QueueName : IEquatable<QueueName>
     public override bool Equals(object? obj)
     {
         return obj is QueueName other && Equals(other);
+    }
+
+    public static bool operator ==(QueueName left, QueueName right)
+    {
+        return left.Equals(right);
+    }
+
+    public static bool operator !=(QueueName left, QueueName right)
+    {
+        return !( left == right );
     }
 }

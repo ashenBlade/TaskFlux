@@ -111,9 +111,9 @@ public class RaftConsensusModule<TCommand, TResponse>
         return _currentState.Apply(request, token);
     }
 
-    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request)
+    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request, CancellationToken token = default)
     {
-        return _currentState.Apply(request);
+        return _currentState.Apply(request, token);
     }
 
     public event RoleChangedEventHandler? RoleChanged;

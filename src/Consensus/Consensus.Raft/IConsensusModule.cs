@@ -67,9 +67,12 @@ public interface IConsensusModule<TCommand, TResponse>
 
     public RequestVoteResponse Handle(RequestVoteRequest request) => CurrentState.Apply(request);
     public AppendEntriesResponse Handle(AppendEntriesRequest request) => CurrentState.Apply(request);
-    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request) => CurrentState.Apply(request);
 
-    public IEnumerable<InstallSnapshotResponse> Handle(InstallSnapshotRequest request, CancellationToken token) =>
+    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request, CancellationToken token = default) =>
+        CurrentState.Apply(request, token);
+
+    public IEnumerable<InstallSnapshotResponse> Handle(InstallSnapshotRequest request,
+                                                       CancellationToken token = default) =>
         CurrentState.Apply(request, token);
 
     /// <summary>

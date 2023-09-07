@@ -2,7 +2,6 @@
 using System.IO.Abstractions;
 using System.Net;
 using System.Net.Sockets;
-using Consensus.CommandQueue;
 using Consensus.CommandQueue.Channel;
 using Consensus.JobQueue;
 using Consensus.NodeProcessor;
@@ -28,9 +27,11 @@ using TaskFlux.Core;
 using TaskFlux.Host;
 using TaskFlux.Host.Helpers;
 using TaskFlux.Host.Infrastructure;
-using TaskFlux.Host.Modules.BinaryRequest;
+using TaskFlux.Host.Modules;
 using TaskFlux.Host.Modules.HttpRequest;
+using TaskFlux.Host.Modules.SocketRequest;
 using TaskFlux.Host.Options;
+using TaskFlux.Host.RequestAcceptor;
 using TaskFlux.Node;
 
 Log.Logger = new LoggerConfiguration()
@@ -96,8 +97,8 @@ try
     var jobQueueStateMachine = CreateJobQueueStateMachine(commandContext);
 
     using var commandQueue = new ChannelCommandQueue();
-    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, log,
-        commandQueue, jobQueueStateMachine, nodeInfo, appInfo, clusterInfo);
+    using var raftConsensusModule =
+        CreateRaftConsensusModule(nodeId, peers, log, jobQueueStateMachine, nodeInfo, appInfo, clusterInfo);
 
     var consensusModule =
         new InfoUpdaterConsensusModuleDecorator<Command, Result>(raftConsensusModule, clusterInfo, nodeInfo);
@@ -112,7 +113,10 @@ try
         new SubmitCommandRequestHandler(consensusModule, clusterInfo, appInfo,
             Log.ForContext<SubmitCommandRequestHandler>()));
 
-    var binaryRequestModule = CreateBinaryRequestModule(consensusModule, appInfo, clusterInfo, configuration);
+    using var requestAcceptor =
+        new ExclusiveRequestAcceptor(consensusModule, Log.ForContext("{SourceContext}", "RequestQueue"));
+
+    var binaryRequestModule = CreateBinaryRequestModule(requestAcceptor, appInfo, clusterInfo, configuration);
 
     var nodeConnectionThread = new Thread(o =>
     {
@@ -134,13 +138,18 @@ try
         Log.Logger.Information("Запускаю менеджер подключений узлов");
         nodeConnectionThread.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
 
-        Log.Logger.Information("Запускаю Election Timer");
-
         Log.Logger.Information("Запукаю фоновые задачи");
         await Task.WhenAll(stateObserver.RunAsync(cts.Token),
             commandQueue.RunAsync(cts.Token),
             httpModule.RunAsync(cts.Token),
-            binaryRequestModule.RunAsync(cts.Token));
+            binaryRequestModule.RunAsync(cts.Token),
+            new Task(() =>
+            {
+                // ReSharper disable once AccessToDisposedClosure
+                var token = cts.Token;
+                // ReSharper disable once AccessToDisposedClosure
+                requestAcceptor.Start(token);
+            }));
     }
     catch (Exception e)
     {
@@ -157,8 +166,10 @@ finally
     Log.CloseAndFlush();
 }
 
+return;
 
-BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<Command, Result> consensusModule,
+
+SocketRequestModule CreateBinaryRequestModule(IRequestAcceptor requestAcceptor,
                                               IApplicationInfo applicationInfo,
                                               IClusterInfo clusterInfo,
                                               IConfiguration config)
@@ -175,22 +186,22 @@ BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<Command, Result> 
         throw;
     }
 
-    return new BinaryRequestModule(consensusModule,
-        new StaticOptionsMonitor<BinaryRequestModuleOptions>(options),
+    return new SocketRequestModule(requestAcceptor,
+        new StaticOptionsMonitor<SocketRequestModuleOptions>(options),
         clusterInfo,
         applicationInfo,
-        Log.ForContext<BinaryRequestModule>());
+        Log.ForContext<SocketRequestModule>());
 
-    BinaryRequestModuleOptions GetOptions()
+    SocketRequestModuleOptions GetOptions()
     {
         var section = config.GetSection("BINARY_REQUEST");
         if (!section.Exists())
         {
-            return BinaryRequestModuleOptions.Default;
+            return SocketRequestModuleOptions.Default;
         }
 
-        return section.Get<BinaryRequestModuleOptions>()
-            ?? BinaryRequestModuleOptions.Default;
+        return section.Get<SocketRequestModuleOptions>()
+            ?? SocketRequestModuleOptions.Default;
     }
 }
 
@@ -312,7 +323,6 @@ INode CreateNode(IApplicationInfo applicationInfo)
 RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
                                                                IPeer[] peers,
                                                                StoragePersistenceFacade storage,
-                                                               ICommandQueue channelCommandQueue,
                                                                IStateMachine<Command, Result> stateMachine,
                                                                INodeInfo nodeInfo,
                                                                IApplicationInfo appInfo,

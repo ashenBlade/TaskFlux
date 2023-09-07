@@ -140,7 +140,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
 
-    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
+    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
     {
         if (!request.Descriptor.IsReadonly)
         {

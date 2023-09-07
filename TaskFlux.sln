@@ -64,7 +64,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Host.Modules.HttpR
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Host.Modules", "src\TaskFlux.Host.Modules\TaskFlux.Host.Modules\TaskFlux.Host.Modules.csproj", "{E8E9E48F-082C-443E-8EC4-EF56118E76C7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Host.Modules.BinaryRequest", "src\TaskFlux.Host.Modules\TaskFlux.Host.Modules.BinaryRequest\TaskFlux.Host.Modules.BinaryRequest.csproj", "{1AA7D5F6-9BBD-4D39-8DC4-25F93AC82D67}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Host.Modules.SocketRequest", "src\TaskFlux.Host.Modules\TaskFlux.Host.Modules.SocketRequest\TaskFlux.Host.Modules.SocketRequest.csproj", "{1AA7D5F6-9BBD-4D39-8DC4-25F93AC82D67}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Core", "src\TaskFlux.Core\TaskFlux.Core.csproj", "{1E7B4B12-FD7C-496A-B904-B61A3F4A4A22}"
 EndProject
@@ -103,6 +103,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobQueue.Core.TestHelpers", "tests\JobQueue.Core.TestHelpers\JobQueue.Core.TestHelpers.csproj", "{22ECB3E1-A6CA-4650-AAF9-55EEDA1B6A29}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.NodeProcessor", "src\Consensus\Consensus.NodeProcessor\Consensus.NodeProcessor.csproj", "{3183671C-91D2-47AA-AB15-3FA2F7348E0F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Host.RequestAcceptor", "src\TaskFlux.Host.Modules\TaskFlux.Host.RequestAcceptor\TaskFlux.Host.RequestAcceptor.csproj", "{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -582,6 +584,18 @@ Global
 		{3183671C-91D2-47AA-AB15-3FA2F7348E0F}.Release|x64.Build.0 = Release|Any CPU
 		{3183671C-91D2-47AA-AB15-3FA2F7348E0F}.Release|x86.ActiveCfg = Release|Any CPU
 		{3183671C-91D2-47AA-AB15-3FA2F7348E0F}.Release|x86.Build.0 = Release|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Debug|x64.Build.0 = Debug|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Debug|x86.Build.0 = Debug|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Release|x64.ActiveCfg = Release|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Release|x64.Build.0 = Release|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Release|x86.ActiveCfg = Release|Any CPU
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{0963B434-4266-4337-A3B9-0FA78CECDD66} = {956F79F9-E3EA-4896-9465-D0A066810939}
@@ -629,5 +643,6 @@ Global
 		{236BA177-0897-40D8-BE31-21BEF53E0A7D} = {750A408B-D4A3-45F8-8D6D-C172679EFF32}
 		{22ECB3E1-A6CA-4650-AAF9-55EEDA1B6A29} = {750A408B-D4A3-45F8-8D6D-C172679EFF32}
 		{3183671C-91D2-47AA-AB15-3FA2F7348E0F} = {E70808CD-66D3-4223-9CCB-9F9B90010FA5}
+		{72C3BEB2-574F-44E5-A4EA-1647FA6F60AA} = {166EB0E4-C4E5-4F55-B59D-EEBFCA53F5BB}
 	EndGlobalSection
 EndGlobal

@@ -1,11 +1,11 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.Extensions.Configuration;
 
-namespace TaskFlux.Host.Modules.BinaryRequest;
+namespace TaskFlux.Host.Modules.SocketRequest;
 
-public class BinaryRequestModuleOptions
+public class SocketRequestModuleOptions
 {
-    public static BinaryRequestModuleOptions Default => new();
+    public static SocketRequestModuleOptions Default => new();
     public const int DefaultBacklogSize = 128;
 
     [ConfigurationKeyName("PORT")]

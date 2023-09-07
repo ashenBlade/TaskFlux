@@ -2,7 +2,8 @@
 
 namespace TaskFlux.Core;
 
-public interface INode
+public interface INode : IReadOnlyNode
 {
-    public IJobQueueManager GetJobQueueManager();
+    public new IJobQueueManager GetJobQueueManager();
+    IReadOnlyJobQueueManager IReadOnlyNode.GetJobQueueManager() => GetJobQueueManager();
 }

@@ -1,28 +1,26 @@
 ﻿using System.Net;
 using System.Net.Sockets;
-using Consensus.Raft;
 using Microsoft.Extensions.Options;
 using Serilog;
-using TaskFlux.Commands;
 using TaskFlux.Core;
 
-namespace TaskFlux.Host.Modules.BinaryRequest;
+namespace TaskFlux.Host.Modules.SocketRequest;
 
-public class BinaryRequestModule
+public class SocketRequestModule
 {
-    private readonly IConsensusModule<Command, Result> _consensusModule;
-    private readonly IOptionsMonitor<BinaryRequestModuleOptions> _options;
+    private readonly IRequestAcceptor _requestAcceptor;
+    private readonly IOptionsMonitor<SocketRequestModuleOptions> _options;
     private readonly IClusterInfo _clusterInfo;
     private readonly IApplicationInfo _applicationInfo;
     private readonly ILogger _logger;
 
-    public BinaryRequestModule(IConsensusModule<Command, Result> consensusModule,
-                               IOptionsMonitor<BinaryRequestModuleOptions> options,
+    public SocketRequestModule(IRequestAcceptor requestAcceptor,
+                               IOptionsMonitor<SocketRequestModuleOptions> options,
                                IClusterInfo clusterInfo,
                                IApplicationInfo applicationInfo,
                                ILogger logger)
     {
-        _consensusModule = consensusModule;
+        _requestAcceptor = requestAcceptor;
         _options = options;
         _clusterInfo = clusterInfo;
         _applicationInfo = applicationInfo;
@@ -44,9 +42,10 @@ public class BinaryRequestModule
             while (token.IsCancellationRequested is false)
             {
                 var client = await listener.AcceptTcpClientAsync(token);
-                var processor = new RequestProcessor(client, _consensusModule, _options, _applicationInfo, _clusterInfo,
-                    Log.ForContext<RequestProcessor>());
+                var processor = new ClientRequestProcessor(client, _requestAcceptor, _options, _applicationInfo,
+                    _clusterInfo, Log.ForContext<ClientRequestProcessor>());
                 // MAYBE: может лучше свой пул потоков для обработки клиентов?
+                // TODO: закрытие обработчика запроса при закрытии приложения
                 _ = processor.ProcessAsync(token);
             }
         }

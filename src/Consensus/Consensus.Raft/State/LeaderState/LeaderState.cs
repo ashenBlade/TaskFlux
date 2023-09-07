@@ -196,7 +196,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         return ConsensusModule.Handle(request, token);
     }
 
-    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
+    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
     {
         if (request.Descriptor.IsReadonly)
         {
@@ -252,7 +252,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             _logger.Debug("Размер файла лога превышен. Создаю снапшот");
             // Асинхронно это наверно делать не стоит (пока)
             var snapshot = StateMachine.GetSnapshot();
-            PersistenceFacade.SaveSnapshot(snapshot);
+            PersistenceFacade.SaveSnapshot(snapshot, token);
         }
 
         // Возвращаем результат

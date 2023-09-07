@@ -2,8 +2,6 @@ using System.Buffers;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
-using Consensus.Raft;
-using Consensus.Raft.Commands.Submit;
 using JobQueue.Core.Exceptions;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -11,36 +9,40 @@ using TaskFlux.Commands;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Serialization;
 using TaskFlux.Core;
-using TaskFlux.Host.Modules.BinaryRequest.Exceptions;
+using TaskFlux.Host.Modules.SocketRequest.Exceptions;
 using TaskFlux.Network.Requests;
 using TaskFlux.Network.Requests.Authorization;
 using TaskFlux.Network.Requests.Packets;
 using TaskFlux.Network.Requests.Serialization;
 
-namespace TaskFlux.Host.Modules.BinaryRequest;
+namespace TaskFlux.Host.Modules.SocketRequest;
 
-internal class RequestProcessor
+internal class ClientRequestProcessor
 {
     private readonly TcpClient _client;
-    private readonly IOptionsMonitor<BinaryRequestModuleOptions> _options;
+    private readonly IOptionsMonitor<SocketRequestModuleOptions> _options;
     private readonly IApplicationInfo _applicationInfo;
-    private IConsensusModule<Command, Result> Module { get; }
+    private readonly IRequestAcceptor _requestAcceptor;
     private IClusterInfo ClusterInfo { get; }
     private ILogger Logger { get; }
-    private CommandSerializer CommandSerializer { get; } = CommandSerializer.Instance;
-    private ResultSerializer ResultSerializer { get; } = ResultSerializer.Instance;
 
-    public RequestProcessor(TcpClient client,
-                            IConsensusModule<Command, Result> consensusModule,
-                            IOptionsMonitor<BinaryRequestModuleOptions> options,
-                            IApplicationInfo applicationInfo,
-                            IClusterInfo clusterInfo,
-                            ILogger logger)
+    private static CommandSerializer CommandSerializer =>
+        CommandSerializer.Instance;
+
+    private static ResultSerializer ResultSerializer =>
+        ResultSerializer.Instance;
+
+    public ClientRequestProcessor(TcpClient client,
+                                  IRequestAcceptor requestAcceptor,
+                                  IOptionsMonitor<SocketRequestModuleOptions> options,
+                                  IApplicationInfo applicationInfo,
+                                  IClusterInfo clusterInfo,
+                                  ILogger logger)
     {
         _client = client;
+        _requestAcceptor = requestAcceptor;
         _options = options;
         _applicationInfo = applicationInfo;
-        Module = consensusModule;
         ClusterInfo = clusterInfo;
         Logger = logger;
     }
@@ -323,12 +325,12 @@ internal class RequestProcessor
 
     private class ClientCommandRequestPacketVisitor : IAsyncPacketVisitor
     {
-        private readonly RequestProcessor _processor;
+        private readonly ClientRequestProcessor _processor;
         private readonly PoolingNetworkPacketSerializer _serializer;
         private ILogger Logger => _processor.Logger;
         public bool ShouldClose { get; private set; }
 
-        public ClientCommandRequestPacketVisitor(RequestProcessor processor,
+        public ClientCommandRequestPacketVisitor(ClientRequestProcessor processor,
                                                  PoolingNetworkPacketSerializer serializer)
         {
             _processor = processor;
@@ -340,7 +342,7 @@ internal class RequestProcessor
             Command command;
             try
             {
-                command = _processor.CommandSerializer.Deserialize(packet.Payload);
+                command = CommandSerializer.Deserialize(packet.Payload);
             }
             // 1. Чтобы в бизнес-логике каждый раз не писать проверку - проверим здесь
             // 2. Зачем клиенту долго ждать, если такую ошибку можно проверить сразу?
@@ -351,7 +353,7 @@ internal class RequestProcessor
                 _processor.Logger.Debug(invalidName,
                     "Ошибка при десериализации команды, включающей название очереди, полученной от клиента");
                 await _serializer.SerializeAsync(
-                    new CommandResponsePacket(_processor.ResultSerializer.Serialize(DefaultErrors.InvalidQueueName)),
+                    new CommandResponsePacket(ResultSerializer.Serialize(DefaultErrors.InvalidQueueName)),
                     token);
                 return;
             }
@@ -362,13 +364,12 @@ internal class RequestProcessor
                 return;
             }
 
-            var result = _processor.Module.Handle(
-                new SubmitRequest<Command>(command.Accept(CommandDescriptorBuilderCommandVisitor.Instance)));
+            var result = await _processor._requestAcceptor.AcceptAsync(command, token);
 
             Packet responsePacket;
             if (result.TryGetResponse(out var response))
             {
-                responsePacket = new CommandResponsePacket(_processor.ResultSerializer.Serialize(response));
+                responsePacket = new CommandResponsePacket(ResultSerializer.Serialize(response));
             }
             else if (result.WasLeader)
             {

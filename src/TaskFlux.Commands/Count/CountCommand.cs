@@ -4,7 +4,7 @@ using TaskFlux.Commands.Visitors;
 
 namespace TaskFlux.Commands.Count;
 
-public class CountCommand: Command
+public class CountCommand : ReadOnlyCommand
 {
     public QueueName Queue { get; }
     public override CommandType Type => CommandType.Count;
@@ -13,8 +13,8 @@ public class CountCommand: Command
     {
         Queue = queue;
     }
-    
-    public override Result Apply(ICommandContext context)
+
+    protected override Result Apply(IReadOnlyCommandContext context)
     {
         var manager = context.Node.GetJobQueueManager();
 
@@ -22,7 +22,7 @@ public class CountCommand: Command
         {
             return DefaultErrors.QueueDoesNotExist;
         }
-        
+
         var count = queue.Count;
         if (count == 0)
         {
@@ -32,8 +32,9 @@ public class CountCommand: Command
         return new CountResult(count);
     }
 
-    public override void ApplyNoResult(ICommandContext context)
-    { }
+    protected override void ApplyNoResult(IReadOnlyCommandContext context)
+    {
+    }
 
     public override void Accept(ICommandVisitor visitor)
     {

@@ -57,8 +57,9 @@ public abstract class State<TCommand, TResponse>
     /// Применить команду к машине состояний
     /// </summary>
     /// <param name="request">Объект запроса</param>
+    /// <param name="token">Токен отмены</param>
     /// <returns>Результат операции</returns>
-    public abstract SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request);
+    public abstract SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default);
 
     /// <summary>
     /// Вызывается, когда состояние узла меняется, для очищения предыдущего (т.е. состояния, которому этот Dispose принадлежит) состояния

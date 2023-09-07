@@ -189,7 +189,7 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
         return ConsensusModule.Handle(request);
     }
 
-    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request)
+    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
     {
         return SubmitResponse<TResponse>.NotLeader;
     }
