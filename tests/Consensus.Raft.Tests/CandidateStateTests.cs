@@ -375,7 +375,6 @@ public class CandidateStateTests
         Assert.Empty(node.PersistenceFacade.ReadLogFileTest());
     }
 
-
     [Theory]
     [InlineData(1, 1)]
     [InlineData(1, 10)]

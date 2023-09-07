@@ -257,7 +257,7 @@ public class StoragePersistenceFacade
     private LogEntryInfo GetLogEntryInfoAtIndex(int globalIndex)
     {
         var localIndex = CalculateLocalIndex(globalIndex);
-        if (localIndex <= 0)
+        if (localIndex < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(globalIndex), globalIndex, "В логе нет указанного индекса");
         }

@@ -7,7 +7,6 @@ using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Persistence;
 using Serilog;
 using TaskFlux.Core;
 
@@ -156,8 +155,7 @@ public class TcpPeer : IPeer
     {
         _logger.Debug("Отправляю снапшот на узел {NodeId}", Id);
         // 1. Отправляем заголовок
-        var requestPacket = new InstallSnapshotRequestPacket(request.Term, request.LeaderId,
-            new LogEntryInfo(request.LastIncludedTerm, request.LastIncludedIndex));
+        var requestPacket = new InstallSnapshotRequestPacket(request.Term, request.LeaderId, request.LastEntry);
         var requestResponse = SendPacketReturning(requestPacket, token);
         if (requestResponse is null)
         {

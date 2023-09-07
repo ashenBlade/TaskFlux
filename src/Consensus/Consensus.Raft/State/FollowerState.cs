@@ -2,7 +2,6 @@ using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Commands.Submit;
-using Consensus.Raft.Persistence;
 using Serilog;
 using TaskFlux.Core;
 
@@ -185,8 +184,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         }
 
         // 1. Обновляем файл снапшота
-        foreach (var success in PersistenceFacade.InstallSnapshot(
-                     new LogEntryInfo(request.LastIncludedTerm, request.LastIncludedIndex),
+        foreach (var success in PersistenceFacade.InstallSnapshot(request.LastEntry,
                      request.Snapshot, token))
         {
             yield return new InstallSnapshotResponse(CurrentTerm);
