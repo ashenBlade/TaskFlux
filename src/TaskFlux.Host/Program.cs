@@ -86,7 +86,7 @@ try
         Log.Logger.ForContext<NodeConnectionManager>());
 
     var stateObserver = new NodeStateObserver(consensusModule, Log.Logger.ForContext<NodeStateObserver>());
-    
+
     using var requestAcceptor =
         new ExclusiveRequestAcceptor(consensusModule, Log.ForContext("{SourceContext}", "RequestQueue"));
 
@@ -99,14 +99,10 @@ try
     var binaryRequestModule = CreateBinaryRequestModule(requestAcceptor, appInfo, clusterInfo, configuration);
 
     var nodeConnectionThread = new Thread(o =>
-        {
-            var (manager, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
-            manager.Run(token);
-        }) 
-        {
-            Priority = ThreadPriority.Highest, 
-            Name = "Обработчик подключений узлов",
-        };
+    {
+        var (manager, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
+        manager.Run(token);
+    }) {Priority = ThreadPriority.Highest, Name = "Обработчик подключений узлов",};
 
     using var cts = new CancellationTokenSource();
 
@@ -126,7 +122,7 @@ try
         await Task.WhenAll(stateObserver.RunAsync(cts.Token),
             httpModule.RunAsync(cts.Token),
             binaryRequestModule.RunAsync(cts.Token),
-            new Task(() =>
+            Task.Run(() =>
             {
                 // ReSharper disable once AccessToDisposedClosure
                 var token = cts.Token;
@@ -242,7 +238,8 @@ StoragePersistenceFacade CreateStoragePersistenceFacade()
     var metadataStorage = CreateMetadataStorage();
     var snapshotStorage = CreateSnapshotStorage();
 
-    return new StoragePersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage, maxLogFileSize: 1024 /* 1 Кб */);
+    return new StoragePersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage,
+        maxLogFileSize: 1024 /* 1 Кб */);
 
     DirectoryInfo CreateTemporaryDirectory()
     {
@@ -359,8 +356,7 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
     var commandSerializer = new ProxyCommandCommandSerializer();
     var peerGroup = new PeerGroup(peers);
     var timerFactory =
-        new ThreadingTimerFactory(
-            TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300),
+        new ThreadingTimerFactory(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300),
             heartbeatTimeout: TimeSpan.FromMilliseconds(100));
 
     // TODO: ручной запуск таймера

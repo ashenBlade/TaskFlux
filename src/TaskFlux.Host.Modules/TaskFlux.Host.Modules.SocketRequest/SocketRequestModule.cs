@@ -44,7 +44,7 @@ public class SocketRequestModule
                 var client = await listener.AcceptTcpClientAsync(token);
                 var processor = new ClientRequestProcessor(client, _requestAcceptor, _options, _applicationInfo,
                     _clusterInfo, Log.ForContext<ClientRequestProcessor>());
-                // MAYBE: может лучше свой пул потоков для обработки клиентов?
+
                 // TODO: закрытие обработчика запроса при закрытии приложения
                 _ = processor.ProcessAsync(token);
             }

@@ -54,8 +54,11 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
                 registration = token.Register(static r => ( ( UserRequest ) r! ).Cancel(), request);
             }
 
+            _logger.Debug("Отправляю запрос в очередь");
             _channel.Write(request);
-            return await request.CommandTask;
+            var result = await request.CommandTask;
+            _logger.Debug("Команда выполнилась");
+            return result;
         }
         finally
         {
@@ -65,11 +68,22 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 
     private void ThreadWorker()
     {
+        CancellationToken token;
         try
         {
-            foreach (var request in _channel.ReadAll(_cts.Token))
+            token = _cts.Token;
+        }
+        catch (ObjectDisposedException disposed)
+        {
+            _logger.Error(disposed, "Не удалось получить токен отмены: источник токенов закрыт");
+            return;
+        }
+
+        try
+        {
+            _logger.Information("Начинаю читать запросы от пользователей");
+            foreach (var request in _channel.ReadAll(token))
             {
-                _logger.Debug("Привет из пизды нахуй");
                 if (request.IsCancelled)
                 {
                     _logger.Debug("Запрос {RequestType} был отменен пока лежал в очереди", request.Command.Type);
@@ -78,7 +92,6 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 
                 try
                 {
-                    _logger.Information("Обрабатываю запрос хуле");
                     var response = _module.Handle(new SubmitRequest<Command>(request.GetDescriptor()), request.Token);
                     request.SetResult(response);
                 }
