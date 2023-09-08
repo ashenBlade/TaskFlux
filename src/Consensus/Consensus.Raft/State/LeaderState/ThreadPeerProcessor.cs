@@ -66,9 +66,9 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
         _thread.Start();
     }
 
-    public void Replicate(LogReplicationRequest request)
+    public bool Replicate(LogReplicationRequest request)
     {
-        _queue.Add(request);
+        return _queue.Add(request);
     }
 
     private void ThreadWorker()
@@ -120,22 +120,15 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                 }
                 else if (heartbeatOrRequest.TryGetHeartbeat(out var heartbeat))
                 {
-                    try
+                    if (TryReplicateLog(peerInfo.NextIndex, peerInfo) is { } greaterTerm)
                     {
-                        if (TryReplicateLog(peerInfo.NextIndex, peerInfo) is { } greaterTerm)
-                        {
-                            _logger.Debug("При отправке Heartbeat запроса узел ответил большим термом");
-                            heartbeat.NotifyFoundGreaterTerm(greaterTerm);
-                            foundGreaterTerm = greaterTerm;
-                        }
-                        else
-                        {
-                            heartbeat.NotifySuccess();
-                        }
+                        _logger.Debug("При отправке Heartbeat запроса узел ответил большим термом");
+                        heartbeat.NotifyFoundGreaterTerm(greaterTerm);
+                        foundGreaterTerm = greaterTerm;
                     }
-                    finally
+                    else
                     {
-                        heartbeat.Dispose();
+                        heartbeat.NotifySuccess();
                     }
                 }
                 else

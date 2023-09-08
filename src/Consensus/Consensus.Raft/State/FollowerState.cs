@@ -195,6 +195,24 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         }
 
         _electionTimer.Schedule();
+        // TODO: восстановить состояние
+        if (!PersistenceFacade.TryGetSnapshot(out var snapshot))
+        {
+            throw new ApplicationException(
+                "Снапшот сохранен через InstallSnapshot, но его не удалось получить для восстановления состояния");
+        }
+
+        var newStateMachine = _stateMachineFactory.Restore(snapshot);
+
+        var notApplied = PersistenceFacade.GetNotApplied();
+        foreach (var (_, data) in notApplied)
+        {
+            var command = _commandCommandSerializer.Deserialize(data);
+            newStateMachine.ApplyNoResponse(command);
+        }
+
+        StateMachine = newStateMachine;
+
         yield return new InstallSnapshotResponse(CurrentTerm);
     }
 

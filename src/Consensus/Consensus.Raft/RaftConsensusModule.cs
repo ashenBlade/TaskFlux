@@ -22,7 +22,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     public NodeRole CurrentRole =>
         ( ( IConsensusModule<TCommand, TResponse> ) this ).CurrentState.Role;
 
-    private ILogger Logger { get; }
+    private readonly ILogger _logger;
     public NodeId Id { get; }
 
     public Term CurrentTerm => PersistenceFacade.CurrentTerm;
@@ -87,7 +87,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         _commandSerializer = commandSerializer;
         StateMachineFactory = stateMachineFactory;
         Id = id;
-        Logger = logger;
+        _logger = logger;
         PeerGroup = peerGroup;
         BackgroundJobQueue = backgroundJobQueue;
         PersistenceFacade = persistenceFacade;
@@ -122,25 +122,24 @@ public class RaftConsensusModule<TCommand, TResponse>
     {
         return new FollowerState<TCommand, TResponse>(this, StateMachineFactory, _commandSerializer,
             _timerFactory.CreateElectionTimer(),
-            Logger.ForContext("SourceContext", "Raft(Follower)"));
+            _logger.ForContext("SourceContext", "Raft(Follower)"));
     }
 
     public State<TCommand, TResponse> CreateLeaderState()
     {
-        return new LeaderState<TCommand, TResponse>(this, Logger.ForContext("SourceContext", "Raft(Leader)"),
+        return new LeaderState<TCommand, TResponse>(this, _logger.ForContext("SourceContext", "Raft(Leader)"),
             _commandSerializer, _timerFactory);
     }
 
     public State<TCommand, TResponse> CreateCandidateState()
     {
         return new CandidateState<TCommand, TResponse>(this, _timerFactory.CreateElectionTimer(),
-            Logger.ForContext("SourceContext", "Raft(Candidate)"));
+            _logger.ForContext("SourceContext", "Raft(Candidate)"));
     }
 
     public override string ToString()
     {
-        return
-            $"RaftNode(Id = {Id}, Role = {CurrentRole}, Term = {CurrentTerm}, VotedFor = {VotedFor?.ToString() ?? "null"})";
+        return $"RaftNode(Id = {Id}, Role = {CurrentRole}, Term = {CurrentTerm}, VotedFor = {VotedFor?.ToString() ?? "null"})";
     }
 
     public void Dispose()

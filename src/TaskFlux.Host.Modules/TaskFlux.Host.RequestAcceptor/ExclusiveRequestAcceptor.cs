@@ -69,6 +69,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
         {
             foreach (var request in _channel.ReadAll(_cts.Token))
             {
+                _logger.Debug("Привет из пизды нахуй");
                 if (request.IsCancelled)
                 {
                     _logger.Debug("Запрос {RequestType} был отменен пока лежал в очереди", request.Command.Type);
@@ -77,6 +78,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 
                 try
                 {
+                    _logger.Information("Обрабатываю запрос хуле");
                     var response = _module.Handle(new SubmitRequest<Command>(request.GetDescriptor()), request.Token);
                     request.SetResult(response);
                 }

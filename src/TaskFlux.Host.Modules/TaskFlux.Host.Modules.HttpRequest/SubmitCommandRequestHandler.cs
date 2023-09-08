@@ -3,7 +3,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Consensus.Raft;
+using System.Threading.Channels;
 using Consensus.Raft.Commands.Submit;
 using Serilog;
 using TaskFlux.Commands;
@@ -24,18 +24,18 @@ public class SubmitCommandRequestHandler : IRequestHandler
 
     private readonly IClusterInfo _clusterInfo;
     private readonly IApplicationInfo _applicationInfo;
-    private readonly IConsensusModule<Command, Result> _consensusModule;
+    private readonly IRequestAcceptor _requestAcceptor;
     private readonly ILogger _logger;
 
-    public SubmitCommandRequestHandler(IConsensusModule<Command, Result> consensusModule,
+    public SubmitCommandRequestHandler(IRequestAcceptor requestAcceptor,
                                        IClusterInfo clusterInfo,
                                        IApplicationInfo applicationInfo,
                                        ILogger logger)
     {
         _clusterInfo = clusterInfo;
         _applicationInfo = applicationInfo;
-        _consensusModule = consensusModule;
         _logger = logger;
+        _requestAcceptor = requestAcceptor;
     }
 
     public async Task HandleRequestAsync(HttpListenerRequest request,
@@ -54,7 +54,7 @@ public class SubmitCommandRequestHandler : IRequestHandler
 
         _logger.Debug("Читаю строку запроса клиента");
         var requestString = await ReadRequestStringAsync(request);
-
+        
         if (string.IsNullOrWhiteSpace(requestString))
         {
             _logger.Debug("В теле запроса не было данных");
@@ -62,9 +62,9 @@ public class SubmitCommandRequestHandler : IRequestHandler
             return;
         }
 
-        if (TrySerializeCommandPayload(requestString, out var payload))
+        if (TrySerializeCommandPayload(requestString, out var command))
         {
-            var submitResponse = _consensusModule.Handle(new SubmitRequest<Command>(payload));
+            var submitResponse = await _requestAcceptor.AcceptAsync(command, token);
             await RespondAsync(response, submitResponse);
         }
         else
@@ -81,11 +81,11 @@ public class SubmitCommandRequestHandler : IRequestHandler
         await writer.FlushAsync();
     }
 
-    private bool TrySerializeCommandPayload(string requestString, out CommandDescriptor<Command> command)
+    private bool TrySerializeCommandPayload(string requestString, out Command command)
     {
         if (string.IsNullOrWhiteSpace(requestString))
         {
-            command = default;
+            command = default!;
             return false;
         }
 
@@ -97,26 +97,25 @@ public class SubmitCommandRequestHandler : IRequestHandler
         {
             var key = int.Parse(tokens[1]);
             var data = Encoding.GetBytes(tokens[2]);
-            command = new CommandDescriptor<Command>(new EnqueueCommand(key, data, _applicationInfo.DefaultQueueName),
-                false);
+            command = new EnqueueCommand(key, data, _applicationInfo.DefaultQueueName);
             return true;
         }
 
         if (commandString.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase)
          && tokens.Length == 1)
         {
-            command = new CommandDescriptor<Command>(new DequeueCommand(_applicationInfo.DefaultQueueName), false);
+            command = new DequeueCommand(_applicationInfo.DefaultQueueName);
             return true;
         }
 
         if (commandString.Equals("count", StringComparison.InvariantCultureIgnoreCase)
          && tokens.Length == 1)
         {
-            command = new CommandDescriptor<Command>(new CountCommand(_applicationInfo.DefaultQueueName), true);
+            command = new CountCommand(_applicationInfo.DefaultQueueName);
             return true;
         }
 
-        command = default;
+        command = default!;
         return false;
     }
 
@@ -222,7 +221,7 @@ public class SubmitCommandRequestHandler : IRequestHandler
         await writer.WriteAsync(SerializeResponse(false, "В теле запроса не указаны данные"));
     }
 
-    private async Task<string> ReadRequestStringAsync(HttpListenerRequest request)
+    private static async Task<string> ReadRequestStringAsync(HttpListenerRequest request)
     {
         using var reader = new StreamReader(request.InputStream, leaveOpen: true);
         return await reader.ReadToEndAsync();

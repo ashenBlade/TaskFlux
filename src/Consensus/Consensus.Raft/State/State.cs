@@ -19,7 +19,12 @@ public abstract class State<TCommand, TResponse>
     protected StoragePersistenceFacade PersistenceFacade => ConsensusModule.PersistenceFacade;
     protected Term CurrentTerm => ConsensusModule.CurrentTerm;
     protected NodeId? VotedFor => ConsensusModule.VotedFor;
-    protected IStateMachine<TCommand, TResponse> StateMachine => ConsensusModule.StateMachine;
+    protected IStateMachine<TCommand, TResponse> StateMachine
+    {
+        get => ConsensusModule.StateMachine;
+        set => ConsensusModule.StateMachine = value ?? throw new ArgumentNullException(nameof(StateMachine), "Попытка установить новое состояние в null");
+    }
+
     protected NodeId Id => ConsensusModule.Id;
     protected IBackgroundJobQueue BackgroundJobQueue => ConsensusModule.BackgroundJobQueue;
     protected PeerGroup PeerGroup => ConsensusModule.PeerGroup;

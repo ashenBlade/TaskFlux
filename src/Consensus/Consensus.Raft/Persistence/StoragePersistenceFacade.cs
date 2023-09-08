@@ -133,12 +133,13 @@ public class StoragePersistenceFacade
 
     public StoragePersistenceFacade(FileLogStorage logStorage,
                                     IMetadataStorage metadataStorage,
-                                    FileSystemSnapshotStorage snapshotStorage)
+                                    FileSystemSnapshotStorage snapshotStorage,
+                                    ulong maxLogFileSize = Constants.MaxLogFileSize)
     {
         _logStorage = logStorage;
         _metadataStorage = metadataStorage;
         _snapshotStorage = snapshotStorage;
-        _sizeChecker = SizeLogFileSizeChecker.MaxLogFileSize;
+        _sizeChecker = new SizeLogFileSizeChecker(maxLogFileSize);
     }
 
     internal StoragePersistenceFacade(FileLogStorage logStorage,
@@ -692,7 +693,9 @@ public class StoragePersistenceFacade
     /// <returns><c>true</c> - размер превышен, <c>false</c> - иначе</returns>
     public bool IsLogFileSizeExceeded()
     {
-        return _sizeChecker.IsLogFileSizeExceeded(_logStorage.FileSize);
+        var logStorageFileSize = _logStorage.FileSize;
+        Console.WriteLine($"Размер лога: {logStorageFileSize}");
+        return _sizeChecker.IsLogFileSizeExceeded(logStorageFileSize);
     }
 
     // Для тестов

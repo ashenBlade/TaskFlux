@@ -15,6 +15,7 @@ public class ThreadingTimerFactory : ITimerFactory
     /// <param name="lower">Нижняя граница интервала таймера выборов</param>
     /// <param name="upper">Верхняя граница интервала таймера выборов</param>
     /// <param name="heartbeatTimeout">Таймаут для Heartbeat запросов</param>
+    /// <remarks>Для правильной работы <paramref name="lower"/> должен быть больше <paramref name="heartbeatTimeout"/> </remarks>
     public ThreadingTimerFactory(TimeSpan lower, TimeSpan upper, TimeSpan heartbeatTimeout)
     {
         _lower = lower;

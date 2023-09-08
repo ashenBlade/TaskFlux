@@ -52,9 +52,13 @@ public class NodeConnectionProcessor : IDisposable
                 }
             }
         }
+        catch (SocketException se)
+        {
+            Logger.Information(se, "Соединение с узлом потеряно");
+            CloseClient();
+        }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            Logger.Information("Соединение с узлом потеряно. Прекращаю обработку");
             CloseClient();
         }
         catch (Exception e)

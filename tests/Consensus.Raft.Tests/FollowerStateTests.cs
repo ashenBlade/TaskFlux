@@ -647,4 +647,16 @@ public class FollowerStateTests
         Assert.False(response.VoteGranted);
         Assert.Equal(expectedTerm, node.CurrentTerm);
     }
+
+    [Fact]
+    public void InstallSnapshot__КогдаСнапшотПолностьюНовый__ДолженВыставитьНовоеСостояние()
+    {
+        Assert.True(false);
+    }
+
+    [Fact]
+    public void InstallSnapshot__КогдаВЛогеЕстьЗаписиПослеПоследнегоИндексаСнапшота__ДолженПрименитьЭтиЗаписи()
+    {
+        Assert.True(false);
+    }
 }

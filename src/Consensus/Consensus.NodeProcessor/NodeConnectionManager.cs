@@ -118,6 +118,7 @@ public class NodeConnectionManager
 
     private void BeginNewClientSession(NodeId id, PacketClient client, CancellationToken token)
     {
+        // TODO: обрабатывать закрытие соединения BrokenPipe
         var processor = new NodeConnectionProcessor(id, client, _raft,
             _logger.ForContext("SourceContext", $"NodeConnectionProcessor({id.Id})"))
             {

@@ -86,22 +86,27 @@ try
         Log.Logger.ForContext<NodeConnectionManager>());
 
     var stateObserver = new NodeStateObserver(consensusModule, Log.Logger.ForContext<NodeStateObserver>());
+    
+    using var requestAcceptor =
+        new ExclusiveRequestAcceptor(consensusModule, Log.ForContext("{SourceContext}", "RequestQueue"));
 
     var httpModule = CreateHttpRequestModule(configuration);
     httpModule.AddHandler(HttpMethod.Post, "/command",
-        new SubmitCommandRequestHandler(consensusModule, clusterInfo, appInfo,
+        new SubmitCommandRequestHandler(requestAcceptor, clusterInfo, appInfo,
             Log.ForContext<SubmitCommandRequestHandler>()));
 
-    using var requestAcceptor =
-        new ExclusiveRequestAcceptor(consensusModule, Log.ForContext("{SourceContext}", "RequestQueue"));
 
     var binaryRequestModule = CreateBinaryRequestModule(requestAcceptor, appInfo, clusterInfo, configuration);
 
     var nodeConnectionThread = new Thread(o =>
-    {
-        var (manager, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
-        manager.Run(token);
-    }) {Priority = ThreadPriority.Highest, Name = "Обработчик подключений узлов",};
+        {
+            var (manager, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
+            manager.Run(token);
+        }) 
+        {
+            Priority = ThreadPriority.Highest, 
+            Name = "Обработчик подключений узлов",
+        };
 
     using var cts = new CancellationTokenSource();
 
@@ -237,7 +242,7 @@ StoragePersistenceFacade CreateStoragePersistenceFacade()
     var metadataStorage = CreateMetadataStorage();
     var snapshotStorage = CreateSnapshotStorage();
 
-    return new StoragePersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage);
+    return new StoragePersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage, maxLogFileSize: 1024 /* 1 Кб */);
 
     DirectoryInfo CreateTemporaryDirectory()
     {
@@ -350,11 +355,12 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
                                                                TaskFluxStateMachineFactory stateMachineFactory)
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
-    var logger = Log.ForContext("SourceContext", "Raft");
+    var logger = Log.Logger.ForContext("SourceContext", "Raft");
     var commandSerializer = new ProxyCommandCommandSerializer();
     var peerGroup = new PeerGroup(peers);
     var timerFactory =
-        new ThreadingTimerFactory(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300),
+        new ThreadingTimerFactory(
+            TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300),
             heartbeatTimeout: TimeSpan.FromMilliseconds(100));
 
     // TODO: ручной запуск таймера

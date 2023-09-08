@@ -100,13 +100,16 @@ public sealed class LogReplicationRequest : IDisposable
     /// <summary>
     /// Дождаться окончания репликации
     /// </summary>
-    public void Wait(CancellationToken token = default)
+    public void Wait(CancellationToken token)
     {
         try
         {
             WaitHandle.WaitAny(new[] {token.WaitHandle, _signal});
         }
         catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
         {
         }
     }

@@ -26,7 +26,16 @@ public class HeartbeatSynchronizer : IDisposable
     /// </returns>
     public bool TryWaitGreaterTerm(out Term greaterTerm)
     {
-        _waitHandle.WaitOne();
+        try
+        {
+            _waitHandle.WaitOne();
+        }
+        catch (ObjectDisposedException)
+        {
+            greaterTerm = default!;
+            return false;
+        }
+
         if (_greaterTerm is { } foundGreaterTerm)
         {
             greaterTerm = foundGreaterTerm;

@@ -49,15 +49,22 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
                 // Конкретно здесь нужно обрабатывать обновление состояния
                 if (p.Processor.TryNotifyHeartbeat(out var synchronizer))
                 {
-                    if (synchronizer.TryWaitGreaterTerm(out var greaterTerm))
+                    try
                     {
-                        var follower = ConsensusModule.CreateFollowerState();
-                        if (ConsensusModule.TryUpdateState(follower, this))
+                        if (synchronizer.TryWaitGreaterTerm(out var greaterTerm))
                         {
-                            ConsensusModule.PersistenceFacade.UpdateState(greaterTerm, null);
-                        }
+                            var follower = ConsensusModule.CreateFollowerState();
+                            if (ConsensusModule.TryUpdateState(follower, this))
+                            {
+                                ConsensusModule.PersistenceFacade.UpdateState(greaterTerm, null);
+                            }
 
-                        return;
+                            return;
+                        }
+                    }
+                    finally
+                    {
+                        synchronizer.Dispose();
                     }
                 }
 
@@ -175,7 +182,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         try
         {
             _becomeFollowerTokenSource.Cancel();
-            // _becomeFollowerTokenSource.Dispose();
+            _becomeFollowerTokenSource.Dispose();
         }
         catch (ObjectDisposedException)
         {
@@ -213,13 +220,19 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         var success = TryReplicate(appended.Index, out var greaterTerm);
         if (!success)
         {
+            if (Role != NodeRole.Leader)
+            {
+                // Пока выполняли запрос перестали быть лидером
+                return ConsensusModule.Handle(request, token);
+            }
+
             if (ConsensusModule.TryUpdateState(ConsensusModule.CreateFollowerState(), this))
             {
                 PersistenceFacade.UpdateState(greaterTerm, null);
                 return SubmitResponse<TResponse>.NotLeader;
             }
 
-            return ConsensusModule.Handle(request);
+            return ConsensusModule.Handle(request, token);
         }
 
         /*
@@ -247,7 +260,6 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
          * т.к. он отправится по таймеру (он должен вызываться часто).
          * Либо придет новый запрос и он отправится вместе с AppendEntries
          */
-
         if (PersistenceFacade.IsLogFileSizeExceeded())
         {
             _logger.Debug("Размер файла лога превышен. Создаю снапшот");
@@ -271,7 +283,19 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         using var request = new LogReplicationRequest(PeerGroup, appendedIndex);
         Array.ForEach(_peerProcessors, p => p.Processor.Replicate(request));
-        request.Wait(_becomeFollowerTokenSource.Token);
+
+        CancellationToken token;
+        try
+        {
+            token = _becomeFollowerTokenSource.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            greaterTerm = Term.Start;
+            return false;
+        }
+
+        request.Wait(token);
         return !request.TryGetGreaterTerm(out greaterTerm);
     }
 

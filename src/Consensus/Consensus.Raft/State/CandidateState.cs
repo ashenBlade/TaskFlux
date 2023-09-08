@@ -57,17 +57,25 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
     /// </remarks>
     private async Task RunQuorum()
     {
+        CancellationToken token;
         try
         {
-            await RunQuorumInner(_cts.Token);
-        }
-        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
-        {
-            _logger.Debug("Сбор кворума прерван - задача отменена");
+            token = _cts.Token;
         }
         catch (ObjectDisposedException)
         {
-            _logger.Verbose("Источник токенов удален во время отправки запросов");
+            _logger.Debug("Не удалось запустить кворум: источник токенов утилизирован");
+            return;
+        }
+
+        try
+        {
+            await RunQuorumInner(token);
+        }
+        catch (OperationCanceledException) when
+            (_cts.IsCancellationRequested)
+        {
+            _logger.Debug("Сбор кворума прерван - задача отменена");
         }
         catch (Exception unhandled)
         {

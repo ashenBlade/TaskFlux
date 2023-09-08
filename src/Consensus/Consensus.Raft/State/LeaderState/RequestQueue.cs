@@ -11,12 +11,14 @@ internal class RequestQueue : IDisposable
     // Объект синхронизатора для Heartbeat запроса
     private HeartbeatSynchronizer? _heartbeatSynchronizer = null;
 
-    // Сигнал того, что в очерердь добавили элемент
+    // Сигнал того, что в очередь добавили элемент
     private readonly AutoResetEvent _enqueueEvent = new(false);
 
     // Сигнал того, что приложение закрывается
     private readonly WaitHandle _processLife;
-
+    
+    private volatile bool _disposed;
+    
     public RequestQueue(WaitHandle processLife)
     {
         _processLife = processLife;
@@ -36,7 +38,8 @@ internal class RequestQueue : IDisposable
         var buffer = new[]
         {
             token.WaitHandle, // Если его отменят до момента вызова WaitHandle.WaitAny, то мы просто выйдем сразу
-            _processLife, _enqueueEvent,
+            _processLife, 
+            _enqueueEvent,
         };
 
         while (!token.IsCancellationRequested)
@@ -61,28 +64,14 @@ internal class RequestQueue : IDisposable
                 break;
             }
 
-            var hadData = false;
             while (_queue.TryDequeue(out var data))
             {
                 yield return data;
-                hadData = true;
             }
 
-            if (hadData)
-            {
-                continue;
-            }
-
-            if (_heartbeatSynchronizer is { } synchronizer)
+            if (Interlocked.CompareExchange(ref _heartbeatSynchronizer, null, _heartbeatSynchronizer) is { } synchronizer)
             {
                 yield return HeartbeatOrRequest.Heartbeat(synchronizer);
-                // Эта бебра (после yield return) выполняется после того, как я вернул synchronizer,
-                // так что на этом моменте логика уже была выполнена и мы можем спокойно вызвать Dispose
-                var stored = Interlocked.CompareExchange(ref _heartbeatSynchronizer, null, synchronizer);
-                if (ReferenceEquals(stored, synchronizer))
-                {
-                    synchronizer.Dispose();
-                }
             }
         }
 
@@ -98,8 +87,12 @@ internal class RequestQueue : IDisposable
     /// Добавить в очередь запросов запрос на репликацию определенного индекса лога
     /// </summary>
     /// <param name="request">Запрос, который нужно сделать</param>
-    public void Add(LogReplicationRequest request)
+    public bool Add(LogReplicationRequest request)
     {
+        if (_disposed)
+        {
+            return false;
+        }
         /*
          * Синхронная реализация очереди допустима, т.к.
          * обработка запросов SubmitRequest в приложении последовательная,
@@ -107,10 +100,17 @@ internal class RequestQueue : IDisposable
          */
         _queue.Enqueue(HeartbeatOrRequest.Request(request));
         _enqueueEvent.Set();
+        return true;
     }
 
     public bool TryAddHeartbeat(out HeartbeatSynchronizer synchronizer)
     {
+        if (_disposed)
+        {
+            synchronizer = default!;
+            return false;
+        }
+        
         if (0 < _queue.Count)
         {
             // Очередь не пуста - есть запросы пользователей
@@ -121,24 +121,27 @@ internal class RequestQueue : IDisposable
         if (_heartbeatSynchronizer is null)
         {
             var sync = new HeartbeatSynchronizer();
-            // Вряд-ли такое случится
             var stored = Interlocked.CompareExchange(ref _heartbeatSynchronizer, sync, null);
             if (stored == null)
             {
-                synchronizer = sync;
+                // Мы добавили новый Synchronizer
                 try
                 {
                     _enqueueEvent.Set();
                 }
                 catch (ObjectDisposedException)
                 {
+                    Interlocked.CompareExchange(ref _heartbeatSynchronizer, null, sync);
                     sync.Dispose();
+                    synchronizer = default!;
                     return false;
                 }
 
+                synchronizer = sync;
                 return true;
             }
 
+            // Не удалось добавить - новый уже кто-то поставил
             sync.Dispose();
         }
 
@@ -148,6 +151,7 @@ internal class RequestQueue : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _enqueueEvent.Dispose();
     }
 }
