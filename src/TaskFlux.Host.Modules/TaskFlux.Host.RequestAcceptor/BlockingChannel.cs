@@ -1,8 +1,11 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("TaskFlux.Host.RequestAcceptor.Tests")]
 
 namespace TaskFlux.Host.RequestAcceptor;
 
-public class BlockingChannel<T> : IDisposable
+internal class BlockingChannel<T> : IDisposable
 {
     private readonly ConcurrentQueue<T> _queue = new();
     private readonly AutoResetEvent _signal = new(false);
@@ -15,7 +18,15 @@ public class BlockingChannel<T> : IDisposable
 
     public IEnumerable<T> ReadAll(CancellationToken token = default)
     {
-        var buffer = new[] {token.WaitHandle, _signal};
+        WaitHandle[] buffer;
+        try
+        {
+            buffer = new[] {token.WaitHandle, _signal};
+        }
+        catch (ObjectDisposedException)
+        {
+            yield break;
+        }
 
         while (!token.IsCancellationRequested)
         {
@@ -31,7 +42,6 @@ public class BlockingChannel<T> : IDisposable
             {
                 break;
             }
-
 
             while (_queue.TryDequeue(out var item))
             {

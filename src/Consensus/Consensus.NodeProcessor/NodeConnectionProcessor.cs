@@ -39,11 +39,6 @@ public class NodeConnectionProcessor : IDisposable
             while (token.IsCancellationRequested is false)
             {
                 var packet = await Client.ReceiveAsync(token);
-                if (packet is null)
-                {
-                    Logger.Information("От узла пришел пустой пакет. Соединение разорвано. Прекращаю обработку");
-                    break;
-                }
 
                 var success = await ProcessPacket(packet, token);
                 if (!success)
@@ -52,20 +47,24 @@ public class NodeConnectionProcessor : IDisposable
                 }
             }
         }
+        catch (IOException io)
+        {
+            Logger.Information(io, "Соединение с узлом потеряно");
+            CloseClient();
+        }
         catch (SocketException se)
         {
             Logger.Information(se, "Соединение с узлом потеряно");
-            CloseClient();
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            CloseClient();
         }
         catch (Exception e)
         {
             Logger.Warning(e, "Во время обработки узла {Node} возникло необработанное исключение", Id);
-            CloseClient();
         }
+
+        CloseClient();
     }
 
     /// <summary>

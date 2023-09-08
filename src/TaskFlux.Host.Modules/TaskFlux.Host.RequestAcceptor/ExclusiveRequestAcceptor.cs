@@ -51,7 +51,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
         {
             if (token.CanBeCanceled)
             {
-                registration = token.Register(r => ( ( UserRequest ) r! ).Cancel(), request);
+                registration = token.Register(static r => ( ( UserRequest ) r! ).Cancel(), request);
             }
 
             _channel.Write(request);
