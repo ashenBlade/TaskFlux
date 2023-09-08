@@ -121,7 +121,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     public State<TCommand, TResponse> CreateFollowerState()
     {
         return new FollowerState<TCommand, TResponse>(this, StateMachineFactory, _commandSerializer,
-            _timerFactory.CreateTimer(),
+            _timerFactory.CreateElectionTimer(),
             Logger.ForContext("SourceContext", "Raft(Follower)"));
     }
 
@@ -133,7 +133,7 @@ public class RaftConsensusModule<TCommand, TResponse>
 
     public State<TCommand, TResponse> CreateCandidateState()
     {
-        return new CandidateState<TCommand, TResponse>(this, _timerFactory.CreateTimer(),
+        return new CandidateState<TCommand, TResponse>(this, _timerFactory.CreateElectionTimer(),
             Logger.ForContext("SourceContext", "Raft(Candidate)"));
     }
 

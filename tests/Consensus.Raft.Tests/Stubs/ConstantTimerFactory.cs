@@ -12,7 +12,12 @@ public class ConstantTimerFactory : ITimerFactory
         _timer = timer;
     }
 
-    public ITimer CreateTimer()
+    public ITimer CreateHeartbeatTimer()
+    {
+        return _timer;
+    }
+
+    public ITimer CreateElectionTimer()
     {
         return _timer;
     }

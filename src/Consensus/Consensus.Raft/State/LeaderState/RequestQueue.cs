@@ -126,7 +126,16 @@ internal class RequestQueue : IDisposable
             if (stored == null)
             {
                 synchronizer = sync;
-                _enqueueEvent.Set();
+                try
+                {
+                    _enqueueEvent.Set();
+                }
+                catch (ObjectDisposedException)
+                {
+                    sync.Dispose();
+                    return false;
+                }
+
                 return true;
             }
 

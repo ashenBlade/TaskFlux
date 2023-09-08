@@ -27,7 +27,7 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
         BackgroundJobQueue.RunInfinite(RunQuorum, _cts.Token);
 
         _electionTimer.Timeout += OnElectionTimerTimeout;
-        _electionTimer.Start();
+        _electionTimer.Schedule();
     }
 
     private async Task<RequestVoteResponse?[]> SendRequestVotes(List<IPeer> peers, CancellationToken token)

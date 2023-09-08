@@ -20,6 +20,7 @@ namespace Consensus.Raft.Tests;
 public class CandidateStateTests
 {
     // TODO: тесты когда голос уже отдан
+    // TODO: кворум собран, но один из ответов - больший терм
     private static readonly NodeId NodeId = new(1);
     private static readonly PeerGroup EmptyPeerGroup = new(Array.Empty<IPeer>());
     private static readonly IStateMachine NullStateMachine = Mock.Of<IStateMachine>();
@@ -56,8 +57,8 @@ public class CandidateStateTests
                                ? Helpers.NullTimerFactory
                                : new ConstantTimerFactory(electionTimer);
         jobQueue ??= Mock.Of<IBackgroundJobQueue>();
-        var peerGroup = peers is { } p
-                            ? new PeerGroup(p.ToArray())
+        var peerGroup = peers != null
+                            ? new PeerGroup(peers.ToArray())
                             : EmptyPeerGroup;
         stateMachine ??= NullStateMachine;
         var node = new RaftConsensusModule(NodeId, peerGroup,
@@ -301,6 +302,35 @@ public class CandidateStateTests
         queue.Run();
 
         Assert.Equal(NodeRole.Leader, node.CurrentRole);
+    }
+
+    [Fact]
+    public void Кворум__КогдаСобранНоОдинИзОтветовИмеетБольшийТерм__ДолженСтатьFollowerВЭтомТерме()
+    {
+        var term = new Term(1);
+        var queue = new SingleRunBackgroundJobQueue();
+        var agreedNode = new Mock<IPeer>().Apply(m =>
+        {
+            m.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+             .ReturnsAsync(new RequestVoteResponse(term, true));
+        });
+        var greaterTerm = term.Increment();
+        var greaterNode = new Mock<IPeer>().Apply(m =>
+        {
+            m.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+             .ReturnsAsync(new RequestVoteResponse(greaterTerm, false));
+        });
+        var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {agreedNode.Object, greaterNode.Object});
+
+        queue.Run();
+
+        node.CurrentRole
+            .Should()
+            .Be(NodeRole.Follower,
+                 "узел должен стать последователем, если хотя бы один узел вернул больший терм во время кворума, даже если большинство согласилось");
+        node.CurrentTerm
+            .Should()
+            .Be(greaterTerm, "надо перейти в больший терм, если был обнаружен");
     }
 
     [Fact]

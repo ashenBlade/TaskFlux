@@ -193,7 +193,7 @@ public class LeaderStateTests
         var heartbeatTimer = new Mock<ITimer>().Apply(t =>
         {
             t.Setup(x => x.Stop()).Verifiable();
-            t.Setup(x => x.Start());
+            t.Setup(x => x.Schedule());
         });
 
         var peerTerm = term.Increment();
@@ -218,7 +218,7 @@ public class LeaderStateTests
         var term = new Term(4);
         var heartbeatTimer = new Mock<ITimer>().Apply(m =>
         {
-            m.Setup(x => x.Start())
+            m.Setup(x => x.Schedule())
              .Verifiable();
             m.Setup(x => x.Stop())
              .Verifiable();
@@ -272,7 +272,7 @@ public class LeaderStateTests
         var term = new Term(4);
         var heartbeatTimer = new Mock<ITimer>().Apply(m =>
         {
-            m.Setup(x => x.Start())
+            m.Setup(x => x.Schedule())
              .Verifiable();
             m.Setup(x => x.Stop())
              .Verifiable();

@@ -31,7 +31,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
     public override void Initialize()
     {
         _electionTimer.Timeout += OnElectionTimerTimeout;
-        _electionTimer.Start();
+        _electionTimer.Schedule();
     }
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)
@@ -81,7 +81,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         if (request.Term < CurrentTerm)
         {
             // Лидер устрел
-            _electionTimer.Start();
+            _electionTimer.Schedule();
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
@@ -94,7 +94,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         if (!PersistenceFacade.PrefixMatch(request.PrevLogEntryInfo))
         {
             // Префиксы закомиченных записей лога не совпадают 
-            _electionTimer.Start();
+            _electionTimer.Schedule();
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
@@ -106,7 +106,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (PersistenceFacade.CommitIndex == request.LeaderCommit)
         {
-            _electionTimer.Start();
+            _electionTimer.Schedule();
             return AppendEntriesResponse.Ok(CurrentTerm);
         }
 
@@ -136,7 +136,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             PersistenceFacade.SaveSnapshot(snapshot);
         }
 
-        _electionTimer.Start();
+        _electionTimer.Schedule();
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
 
@@ -194,7 +194,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             }
         }
 
-        _electionTimer.Start();
+        _electionTimer.Schedule();
         yield return new InstallSnapshotResponse(CurrentTerm);
     }
 

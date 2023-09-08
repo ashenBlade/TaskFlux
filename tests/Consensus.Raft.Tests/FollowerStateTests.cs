@@ -226,7 +226,7 @@ public class FollowerStateTests
         var timer = new Mock<ITimer>(MockBehavior.Loose);
         timer.Setup(x => x.Stop())
              .Verifiable();
-        timer.Setup(x => x.Start())
+        timer.Setup(x => x.Schedule())
              .Verifiable();
 
         using var node = CreateFollowerNode(term, null, electionTimer: timer.Object);
@@ -238,7 +238,7 @@ public class FollowerStateTests
 
         timer.Verify(x => x.Stop(), Times.Once());
         // Считаем еще самый первый запуск
-        timer.Verify(x => x.Start(), Times.Exactly(2));
+        timer.Verify(x => x.Schedule(), Times.Exactly(2));
     }
 
     [Fact]
@@ -595,5 +595,56 @@ public class FollowerStateTests
         Assert.Equal(committedEntries.Concat(newEntries), actualEntries, LogEntryEqualityComparer.Instance);
         Assert.Equal(request.Term, response.Term);
         Assert.Equal(node.CurrentTerm, response.Term);
+    }
+
+    [Fact]
+    public void RequestVote__КогдаУжеГолосовалВТерме__НеДолженОтдатьГолос()
+    {
+        var term = new Term(4);
+        var votedFor = new NodeId(5);
+        var candidateId = new NodeId(2);
+
+        var node = CreateFollowerNode(term, votedFor);
+        node.PersistenceFacade.InsertRange(new LogEntry[]
+        {
+            new(new(1), Array.Empty<byte>()), // 1
+            new(new(3), Array.Empty<byte>()), // 2
+            new(new(3), Array.Empty<byte>()), // 3
+        }, 0);
+        var expectedTerm = term.Increment();
+
+        // Конфликт на 2 записи (индекс 1): наш терм - 3, его терм - 2
+        var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: expectedTerm,
+            LastLogEntryInfo: new LogEntryInfo(new Term(2), 1));
+
+        var response = node.Handle(request);
+
+        Assert.False(response.VoteGranted);
+        Assert.Equal(expectedTerm, node.CurrentTerm);
+    }
+
+    [Fact]
+    public void RequestVote__КогдаУжеОтдавалГолосЗаУзел__ДолженПовторноОтдатьГолос()
+    {
+        var term = new Term(4);
+        var votedFor = new NodeId(5);
+
+        var node = CreateFollowerNode(term, votedFor);
+        node.PersistenceFacade.InsertRange(new LogEntry[]
+        {
+            new(new(1), Array.Empty<byte>()), // 1
+            new(new(3), Array.Empty<byte>()), // 2
+            new(new(3), Array.Empty<byte>()), // 3
+        }, 0);
+        var expectedTerm = term.Increment();
+
+        // Конфликт на 2 записи (индекс 1): наш терм - 3, его терм - 2
+        var request = new RequestVoteRequest(CandidateId: votedFor, CandidateTerm: expectedTerm,
+            LastLogEntryInfo: new LogEntryInfo(new Term(2), 1));
+
+        var response = node.Handle(request);
+
+        Assert.False(response.VoteGranted);
+        Assert.Equal(expectedTerm, node.CurrentTerm);
     }
 }

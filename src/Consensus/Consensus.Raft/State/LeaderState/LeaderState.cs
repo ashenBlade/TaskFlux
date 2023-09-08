@@ -62,10 +62,11 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
                 }
 
                 // Запускаем таймер заново
-                p.Timer.Start();
+                p.Timer.Schedule();
             };
             p.Processor.Start(_becomeFollowerTokenSource.Token);
-            p.Timer.Start();
+            // Сразу же запускаем обработчик, чтобы уведомить других об окончании выборов
+            p.Timer.ForceRun();
         });
         _logger.Verbose("Потоки обработчиков узлов запущены");
     }
@@ -79,7 +80,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             var peer = peers[i];
             var processor = new ThreadPeerProcessor<TCommand, TResponse>(peer,
                 _logger.ForContext("SourceContext", $"PeerProcessor({peer.Id.Id})"), this);
-            var timer = _timerFactory.CreateTimer();
+            var timer = _timerFactory.CreateHeartbeatTimer();
             processors[i] = ( processor, timer );
         }
 

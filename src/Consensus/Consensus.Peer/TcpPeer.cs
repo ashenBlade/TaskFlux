@@ -117,7 +117,6 @@ public class TcpPeer : IPeer
     public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(request);
-        Console.WriteLine($"SendRequestVote");
 
         if (_client.Socket.Connected)
         {

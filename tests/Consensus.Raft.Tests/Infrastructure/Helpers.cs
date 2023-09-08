@@ -20,7 +20,7 @@ public static class Helpers
     private static ITimerFactory CreateNullTimerFactory()
     {
         var mock = new Mock<ITimerFactory>();
-        mock.Setup(x => x.CreateTimer())
+        mock.Setup(x => x.CreateHeartbeatTimer())
             .Returns(NullTimer);
         return mock.Object;
     }
