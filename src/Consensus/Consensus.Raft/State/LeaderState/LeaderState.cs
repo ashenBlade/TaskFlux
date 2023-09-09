@@ -213,13 +213,16 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         }
 
         // Добавляем команду в буфер
+        _logger.Verbose("Записываю команду в буфер");
         var newEntry = new LogEntry(CurrentTerm, _commandSerializer.Serialize(request.Descriptor.Command));
         var appended = PersistenceFacade.AppendBuffer(newEntry);
 
         // Сигнализируем узлам, чтобы принялись реплицировать
+        _logger.Verbose("Реплицирую команду");
         var success = TryReplicate(appended.Index, out var greaterTerm);
         if (!success)
         {
+            _logger.Verbose("Команду реплицировать не удалось: состояние поменялось");
             if (Role != NodeRole.Leader)
             {
                 // Пока выполняли запрос перестали быть лидером
@@ -228,6 +231,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
             if (ConsensusModule.TryUpdateState(ConsensusModule.CreateFollowerState(), this))
             {
+                _logger.Verbose("Стал Follower");
                 PersistenceFacade.UpdateState(greaterTerm, null);
                 return SubmitResponse<TResponse>.NotLeader;
             }
@@ -252,6 +256,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         var response = StateMachine.Apply(request.Descriptor.Command);
 
         // Коммитим запись и применяем 
+        _logger.Verbose("Коммчу команду с индексом {Index}", appended.Index);
         PersistenceFacade.Commit(appended.Index);
         PersistenceFacade.SetLastApplied(appended.Index);
 
@@ -266,6 +271,10 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             // Асинхронно это наверно делать не стоит (пока)
             var snapshot = StateMachine.GetSnapshot();
             PersistenceFacade.SaveSnapshot(snapshot, token);
+        }
+        else
+        {
+            _logger.Verbose("Размер лога не превышен");
         }
 
         // Возвращаем результат

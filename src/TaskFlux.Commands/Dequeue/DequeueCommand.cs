@@ -4,7 +4,7 @@ using TaskFlux.Commands.Visitors;
 
 namespace TaskFlux.Commands.Dequeue;
 
-public class DequeueCommand : Command
+public class DequeueCommand : UpdateCommand
 {
     public QueueName Queue { get; }
 

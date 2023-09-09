@@ -84,6 +84,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
             _logger.Information("Начинаю читать запросы от пользователей");
             foreach (var request in _channel.ReadAll(token))
             {
+                _logger.Debug("Получен запрос: {@RequestType}", request.Command);
                 if (request.IsCancelled)
                 {
                     _logger.Debug("Запрос {RequestType} был отменен пока лежал в очереди", request.Command.Type);

@@ -3,7 +3,8 @@
 namespace TaskFlux.Commands;
 
 /// <summary>
-/// Базовый класс команды, которая может быть выполнена над узлом
+/// Базовый класс команды, которая может быть выполнена над узлом.
+/// От нее настледуются 2 типа команд: модифицирующие и только для чтения.
 /// </summary>
 public abstract class Command
 {
@@ -11,7 +12,7 @@ public abstract class Command
     {
     }
 
-    public virtual bool IsReadOnly => true;
+    public abstract bool IsReadOnly { get; }
     public abstract CommandType Type { get; }
 
     public abstract Result Apply(ICommandContext context);

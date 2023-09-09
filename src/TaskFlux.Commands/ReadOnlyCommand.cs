@@ -2,6 +2,9 @@ using TaskFlux.Commands.Visitors;
 
 namespace TaskFlux.Commands;
 
+/// <summary>
+/// Команда, предназначенная только для чтения - не модифицирует данные
+/// </summary>
 public abstract class ReadOnlyCommand : Command
 {
     public sealed override bool IsReadOnly => true;

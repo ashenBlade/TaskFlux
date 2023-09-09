@@ -142,13 +142,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
     {
-        if (!request.Descriptor.IsReadonly)
-        {
-            return SubmitResponse<TResponse>.NotLeader;
-        }
-
-        var response = StateMachine.Apply(request.Descriptor.Command);
-        return SubmitResponse<TResponse>.Success(response, false);
+        return SubmitResponse<TResponse>.NotLeader;
     }
 
     private void OnElectionTimerTimeout()
