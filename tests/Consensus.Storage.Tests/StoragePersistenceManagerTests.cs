@@ -1009,6 +1009,137 @@ public class StoragePersistenceManagerTests
         var success = facade.TryGetFrom(index, out _);
         Assert.False(success);
     }
+
+    // TODO: GetFrom тоже
+    [Fact]
+    public void
+        GetPrecedingEntryInfo__КогдаСуществуетСнапшот_ИндексРавенПервомуВЛоге__ДолженВернутьВхождениеИзСнапшота()
+    {
+        var (facade, _) = CreateFacade();
+        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
+        facade.SnapshotStorage.WriteSnapshotDataTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
+
+        var actual = facade.GetPrecedingEntryInfo(snapshotLastEntry.Index + 1);
+
+        Assert.Equal(snapshotLastEntry, actual);
+    }
+
+    [Fact]
+    public void
+        GetPrecedingEntryInfo__КогдаСуществуетСнапшот_ИндексНаходитсяВПределахЛога__ДолженВернутьВхождениеИзЛога()
+    {
+        var (facade, _) = CreateFacade();
+        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
+        facade.SnapshotStorage.WriteSnapshotDataTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
+        var entries = new[]
+        {
+            RandomDataEntry(2), // 11
+            RandomDataEntry(2), // 12
+            RandomDataEntry(3), // 13
+        };
+        facade.LogStorage.SetFileTest(entries);
+        var expected = new LogEntryInfo(new Term(2), 12);
+
+        var actual = facade.GetPrecedingEntryInfo(13);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void GetPrecedingEntryInfo__КогдаСуществуетСнапшот_ИндексПервыйИзБуфера__ДолженВернутьВхождениеИзЛога()
+    {
+        var (facade, _) = CreateFacade();
+        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
+        facade.SnapshotStorage.WriteSnapshotDataTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
+        var entries = new[]
+        {
+            RandomDataEntry(2), // 11
+            RandomDataEntry(2), // 12
+            RandomDataEntry(3), // 13
+        };
+        facade.LogStorage.SetFileTest(entries);
+        var expected = new LogEntryInfo(new Term(3), 13);
+
+        var actual = facade.GetPrecedingEntryInfo(14);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void GetPrecedingEntryInfo__КогдаСуществуетСнапшот_ИндексВПределахБуфера__ДолженВернутьВхождениеИзБуфера()
+    {
+        var (facade, _) = CreateFacade();
+        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
+        facade.SnapshotStorage.WriteSnapshotDataTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
+        var entries = new[]
+        {
+            RandomDataEntry(2), // 11
+            RandomDataEntry(2), // 12
+            RandomDataEntry(3), // 13
+        };
+        var buffer = new[]
+        {
+            RandomDataEntry(3), // 14
+            RandomDataEntry(3), // 15
+            RandomDataEntry(4), // 16
+        };
+        facade.SetupBufferTest(buffer);
+        facade.LogStorage.SetFileTest(entries);
+        var expected = new LogEntryInfo(new Term(3), 15);
+
+        var actual = facade.GetPrecedingEntryInfo(16);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void
+        GetPrecedingEntryInfo__КогдаСуществуетСнапшот_ИндексПослеПоследнегоВБуфере__ДолженВернутьВхождениеИзБуфера()
+    {
+        var (facade, _) = CreateFacade();
+        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
+        facade.SnapshotStorage.WriteSnapshotDataTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
+        var entries = new[]
+        {
+            RandomDataEntry(2), // 11
+            RandomDataEntry(2), // 12
+            RandomDataEntry(3), // 13
+        };
+        var buffer = new[]
+        {
+            RandomDataEntry(3), // 14
+            RandomDataEntry(3), // 15
+            RandomDataEntry(4), // 16
+        };
+        facade.SetupBufferTest(buffer);
+        facade.LogStorage.SetFileTest(entries);
+        var expected = new LogEntryInfo(new Term(4), 16);
+
+        var actual = facade.GetPrecedingEntryInfo(17);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void
+        GetPrecedingEntryInfo__КогдаСуществуетСнапшот_БуферПуст_ИндексПослеИндексаСнапшота__ДолженВернутьВхождениеИзСнапшота()
+    {
+        var (facade, _) = CreateFacade();
+        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
+        facade.SnapshotStorage.WriteSnapshotDataTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
+        var buffer = new[]
+        {
+            RandomDataEntry(2), // 11
+            RandomDataEntry(2), // 12
+            RandomDataEntry(3), // 13
+        };
+        facade.SetupBufferTest(buffer);
+        var expected = new LogEntryInfo(new Term(2), 10);
+
+        var actual = facade.GetPrecedingEntryInfo(11);
+
+        Assert.Equal(expected, actual);
+    }
 }
 
 file static class EnumerableExtensions

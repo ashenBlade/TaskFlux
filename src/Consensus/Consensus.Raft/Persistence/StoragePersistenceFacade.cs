@@ -392,30 +392,19 @@ public class StoragePersistenceFacade
                 "Следующий индекс лога не может быть отрицательным");
         }
 
+        if (nextIndex == 0)
+        {
+            return LogEntryInfo.Tomb;
+        }
+
         lock (_lock)
         {
-            if (_logStorage.Count + _buffer.Count + 1 < nextIndex)
+            if (_snapshotStorage.LastLogEntry.Index + 1 == nextIndex)
             {
-                throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
-                    "Следующий индекс лога не может быть больше числа записей в логе + 1");
+                return _snapshotStorage.LastLogEntry;
             }
 
-            if (nextIndex == 0)
-            {
-                return LogEntryInfo.Tomb;
-            }
-
-            var index = nextIndex - 1;
-
-            // Запись находится в логе
-            if (_logStorage.Count <= index)
-            {
-                var bufferIndex = index - _logStorage.Count;
-                var bufferEntry = _buffer[bufferIndex];
-                return new LogEntryInfo(bufferEntry.Term, index);
-            }
-
-            return _logStorage.GetInfoAt(index);
+            return GetLogEntryInfoAtIndex(nextIndex - 1);
         }
     }
 
@@ -627,24 +616,30 @@ public class StoragePersistenceFacade
         }
 
         // 4. Переименовать файл в нужное имя
-        try
+        lock (_lock)
         {
-            snapshotTempFile.Save();
-        }
-        catch (Exception)
-        {
-            snapshotTempFile.Discard();
-            throw;
-        }
+            try
+            {
+                snapshotTempFile.Save();
+            }
+            catch (Exception)
+            {
+                snapshotTempFile.Discard();
+                throw;
+            }
 
-        ClearCommandLog();
+            // Очищаем непримененные команды
+            _buffer.Clear();
+            // Очищаем сам файл лога
+            _logStorage.Clear();
+        }
     }
 
     /// <summary>
     /// Очистить файл лога команд.
     /// Выполняется после создания нового снапшота.
     /// </summary>
-    public void ClearCommandLog()
+    private void ClearCommandLog()
     {
         lock (_lock)
         {
