@@ -95,7 +95,6 @@ try
         new SubmitCommandRequestHandler(requestAcceptor, clusterInfo, appInfo,
             Log.ForContext<SubmitCommandRequestHandler>()));
 
-
     var binaryRequestModule = CreateBinaryRequestModule(requestAcceptor, appInfo, clusterInfo, configuration);
 
     var nodeConnectionThread = new Thread(o =>
@@ -139,6 +138,10 @@ try
         cts.Cancel();
         nodeConnectionThread.Join();
     }
+}
+catch (Exception e)
+{
+    Log.Fatal(e, "Необработанное исключение во время настройки сервера");
 }
 finally
 {
@@ -217,23 +220,8 @@ StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions option
 {
     var dataDirectory = GetDataDirectory(options);
 
-
     var fs = new FileSystem();
-    var consensusDirectory = new DirectoryInfo(Path.Combine(dataDirectory, "consensus"));
-    if (!consensusDirectory.Exists)
-    {
-        Log.Information("Директории для хранения данных не существует. Создаю новую - {Path}",
-            consensusDirectory.FullName);
-        try
-        {
-            consensusDirectory.Create();
-        }
-        catch (IOException e)
-        {
-            Log.Fatal(e, "Невозможно создать директорию для данных");
-            throw;
-        }
-    }
+    var consensusDirectory = CreateConsensusDirectory();
 
     var tempDirectory = CreateTemporaryDirectory();
 
@@ -265,6 +253,27 @@ StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions option
         return temporary;
     }
 
+    DirectoryInfo CreateConsensusDirectory()
+    {
+        var dir = new DirectoryInfo(Path.Combine(dataDirectory, "consensus"));
+        if (!dir.Exists)
+        {
+            Log.Information("Директории для хранения данных не существует. Создаю новую - {Path}",
+                dir.FullName);
+            try
+            {
+                dir.Create();
+            }
+            catch (IOException e)
+            {
+                Log.Fatal(e, "Невозможно создать директорию для данных");
+                throw;
+            }
+        }
+
+        return dir;
+    }
+
     FileSystemSnapshotStorage CreateSnapshotStorage()
     {
         var snapshotFile = new FileInfo(Path.Combine(consensusDirectory.FullName, "raft.snapshot"));
@@ -284,7 +293,7 @@ StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions option
         }
 
         return new FileSystemSnapshotStorage(new FileInfoWrapper(fs, snapshotFile),
-            new DirectoryInfoWrapper(fs, tempDirectory));
+            new DirectoryInfoWrapper(fs, tempDirectory), Log.ForContext("SourceContext", "SnapshotManager"));
     }
 
     FileLogStorage CreateFileLogStorage()
@@ -457,8 +466,7 @@ IStateMachine<Command, Result> RestoreState(StoragePersistenceFacade facade, Tas
     }
     catch (Exception e)
     {
-        Log.Fatal(e, "Ошибка во время восстановления лога");
-        Log.CloseAndFlush();
+        Log.Error(e, "Ошибка во время восстановления лога");
         throw;
     }
 

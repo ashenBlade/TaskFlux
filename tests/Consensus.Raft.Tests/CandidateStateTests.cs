@@ -73,7 +73,7 @@ public class CandidateStateTests
             var logStorage = new FileLogStorage(fs.Log, fs.TemporaryDirectory);
             var metadataStorage =
                 new FileMetadataStorage(fs.Metadata.Open(FileMode.Open), new Term(term), NodeId);
-            var snapshotStorage = new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory);
+            var snapshotStorage = new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory, Logger.None);
             if (fileSizeChecker is null)
             {
                 return new StoragePersistenceFacade(logStorage, metadataStorage, snapshotStorage);

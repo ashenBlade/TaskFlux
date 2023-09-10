@@ -1,5 +1,10 @@
 namespace Consensus.Raft.Persistence;
 
+/// <summary>
+/// Структура представляющая собой информацию о какой либо записи команды - ее терм и индекс
+/// </summary>
+/// <param name="Term">Терм команды</param>
+/// <param name="Index">Индекс команды</param>
 public readonly record struct LogEntryInfo(Term Term, int Index)
 {
     /// <summary>

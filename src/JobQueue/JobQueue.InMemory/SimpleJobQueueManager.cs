@@ -65,6 +65,11 @@ public class SimpleJobQueueManager : IJobQueueManager
         {
             try
             {
+                if (!found && jobQueue.Name.IsDefaultQueue)
+                {
+                    found = true;
+                }
+
                 result.Add(jobQueue.Name, jobQueue);
             }
             catch (ArgumentException arg)

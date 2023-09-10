@@ -35,7 +35,7 @@ public class FollowerStateTests
 
         var persistence = new StoragePersistenceFacade(new FileLogStorage(fs.Log, fs.TemporaryDirectory),
             new FileMetadataStorage(fs.Metadata.Open(FileMode.OpenOrCreate), currentTerm, votedFor),
-            new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory));
+            new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory, Logger.None));
 
         var node = new RaftConsensusModule(NodeId,
             EmptyPeerGroup,
@@ -354,7 +354,7 @@ public class FollowerStateTests
             var (_, log, metadata, snapshot, tempDir) = Helpers.CreateFileSystem();
             var logFile = new FileLogStorage(log, tempDir);
             var metadataFile = new FileMetadataStorage(metadata.Open(FileMode.OpenOrCreate), new Term(1), null);
-            var snapshotFile = new FileSystemSnapshotStorage(snapshot, tempDir);
+            var snapshotFile = new FileSystemSnapshotStorage(snapshot, tempDir, Logger.None);
             return ( new StoragePersistenceFacade(logFile, metadataFile, snapshotFile),
                      new ConsensusFileSystem(snapshot) );
         }

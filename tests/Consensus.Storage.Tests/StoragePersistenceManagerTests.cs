@@ -7,7 +7,9 @@ using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
 using FluentAssertions;
+using Serilog.Core;
 using TaskFlux.Core;
+using Constants = Consensus.Raft.Persistence.Constants;
 
 // ReSharper disable UseUtf8StringLiteral
 // ReSharper disable StringLiteralTypo
@@ -66,7 +68,7 @@ public class StoragePersistenceManagerTests
                        : new Term(initialTerm.Value);
         var metadataStorage = new FileMetadataStorage(fs.MetadataFile.Open(FileMode.OpenOrCreate), term, votedFor);
 
-        var snapshotStorage = new FileSystemSnapshotStorage(fs.SnapshotFile, fs.TemporaryDirectory);
+        var snapshotStorage = new FileSystemSnapshotStorage(fs.SnapshotFile, fs.TemporaryDirectory, Logger.None);
         var facade = new StoragePersistenceFacade(logStorage, metadataStorage, snapshotStorage);
 
         return ( facade, fs );

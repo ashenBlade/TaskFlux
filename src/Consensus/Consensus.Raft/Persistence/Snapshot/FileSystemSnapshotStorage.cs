@@ -2,6 +2,7 @@ using System.Buffers;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Abstractions;
+using Serilog;
 using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Raft.Persistence.Snapshot;
@@ -16,15 +17,66 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
 
     private readonly IFileInfo _snapshotFile;
     private readonly IDirectoryInfo _temporarySnapshotFileDirectory;
+    private readonly ILogger _logger;
 
     public bool HasSnapshot => !LastLogEntry.IsTomb;
 
-    public FileSystemSnapshotStorage(IFileInfo snapshotFile, IDirectoryInfo temporarySnapshotFileDirectory)
+    public FileSystemSnapshotStorage(
+        IFileInfo snapshotFile,
+        IDirectoryInfo temporarySnapshotFileDirectory,
+        ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(snapshotFile);
         ArgumentNullException.ThrowIfNull(temporarySnapshotFileDirectory);
         _snapshotFile = snapshotFile;
         _temporarySnapshotFileDirectory = temporarySnapshotFileDirectory;
+        _logger = logger;
+
+        Initialize();
+    }
+
+    private void Initialize()
+    {
+        var fileLength = _snapshotFile.Length;
+        if (!_snapshotFile.Exists || fileLength == 0)
+        {
+            LastLogEntry = LogEntryInfo.Tomb;
+            return;
+        }
+
+        const int minHeaderSize = sizeof(int)  // Маркер 
+                                + sizeof(int)  // Индекс
+                                + sizeof(int); // Терм
+
+        if (fileLength < minHeaderSize)
+        {
+            throw new InvalidDataException(
+                $"Размер файла не пуст и его размер меньше минимального. Минимальный размер: {minHeaderSize}. Размер файла: {fileLength}");
+        }
+
+        using var fileStream = _snapshotFile.OpenRead();
+        var reader = new StreamBinaryReader(fileStream);
+        // 1. Маркер
+        var marker = reader.ReadInt32();
+        if (marker != Marker)
+        {
+            throw new InvalidDataException(
+                $"Хранившийся в файле маркер не равен требуемому. Прочитано: {marker}. Ожидалось: {Marker}");
+        }
+
+        var index = reader.ReadInt32();
+        if (index < 0)
+        {
+            throw new InvalidDataException($"Индекс команды, хранившийся в снапшоте, - отрицательный. Индекс: {index}");
+        }
+
+        var term = reader.ReadInt32();
+        if (term < Term.StartTerm)
+        {
+            throw new InvalidDataException($"Терм команды, хранившийся в снапшоте, - отрицательный. Терм: {term}");
+        }
+
+        LastLogEntry = new LogEntryInfo(new Term(term), index);
     }
 
     public ISnapshotFileWriter CreateTempSnapshotFile()

@@ -46,6 +46,7 @@ public class TaskFluxStateMachineFactory : IStateMachineFactory<Command, Result>
             memoryStream.Write(chunk.Span);
         }
 
+        memoryStream.Position = 0;
         var queues = _fileJobQueueSnapshotSerializer.Deserialize(memoryStream)
                                                     .ToList();
 

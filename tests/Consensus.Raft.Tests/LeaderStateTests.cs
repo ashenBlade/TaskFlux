@@ -72,7 +72,7 @@ public class LeaderStateTests
             var fs = Helpers.CreateFileSystem();
             var log = new FileLogStorage(fs.Log, fs.TemporaryDirectory);
             var metadata = new FileMetadataStorage(fs.Metadata.Open(FileMode.Open), term, votedFor);
-            var snapshotStorage = new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory);
+            var snapshotStorage = new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory, Logger.None);
             return new StoragePersistenceFacade(log, metadata, snapshotStorage);
         }
     }
