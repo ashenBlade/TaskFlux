@@ -1,6 +1,5 @@
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
-using Consensus.CommandQueue;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.Tests.Stubs;
 using Moq;
@@ -13,7 +12,6 @@ public static class Helpers
     public static readonly ITimer NullTimer = CreateNullTimer();
     public static readonly IStateMachine NullStateMachine = CreateNullStateMachine();
     public static readonly IStateMachineFactory NullStateMachineFactory = CreateNullStateMachineFactory();
-    public static readonly ICommandQueue NullCommandQueue = Mock.Of<ICommandQueue>();
     public static readonly ICommandSerializer<int> NullCommandSerializer = new StubCommandSerializer<int>();
     public static readonly ITimerFactory NullTimerFactory = CreateNullTimerFactory();
 
@@ -22,12 +20,16 @@ public static class Helpers
         var mock = new Mock<ITimerFactory>();
         mock.Setup(x => x.CreateHeartbeatTimer())
             .Returns(NullTimer);
+        mock.Setup(x => x.CreateElectionTimer())
+            .Returns(NullTimer);
         return mock.Object;
     }
 
     private static IStateMachineFactory CreateNullStateMachineFactory()
     {
         var mock = new Mock<IStateMachineFactory>();
+        mock.Setup(x => x.CreateEmpty()).Returns(NullStateMachine);
+        mock.Setup(x => x.Restore(It.IsAny<ISnapshot>())).Returns(NullStateMachine);
         return mock.Object;
     }
 
@@ -36,6 +38,7 @@ public static class Helpers
         return new Mock<IStateMachine>().Apply(m =>
                                          {
                                              m.Setup(x => x.Apply(It.IsAny<int>())).Returns(1);
+                                             m.Setup(x => x.ApplyNoResponse(It.IsAny<int>()));
                                          })
                                         .Object;
     }

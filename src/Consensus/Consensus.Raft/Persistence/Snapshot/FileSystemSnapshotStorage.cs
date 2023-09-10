@@ -11,11 +11,13 @@ namespace Consensus.Raft.Persistence.Snapshot;
 /// </summary>
 public class FileSystemSnapshotStorage : ISnapshotStorage
 {
+    /// <inheritdoc cref="Constants.Marker"/>
+    public const int Marker = Constants.Marker;
+
     private readonly IFileInfo _snapshotFile;
     private readonly IDirectoryInfo _temporarySnapshotFileDirectory;
 
-    /// <inheritdoc cref="Constants.Marker"/>
-    public const int Marker = Constants.Marker;
+    public bool HasSnapshot => !LastLogEntry.IsTomb;
 
     public FileSystemSnapshotStorage(IFileInfo snapshotFile, IDirectoryInfo temporarySnapshotFileDirectory)
     {

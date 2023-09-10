@@ -256,7 +256,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         var response = StateMachine.Apply(request.Descriptor.Command);
 
         // Коммитим запись и применяем 
-        _logger.Verbose("Коммчу команду с индексом {Index}", appended.Index);
+        _logger.Verbose("Коммичу команду с индексом {Index}", appended.Index);
         PersistenceFacade.Commit(appended.Index);
         PersistenceFacade.SetLastApplied(appended.Index);
 

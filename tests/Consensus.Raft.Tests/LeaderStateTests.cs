@@ -62,7 +62,7 @@ public class LeaderStateTests
         }
 
         var node = new RaftConsensusModule(NodeId, peerGroup, Logger.None, timerFactory,
-            Helpers.NullBackgroundJobQueue, facade, Helpers.NullCommandQueue, stateMachine,
+            Helpers.NullBackgroundJobQueue, facade, stateMachine,
             CommandSerializer, Helpers.NullStateMachineFactory);
         node.SetStateTest(node.CreateLeaderState());
         return node;

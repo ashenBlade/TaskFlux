@@ -54,8 +54,29 @@ public class StoragePersistenceFacade
         {
             lock (_lock)
             {
+                if (SnapshotStorage.HasSnapshot)
+                {
+                    if (_buffer is [_, ..])
+                    {
+                        var index = SnapshotStorage.LastLogEntry.Index
+                                  + _buffer.Count
+                                  + _logStorage.Count;
+                        return new LogEntryInfo(_buffer[^1].Term, index);
+                    }
+
+                    if (0 < _logStorage.Count)
+                    {
+                        var index = SnapshotStorage.LastLogEntry.Index
+                                  + _logStorage.Count;
+                        return new LogEntryInfo(_logStorage.GetLastLogEntry().Term, index);
+                    }
+
+                    return SnapshotStorage.LastLogEntry;
+                }
+
+                // Снапшота нет
                 return _buffer is [_, ..]
-                           ? new LogEntryInfo(_buffer[^1].Term, CommitIndex + _buffer.Count)
+                           ? new LogEntryInfo(_buffer[^1].Term, _logStorage.Count + _buffer.Count - 1)
                            : _logStorage.GetLastLogEntry();
             }
         }
@@ -70,6 +91,11 @@ public class StoragePersistenceFacade
         {
             lock (_lock)
             {
+                if (SnapshotStorage.HasSnapshot)
+                {
+                    return SnapshotStorage.LastLogEntry.Index + _logStorage.Count;
+                }
+
                 return _logStorage.Count - 1;
             }
         }
@@ -192,13 +218,20 @@ public class StoragePersistenceFacade
     /// </summary>
     /// <param name="entries">Записи, которые необходимо добавить</param>
     /// <param name="startIndex">Индекс, начиная с которого необходимо добавить записи</param>
-    public void InsertRange(IEnumerable<LogEntry> entries, int startIndex)
+    public void InsertBufferRange(IEnumerable<LogEntry> entries, int startIndex)
     {
+        if (startIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(startIndex), startIndex,
+                "Индекс лога не может быть отрицательным");
+        }
+
         lock (_lock)
         {
             // Индекс, с которого начинаются записи в буфере
-            var bufferStartIndex = startIndex - _logStorage.Count;
+            var bufferStartIndex = CalculateLocalIndex(startIndex) - _logStorage.Count;
 
+            // TODO: хуйня здесь
             if (bufferStartIndex < 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(startIndex), startIndex,
@@ -225,10 +258,22 @@ public class StoragePersistenceFacade
     {
         lock (_lock)
         {
-            var newIndex = _logStorage.Count + _buffer.Count;
+            var newIndex = CalculateGlobalIndex(_logStorage.Count + _buffer.Count);
             _buffer.Add(entry);
             return new LogEntryInfo(entry.Term, newIndex);
         }
+    }
+
+    private int CalculateGlobalIndex(int localIndex)
+    {
+        if (SnapshotStorage.HasSnapshot)
+        {
+            return SnapshotStorage.LastLogEntry.Index
+                 + 1 // Учитываем Tomb 
+                 + localIndex;
+        }
+
+        return localIndex;
     }
 
     /// <summary>
@@ -258,9 +303,17 @@ public class StoragePersistenceFacade
     private LogEntryInfo GetLogEntryInfoAtIndex(int globalIndex)
     {
         var localIndex = CalculateLocalIndex(globalIndex);
-        if (localIndex < 0)
+        if (localIndex < -1)
         {
+            Serilog.Log.Debug(
+                "В логе нет указанного индекса {GlobalIndex}. Локальный индекс: {LocalIndex}. Последний индекс: {LastEntry}",
+                globalIndex, localIndex, LastEntry);
             throw new ArgumentOutOfRangeException(nameof(globalIndex), globalIndex, "В логе нет указанного индекса");
+        }
+
+        if (localIndex == -1)
+        {
+            return SnapshotStorage.LastLogEntry;
         }
 
         if (_logStorage.TryGetInfoAt(localIndex, out var lastLogEntry))
@@ -323,6 +376,15 @@ public class StoragePersistenceFacade
         }
     }
 
+    /// <summary>
+    /// Рассчитать локальный индекс по переданному глобальному
+    /// </summary>
+    /// <param name="globalIndex">Глобальный индекс</param>
+    /// <returns>
+    /// - Положительное число - локальный индекс среди лога/буфера
+    /// - -1 - переданный индекс - это индекс последней команды в снапшоте
+    /// - Отрицательное число - команда заходит за пределы снапшота (внутрь)
+    /// </returns>
     private int CalculateLocalIndex(int globalIndex)
     {
         /*
@@ -343,10 +405,16 @@ public class StoragePersistenceFacade
          *
          * Снапшота еще нет, то локальный и глобальный индексы совпадают
          */
-        if (SnapshotStorage.LastLogEntry.IsTomb)
+        if (!SnapshotStorage.HasSnapshot)
         {
             return globalIndex;
         }
+
+        /*
+         * Глобальный индекс: |    10   | 11  | 12  | 13  | 14  |
+         *                    | Снапшот |
+         * Локальный индекс:  |    -1   |  0  |  1  |  2  |  3   |
+         */
 
         return globalIndex - SnapshotStorage.LastLogEntry.Index - 1;
     }
@@ -358,9 +426,34 @@ public class StoragePersistenceFacade
     /// <returns>Результат коммита лога</returns>
     public void Commit(int index)
     {
+        if (index < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), index,
+                "Индекс лога не может быть отрицательным при коммите");
+        }
+
         lock (_lock)
         {
-            var removeCount = index - _logStorage.Count + 1;
+            var localIndex = CalculateLocalIndex(index);
+            if (localIndex < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Указанный индекс коммита меньше последней команды в снапшоте. Переданный индекс: {index}. Последний индекс снашпота: {SnapshotStorage.LastLogEntry}");
+            }
+
+            if (_logStorage.Count + _buffer.Count < localIndex)
+            {
+                throw new InvalidOperationException(
+                    $"Указанный индекс больше максимального хранящегося индекса лога. Переданный индекс: {index}. Последний индекс: {LastEntry.Index}");
+            }
+
+            if (localIndex < _logStorage.Count)
+            {
+                // Нечего коммитить - уже в логе
+                return;
+            }
+
+            var removeCount = localIndex - _logStorage.Count + 1;
             if (removeCount == 0)
             {
                 return;
@@ -636,21 +729,6 @@ public class StoragePersistenceFacade
     }
 
     /// <summary>
-    /// Очистить файл лога команд.
-    /// Выполняется после создания нового снапшота.
-    /// </summary>
-    private void ClearCommandLog()
-    {
-        lock (_lock)
-        {
-            // Очищаем непримененные команды
-            _buffer.Clear();
-            // Очищаем сам файл лога
-            _logStorage.Clear();
-        }
-    }
-
-    /// <summary>
     /// Получить снапшот состояния, если файл существовал
     /// </summary>
     /// <param name="snapshot">Хранившийся файл снапшота</param>
@@ -688,9 +766,7 @@ public class StoragePersistenceFacade
     /// <returns><c>true</c> - размер превышен, <c>false</c> - иначе</returns>
     public bool IsLogFileSizeExceeded()
     {
-        var logStorageFileSize = _logStorage.FileSize;
-        Console.WriteLine($"Размер лога: {logStorageFileSize}");
-        return _sizeChecker.IsLogFileSizeExceeded(logStorageFileSize);
+        return _sizeChecker.IsLogFileSizeExceeded(_logStorage.FileSize);
     }
 
     // Для тестов

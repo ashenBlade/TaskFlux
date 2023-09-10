@@ -75,7 +75,7 @@ public class StoragePersistenceManagerTests
     private static readonly LogEntryEqualityComparer Comparer = new();
 
     [Fact]
-    public void Append__СПустымЛогом__ДолженДобавитьЗаписьВБуферВПамяти()
+    public void AppendBuffer__СПустымЛогом__ДолженДобавитьЗаписьВБуферВПамяти()
     {
         var (facade, _) = CreateFacade();
         var entry = new LogEntry(new Term(2), Array.Empty<byte>());
@@ -87,8 +87,32 @@ public class StoragePersistenceManagerTests
         Assert.Equal(entry, actualEntry, Comparer);
     }
 
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 0)]
+    [InlineData(0, 1)]
+    [InlineData(2, 2)]
+    [InlineData(3, 0)]
+    [InlineData(0, 3)]
+    [InlineData(3, 3)]
+    [InlineData(5, 5)]
+    public void AppendBuffer__КогдаЕстьСнапшот__ДолженВернутьПравильныйНовыйИндекс(int logSize, int bufferSize)
+    {
+        var (facade, _) = CreateFacade();
+        var lastSnapshotIndex = 10;
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(2), lastSnapshotIndex,
+            new StubSnapshot(Array.Empty<byte>()));
+        facade.SetupBufferTest(Enumerable.Range(0, bufferSize).Select(_ => RandomDataEntry(2)));
+        facade.LogStorage.SetFileTest(Enumerable.Range(0, logSize).Select(_ => RandomDataEntry(2)));
+        var expected = new LogEntryInfo(new Term(2), lastSnapshotIndex + logSize + bufferSize + 1);
+
+        var actual = facade.AppendBuffer(new LogEntry(new Term(2), Array.Empty<byte>()));
+
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
-    public void Append__СПустымЛогом__НеДолженЗаписыватьЗаписьВLogStorage()
+    public void AppendBuffer__СПустымЛогом__НеДолженЗаписыватьЗаписьВLogStorage()
     {
         var (facade, _) = CreateFacade();
         var entry = new LogEntry(new Term(2), Array.Empty<byte>());
@@ -99,7 +123,7 @@ public class StoragePersistenceManagerTests
     }
 
     [Fact]
-    public void Append__СПустымЛогом__ДолженВернутьАктуальнуюИнформациюОЗаписанномЭлементе()
+    public void AppendBuffer__СПустымЛогом__ДолженВернутьАктуальнуюИнформациюОЗаписанномЭлементе()
     {
         var entry = new LogEntry(DefaultTerm, new byte[] {123, 4, 56});
         var (facade, _) = CreateFacade();
@@ -113,7 +137,7 @@ public class StoragePersistenceManagerTests
     }
 
     [Fact]
-    public void Append__КогдаВБуфереЕстьЭлементы__ДолженВернутьПравильнуюЗапись()
+    public void AppendBuffer__КогдаВБуфереЕстьЭлементы__ДолженВернутьПравильнуюЗапись()
     {
         var (facade, _) = CreateFacade(2);
         var buffer = new List<LogEntry>()
@@ -136,7 +160,7 @@ public class StoragePersistenceManagerTests
         new(new Term(term), Encoding.UTF8.GetBytes(data));
 
     [Fact]
-    public void Append__КогдаБуферПустНоВХранилищеЕстьЭлементы__ДолженВернутьПравильнуюЗапись()
+    public void AppendBuffer__КогдаБуферПустНоВХранилищеЕстьЭлементы__ДолженВернутьПравильнуюЗапись()
     {
         var (facade, _) = CreateFacade(2);
         facade.LogStorage.AppendRange(new[] {Entry(1, 99, 76, 33), Entry(1, 9), Entry(2, 94, 22, 48)});
@@ -153,7 +177,7 @@ public class StoragePersistenceManagerTests
     }
 
     [Fact]
-    public void Append__КогдаВБуфереИХранилищеЕстьЭлементы__ДолженВернутьПравильнуюЗапись()
+    public void AppendBuffer__КогдаВБуфереИХранилищеЕстьЭлементы__ДолженВернутьПравильнуюЗапись()
     {
         var (facade, _) = CreateFacade(3);
         facade.LogStorage.AppendRange(new[] {Entry(1, "adfasfas"), Entry(2, "aaaa"), Entry(2, "aegqer89987")});
@@ -399,7 +423,7 @@ public class StoragePersistenceManagerTests
                                 .Select(RandomDataEntry)
                                 .ToArray();
 
-        facade.InsertRange(entries, 0);
+        facade.InsertBufferRange(entries, 0);
 
         Assert.Equal(entries, facade.ReadLogBufferTest());
         Assert.Empty(facade.LogStorage.ReadAllTest());
@@ -430,7 +454,7 @@ public class StoragePersistenceManagerTests
         var (facade, _) = CreateFacade(bufferSize + toInsertSize + 1);
         facade.SetupBufferTest(buffer);
 
-        facade.InsertRange(toInsert, bufferSize);
+        facade.InsertBufferRange(toInsert, bufferSize);
 
         var actual = facade.ReadLogBufferTest();
         Assert.Equal(expected, actual, Comparer);
@@ -471,7 +495,7 @@ public class StoragePersistenceManagerTests
         var (facade, _) = CreateFacade(bufferCount + toInsertCount + 1);
         facade.SetupBufferTest(buffer);
 
-        facade.InsertRange(toInsert, insertIndex);
+        facade.InsertBufferRange(toInsert, insertIndex);
 
         var actual = facade.ReadLogBufferTest();
 
@@ -758,7 +782,6 @@ public class StoragePersistenceManagerTests
 
     // TODO: тесты на применение оставшихся команд
     // TODO: тесты на обновление состояния после установки снапшота
-    // TODO: тесты на очищение лога для SaveSnapshot
 
     private static byte[] RandomBytes(int size)
     {
@@ -1010,7 +1033,6 @@ public class StoragePersistenceManagerTests
         Assert.False(success);
     }
 
-    // TODO: GetFrom тоже
     [Fact]
     public void
         GetPrecedingEntryInfo__КогдаСуществуетСнапшот_ИндексРавенПервомуВЛоге__ДолженВернутьВхождениеИзСнапшота()
@@ -1139,6 +1161,61 @@ public class StoragePersistenceManagerTests
         var actual = facade.GetPrecedingEntryInfo(11);
 
         Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(5)]
+    public void InsertBufferRange__КогдаЕстьСнашпот__ДолженДобавитьЗаписиВКонец(int initialBufferSize)
+    {
+        var (facade, _) = CreateFacade();
+        var snapshotLastIndex = 11;
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(3), snapshotLastIndex,
+            new StubSnapshot(Array.Empty<byte>()));
+        var existingBuffer = Enumerable.Range(0, initialBufferSize)
+                                       .Select(_ => RandomDataEntry(3))
+                                       .ToArray();
+        facade.SetupBufferTest(existingBuffer);
+        var toInsert = new[] {RandomDataEntry(3), RandomDataEntry(3),};
+        var expected = existingBuffer.Concat(toInsert)
+                                     .ToArray();
+
+        facade.InsertBufferRange(toInsert, snapshotLastIndex + initialBufferSize + 1);
+
+        var actual = facade.ReadLogBufferTest();
+
+        actual.Should()
+              .Equal(expected, "записи должны сконкатенироваться");
+    }
+
+    [Fact]
+    public void InsertBufferRange__КогдаЕстьСнапшот__ДолженПерезаписатьБуфер()
+    {
+        var (facade, _) = CreateFacade();
+        var snapshotLastIndex = 11;
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(3), snapshotLastIndex,
+            new StubSnapshot(Array.Empty<byte>()));
+        var existingBuffer = new[]
+        {
+            RandomDataEntry(3), // 11
+            RandomDataEntry(4), // 12
+            RandomDataEntry(4), // 13
+            RandomDataEntry(4), // 14
+        };
+        facade.SetupBufferTest(existingBuffer);
+        var toInsert = new[] {RandomDataEntry(3), RandomDataEntry(3),};
+
+        var expected = existingBuffer[..0]
+                      .Concat(toInsert)
+                      .ToArray();
+
+        facade.InsertBufferRange(toInsert, 12);
+
+        var actual = facade.ReadLogBufferTest();
+
+        actual.Should()
+              .Equal(expected, "записи должны сконкатенироваться");
     }
 }
 

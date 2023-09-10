@@ -43,7 +43,6 @@ public class FollowerStateTests
             timerFactory,
             backgroundJobQueue,
             persistence,
-            Helpers.NullCommandQueue,
             Helpers.NullStateMachine,
             Helpers.NullCommandSerializer,
             Helpers.NullStateMachineFactory);
@@ -135,7 +134,7 @@ public class FollowerStateTests
     {
         var term = new Term(4);
         var node = CreateFollowerNode(term, null);
-        node.PersistenceFacade.InsertRange(new LogEntry[]
+        node.PersistenceFacade.InsertBufferRange(new LogEntry[]
         {
             new(new(1), Array.Empty<byte>()), // 1
             new(new(3), Array.Empty<byte>()), // 2
@@ -162,7 +161,7 @@ public class FollowerStateTests
     {
         var term = new Term(4);
         var node = CreateFollowerNode(term, null);
-        node.PersistenceFacade.InsertRange(new LogEntry[]
+        node.PersistenceFacade.InsertBufferRange(new LogEntry[]
         {
             new(new(1), Array.Empty<byte>()), // 1
             new(new(3), Array.Empty<byte>()), // 2
@@ -248,7 +247,7 @@ public class FollowerStateTests
 
         var node = CreateFollowerNode(term, null);
 
-        node.PersistenceFacade.InsertRange(
+        node.PersistenceFacade.InsertBufferRange(
             new LogEntry[]
             {
                 new(new(1), Array.Empty<byte>()), new(new(2), Array.Empty<byte>()),
@@ -332,9 +331,6 @@ public class FollowerStateTests
         // Follower не использует фоновые задачи - это только для Candidate/Leader
         var backgroundJobQueue = Mock.Of<IBackgroundJobQueue>();
 
-        // Очередь команд - абстракция только для синхронного выполнения команд (потом может вынесу выше)
-        var commandQueue = new SimpleCommandQueue();
-
         var commandSerializer =
             Mock.Of<ICommandSerializer<int>>(x => x.Serialize(It.IsAny<int>()) == Array.Empty<byte>());
 
@@ -345,7 +341,6 @@ public class FollowerStateTests
             Helpers.NullTimerFactory,
             backgroundJobQueue,
             persistenceFacade,
-            commandQueue,
             Helpers.NullStateMachine,
             commandSerializer,
             Helpers.NullStateMachineFactory);
@@ -579,7 +574,8 @@ public class FollowerStateTests
         node.PersistenceFacade.LogStorage.AppendRange(committedEntries);
 
         // Добавляем 2 незакоммиченные записи
-        node.PersistenceFacade.InsertRange(new LogEntry[] {new(new(3), new byte[] {4}), new(new(3), new byte[] {5}),},
+        node.PersistenceFacade.InsertBufferRange(
+            new LogEntry[] {new(new(3), new byte[] {4}), new(new(3), new byte[] {5}),},
             3);
 
         // В запросе передается 1 запись (идет сразу после наших закоммиченных) 
@@ -605,7 +601,7 @@ public class FollowerStateTests
         var candidateId = new NodeId(2);
 
         var node = CreateFollowerNode(term, votedFor);
-        node.PersistenceFacade.InsertRange(new LogEntry[]
+        node.PersistenceFacade.InsertBufferRange(new LogEntry[]
         {
             new(new(1), Array.Empty<byte>()), // 1
             new(new(3), Array.Empty<byte>()), // 2
@@ -630,7 +626,7 @@ public class FollowerStateTests
         var votedFor = new NodeId(5);
 
         var node = CreateFollowerNode(term, votedFor);
-        node.PersistenceFacade.InsertRange(new LogEntry[]
+        node.PersistenceFacade.InsertBufferRange(new LogEntry[]
         {
             new(new(1), Array.Empty<byte>()), // 1
             new(new(3), Array.Empty<byte>()), // 2

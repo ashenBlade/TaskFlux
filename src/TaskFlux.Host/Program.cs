@@ -68,7 +68,7 @@ try
 
     Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
 
-    var facade = CreateStoragePersistenceFacade();
+    var facade = CreateStoragePersistenceFacade(serverOptions);
 
     Log.Information("Создаю очередь машины состояний");
     var appInfo = CreateApplicationInfo();
@@ -213,10 +213,13 @@ EndPoint GetEndpoint(string host, int port)
     return new DnsEndPoint(host, port);
 }
 
-StoragePersistenceFacade CreateStoragePersistenceFacade()
+StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions options)
 {
+    var dataDirectory = GetDataDirectory(options);
+
+
     var fs = new FileSystem();
-    var consensusDirectory = new DirectoryInfo(Path.Combine(Directory.GetCurrentDirectory(), "consensus"));
+    var consensusDirectory = new DirectoryInfo(Path.Combine(dataDirectory, "consensus"));
     if (!consensusDirectory.Exists)
     {
         Log.Information("Директории для хранения данных не существует. Создаю новую - {Path}",
@@ -342,6 +345,54 @@ StoragePersistenceFacade CreateStoragePersistenceFacade()
             Log.Fatal(e, "Ошибка во время инициализации файла метаданных");
             throw;
         }
+    }
+
+    string GetDataDirectory(RaftServerOptions raftServerOptions)
+    {
+        string workingDirectory;
+        if (!string.IsNullOrWhiteSpace(raftServerOptions.DataDirectory))
+        {
+            workingDirectory = raftServerOptions.DataDirectory;
+            Log.Information("Указана директория данных: {WorkingDirectory}", workingDirectory);
+        }
+        else
+        {
+            Log.Information("Директория данных не указана. Выставляю в рабочую директорию");
+            workingDirectory = Directory.GetCurrentDirectory();
+        }
+
+        if (!Directory.Exists(workingDirectory))
+        {
+            if (File.Exists(workingDirectory))
+            {
+                // Это может быть только в случае, если директория была указана вручную
+                Log.Error("Директория для данных - файл");
+                throw new InvalidDataException(
+                    $"Указанная директория для данных - файл. Указанная директория: {workingDirectory}");
+            }
+
+            Log.Error("Указанная директория для данных не существует");
+            throw new InvalidDataException(
+                $"Указанная директория для данных не существует. Директория данных - {workingDirectory}");
+        }
+
+        try
+        {
+            using var _ = File.Create(Path.Combine(workingDirectory, Path.GetRandomFileName()), 1,
+                FileOptions.DeleteOnClose);
+        }
+        catch (UnauthorizedAccessException access)
+        {
+            Log.Error(access, "Для указанной директории отстутствуют права на запись");
+            throw;
+        }
+        catch (Exception e)
+        {
+            Log.Error(e, "В рабочей директории невозможно создать файл");
+            throw;
+        }
+
+        return workingDirectory;
     }
 }
 

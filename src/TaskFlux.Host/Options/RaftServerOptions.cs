@@ -25,4 +25,7 @@ public class RaftServerOptions
 
     [ConfigurationKeyName("ELECTION_TIMEOUT")]
     public TimeSpan ElectionTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
+    [ConfigurationKeyName("DATA_DIR")]
+    public string? DataDirectory { get; set; }
 }

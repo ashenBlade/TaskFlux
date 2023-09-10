@@ -100,8 +100,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (0 < request.Entries.Count)
         {
-            // Если это не Heartbeat, то применить новые команды
-            PersistenceFacade.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
+            PersistenceFacade.InsertBufferRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
 
         if (PersistenceFacade.CommitIndex == request.LeaderCommit)
@@ -117,11 +116,14 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
         // Закоммиченные записи можно уже применять к машине состояний 
         var notApplied = PersistenceFacade.GetNotApplied();
-
-        foreach (var entry in notApplied)
+        if (notApplied.Count > 0)
         {
-            var command = _commandCommandSerializer.Deserialize(entry.Data);
-            StateMachine.ApplyNoResponse(command);
+            _logger.Debug("Применяю {Count} команд", notApplied.Count);
+            foreach (var entry in notApplied)
+            {
+                var command = _commandCommandSerializer.Deserialize(entry.Data);
+                StateMachine.ApplyNoResponse(command);
+            }
         }
 
         // После применения команды, обновляем индекс последней примененной записи.

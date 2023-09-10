@@ -1,4 +1,3 @@
-using Consensus.CommandQueue;
 using Consensus.Raft.Persistence;
 using Serilog;
 using TaskFlux.Core;
@@ -13,7 +12,6 @@ public class RaftConsensusModule : RaftConsensusModule<int, int>
                                  ITimerFactory timerFactory,
                                  IBackgroundJobQueue backgroundJobQueue,
                                  StoragePersistenceFacade persistenceFacade,
-                                 ICommandQueue commandQueue,
                                  IStateMachine<int, int> stateMachine,
                                  ICommandSerializer<int> commandSerializer,
                                  IStateMachineFactory<int, int> stateMachineFactory)

@@ -1,4 +1,3 @@
-using Consensus.CommandQueue;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
@@ -63,7 +62,7 @@ public class CandidateStateTests
         stateMachine ??= NullStateMachine;
         var node = new RaftConsensusModule(NodeId, peerGroup,
             Logger.None, timerFactory, jobQueue,
-            facade, Mock.Of<ICommandQueue>(),
+            facade,
             stateMachine, NullCommandSerializer, NullStateMachineFactory);
         node.SetStateTest(node.CreateCandidateState());
         return node;

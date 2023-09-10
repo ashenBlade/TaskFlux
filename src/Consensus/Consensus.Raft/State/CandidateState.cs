@@ -211,6 +211,10 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
         }
 
         var logConflicts = PersistenceFacade.Conflicts(request.LastLogEntryInfo);
+        if (logConflicts)
+        {
+            _logger.Debug("При обработке RequestVote от узла {NodeId} обнаружен конфликт лога", request.CandidateId);
+        }
 
         if (CurrentTerm < request.CandidateTerm)
         {
