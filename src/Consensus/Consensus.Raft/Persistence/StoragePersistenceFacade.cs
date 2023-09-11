@@ -161,11 +161,8 @@ public class StoragePersistenceFacade
                                     IMetadataStorage metadataStorage,
                                     FileSystemSnapshotStorage snapshotStorage,
                                     ulong maxLogFileSize = Constants.MaxLogFileSize)
+        : this(logStorage, metadataStorage, snapshotStorage, new SizeLogFileSizeChecker(maxLogFileSize))
     {
-        _logStorage = logStorage;
-        _metadataStorage = metadataStorage;
-        _snapshotStorage = snapshotStorage;
-        _sizeChecker = new SizeLogFileSizeChecker(maxLogFileSize);
     }
 
     internal StoragePersistenceFacade(FileLogStorage logStorage,
@@ -177,6 +174,9 @@ public class StoragePersistenceFacade
         _metadataStorage = metadataStorage;
         _snapshotStorage = snapshotStorage;
         _sizeChecker = sizeChecker;
+        LastAppliedGlobalIndex = snapshotStorage.HasSnapshot
+                                     ? snapshotStorage.LastLogEntry.Index
+                                     : LogEntryInfo.TombIndex;
     }
 
     /// <summary>
@@ -229,10 +229,19 @@ public class StoragePersistenceFacade
         lock (_lock)
         {
             // Индекс, с которого начинаются записи в буфере
-            var bufferStartIndex = CalculateLocalIndex(startIndex) - _logStorage.Count;
+            var localIndex = CalculateLocalIndex(startIndex);
+            var bufferStartIndex = localIndex - _logStorage.Count;
+
+            if (bufferStartIndex == -1)
+            {
+                // Надо перезаписать все с самого начала (весь буфер)
+                _buffer.Clear();
+                _buffer.AddRange(entries);
+                return;
+            }
 
             // TODO: хуйня здесь
-            if (bufferStartIndex < 0)
+            if (bufferStartIndex < -1)
             {
                 throw new ArgumentOutOfRangeException(nameof(startIndex), startIndex,
                     "Нельзя перезаписать закоммиченные записи");
@@ -435,7 +444,14 @@ public class StoragePersistenceFacade
         lock (_lock)
         {
             var localIndex = CalculateLocalIndex(index);
-            if (localIndex < 0)
+            if (localIndex == -1)
+            {
+                // Этот индекс указывает на последний индекс из снапшота
+                // Такое возможно, когда снапшот только создался и лидер прислал Heartbeat
+                return;
+            }
+
+            if (localIndex < -1)
             {
                 throw new InvalidOperationException(
                     $"Указанный индекс коммита меньше последней команды в снапшоте. Переданный индекс: {index}. Последний индекс снашпота: {SnapshotStorage.LastLogEntry}");
@@ -511,12 +527,25 @@ public class StoragePersistenceFacade
     {
         lock (_lock)
         {
+            if (LastAppliedGlobalIndex == LogEntryInfo.TombIndex)
+            {
+                // Никакие записи еще не применялись
+                if (_logStorage.Count == 0)
+                {
+                    return Array.Empty<LogEntry>();
+                }
+
+                return _logStorage.ReadFrom(0);
+            }
+
             if (CommitIndex <= LastAppliedGlobalIndex || CommitIndex == LogEntryInfo.TombIndex)
             {
                 return Array.Empty<LogEntry>();
             }
 
-            return _logStorage.ReadFrom(LastAppliedGlobalIndex + 1);
+            // BUG: нет учета глобального индекса
+            var startIndex = CalculateLocalIndex(LastAppliedGlobalIndex);
+            return _logStorage.ReadFrom(startIndex + 1);
         }
     }
 
@@ -533,7 +562,7 @@ public class StoragePersistenceFacade
         }
 
         // Индекс не меньше последнего из снапшота
-        if (!_snapshotStorage.LastLogEntry.IsTomb && globalIndex <= _snapshotStorage.LastLogEntry.Index)
+        if (_snapshotStorage.HasSnapshot && globalIndex < _snapshotStorage.LastLogEntry.Index)
         {
             throw new ArgumentOutOfRangeException(nameof(globalIndex), globalIndex,
                 "Указанный индекс входит в пределы снапшота");
@@ -571,6 +600,7 @@ public class StoragePersistenceFacade
 
         // Сохраним индекс, чтобы потом могли очистить лог
         var lastLocalIndex = CalculateLocalIndex(lastIncludedEntry.Index);
+
         Debug.Assert(lastLocalIndex >= 0, "Последний индекс в снапшоте меньше индекса первой моей команды в логе",
             "Нельзя установить снапшот, когда последний индекс команды в логе меньше нашей первой команды");
 
@@ -582,11 +612,13 @@ public class StoragePersistenceFacade
         {
             snapshotTempFile.Initialize(lastIncludedEntry);
         }
-        catch (Exception)
+        catch (Exception e)
         {
             snapshotTempFile.Discard();
             throw;
         }
+
+        yield return true;
 
         // 3. Записываем сами данные на диск
         foreach (var chunk in snapshot.GetAllChunks(token))
@@ -598,7 +630,7 @@ public class StoragePersistenceFacade
             catch (OperationCanceledException)
             {
                 snapshotTempFile.Discard();
-                yield break;
+                throw;
             }
             catch (Exception)
             {
@@ -613,7 +645,6 @@ public class StoragePersistenceFacade
         snapshotTempFile.Save();
 
         // 5. Очищаем лог до указанного индекса
-
         if (lastLocalIndex < _logStorage.Count)
         {
             // Индекс находится в самом файле лога
@@ -721,10 +752,20 @@ public class StoragePersistenceFacade
                 throw;
             }
 
-            // Очищаем непримененные команды
-            _buffer.Clear();
-            // Очищаем сам файл лога
+            // TODO: очищать только примененные
             _logStorage.Clear();
+            // var removeUntil = CalculateLocalIndex(LastAppliedGlobalIndex);
+            // if (0 < removeUntil && removeUntil < _logStorage.Count)
+            // {
+            //     if (removeUntil == _logStorage.Count - 1)
+            //     {
+            //         _logStorage.Clear();
+            //     }
+            //     else
+            //     {
+            //         _logStorage.RemoveUntil(removeUntil);
+            //     }
+            // }
         }
     }
 

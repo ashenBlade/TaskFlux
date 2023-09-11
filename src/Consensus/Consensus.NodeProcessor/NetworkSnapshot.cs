@@ -35,7 +35,5 @@ public class NetworkSnapshot : ISnapshot
                         $"Получен неожиданный пакет данных. Ожидался {RaftPacketType.InstallSnapshotChunk}. Получен: {packet}");
             }
         }
-
-        token.ThrowIfCancellationRequested();
     }
 }

@@ -15,7 +15,7 @@ public class InstallSnapshotChunkPacket : RaftPacket
     protected override int EstimatePacketSize()
     {
         return sizeof(RaftPacketType) // Маркер
-             + sizeof(uint)           // Размер
+             + sizeof(int)            // Размер
              + Chunk.Length;          // Данные
     }
 

@@ -4,15 +4,15 @@ namespace Consensus.Storage.Tests;
 
 public class StubSnapshot : ISnapshot
 {
-    private readonly byte[] _data;
+    public byte[] Data { get; }
 
     public StubSnapshot(byte[] data)
     {
-        _data = data;
+        Data = data;
     }
 
     public IEnumerable<ReadOnlyMemory<byte>> GetAllChunks(CancellationToken token = default)
     {
-        yield return _data;
+        yield return Data;
     }
 }

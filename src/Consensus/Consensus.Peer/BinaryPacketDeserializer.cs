@@ -124,7 +124,9 @@ public class BinaryPacketDeserializer
                                                               token),
                    RaftPacketType.AppendEntriesResponse => await DeserializeAppendEntriesResponsePacketAsync(stream,
                                                                token),
-                   _ => throw new ArgumentOutOfRangeException()
+                   RaftPacketType.InstallSnapshotChunk    => DeserializeInstallSnapshotChunkPacket(stream, token),
+                   RaftPacketType.InstallSnapshotRequest  => DeserializeInstallSnapshotRequestPacket(stream, token),
+                   RaftPacketType.InstallSnapshotResponse => DeserializeInstallSnapshotResponsePacket(stream, token),
                };
     }
 

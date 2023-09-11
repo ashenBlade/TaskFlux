@@ -10,7 +10,7 @@ internal abstract class ThreadingTimer : ITimer
     private readonly Timer _timer;
     public event Action? Timeout;
 
-    public ThreadingTimer()
+    protected ThreadingTimer()
     {
         _timer = new Timer(OnTimeout);
     }
@@ -23,7 +23,6 @@ internal abstract class ThreadingTimer : ITimer
 
     public void ForceRun()
     {
-        // TODO: добавить тесты на его вызов
         if (_disposed)
         {
             return;
@@ -43,7 +42,11 @@ internal abstract class ThreadingTimer : ITimer
 
         try
         {
-            _timer.Change(sleepTime, Infinite);
+            var success = _timer.Change(sleepTime, Infinite);
+            if (!success)
+            {
+                throw new Exception("Пошел нахуй - таймер не обновлен");
+            }
         }
         catch (ObjectDisposedException)
         {

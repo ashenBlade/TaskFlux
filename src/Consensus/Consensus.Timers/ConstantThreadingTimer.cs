@@ -9,11 +9,6 @@ internal class ConstantThreadingTimer : ThreadingTimer
         _sleepTimeMs = ( int ) timeout.TotalMilliseconds;
     }
 
-    public ConstantThreadingTimer(int timeoutMs)
-    {
-        _sleepTimeMs = timeoutMs;
-    }
-
     protected override int GetSleepTimeMs()
     {
         return _sleepTimeMs;

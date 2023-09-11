@@ -274,7 +274,15 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
         }
 
         var state = ConsensusModule.CreateFollowerState();
-        ConsensusModule.TryUpdateState(state, this);
+        if (ConsensusModule.TryUpdateState(state, this))
+        {
+            _logger.Debug("Получен InstallSnapshotRequest с термом не меньше моего. Перехожу в Follower");
+        }
+        else
+        {
+            _logger.Debug("Получен InstallSnapshotRequest с термом не меньше моего, но перейти в Follower не удалось");
+        }
+
         return ConsensusModule.Handle(request, token);
     }
 }

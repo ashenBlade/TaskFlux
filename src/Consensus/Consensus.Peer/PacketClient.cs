@@ -62,8 +62,7 @@ public class PacketClient : IDisposable
         {
             return false;
         }
-        catch (IOException io)
-            when (io.GetBaseException() is SocketException)
+        catch (IOException)
         {
             return false;
         }

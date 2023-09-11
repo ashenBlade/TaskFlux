@@ -68,7 +68,9 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            _logger.Debug("Терм кандидата больше, но лог конфликтует: обновляю только терм");
+            _logger.Debug(
+                "Терм кандидата больше, но лог конфликтует: обновляю только терм. Кандидат: {CandidateId}. Моя последняя запись: {MyLastEntry}. Его последняя запись: {CandidateLastEntry}",
+                request.CandidateId, PersistenceFacade.LastEntry, request.LastLogEntryInfo);
             PersistenceFacade.UpdateState(request.CandidateTerm, null);
         }
 
@@ -77,14 +79,13 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override AppendEntriesResponse Apply(AppendEntriesRequest request)
     {
-        _electionTimer.Stop();
         if (request.Term < CurrentTerm)
         {
             // Лидер устрел
-            _electionTimer.Schedule();
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
+        using var _ = ElectionTimerScope.BeginScope(_electionTimer);
         if (CurrentTerm < request.Term)
         {
             // Мы отстали от общего состояния (старый терм)
@@ -94,7 +95,6 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         if (!PersistenceFacade.PrefixMatch(request.PrevLogEntryInfo))
         {
             // Префиксы закомиченных записей лога не совпадают 
-            _electionTimer.Schedule();
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
@@ -105,7 +105,6 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (PersistenceFacade.CommitIndex == request.LeaderCommit)
         {
-            _electionTimer.Schedule();
             return AppendEntriesResponse.Ok(CurrentTerm);
         }
 
@@ -138,8 +137,21 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             PersistenceFacade.SaveSnapshot(snapshot);
         }
 
-        _electionTimer.Schedule();
         return AppendEntriesResponse.Ok(CurrentTerm);
+    }
+
+    private readonly record struct ElectionTimerScope(ITimer Timer) : IDisposable
+    {
+        public void Dispose()
+        {
+            Timer.Schedule();
+        }
+
+        public static ElectionTimerScope BeginScope(ITimer timer)
+        {
+            timer.Stop();
+            return new ElectionTimerScope(timer);
+        }
     }
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
@@ -170,28 +182,45 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
     {
         if (request.Term < CurrentTerm)
         {
+            _logger.Information("Терм узла меньше моего. Отклоняю InstallSnapshotRequest");
             yield return new InstallSnapshotResponse(CurrentTerm);
             yield break;
         }
 
+        using var _ = ElectionTimerScope.BeginScope(_electionTimer);
+        _logger.Information("Начинаю обработку InstallSnapshot");
         if (CurrentTerm < request.Term)
         {
-            PersistenceFacade.UpdateState(request.Term, null);
+            _logger.Information("Терм лидера больше моего. Обновляю терм до {Term}", request.Term);
+            NodeId? votedFor = null;
+            if (PersistenceFacade.VotedFor is null || PersistenceFacade.VotedFor == request.LeaderId)
+            {
+                votedFor = request.LeaderId;
+            }
+
+            PersistenceFacade.UpdateState(request.Term, votedFor);
         }
 
         // 1. Обновляем файл снапшота
+        _logger.Debug("Начинаю получать чанки снашота");
+        // _electionTimer.Stop();
+        // _electionTimer.Schedule();
+        token.ThrowIfCancellationRequested();
         foreach (var success in PersistenceFacade.InstallSnapshot(request.LastEntry,
                      request.Snapshot, token))
         {
+            // _electionTimer.Stop();
+            _logger.Debug("Очередной чанк снапшота установлен. Возвращаю ответ");
             yield return new InstallSnapshotResponse(CurrentTerm);
+            // _electionTimer.Schedule(); 
             if (!success)
             {
                 yield break;
             }
         }
 
-        _electionTimer.Schedule();
-        // TODO: восстановить состояние
+        _logger.Information("Снапшот установлен. Начинаю восстановление состояния");
+
         if (!PersistenceFacade.TryGetSnapshot(out var snapshot))
         {
             throw new ApplicationException(
@@ -208,30 +237,9 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         }
 
         StateMachine = newStateMachine;
+        PersistenceFacade.SetLastApplied(PersistenceFacade.CommitIndex);
+        _logger.Information("Состояние восстановлено");
 
         yield return new InstallSnapshotResponse(CurrentTerm);
-    }
-
-    private void RestoreState()
-    {
-        // 1. Восстанавливаем из снапшота
-        var stateMachine =
-            PersistenceFacade.TryGetSnapshot(out var snapshot)
-                ? _stateMachineFactory.Restore(snapshot)
-                : _stateMachineFactory.CreateEmpty();
-
-        // 2. Применяем команды из лога, если есть
-        var nonApplied = PersistenceFacade.GetNotApplied();
-        if (nonApplied.Count > 0)
-        {
-            foreach (var (_, payload) in nonApplied)
-            {
-                var command = _commandCommandSerializer.Deserialize(payload);
-                stateMachine.ApplyNoResponse(command);
-            }
-        }
-
-        // 3. Обновляем машину
-        ConsensusModule.StateMachine = stateMachine;
     }
 }

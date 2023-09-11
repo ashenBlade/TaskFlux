@@ -120,6 +120,7 @@ public class NodeConnectionProcessor : IDisposable
 
     private async ValueTask<bool> ProcessRequestVoteAsync(RequestVoteRequestPacket packet, CancellationToken token)
     {
+        Logger.Information("От узла получен RequestVote пакет");
         var request = packet.Request;
         var result = ConsensusModule.Handle(request);
         await Client.SendAsync(new RequestVoteResponsePacket(result), token);
@@ -130,7 +131,6 @@ public class NodeConnectionProcessor : IDisposable
     {
         var snapshot = new NetworkSnapshot(Client);
         var request = new InstallSnapshotRequest(packet.Term, packet.LeaderId, packet.LastEntry, snapshot);
-
         foreach (var response in ConsensusModule.Handle(request, token))
         {
             await Client.SendAsync(new InstallSnapshotResponsePacket(response.CurrentTerm), token);

@@ -17,7 +17,7 @@ using Constants = Consensus.Raft.Persistence.Constants;
 namespace Consensus.Storage.Tests;
 
 [Trait("Category", "Raft")]
-public class StoragePersistenceManagerTests
+public class StoragePersistenceFacadeTests
 {
     private static LogEntry EmptyEntry(int term) => new(new Term(term), Array.Empty<byte>());
 
@@ -1218,6 +1218,162 @@ public class StoragePersistenceManagerTests
 
         actual.Should()
               .Equal(expected, "записи должны сконкатенироваться");
+    }
+
+    [Fact]
+    public void SaveSnapshot__КогдаСнапшотУжеСуществовал__ДолженПерезаписатьФайл()
+    {
+        var (facade, _) = CreateFacade();
+        var oldSnapshot = new StubSnapshot(RandomBytes(100));
+        var newSnapshot = new StubSnapshot(RandomBytes(90));
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(2), 10, oldSnapshot);
+        facade.LogStorage.SetFileTest(new[]
+        {
+            RandomDataEntry(2), // 11
+            RandomDataEntry(3), // 12
+        });
+        facade.SetLastApplied(12);
+
+        facade.SaveSnapshot(newSnapshot);
+
+        var (actualIndex, actualTerm, actualData) = facade.ReadSnapshotFileTest();
+        actualIndex
+           .Should()
+           .Be(12, "последний примененный индекс - 12");
+        actualTerm
+           .Should()
+           .Be(new Term(3), "терм последней примененной команды - 3");
+        actualData
+           .Should()
+           .Equal(newSnapshot.Data, "данные должны быть перезаписаны");
+    }
+
+    [Fact]
+    public void GetNotApplied__КогдаНикакиеЗаписиНеБылиПрименены()
+    {
+        var (facade, _) = CreateFacade();
+        var log = new[]
+        {
+            RandomDataEntry(1), // 0
+            RandomDataEntry(2), // 1
+            RandomDataEntry(2), // 2
+            RandomDataEntry(3), // 3
+        };
+        var buffer = new[]
+        {
+            RandomDataEntry(4), // 4
+        };
+        facade.SetupBufferTest(buffer);
+        facade.LogStorage.SetFileTest(log);
+
+        var actual = facade.GetNotApplied();
+
+        actual.Should()
+              .Equal(log, LogEntryComparisonFunc, "никакие записи не были применены, надо вернуть весь лог");
+    }
+
+    [Fact]
+    public void GetNotApplied__КогдаЧастьБылаПрименена()
+    {
+        var (facade, _) = CreateFacade();
+        var log = new[]
+        {
+            RandomDataEntry(1), // 0
+            RandomDataEntry(2), // 1
+            RandomDataEntry(2), // 2
+            RandomDataEntry(3), // 3
+        };
+        var buffer = new[]
+        {
+            RandomDataEntry(4), // 4
+        };
+        facade.SetupBufferTest(buffer);
+        facade.LogStorage.SetFileTest(log);
+        facade.SetLastApplied(2);
+        var expected = log[3..];
+
+        var actual = facade.GetNotApplied();
+
+        actual.Should()
+              .Equal(expected, equalityComparison: LogEntryComparisonFunc,
+                   because: "записи до 3 индекса были применены");
+    }
+
+    [Fact]
+    public void GetNotApplied__КогдаВсеБылиПрименены__ДолженВернутьПустойСписок()
+    {
+        var (facade, _) = CreateFacade();
+        var log = new[]
+        {
+            RandomDataEntry(1), // 0
+            RandomDataEntry(2), // 1
+            RandomDataEntry(2), // 2
+            RandomDataEntry(3), // 3
+        };
+        var buffer = new[]
+        {
+            RandomDataEntry(4), // 4
+        };
+        facade.SetupBufferTest(buffer);
+        facade.LogStorage.SetFileTest(log);
+        facade.SetLastApplied(3);
+
+        var actual = facade.GetNotApplied();
+
+        actual.Should()
+              .BeEmpty("все записи из лога были закоммичены");
+    }
+
+    [Fact]
+    public void GetNotApplied__КогдаЕстьСнапшот_ВесьЛогНеПрименен__ДолженВернутьВесьЛог()
+    {
+        var (facade, _) = CreateFacade();
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(2), 10, new StubSnapshot(Array.Empty<byte>()));
+        var log = new[]
+        {
+            RandomDataEntry(1), // 11
+            RandomDataEntry(2), // 12
+            RandomDataEntry(2), // 13
+            RandomDataEntry(3), // 14
+        };
+        var buffer = new[]
+        {
+            RandomDataEntry(4), // 15
+        };
+        facade.SetupBufferTest(buffer);
+        facade.LogStorage.SetFileTest(log);
+
+        var actual = facade.GetNotApplied();
+
+        actual.Should()
+              .Equal(log, LogEntryComparisonFunc, "никакие записи из лога не были применены, надо вернуть весь лог");
+    }
+
+    [Fact]
+    public void GetNotApplied__КогдаЕстьСнапшот_ЧастьЛогаНеПрименена__ДолженВернутьЧастьЛога()
+    {
+        var (facade, _) = CreateFacade();
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(2), 10, new StubSnapshot(Array.Empty<byte>()));
+        var log = new[]
+        {
+            RandomDataEntry(1), // 11
+            RandomDataEntry(2), // 12
+            RandomDataEntry(2), // 13
+            RandomDataEntry(3), // 14
+        };
+        var buffer = new[]
+        {
+            RandomDataEntry(4), // 15
+        };
+        facade.SetupBufferTest(buffer);
+        facade.LogStorage.SetFileTest(log);
+        facade.SetLastApplied(12);
+        var expected = log[2..];
+
+        var actual = facade.GetNotApplied();
+
+        actual.Should()
+              .Equal(expected, LogEntryComparisonFunc, "записи до 12 (локального 2) были применены уже");
     }
 }
 

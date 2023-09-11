@@ -122,6 +122,8 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
 
         public IEnumerable<ReadOnlyMemory<byte>> GetAllChunks(CancellationToken token = default)
         {
+            var logger = Serilog.Log.ForContext("SourceContext", "FileSystemSnapshot");
+            logger.Information("Открываю файл для прочтения");
             using var stream = _snapshotFile.OpenRead();
             stream.Seek(SnapshotDataStartPosition, SeekOrigin.Begin);
             var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
@@ -130,8 +132,11 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
                 int read;
                 while (( read = stream.Read(buffer) ) != 0)
                 {
+                    logger.Information("Прочитан очередной чанк данных");
                     yield return buffer.AsMemory(0, read);
                 }
+
+                logger.Information("Файл закончился");
             }
             finally
             {
@@ -270,13 +275,10 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             Debug.Assert(_writtenLogEntry is not null,
                 "Объект информации последней команды снапшота не должен быть null");
 
-            // 1. Сбрасываем все данные на диск 
             _temporarySnapshotFileStream.Flush();
-
-            // 3. Переименовываем новый
-            _temporarySnapshotFile.MoveTo(_parent._snapshotFile.FullName, true);
-
             _temporarySnapshotFileStream.Close();
+            _temporarySnapshotFileStream.Dispose();
+            _temporarySnapshotFile.MoveTo(_parent._snapshotFile.FullName, true);
 
             _parent.LastLogEntry = _writtenLogEntry.Value;
 
@@ -319,6 +321,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
                 case SnapshotFileState.Initialized:
                     break;
                 default:
+                    Debug.Assert(false, $"Неизвестное состояние при записи файла снапшота: {_state}");
                     throw new InvalidEnumArgumentException(nameof(_state), ( int ) _state, typeof(SnapshotFileState));
             }
 
@@ -331,7 +334,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
     // Для тестов
     internal (int LastIndex, Term LastTerm, byte[] SnapshotData) ReadAllDataTest()
     {
-        var stream = _snapshotFile.OpenRead();
+        using var stream = _snapshotFile.OpenRead();
         var reader = new StreamBinaryReader(stream);
 
         var marker = reader.ReadInt32();

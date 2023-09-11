@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
@@ -99,7 +100,13 @@ public class TcpPeer : IPeer
         using var cts = CreateTimeoutCts(token, _requestTimeout);
 
         _logger.Debug("Делаю запрос RequestVote");
-        await _client.SendAsync(new RequestVoteRequestPacket(request), cts.Token);
+        try
+        {
+            await _client.SendAsync(new RequestVoteRequestPacket(request), cts.Token);
+        }
+        catch (ObjectDisposedException e)
+        {
+        }
 
         _logger.Debug("Запрос отослан. Получаю ответ");
         var response = await _client.ReceiveAsync(cts.Token);
@@ -158,9 +165,12 @@ public class TcpPeer : IPeer
         var requestResponse = SendPacketReturning(requestPacket, token);
         if (requestResponse is null)
         {
+            _logger.Debug(
+                "Во время отправка заголовка InstallSnapshot соединение разорвалось. Восстанавливаю соединение");
             // Если соединение было оборвано - сделать повторную попытку
             if (!TryEstablishConnection(token))
             {
+                _logger.Debug("Соединение восстановить не удалось");
                 yield return null;
                 yield break;
             }
@@ -168,25 +178,48 @@ public class TcpPeer : IPeer
             requestResponse = SendPacketReturning(requestPacket, token);
             if (requestResponse is null)
             {
+                _logger.Debug(
+                    "Соединение восстановилось, но во время повторной отправки заголовка InstallSnapshot повторно разорвалось");
                 yield return null;
                 yield break;
             }
         }
 
-        yield return GetInstallSnapshotResponse(requestResponse);
+        _logger.Debug("Заголовок отправлен. Получаю ответ");
+        var response = GetInstallSnapshotResponse(requestResponse);
+        _logger.Debug("Ответ получен. Терм узла: {Term}", response.CurrentTerm);
+        yield return response;
 
         // 2. Поочередно отправляем чанки
         foreach (var chunk in request.Snapshot.GetAllChunks(token))
         {
+            _logger.Debug("Отправляю очередной чанк данных");
             var chunkResponse = SendPacketReturning(new InstallSnapshotChunkPacket(chunk), token);
             if (chunkResponse is null)
             {
+                _logger.Debug("Во время отправки чанка данных соединение было разорвано");
+                yield return null;
+                yield break;
+            }
+
+            _logger.Debug("Чанк данных отправлен. Получаю ответ");
+            yield return GetInstallSnapshotResponse(chunkResponse);
+        }
+
+        // Отправляем последний пустой пакет - окончание передачи
+        {
+            _logger.Debug("Отправка чанков закончена. Отправляю последний пакет");
+            var chunkResponse = SendPacketReturning(new InstallSnapshotChunkPacket(Memory<byte>.Empty), token);
+            if (chunkResponse is null)
+            {
+                _logger.Debug("Во время отправки последнего пакета соединение было разорвано");
                 yield return null;
                 yield break;
             }
 
             yield return GetInstallSnapshotResponse(chunkResponse);
         }
+
 
         // Это для явного разделения конца метода и локальной функции
         yield break;
@@ -214,6 +247,12 @@ public class TcpPeer : IPeer
         try
         {
             _client.Send(request, token);
+            if (request.PacketType is RaftPacketType.InstallSnapshotChunk or RaftPacketType.InstallSnapshotRequest
+                                                                          or RaftPacketType.InstallSnapshotResponse)
+            {
+                _logger.Information("Отправил {PacketType} пакет. Ожидаю ответа", request.PacketType);
+            }
+
             return _client.Receive(token);
         }
         catch (SocketException)
@@ -228,6 +267,7 @@ public class TcpPeer : IPeer
 
     private bool TryEstablishConnection(CancellationToken token)
     {
+        return TryEstablishConnectionAsync(token).GetAwaiter().GetResult();
         _logger.Debug("Начинаю устанавливать соединение");
         var connected = _client.Connect(_endPoint);
         if (!connected)
@@ -287,10 +327,17 @@ public class TcpPeer : IPeer
     private async ValueTask<bool> TryEstablishConnectionAsync(CancellationToken token = default)
     {
         _logger.Debug("Начинаю устанавливать соединение");
-        var connected = await _client.ConnectAsync(_endPoint, _connectionTimeout, token);
-        if (!connected)
+        try
         {
-            return false;
+            var connected = await _client.ConnectAsync(_endPoint, _connectionTimeout, token);
+            if (!connected)
+            {
+                return false;
+            }
+        }
+        catch (ObjectDisposedException e)
+        {
+            _logger.Error(e, "Ошибка при соединении");
         }
 
         using var cts = CreateTimeoutCts(token, _requestTimeout);
@@ -309,7 +356,7 @@ public class TcpPeer : IPeer
                     var response = ( ConnectResponsePacket ) packet;
                     if (response.Success)
                     {
-                        _logger.Debug("Авторизация прошла успшено");
+                        _logger.Debug("Авторизация прошла успешно");
                         return true;
                     }
 
@@ -320,23 +367,21 @@ public class TcpPeer : IPeer
                 case RaftPacketType.RequestVoteResponse:
                 case RaftPacketType.AppendEntriesRequest:
                 case RaftPacketType.AppendEntriesResponse:
+                case RaftPacketType.InstallSnapshotRequest:
+                case RaftPacketType.InstallSnapshotChunk:
+                case RaftPacketType.InstallSnapshotResponse:
                     throw new InvalidOperationException(
                         $"От узла пришел неожиданный ответ: PacketType: {packet.PacketType}");
                 default:
-                    throw new ArgumentOutOfRangeException();
+                    throw new InvalidEnumArgumentException(nameof(packet.PacketType), ( int ) packet.PacketType,
+                        typeof(RaftPacketType));
             }
         }
         catch (SocketException)
         {
-            await _client.DisconnectAsync(token);
         }
         catch (IOException)
         {
-            await _client.DisconnectAsync(token);
-        }
-        catch (OperationCanceledException)
-        {
-            await _client.DisconnectAsync(CancellationToken.None);
         }
 
         return false;

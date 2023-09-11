@@ -83,6 +83,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
          */
         try
         {
+            // BUG: надо только закоммиченные отправлять
             var peerInfo = new PeerInfo(PersistenceFacade.LastEntry.Index + 1);
             Term? foundGreaterTerm = null;
             foreach (var heartbeatOrRequest in _queue.ReadAllRequests(_token))
@@ -166,30 +167,38 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
         {
             if (!PersistenceFacade.TryGetFrom(info.NextIndex, out var entries))
             {
+                _logger.Debug("В логе не оказалось записей после индекса: {Index}", info.NextIndex);
                 if (PersistenceFacade.TryGetSnapshot(out var snapshot))
                 {
+                    _logger.Debug("Начинаю отправку файла снапшота на узел");
                     var lastEntry = PersistenceFacade.SnapshotStorage.LastLogEntry;
                     var installSnapshotResponses = _peer.SendInstallSnapshot(new InstallSnapshotRequest(CurrentTerm,
                         ConsensusModule.Id, lastEntry,
                         snapshot), _token);
 
-                    var nullFound = false;
+                    var connectionBroken = false;
                     foreach (var installSnapshotResponse in installSnapshotResponses)
                     {
                         if (installSnapshotResponse is null)
                         {
-                            nullFound = true;
-                            continue;
+                            _logger.Debug(
+                                "Во время отправки файла снапшота соединение было разорвано. Прекращаю оправку");
+                            connectionBroken = true;
+                            break;
                         }
 
                         if (CurrentTerm < installSnapshotResponse.CurrentTerm)
                         {
                             // Найден больший терм/лидер.
                             // Переходим в новый терм и закрываем все обработчики запросов
+                            _logger.Information("При отправке файла снапшота у узла обнаружен больший терм");
                             var follower = ConsensusModule.CreateFollowerState();
                             if (ConsensusModule.TryUpdateState(follower, _caller))
                             {
-                                continue;
+                                _logger.Debug("Перешел в Follower. Обновляю терм в {NewTerm}",
+                                    installSnapshotResponse.CurrentTerm);
+                                ConsensusModule.PersistenceFacade.UpdateState(installSnapshotResponse.CurrentTerm,
+                                    null);
                             }
 
                             break;
@@ -198,13 +207,15 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                         // Продолжаем отправлять запросы
                     }
 
-                    if (nullFound)
+                    if (connectionBroken)
                     {
-                        // Делаем повторную попытку отправки
+                        _logger.Debug(
+                            "Во время отправки снапшота соединение было разорвано. Делаю повторную попытку отправки снапшота");
                         continue;
                     }
 
                     info.Update(1);
+                    _logger.Debug("Снапшот отправлен на другой узел");
                     continue;
                 }
 
