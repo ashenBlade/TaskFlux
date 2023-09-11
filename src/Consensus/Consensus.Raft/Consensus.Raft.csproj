@@ -24,7 +24,6 @@
     <ItemGroup>
       <ProjectReference Include="..\..\TaskFlux.Core\TaskFlux.Core.csproj" />
         <ProjectReference Include="..\..\TaskFlux.Serialization.Helpers\TaskFlux.Serialization.Helpers.csproj"/>
-      <ProjectReference Include="..\Consensus.CommandQueue\Consensus.CommandQueue\Consensus.CommandQueue.csproj" />
     </ItemGroup>
 
 </Project>
