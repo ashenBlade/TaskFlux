@@ -4,6 +4,7 @@ using System.Text;
 using Consensus.Raft;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.Persistence.Log;
+using FluentAssertions;
 
 namespace Consensus.Storage.Tests;
 
@@ -395,5 +396,50 @@ public class FileLogStorageTests
         log.Clear();
 
         Assert.Equal(0, log.Count);
+    }
+
+    [Fact]
+    public void RemoveUntil__КогдаИндексРавенПоследнемуВЛоге__ДолженОчиститьЛог()
+    {
+        var (log, _) = CreateFileLogStorage();
+        var entries = new[]
+        {
+            Entry(1, "asdf"),      // 0
+            Entry(2, "data"),      // 1
+            Entry(3, "hello"),     // 2
+            Entry(4, "  asdf334"), // 3
+            Entry(5, "3583w56q4"), // 4
+        };
+        log.SetFileTest(entries);
+
+        log.RemoveUntil(4);
+        log.ReadAllTest()
+           .Should()
+           .BeEmpty();
+    }
+
+    [Fact]
+    public void RemoveUntil__КогдаИндексРавенПредпоследнемуВЛоге__ДолженОставитьТолькоПоследнийЭлемент()
+    {
+        var (log, _) = CreateFileLogStorage();
+        var entries = new[]
+        {
+            Entry(1, "asdf"),      // 0
+            Entry(2, "data"),      // 1
+            Entry(3, "hello"),     // 2
+            Entry(4, "  asdf334"), // 3
+            Entry(5, "3583w56q4"), // 4
+        };
+        var expected = entries[^1];
+        log.SetFileTest(entries);
+
+        log.RemoveUntil(3);
+
+        log.ReadAllTest()
+           .Should()
+           .ContainSingle("указан предпоследний индекс")
+           .Which
+           .Should()
+           .Be(expected, Comparer, "значение должно быть равно последнему из лога");
     }
 }

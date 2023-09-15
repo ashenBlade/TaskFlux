@@ -478,7 +478,7 @@ public class FollowerStateTests
     }
 
     [Fact]
-    public void InstallSnapshot__КогдаЧанкДанныхОдин__ДолженВернуть2Ответа()
+    public void InstallSnapshot__КогдаЧанкДанныхОдин__ДолженВернуть3Ответа()
     {
         var (node, persistence, _) = CreateFollowerNodeNew();
 
@@ -495,10 +495,12 @@ public class FollowerStateTests
            .Should()
            .AllSatisfy(x =>
             {
-                x.CurrentTerm.Should().Be(leaderTerm, "терм должен быть как у лидера");
+                x.CurrentTerm
+                 .Should()
+                 .Be(leaderTerm, "терм должен быть как у лидера");
             }, "терм во время работы не меняется")
            .And
-           .HaveCount(2, "один ответ для чанка с данными, другой для ответа на чанк окончания");
+           .HaveCount(3, "первый ответ");
 
         var (index, term, data) = persistence.ReadSnapshotFileTest();
         Assert.Equal(lastIncludedEntry.Index, index);

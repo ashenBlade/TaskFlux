@@ -414,6 +414,7 @@ public class StoragePersistenceFacade
          *
          * Снапшота еще нет, то локальный и глобальный индексы совпадают
          */
+        return CalculateLocalIndexRaw(SnapshotStorage.LastLogEntry.Index, globalIndex);
         if (!SnapshotStorage.HasSnapshot)
         {
             return globalIndex;
@@ -426,6 +427,16 @@ public class StoragePersistenceFacade
          */
 
         return globalIndex - SnapshotStorage.LastLogEntry.Index - 1;
+    }
+
+    private static int CalculateLocalIndexRaw(int snapshotLastIndex, int globalIndex)
+    {
+        if (snapshotLastIndex == LogEntryInfo.TombIndex)
+        {
+            return globalIndex;
+        }
+
+        return globalIndex - snapshotLastIndex - 1;
     }
 
     /// <summary>
@@ -706,7 +717,7 @@ public class StoragePersistenceFacade
     public void SaveSnapshot(ISnapshot snapshot, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
-
+        var oldLocalIndex = CalculateLocalIndex(LastAppliedGlobalIndex);
         // 1. Создать временный файл
         var snapshotTempFile = _snapshotStorage.CreateTempSnapshotFile();
 
@@ -752,8 +763,26 @@ public class StoragePersistenceFacade
                 throw;
             }
 
+            if (_logStorage.Count == 0)
+            {
+                // Странная ситуация, но ладно
+                return;
+            }
+
             // TODO: очищать только примененные
-            _logStorage.Clear();
+            if (oldLocalIndex == _logStorage.Count - 1)
+            {
+                // Если индекс примененной равен последнему, то полностью очищаем
+                _logStorage.Clear();
+            }
+            else
+            {
+                // Если индекс примененной меньше, то очищаем до указанного индекса
+                _logStorage.RemoveUntil(oldLocalIndex);
+            }
+
+            //
+            //
             // var removeUntil = CalculateLocalIndex(LastAppliedGlobalIndex);
             // if (0 < removeUntil && removeUntil < _logStorage.Count)
             // {

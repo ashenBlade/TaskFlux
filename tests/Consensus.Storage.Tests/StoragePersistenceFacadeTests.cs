@@ -1375,6 +1375,56 @@ public class StoragePersistenceFacadeTests
         actual.Should()
               .Equal(expected, LogEntryComparisonFunc, "записи до 12 (локального 2) были применены уже");
     }
+
+    [Fact]
+    public void SaveSnapshot__КогдаИндексПримененнойКомандыРавенПоследнемуЗакоммиченному__ДолженОчиститьЛог()
+    {
+        var (facade, _) = CreateFacade();
+        var oldSnapshot = new StubSnapshot(RandomBytes(100));
+        var newSnapshot = new StubSnapshot(RandomBytes(90));
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(2), 10, oldSnapshot);
+        facade.LogStorage.SetFileTest(new[]
+        {
+            RandomDataEntry(2), // 11
+            RandomDataEntry(3), // 12
+        });
+        facade.SetLastApplied(12);
+
+        facade.SaveSnapshot(newSnapshot);
+
+        var actualLogFile = facade.ReadLogFileTest();
+        actualLogFile.Should()
+                     .BeEmpty("последний примененный индекс равен последнему индексу в логе");
+    }
+
+    [Fact]
+    public void
+        SaveSnapshot__КогдаИндексПримененнойКомандыМеньшеПоследнейЗакоммиченной__ДолженОчиститьЛогДоУказанногоИндекса()
+    {
+        var (facade, _) = CreateFacade();
+        var oldSnapshot = new StubSnapshot(RandomBytes(100));
+        var newSnapshot = new StubSnapshot(RandomBytes(90));
+        facade.SnapshotStorage.WriteSnapshotDataTest(new Term(2), 10, oldSnapshot);
+        var lastLogEntry = RandomDataEntry(3);
+        var expected = new[] {lastLogEntry};
+        facade.LogStorage.SetFileTest(new[]
+        {
+            RandomDataEntry(2), // 11
+            RandomDataEntry(2), // 12
+            RandomDataEntry(3), // 13
+            lastLogEntry,       // 14
+        });
+        facade.SetLastApplied(13);
+
+        facade.SaveSnapshot(newSnapshot);
+
+        var actualLogFile = facade.ReadLogFileTest();
+        actualLogFile.Should()
+                     .Equal(expected, EqualityComparison,
+                          "последняя примененная запись имеет предпоследний индекс в логе");
+    }
+
+    private static bool EqualityComparison(LogEntry left, LogEntry right) => Comparer.Equals(left, right);
 }
 
 file static class EnumerableExtensions

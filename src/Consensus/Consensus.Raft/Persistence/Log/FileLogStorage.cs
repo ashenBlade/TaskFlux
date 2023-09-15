@@ -160,7 +160,7 @@ public class FileLogStorage : ILogStorage, IDisposable
         stream.Seek(0, SeekOrigin.Begin);
         writer.Write(Marker);
         writer.Write(CurrentVersion);
-        stream.Flush(true);
+        stream.Flush();
     }
 
     public int Count => _index.Count;
@@ -478,6 +478,7 @@ public class FileLogStorage : ILogStorage, IDisposable
             // 4. Переименовываем
             _fileStream.Close();
             file.MoveTo(_logFile.FullName, true);
+            _index.RemoveRange(0, index + 1);
         }
         catch (Exception)
         {
@@ -487,7 +488,6 @@ public class FileLogStorage : ILogStorage, IDisposable
         }
 
         // 5. Обновляем индекс и поток файла лога
-        _index.RemoveRange(0, index + 1);
         _fileStream.Dispose();
         _fileStream = stream;
         return;

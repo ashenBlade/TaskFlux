@@ -189,19 +189,11 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
 
                         if (CurrentTerm < installSnapshotResponse.CurrentTerm)
                         {
-                            // Найден больший терм/лидер.
-                            // Переходим в новый терм и закрываем все обработчики запросов
-                            _logger.Information("При отправке файла снапшота у узла обнаружен больший терм");
-                            var follower = ConsensusModule.CreateFollowerState();
-                            if (ConsensusModule.TryUpdateState(follower, _caller))
-                            {
-                                _logger.Debug("Перешел в Follower. Обновляю терм в {NewTerm}",
-                                    installSnapshotResponse.CurrentTerm);
-                                ConsensusModule.PersistenceFacade.UpdateState(installSnapshotResponse.CurrentTerm,
-                                    null);
-                            }
-
-                            break;
+                            // В текущей архитектуре - ничего не делаем,
+                            _logger.Information(
+                                "От узла {NodeId} получен больший терм {Term}. Текущий терм: {CurrentTerm}", _peer.Id,
+                                installSnapshotResponse.CurrentTerm, PersistenceFacade.CurrentTerm);
+                            return installSnapshotResponse.CurrentTerm;
                         }
 
                         // Продолжаем отправлять запросы
