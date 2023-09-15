@@ -122,7 +122,7 @@ public class CandidateStateTests
             m.Setup(x => x.Stop()).Verifiable();
         });
 
-        _ = CreateCandidateNode(oldTerm.Value, electionTimer: timer.Object, jobQueue: jobQueue);
+        using var _ = CreateCandidateNode(oldTerm.Value, electionTimer: timer.Object, jobQueue: jobQueue);
 
         jobQueue.Run();
 
@@ -134,7 +134,7 @@ public class CandidateStateTests
     {
         var queue = new SingleRunBackgroundJobQueue();
         var term = new Term(DefaultTerm);
-        var node = CreateCandidateNode(term, jobQueue: queue,
+        using var node = CreateCandidateNode(term, jobQueue: queue,
             peers: new[] {new StubQuorumPeer(new RequestVoteResponse(term, false))});
 
         queue.Run();
@@ -201,7 +201,7 @@ public class CandidateStateTests
                                                 .Select(_ => new StubQuorumPeer(term, false)));
 
         var queue = new SingleRunBackgroundJobQueue();
-        var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
+        using var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
 
         queue.Run();
 
@@ -229,7 +229,7 @@ public class CandidateStateTests
                                                 .Select(_ => new StubQuorumPeer(term, false)));
 
         var queue = new SingleRunBackgroundJobQueue();
-        var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
+        using var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
 
         queue.Run();
 
@@ -248,7 +248,7 @@ public class CandidateStateTests
              .ReturnsAsync(new RequestVoteResponse(term, true));
         });
         var queue = new SingleRunBackgroundJobQueue();
-        _ = CreateCandidateNode(term, jobQueue: queue, peers: new[] {mock.Object});
+        using var _ = CreateCandidateNode(term, jobQueue: queue, peers: new[] {mock.Object});
 
         queue.Run();
 
@@ -264,7 +264,7 @@ public class CandidateStateTests
         var queue = new SingleRunBackgroundJobQueue();
         var newTerm = term.Increment();
         var peer = new StubQuorumPeer(new RequestVoteResponse(newTerm, false));
-        var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer});
+        using var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer});
 
         queue.Run();
 
@@ -278,7 +278,7 @@ public class CandidateStateTests
         var queue = new SingleRunBackgroundJobQueue();
         var newTerm = term.Increment();
         var peer = new StubQuorumPeer(new RequestVoteResponse(newTerm, false));
-        var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer});
+        using var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer});
 
         queue.Run();
 
@@ -296,7 +296,7 @@ public class CandidateStateTests
              .ReturnsAsync(( RequestVoteResponse? ) null)
              .ReturnsAsync(new RequestVoteResponse(term, true));
         });
-        var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer.Object});
+        using var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer.Object});
 
         queue.Run();
 
@@ -319,7 +319,8 @@ public class CandidateStateTests
             m.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
              .ReturnsAsync(new RequestVoteResponse(greaterTerm, false));
         });
-        var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {agreedNode.Object, greaterNode.Object});
+        using var node =
+            CreateCandidateNode(term, jobQueue: queue, peers: new[] {agreedNode.Object, greaterNode.Object});
 
         queue.Run();
 
@@ -336,7 +337,7 @@ public class CandidateStateTests
     public void RequestVote__СБолееВысокимТермом__ДолженСтатьFollower()
     {
         var term = new Term(2);
-        var node = CreateCandidateNode(term);
+        using var node = CreateCandidateNode(term);
         var newTerm = term.Increment();
         var request = new RequestVoteRequest(AnotherNodeId, newTerm, LogEntryInfo.Tomb);
         var response = node.Handle(request);
@@ -350,7 +351,7 @@ public class CandidateStateTests
     public void RequestVote__СБолееВысокимТермом__ДолженОбновитьСвойТерм()
     {
         var term = new Term(2);
-        var node = CreateCandidateNode(term);
+        using var node = CreateCandidateNode(term);
         var newTerm = term.Increment();
         var request = new RequestVoteRequest(AnotherNodeId, newTerm, LogEntryInfo.Tomb);
         var response = node.Handle(request);
@@ -365,7 +366,7 @@ public class CandidateStateTests
     public void Heartbeat__СБолееВысокимТермом__ДолженПерейтиВFollower()
     {
         var term = new Term(2);
-        var node = CreateCandidateNode(term);
+        using var node = CreateCandidateNode(term);
         var newTerm = term.Increment();
         var request = AppendEntriesRequest.Heartbeat(newTerm, node.PersistenceFacade.CommitIndex, AnotherNodeId,
             node.PersistenceFacade.LastEntry);
@@ -390,7 +391,7 @@ public class CandidateStateTests
     public void AppendEntries__ВКонецПустогоЛога__ДолженДобавитьЗаписи(int entriesCount)
     {
         var term = new Term(2);
-        var node = CreateCandidateNode(term);
+        using var node = CreateCandidateNode(term);
 
         var entries = Enumerable.Range(0, entriesCount)
                                 .Select(_ => RandomDataEntry(term))
@@ -413,7 +414,7 @@ public class CandidateStateTests
     public void AppendEntries__ВКонецНеПустогоЛога__ДолженДобавитьЗаписи(int logSize, int entriesCount)
     {
         var term = new Term(2);
-        var node = CreateCandidateNode(term);
+        using var node = CreateCandidateNode(term);
 
         var entries = Enumerable.Range(0, entriesCount)
                                 .Select(_ => RandomDataEntry(term))
@@ -448,7 +449,7 @@ public class CandidateStateTests
                                       .ToArray();
 
         var (expectedFile, expectedBuffer) = bufferEntries.Split(commitIndex);
-        var node = CreateCandidateNode(term);
+        using var node = CreateCandidateNode(term);
         node.PersistenceFacade.SetupBufferTest(bufferEntries);
 
         var request = new AppendEntriesRequest(term, commitIndex, AnotherNodeId, node.PersistenceFacade.LastEntry,
@@ -480,7 +481,7 @@ public class CandidateStateTests
         var (expectedFile, expectedBufferEnqueued) = bufferEntries.Split(commitIndex);
         var expectedBuffer = expectedBufferEnqueued.Concat(enqueueEntries);
 
-        var node = CreateCandidateNode(term);
+        using var node = CreateCandidateNode(term);
         node.PersistenceFacade.SetupBufferTest(bufferEntries);
 
         var request = new AppendEntriesRequest(term, commitIndex, AnotherNodeId, node.PersistenceFacade.LastEntry,
@@ -498,7 +499,7 @@ public class CandidateStateTests
     public void AppendEntries__КогдаЛогКонфликтует__ДолженОтветитьFalse()
     {
         var term = new Term(5);
-        var node = CreateCandidateNode(term);
+        using var node = CreateCandidateNode(term);
         var nodeEntries = new[]
         {
             RandomDataEntry(1), // 0
@@ -544,7 +545,7 @@ public class CandidateStateTests
         var stateMachine = new Mock<IStateMachine>();
         stateMachine.Setup(x => x.GetSnapshot())
                     .Returns(new StubSnapshot(snapshotData));
-        var node = CreateCandidateNode(term,
+        using var node = CreateCandidateNode(term,
             fileSizeChecker: StubFileSizeChecker.Exceeded,
             stateMachine: stateMachine.Object);
         node.PersistenceFacade.SetupBufferTest(existingEntries);
@@ -587,7 +588,7 @@ public class CandidateStateTests
     {
         var currentTerm = new Term(2);
         var queue = new SingleRunBackgroundJobQueue();
-        var node = CreateCandidateNode(currentTerm, jobQueue: queue);
+        using var node = CreateCandidateNode(currentTerm, jobQueue: queue);
         var nodeEntries = new[] {RandomDataEntry(1), RandomDataEntry(2), RandomDataEntry(2), RandomDataEntry(2),};
         node.PersistenceFacade.SetupBufferTest(nodeEntries);
         var newTerm = currentTerm.Increment();
@@ -611,7 +612,7 @@ public class CandidateStateTests
          */
         var currentTerm = new Term(2);
         var queue = new SingleRunBackgroundJobQueue();
-        var node = CreateCandidateNode(currentTerm, jobQueue: queue);
+        using var node = CreateCandidateNode(currentTerm, jobQueue: queue);
         var newTerm = currentTerm.Increment();
 
         var request = AppendEntriesRequest.Heartbeat(newTerm, -1, AnotherNodeId, LogEntryInfo.Tomb);
@@ -630,7 +631,7 @@ public class CandidateStateTests
     {
         var currentTerm = new Term(2);
         var queue = new SingleRunBackgroundJobQueue();
-        var node = CreateCandidateNode(currentTerm, jobQueue: queue);
+        using var node = CreateCandidateNode(currentTerm, jobQueue: queue);
 
         var request = new RequestVoteRequest(AnotherNodeId, currentTerm, LogEntryInfo.Tomb);
         var response = node.Handle(request);
@@ -652,7 +653,7 @@ public class CandidateStateTests
          */
         var currentTerm = new Term(2);
         var queue = new SingleRunBackgroundJobQueue();
-        var node = CreateCandidateNode(currentTerm, jobQueue: queue);
+        using var node = CreateCandidateNode(currentTerm, jobQueue: queue);
         var newTerm = currentTerm.Increment();
 
         var request = new RequestVoteRequest(AnotherNodeId, newTerm, LogEntryInfo.Tomb);
@@ -691,7 +692,7 @@ public class CandidateStateTests
                               .Select(_ => new StubQuorumPeer(term, true))
                               .ToArray();
 
-        _ = CreateCandidateNode(term, electionTimer: electionTimer.Object,
+        using var _ = CreateCandidateNode(term, electionTimer: electionTimer.Object,
             jobQueue: queue, peers: peers);
 
         queue.Run();
@@ -725,7 +726,7 @@ public class CandidateStateTests
                                                 .Select(_ => new StubQuorumPeer(null)))
                               .ToArray();
 
-        var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
+        using var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
 
         queue.Run();
 

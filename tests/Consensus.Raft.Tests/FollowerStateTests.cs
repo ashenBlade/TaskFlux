@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using Castle.Core;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
@@ -323,7 +324,7 @@ public class FollowerStateTests
                                     StoragePersistenceFacade Persistence,
                                     ConsensusFileSystem FileSystem);
 
-    private static NodeCreateResult CreateFollowerNodeNew()
+    private static NodeCreateResult CreateFollowerNodeNew(IStateMachineFactory? factory = null)
     {
         // Follower никому ничего не отправляет, только принимает
         var peers = new PeerGroup(Array.Empty<IPeer>());
@@ -335,7 +336,7 @@ public class FollowerStateTests
             Mock.Of<ICommandSerializer<int>>(x => x.Serialize(It.IsAny<int>()) == Array.Empty<byte>());
 
         var (persistenceFacade, fileSystem) = CreateStorage();
-
+        factory ??= Helpers.NullStateMachineFactory;
         var node = new RaftConsensusModule(NodeId,
             peers, Logger.None,
             Helpers.NullTimerFactory,
@@ -343,7 +344,7 @@ public class FollowerStateTests
             persistenceFacade,
             Helpers.NullStateMachine,
             commandSerializer,
-            Helpers.NullStateMachineFactory);
+            factory);
 
         node.SetStateTest(node.CreateFollowerState());
 
@@ -439,7 +440,7 @@ public class FollowerStateTests
     [InlineData(3)]
     [InlineData(5)]
     [InlineData(10)]
-    public void InstallSnapshot__КогдаЧанковНесколько__ДолженВернутьОтветовНа1БольшеЧемЧанков(int chunksCount)
+    public void InstallSnapshot__КогдаЧанковНесколько__ДолженВернутьОтветовНа2БольшеЧемЧанков(int chunksCount)
     {
         var (node, _, _) = CreateFollowerNodeNew();
 
@@ -462,7 +463,8 @@ public class FollowerStateTests
                 r.CurrentTerm.Should().Be(leaderTerm, "терм лидера больше");
             })
            .And
-           .HaveCount(chunksCount + 1, $"{chunksCount} ответов для чанков и последний - завершающий");
+           .HaveCount(chunksCount + 2,
+                $"{chunksCount} ответов для чанков, 1 после валидации заголовка и еще 1 последний, подтверждающий");
 
         return;
 
@@ -647,14 +649,90 @@ public class FollowerStateTests
     }
 
     [Fact]
-    public void InstallSnapshot__КогдаСнапшотПолностьюНовый__ДолженВыставитьНовоеСостояние()
+    public void InstallSnapshot__ДолженВыставитьНовоеСостояние()
     {
-        Assert.True(false);
+        // TODO: заменить StateMachine на Application
+
+        var newStateMachine = new StubStateMachine(123);
+        var stateMachineFactory = new Mock<IStateMachineFactory>().Apply(f =>
+        {
+            f.Setup(x => x.Restore(It.IsAny<ISnapshot>()))
+             .Returns(newStateMachine);
+            f.Setup(x => x.CreateEmpty())
+             .Throws(new InvalidOperationException("Приложение должно восстановиться, а не создаваться заново"));
+        });
+
+        var (node, persistence, fs) = CreateFollowerNodeNew(factory: stateMachineFactory.Object);
+        fs.SnapshotFile.Delete();
+
+        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
+        var snapshotData = new byte[] {1, 2, 3};
+        var leaderTerm = new Term(2);
+
+        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
+            new StubSnapshot(snapshotData));
+        foreach (var response in node.Handle(request))
+        {
+            response.CurrentTerm
+                    .Should()
+                    .Be(leaderTerm, "отправленный лидером терм больше текущего");
+        }
+
+        node.StateMachine
+            .Should()
+            .Be(newStateMachine, comparer: ReferenceEqualityComparer<StubStateMachine>.Instance,
+                 becauseArgs: "нужно восстановить состояние из снапшота");
+    }
+
+    private class StubStateMachine : IStateMachine
+    {
+        public int Value { get; }
+
+        public StubStateMachine(int value)
+        {
+            Value = value;
+        }
+
+        public int Apply(int command)
+        {
+            return Value;
+        }
+
+        public void ApplyNoResponse(int command)
+        {
+        }
+
+        public ISnapshot GetSnapshot()
+        {
+            return new StubSnapshot(Array.Empty<byte>());
+        }
     }
 
     [Fact]
-    public void InstallSnapshot__КогдаВЛогеЕстьЗаписиПослеПоследнегоИндексаСнапшота__ДолженПрименитьЭтиЗаписи()
+    public void InstallSnapshot__ДолженОчиститьЛогИБуфер()
     {
-        Assert.True(false);
+        var (node, persistence, fs) = CreateFollowerNodeNew();
+        fs.SnapshotFile.Delete();
+
+        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
+        var snapshotData = new byte[] {1, 2, 3};
+        var leaderTerm = new Term(2);
+        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
+            new StubSnapshot(snapshotData));
+
+        foreach (var response in node.Handle(request))
+        {
+            response.CurrentTerm
+                    .Should()
+                    .Be(leaderTerm, "отправленный лидером терм больше текущего");
+        }
+
+        persistence.ReadLogBufferTest()
+                   .Should()
+                   .BeEmpty("лог должен быть очищен после установки нового снапшота");
+
+        persistence.ReadLogFileTest()
+                   .Should()
+                   .BeEmpty("лог должен быть очищен после установки нового снапшота");
     }
 }
