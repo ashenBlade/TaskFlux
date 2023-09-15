@@ -44,9 +44,9 @@ public class FollowerStateTests
             timerFactory,
             backgroundJobQueue,
             persistence,
-            Helpers.NullStateMachine,
+            Helpers.NullApplication,
             Helpers.NullCommandSerializer,
-            Helpers.NullStateMachineFactory);
+            Helpers.NullApplicationFactory);
 
         node.SetStateTest(node.CreateFollowerState());
 
@@ -119,13 +119,13 @@ public class FollowerStateTests
     {
         var oldTerm = new Term(myTerm);
 
-        var stateMachine = CreateFollowerNode(oldTerm, null);
+        var node = CreateFollowerNode(oldTerm, null);
 
         var expectedTerm = new Term(otherTerm);
         var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: expectedTerm,
             LastLogEntryInfo: new LogEntryInfo(oldTerm, 0));
 
-        var response = stateMachine.Handle(request);
+        var response = node.Handle(request);
 
         Assert.False(response.VoteGranted);
     }
@@ -212,11 +212,11 @@ public class FollowerStateTests
     {
         var oldTerm = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
-        using var stateMachine = CreateFollowerNode(oldTerm, null, timer.Object);
+        using var node = CreateFollowerNode(oldTerm, null, timer.Object);
 
         timer.Raise(x => x.Timeout += null);
 
-        Assert.Equal(stateMachine.Id, stateMachine.VotedFor);
+        Assert.Equal(node.Id, node.VotedFor);
     }
 
     [Fact]
@@ -324,7 +324,7 @@ public class FollowerStateTests
                                     StoragePersistenceFacade Persistence,
                                     ConsensusFileSystem FileSystem);
 
-    private static NodeCreateResult CreateFollowerNodeNew(IStateMachineFactory? factory = null)
+    private static NodeCreateResult CreateFollowerNodeNew(IApplicationFactory? factory = null)
     {
         // Follower никому ничего не отправляет, только принимает
         var peers = new PeerGroup(Array.Empty<IPeer>());
@@ -336,13 +336,13 @@ public class FollowerStateTests
             Mock.Of<ICommandSerializer<int>>(x => x.Serialize(It.IsAny<int>()) == Array.Empty<byte>());
 
         var (persistenceFacade, fileSystem) = CreateStorage();
-        factory ??= Helpers.NullStateMachineFactory;
+        factory ??= Helpers.NullApplicationFactory;
         var node = new RaftConsensusModule(NodeId,
             peers, Logger.None,
             Helpers.NullTimerFactory,
             backgroundJobQueue,
             persistenceFacade,
-            Helpers.NullStateMachine,
+            Helpers.NullApplication,
             commandSerializer,
             factory);
 
@@ -653,16 +653,16 @@ public class FollowerStateTests
     {
         // TODO: заменить StateMachine на Application
 
-        var newStateMachine = new StubStateMachine(123);
-        var stateMachineFactory = new Mock<IStateMachineFactory>().Apply(f =>
+        var application = new StubApplication(123);
+        var applicationFactory = new Mock<IApplicationFactory>().Apply(f =>
         {
             f.Setup(x => x.Restore(It.IsAny<ISnapshot>()))
-             .Returns(newStateMachine);
+             .Returns(application);
             f.Setup(x => x.CreateEmpty())
              .Throws(new InvalidOperationException("Приложение должно восстановиться, а не создаваться заново"));
         });
 
-        var (node, persistence, fs) = CreateFollowerNodeNew(factory: stateMachineFactory.Object);
+        var (node, _, fs) = CreateFollowerNodeNew(factory: applicationFactory.Object);
         fs.SnapshotFile.Delete();
 
         var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
@@ -678,17 +678,17 @@ public class FollowerStateTests
                     .Be(leaderTerm, "отправленный лидером терм больше текущего");
         }
 
-        node.StateMachine
+        node.Application
             .Should()
-            .Be(newStateMachine, comparer: ReferenceEqualityComparer<StubStateMachine>.Instance,
+            .Be(application, comparer: ReferenceEqualityComparer<StubApplication>.Instance,
                  becauseArgs: "нужно восстановить состояние из снапшота");
     }
 
-    private class StubStateMachine : IStateMachine
+    private class StubApplication : IApplication
     {
         public int Value { get; }
 
-        public StubStateMachine(int value)
+        public StubApplication(int value)
         {
             Value = value;
         }

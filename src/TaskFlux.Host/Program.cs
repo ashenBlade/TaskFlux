@@ -70,14 +70,14 @@ try
 
     var facade = CreateStoragePersistenceFacade(serverOptions);
 
-    Log.Information("Создаю очередь машины состояний");
     var appInfo = CreateApplicationInfo();
     var clusterInfo = CreateClusterInfo(serverOptions);
     var nodeInfo = CreateNodeInfo(serverOptions);
-    var factory = new TaskFluxStateMachineFactory(nodeInfo, appInfo, clusterInfo);
-    var taskFluxStateMachine = RestoreState(facade, factory);
+    var factory = new TaskFluxApplicationFactory(nodeInfo, appInfo, clusterInfo);
+    Log.Information("Восстанавливаю состояние приложения");
+    var taskFluxApplication = RestoreApplication(facade, factory);
 
-    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, taskFluxStateMachine, factory);
+    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, taskFluxApplication, factory);
 
     var consensusModule =
         new InfoUpdaterConsensusModuleDecorator<Command, Result>(raftConsensusModule, clusterInfo, nodeInfo);
@@ -408,8 +408,8 @@ StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions option
 RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
                                                                IPeer[] peers,
                                                                StoragePersistenceFacade storage,
-                                                               IStateMachine<Command, Result> stateMachine,
-                                                               TaskFluxStateMachineFactory stateMachineFactory)
+                                                               IApplication<Command, Result> application,
+                                                               TaskFluxApplicationFactory applicationFactory)
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
     var logger = Log.Logger.ForContext("SourceContext", "Raft");
@@ -421,21 +421,21 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
 
     // TODO: ручной запуск таймера
     return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, timerFactory,
-        jobQueue, storage, stateMachine, stateMachineFactory,
+        jobQueue, storage, application, applicationFactory,
         commandSerializer);
 }
 
-IStateMachine<Command, Result> RestoreState(StoragePersistenceFacade facade, TaskFluxStateMachineFactory factory)
+IApplication<Command, Result> RestoreApplication(StoragePersistenceFacade facade, TaskFluxApplicationFactory factory)
 {
     // 1. Восстановить данные из снапшота, если есть, иначе инициализировать пустым
     // 2. Применить команды из лога
-    IStateMachine<Command, Result> stateMachine;
+    IApplication<Command, Result> application;
     if (facade.TryGetSnapshot(out var snapshot))
     {
         Log.Information("Обнаружен существующий файл снашпота. Восстанавливаю состояние");
         try
         {
-            stateMachine = factory.Restore(snapshot);
+            application = factory.Restore(snapshot);
         }
         catch (Exception e)
         {
@@ -445,7 +445,7 @@ IStateMachine<Command, Result> RestoreState(StoragePersistenceFacade facade, Tas
     }
     else
     {
-        stateMachine = factory.CreateEmpty();
+        application = factory.CreateEmpty();
     }
 
     try
@@ -458,7 +458,7 @@ IStateMachine<Command, Result> RestoreState(StoragePersistenceFacade facade, Tas
             foreach (var (_, payload) in notApplied)
             {
                 var command = CommandSerializer.Instance.Deserialize(payload);
-                stateMachine.ApplyNoResponse(command);
+                application.ApplyNoResponse(command);
             }
 
             Log.Debug("Состояние восстановлено. Применено {Count} записей", notApplied.Count);
@@ -470,7 +470,7 @@ IStateMachine<Command, Result> RestoreState(StoragePersistenceFacade facade, Tas
         throw;
     }
 
-    return stateMachine;
+    return application;
 }
 
 ApplicationInfo CreateApplicationInfo()

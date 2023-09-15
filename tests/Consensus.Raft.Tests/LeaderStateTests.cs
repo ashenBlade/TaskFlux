@@ -43,7 +43,7 @@ public class LeaderStateTests
                                                  ITimer? heartbeatTimer = null,
                                                  IEnumerable<IPeer>? peers = null,
                                                  LogEntry[]? logEntries = null,
-                                                 IStateMachine? stateMachine = null)
+                                                 IApplication? application = null)
     {
         var peerGroup = new PeerGroup(peers switch
                                       {
@@ -54,7 +54,7 @@ public class LeaderStateTests
         var timerFactory = heartbeatTimer is null
                                ? Helpers.NullTimerFactory
                                : new ConstantTimerFactory(heartbeatTimer);
-        stateMachine ??= Helpers.NullStateMachine;
+        application ??= Helpers.NullApplication;
         var facade = CreateFacade();
         if (logEntries is {Length: > 0})
         {
@@ -62,8 +62,8 @@ public class LeaderStateTests
         }
 
         var node = new RaftConsensusModule(NodeId, peerGroup, Logger.None, timerFactory,
-            Helpers.NullBackgroundJobQueue, facade, stateMachine,
-            CommandSerializer, Helpers.NullStateMachineFactory);
+            Helpers.NullBackgroundJobQueue, facade, application,
+            CommandSerializer, Helpers.NullApplicationFactory);
         node.SetStateTest(node.CreateLeaderState());
         return node;
 
@@ -400,14 +400,14 @@ public class LeaderStateTests
     public void SubmitRequest__КогдаДругихУзловНет__ДолженОбработатьЗапрос()
     {
         var term = new Term(1);
-        var mock = new Mock<IStateMachine>();
+        var mock = new Mock<IApplication>();
         var command = 1;
         var expectedResponse = 123;
         var request = CreateSubmitRequest(command);
         mock.Setup(x => x.Apply(It.Is<int>(y => y == command)))
             .Returns(expectedResponse)
             .Verifiable();
-        using var node = CreateLeaderNode(term, null, peers: Array.Empty<IPeer>(), stateMachine: mock.Object);
+        using var node = CreateLeaderNode(term, null, peers: Array.Empty<IPeer>(), application: mock.Object);
 
         var response = node.Handle(request);
 
@@ -426,7 +426,7 @@ public class LeaderStateTests
     public void SubmitRequest__КогдаЕдинственныйДругойУзелОтветилУспехом__ДолженОбработатьЗапрос()
     {
         var term = new Term(1);
-        var machine = new Mock<IStateMachine>();
+        var machine = new Mock<IApplication>();
         var command = 1;
         var expectedResponse = 123;
         var peer = new Mock<IPeer>();
@@ -440,7 +440,7 @@ public class LeaderStateTests
 
         using var node = CreateLeaderNode(term, null,
             peers: new[] {peer.Object},
-            stateMachine: machine.Object);
+            application: machine.Object);
 
         var response = node.Handle(request);
 

@@ -209,7 +209,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         if (request.Descriptor.IsReadonly)
         {
             // Короткий путь для readonly команд
-            return SubmitResponse<TResponse>.Success(StateMachine.Apply(request.Descriptor.Command), true);
+            return SubmitResponse<TResponse>.Success(Application.Apply(request.Descriptor.Command), true);
         }
 
         // Добавляем команду в буфер
@@ -250,10 +250,10 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             return SubmitResponse<TResponse>.NotLeader;
         }
 
-        // Применяем команду к машине состояний.
+        // Применяем команду к приложению.
         // Лучше сначала применить и, если что не так, упасть,
         // чем закоммитить, а потом каждый раз валиться при восстановлении
-        var response = StateMachine.Apply(request.Descriptor.Command);
+        var response = Application.Apply(request.Descriptor.Command);
 
         // Коммитим запись и применяем 
         _logger.Verbose("Коммичу команду с индексом {Index}", appended.Index);
@@ -269,7 +269,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         {
             _logger.Debug("Размер файла лога превышен. Создаю снапшот");
             // Асинхронно это наверно делать не стоит (пока)
-            var snapshot = StateMachine.GetSnapshot();
+            var snapshot = Application.GetSnapshot();
             PersistenceFacade.SaveSnapshot(snapshot, token);
         }
         else

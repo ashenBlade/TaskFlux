@@ -61,10 +61,10 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
     public PeerGroup PeerGroup =>
         _module.PeerGroup;
 
-    public IStateMachine<TCommand, TResult> StateMachine
+    public IApplication<TCommand, TResult> Application
     {
-        get => _module.StateMachine;
-        set => _module.StateMachine = value;
+        get => _module.Application;
+        set => _module.Application = value;
     }
 
     public RequestVoteResponse Handle(RequestVoteRequest request)

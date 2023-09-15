@@ -19,10 +19,13 @@ public abstract class State<TCommand, TResponse>
     protected StoragePersistenceFacade PersistenceFacade => ConsensusModule.PersistenceFacade;
     protected Term CurrentTerm => ConsensusModule.CurrentTerm;
     protected NodeId? VotedFor => ConsensusModule.VotedFor;
-    protected IStateMachine<TCommand, TResponse> StateMachine
+
+    protected IApplication<TCommand, TResponse> Application
     {
-        get => ConsensusModule.StateMachine;
-        set => ConsensusModule.StateMachine = value ?? throw new ArgumentNullException(nameof(StateMachine), "Попытка установить новое состояние в null");
+        get => ConsensusModule.Application;
+        set => ConsensusModule.Application = value
+                                          ?? throw new ArgumentNullException(nameof(Application),
+                                                 "Попытка установить новое состояние в null");
     }
 
     protected NodeId Id => ConsensusModule.Id;
@@ -59,7 +62,7 @@ public abstract class State<TCommand, TResponse>
     public abstract AppendEntriesResponse Apply(AppendEntriesRequest request);
 
     /// <summary>
-    /// Применить команду к машине состояний
+    /// Применить команду к приложению
     /// </summary>
     /// <param name="request">Объект запроса</param>
     /// <param name="token">Токен отмены</param>

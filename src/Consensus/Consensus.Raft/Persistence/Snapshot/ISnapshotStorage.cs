@@ -1,7 +1,7 @@
 namespace Consensus.Raft.Persistence.Snapshot;
 
 /// <summary>
-/// Интерфейс хранилище снапшотов машины состояний.
+/// Интерфейс хранилища снапшотов приложения.
 /// По факту, предоставляет интерфейс доступа к файлу.
 /// </summary>
 public interface ISnapshotStorage

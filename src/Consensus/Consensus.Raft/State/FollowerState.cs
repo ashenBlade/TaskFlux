@@ -10,19 +10,19 @@ namespace Consensus.Raft.State;
 public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Follower;
-    private readonly IStateMachineFactory<TCommand, TResponse> _stateMachineFactory;
+    private readonly IApplicationFactory<TCommand, TResponse> _applicationFactory;
     private readonly ICommandSerializer<TCommand> _commandCommandSerializer;
     private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
 
     internal FollowerState(IConsensusModule<TCommand, TResponse> consensusModule,
-                           IStateMachineFactory<TCommand, TResponse> stateMachineFactory,
+                           IApplicationFactory<TCommand, TResponse> applicationFactory,
                            ICommandSerializer<TCommand> commandCommandSerializer,
                            ITimer electionTimer,
                            ILogger logger)
         : base(consensusModule)
     {
-        _stateMachineFactory = stateMachineFactory;
+        _applicationFactory = applicationFactory;
         _commandCommandSerializer = commandCommandSerializer;
         _electionTimer = electionTimer;
         _logger = logger;
@@ -113,7 +113,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         // Коммитим записи по индексу лидера
         PersistenceFacade.Commit(request.LeaderCommit);
 
-        // Закоммиченные записи можно уже применять к машине состояний 
+        // Закоммиченные записи можно уже применять к приложению 
         var notApplied = PersistenceFacade.GetNotApplied();
         if (notApplied.Count > 0)
         {
@@ -121,7 +121,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             foreach (var entry in notApplied)
             {
                 var command = _commandCommandSerializer.Deserialize(entry.Data);
-                StateMachine.ApplyNoResponse(command);
+                Application.ApplyNoResponse(command);
             }
         }
 
@@ -133,7 +133,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (PersistenceFacade.IsLogFileSizeExceeded())
         {
-            var snapshot = StateMachine.GetSnapshot();
+            var snapshot = Application.GetSnapshot();
             PersistenceFacade.SaveSnapshot(snapshot);
         }
 
@@ -227,16 +227,16 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
                 "Снапшот сохранен через InstallSnapshot, но его не удалось получить для восстановления состояния");
         }
 
-        var newStateMachine = _stateMachineFactory.Restore(snapshot);
+        var application = _applicationFactory.Restore(snapshot);
 
         var notApplied = PersistenceFacade.GetNotApplied();
         foreach (var (_, data) in notApplied)
         {
             var command = _commandCommandSerializer.Deserialize(data);
-            newStateMachine.ApplyNoResponse(command);
+            application.ApplyNoResponse(command);
         }
 
-        StateMachine = newStateMachine;
+        Application = application;
         PersistenceFacade.SetLastApplied(PersistenceFacade.CommitIndex);
         _logger.Information("Состояние восстановлено");
 

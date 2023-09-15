@@ -63,7 +63,7 @@ public interface IConsensusModule<TCommand, TResponse>
     /// <summary>
     /// Объект, представляющий текущий узел
     /// </summary>
-    public IStateMachine<TCommand, TResponse> StateMachine { get; set; }
+    public IApplication<TCommand, TResponse> Application { get; set; }
 
     public RequestVoteResponse Handle(RequestVoteRequest request) => CurrentState.Apply(request);
     public AppendEntriesResponse Handle(AppendEntriesRequest request) => CurrentState.Apply(request);

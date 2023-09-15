@@ -1,17 +1,17 @@
+using Consensus.Application.TaskFlux.Serialization;
 using Consensus.Raft;
 using Consensus.Raft.Persistence;
-using Consensus.StateMachine.TaskFlux.Serialization;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Visitors;
 
-namespace Consensus.StateMachine.TaskFlux;
+namespace Consensus.Application.TaskFlux;
 
-public class TaskFluxStateMachine : IStateMachine<Command, Result>
+public class TaskFluxApplication : IApplication<Command, Result>
 {
     private readonly ICommandContext _context;
     private readonly IJobQueueSnapshotSerializer _serializer;
 
-    public TaskFluxStateMachine(ICommandContext context, IJobQueueSnapshotSerializer serializer)
+    public TaskFluxApplication(ICommandContext context, IJobQueueSnapshotSerializer serializer)
     {
         _context = context;
         _serializer = serializer;

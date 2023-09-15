@@ -1,7 +1,7 @@
+using Consensus.Application.TaskFlux;
+using Consensus.Application.TaskFlux.Serialization;
 using Consensus.Raft;
 using Consensus.Raft.Persistence;
-using Consensus.StateMachine.TaskFlux;
-using Consensus.StateMachine.TaskFlux.Serialization;
 using JobQueue.Core;
 using JobQueue.InMemory;
 using JobQueue.PriorityQueue.StandardLibrary;
@@ -13,7 +13,7 @@ using TaskFlux.Node;
 
 namespace TaskFlux.Host.Infrastructure;
 
-public class TaskFluxStateMachineFactory : IStateMachineFactory<Command, Result>
+public class TaskFluxApplicationFactory : IApplicationFactory<Command, Result>
 {
     private readonly INodeInfo _nodeInfo;
     private readonly IApplicationInfo _appInfo;
@@ -22,23 +22,23 @@ public class TaskFluxStateMachineFactory : IStateMachineFactory<Command, Result>
     private readonly IJobQueueSnapshotSerializer _fileJobQueueSnapshotSerializer =
         new FileJobQueueSnapshotSerializer(PrioritizedJobQueueFactory.Instance);
 
-    public TaskFluxStateMachineFactory(INodeInfo nodeInfo, IApplicationInfo appInfo, IClusterInfo clusterInfo)
+    public TaskFluxApplicationFactory(INodeInfo nodeInfo, IApplicationInfo appInfo, IClusterInfo clusterInfo)
     {
         _nodeInfo = nodeInfo;
         _appInfo = appInfo;
         _clusterInfo = clusterInfo;
     }
 
-    public IStateMachine<Command, Result> CreateEmpty()
+    public IApplication<Command, Result> CreateEmpty()
     {
         var node = new TaskFluxNode(new SimpleJobQueueManager(new PrioritizedJobQueue(QueueName.Default, 0,
             new StandardLibraryPriorityQueue<long, byte[]>())));
         var commandContext = new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo);
         var serializer = _fileJobQueueSnapshotSerializer;
-        return new TaskFluxStateMachine(commandContext, serializer);
+        return new TaskFluxApplication(commandContext, serializer);
     }
 
-    public IStateMachine<Command, Result> Restore(ISnapshot snapshot)
+    public IApplication<Command, Result> Restore(ISnapshot snapshot)
     {
         var memoryStream = new MemoryStream();
         foreach (var chunk in snapshot.GetAllChunks())
@@ -51,7 +51,7 @@ public class TaskFluxStateMachineFactory : IStateMachineFactory<Command, Result>
                                                     .ToList();
 
         var node = new TaskFluxNode(new SimpleJobQueueManager(queues));
-        return new TaskFluxStateMachine(new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo),
+        return new TaskFluxApplication(new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo),
             _fileJobQueueSnapshotSerializer);
     }
 }

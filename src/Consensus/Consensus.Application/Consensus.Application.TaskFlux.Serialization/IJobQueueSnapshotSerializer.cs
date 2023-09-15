@@ -1,6 +1,6 @@
 using JobQueue.Core;
 
-namespace Consensus.StateMachine.TaskFlux.Serialization;
+namespace Consensus.Application.TaskFlux.Serialization;
 
 public interface IJobQueueSnapshotSerializer
 {

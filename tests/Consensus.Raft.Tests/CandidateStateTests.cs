@@ -22,8 +22,8 @@ public class CandidateStateTests
     // TODO: кворум собран, но один из ответов - больший терм
     private static readonly NodeId NodeId = new(1);
     private static readonly PeerGroup EmptyPeerGroup = new(Array.Empty<IPeer>());
-    private static readonly IStateMachine NullStateMachine = Mock.Of<IStateMachine>();
-    private static readonly IStateMachineFactory NullStateMachineFactory = Mock.Of<IStateMachineFactory>();
+    private static readonly IApplication NullApplication = Mock.Of<IApplication>();
+    private static readonly IApplicationFactory NullApplicationFactory = Mock.Of<IApplicationFactory>();
 
     private static readonly ICommandSerializer<int> NullCommandSerializer =
         new Mock<ICommandSerializer<int>>().Apply(m =>
@@ -35,17 +35,17 @@ public class CandidateStateTests
 
     private static RaftConsensusModule CreateCandidateNode(Term term,
                                                            ITimer? electionTimer = null,
-                                                           IStateMachine? stateMachine = null,
+                                                           IApplication? application = null,
                                                            IBackgroundJobQueue? jobQueue = null,
                                                            IEnumerable<IPeer>? peers = null,
                                                            ILogFileSizeChecker? fileSizeChecker = null)
     {
-        return CreateCandidateNode(term.Value, electionTimer, stateMachine, jobQueue, peers, fileSizeChecker);
+        return CreateCandidateNode(term.Value, electionTimer, application, jobQueue, peers, fileSizeChecker);
     }
 
     private static RaftConsensusModule CreateCandidateNode(int term,
                                                            ITimer? electionTimer = null,
-                                                           IStateMachine? stateMachine = null,
+                                                           IApplication? application = null,
                                                            IBackgroundJobQueue? jobQueue = null,
                                                            IEnumerable<IPeer>? peers = null,
                                                            ILogFileSizeChecker? fileSizeChecker = null)
@@ -59,11 +59,11 @@ public class CandidateStateTests
         var peerGroup = peers != null
                             ? new PeerGroup(peers.ToArray())
                             : EmptyPeerGroup;
-        stateMachine ??= NullStateMachine;
+        application ??= NullApplication;
         var node = new RaftConsensusModule(NodeId, peerGroup,
             Logger.None, timerFactory, jobQueue,
             facade,
-            stateMachine, NullCommandSerializer, NullStateMachineFactory);
+            application, NullCommandSerializer, NullApplicationFactory);
         node.SetStateTest(node.CreateCandidateState());
         return node;
 
@@ -542,12 +542,12 @@ public class CandidateStateTests
         };
 
         var snapshotData = new byte[100].Apply(arr => Random.Shared.NextBytes(arr));
-        var stateMachine = new Mock<IStateMachine>();
-        stateMachine.Setup(x => x.GetSnapshot())
-                    .Returns(new StubSnapshot(snapshotData));
+        var application = new Mock<IApplication>();
+        application.Setup(x => x.GetSnapshot())
+                   .Returns(new StubSnapshot(snapshotData));
         using var node = CreateCandidateNode(term,
             fileSizeChecker: StubFileSizeChecker.Exceeded,
-            stateMachine: stateMachine.Object);
+            application: application.Object);
         node.PersistenceFacade.SetupBufferTest(existingEntries);
         var expectedLastIndex = 4;
         var expectedLastTerm = 5;

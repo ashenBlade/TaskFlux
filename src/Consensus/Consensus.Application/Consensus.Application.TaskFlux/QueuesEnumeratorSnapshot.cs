@@ -1,8 +1,8 @@
+using Consensus.Application.TaskFlux.Serialization;
 using Consensus.Raft.Persistence;
-using Consensus.StateMachine.TaskFlux.Serialization;
 using JobQueue.Core;
 
-namespace Consensus.StateMachine.TaskFlux;
+namespace Consensus.Application.TaskFlux;
 
 /// <summary>
 /// Реализация снапшота, которая итерируется по всем очередям и поочередно сериализует каждую 

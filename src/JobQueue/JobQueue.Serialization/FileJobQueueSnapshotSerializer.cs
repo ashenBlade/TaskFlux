@@ -1,5 +1,5 @@
 ﻿using System.Collections;
-using Consensus.StateMachine.TaskFlux.Serialization;
+using Consensus.Application.TaskFlux.Serialization;
 using JobQueue.Core;
 using TaskFlux.Serialization.Helpers;
 
