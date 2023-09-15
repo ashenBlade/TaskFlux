@@ -175,7 +175,6 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         _electionTimer.Timeout -= OnElectionTimerTimeout;
         _electionTimer.Dispose();
     }
-    // TODO: тест на очищение TEMP когда из лидера в фолловера
 
     public override IEnumerable<InstallSnapshotResponse> Apply(InstallSnapshotRequest request,
                                                                CancellationToken token = default)
