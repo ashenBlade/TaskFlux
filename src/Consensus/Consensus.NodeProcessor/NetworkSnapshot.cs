@@ -1,6 +1,5 @@
 using Consensus.Network;
 using Consensus.Network.Packets;
-using Consensus.Peer;
 using Consensus.Raft.Persistence;
 
 namespace Consensus.NodeProcessor;
@@ -18,7 +17,7 @@ public class NetworkSnapshot : ISnapshot
     {
         while (!token.IsCancellationRequested)
         {
-            var packet = _client.Receive(token);
+            var packet = _client.Receive();
             switch (packet)
             {
                 case {PacketType: RaftPacketType.InstallSnapshotChunk}:

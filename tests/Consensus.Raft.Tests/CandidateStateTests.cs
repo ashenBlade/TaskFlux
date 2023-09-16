@@ -165,9 +165,19 @@ public class CandidateStateTests
             throw new Exception("Кандидат не должен отсылать AppendEntries");
         }
 
-        public Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
+        public AppendEntriesResponse SendAppendEntries(AppendEntriesRequest request)
+        {
+            throw new Exception("Кандидат не должен отсылать AppendEntries");
+        }
+
+        public Task<RequestVoteResponse?> SendRequestVoteAsync(RequestVoteRequest request, CancellationToken token)
         {
             return Task.FromResult(_response);
+        }
+
+        public RequestVoteResponse? SendRequestVote(RequestVoteRequest request)
+        {
+            return _response;
         }
 
         public IEnumerable<InstallSnapshotResponse?> SendInstallSnapshot(
@@ -243,7 +253,7 @@ public class CandidateStateTests
         var mock = new Mock<IPeer>().Apply(m =>
         {
             m.SetupGet(x => x.Id).Returns(AnotherNodeId);
-            m.SetupSequence(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+            m.SetupSequence(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
              .ReturnsAsync(( RequestVoteResponse? ) null)
              .ReturnsAsync(new RequestVoteResponse(term, true));
         });
@@ -253,7 +263,7 @@ public class CandidateStateTests
         queue.Run();
 
         // Первый раз ошибка сети, а второй раз соединение установлено
-        mock.Verify(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()),
+        mock.Verify(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()),
             Times.Exactly(2));
     }
 
@@ -292,7 +302,7 @@ public class CandidateStateTests
         var queue = new SingleRunBackgroundJobQueue();
         var peer = new Mock<IPeer>().Apply(m =>
         {
-            m.SetupSequence(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+            m.SetupSequence(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
              .ReturnsAsync(( RequestVoteResponse? ) null)
              .ReturnsAsync(new RequestVoteResponse(term, true));
         });
@@ -310,13 +320,13 @@ public class CandidateStateTests
         var queue = new SingleRunBackgroundJobQueue();
         var agreedNode = new Mock<IPeer>().Apply(m =>
         {
-            m.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+            m.Setup(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
              .ReturnsAsync(new RequestVoteResponse(term, true));
         });
         var greaterTerm = term.Increment();
         var greaterNode = new Mock<IPeer>().Apply(m =>
         {
-            m.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+            m.Setup(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
              .ReturnsAsync(new RequestVoteResponse(greaterTerm, false));
         });
         using var node =
@@ -679,7 +689,7 @@ public class CandidateStateTests
         var queue = new SingleRunBackgroundJobQueue();
 
         var peer = new Mock<IPeer>();
-        peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+        peer.Setup(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RequestVoteResponse(CurrentTerm: term, VoteGranted: true));
 
         var electionTimer = new Mock<ITimer>().Apply(m =>

@@ -74,16 +74,18 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
     private void ThreadWorker()
     {
         /*
-         * Обновление состояния нужно делать не через этот поток,
+         * Обновление состояния нужно делать не здесь (через этот поток),
          * т.к. это вызовет дедлок:
          * - Вызываем TryUpdateState
          * - TryUpdateState вызывает Dispose у нашего состояния лидера
          * - Состояние лидера вызывает Join для каждого потока
-         * - Но т.к. вызвали мы, то получается вызываем Join для самих себя
+         * - Но т.к. вызвали мы, то получается ВЫЗЫВАЕМ Thread.Join ДЛЯ САМОГО СЕБЯ
+         *
+         * Если нашли такое - поставим флаг.
+         * От лидера все равно запрос и там обновим состояние.
          */
         try
         {
-            // BUG: надо только закоммиченные отправлять
             var peerInfo = new PeerInfo(PersistenceFacade.LastEntry.Index + 1);
             Term? foundGreaterTerm = null;
             foreach (var heartbeatOrRequest in _queue.ReadAllRequests(_token))
@@ -225,11 +227,8 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
             AppendEntriesResponse response;
             while (true)
             {
-                var currentResponse = _peer.SendAppendEntriesAsync(appendEntriesRequest, _token)
-                                            // TODO: заменить на синхронную версию
-                                           .GetAwaiter()
-                                           .GetResult();
-
+                var currentResponse = _peer.SendAppendEntries(appendEntriesRequest);
+                _token.ThrowIfCancellationRequested();
                 // 2. Если ответ не вернулся (null) - соединение было разорвано - делаем повторную попытку с переподключением
                 if (currentResponse is null)
                 {

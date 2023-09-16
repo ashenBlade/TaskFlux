@@ -35,12 +35,13 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
         // Отправляем запрос всем пирам.
         // Стандартный Scatter/Gather паттерн
         var request = new RequestVoteRequest(CandidateId: Id,
-            CandidateTerm: CurrentTerm, LastLogEntryInfo: PersistenceFacade.LastEntry);
+            CandidateTerm: CurrentTerm,
+            LastLogEntryInfo: PersistenceFacade.LastEntry);
 
         var requests = new Task<RequestVoteResponse?>[peers.Count];
         for (var i = 0; i < peers.Count; i++)
         {
-            requests[i] = peers[i].SendRequestVote(request, token);
+            requests[i] = peers[i].SendRequestVoteAsync(request, token);
         }
 
         return await Task.WhenAll(requests);

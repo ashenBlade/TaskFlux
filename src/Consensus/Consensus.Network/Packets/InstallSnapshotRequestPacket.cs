@@ -5,7 +5,7 @@ using TaskFlux.Serialization.Helpers;
 
 namespace Consensus.Network.Packets;
 
-public class InstallSnapshotRequestPacket : RaftPacket
+public sealed class InstallSnapshotRequestPacket : RaftPacket
 {
     public Term Term { get; }
     public NodeId LeaderId { get; }

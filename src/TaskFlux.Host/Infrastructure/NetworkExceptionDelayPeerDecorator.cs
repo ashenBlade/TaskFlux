@@ -34,15 +34,35 @@ public class NetworkExceptionDelayPeerDecorator : IPeer
         return response;
     }
 
-    public async Task<RequestVoteResponse?> SendRequestVote(RequestVoteRequest request, CancellationToken token)
+    public AppendEntriesResponse? SendAppendEntries(AppendEntriesRequest request)
     {
-        var response = await _peer.SendRequestVote(request, token);
+        return ReturnDelaying(_peer.SendAppendEntries(request));
+    }
+
+    private T? ReturnDelaying<T>(T? value)
+    {
+        if (value is null)
+        {
+            Thread.Sleep(_delay);
+        }
+
+        return value;
+    }
+
+    public async Task<RequestVoteResponse?> SendRequestVoteAsync(RequestVoteRequest request, CancellationToken token)
+    {
+        var response = await _peer.SendRequestVoteAsync(request, token);
         if (response is null)
         {
             await Task.Delay(_delay, token);
         }
 
         return response;
+    }
+
+    public RequestVoteResponse? SendRequestVote(RequestVoteRequest request)
+    {
+        return ReturnDelaying(_peer.SendRequestVote(request));
     }
 
     public IEnumerable<InstallSnapshotResponse?> SendInstallSnapshot(InstallSnapshotRequest request,

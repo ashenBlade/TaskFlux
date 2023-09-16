@@ -3,7 +3,6 @@ using System.Net;
 using System.Net.Sockets;
 using Consensus.Network;
 using Consensus.Network.Packets;
-using Consensus.Peer;
 using Consensus.Raft;
 using Serilog;
 using TaskFlux.Commands;
@@ -16,14 +15,20 @@ public class NodeConnectionManager
     private readonly string _host;
     private readonly int _port;
     private readonly IConsensusModule<Command, Result> _raft;
+    private readonly TimeSpan _requestTimeout;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<NodeId, NodeConnectionProcessor> _nodes = new();
 
-    public NodeConnectionManager(string host, int port, IConsensusModule<Command, Result> raft, ILogger logger)
+    public NodeConnectionManager(string host,
+                                 int port,
+                                 IConsensusModule<Command, Result> raft,
+                                 TimeSpan requestTimeout,
+                                 ILogger logger)
     {
         _host = host;
         _port = port;
         _raft = raft;
+        _requestTimeout = requestTimeout;
         _logger = logger;
     }
 
@@ -118,21 +123,26 @@ public class NodeConnectionManager
 
     private void BeginNewClientSession(NodeId id, PacketClient client, CancellationToken token)
     {
-        // TODO: обрабатывать закрытие соединения BrokenPipe
+        var requestTimeoutMs = ( int ) _requestTimeout.TotalMilliseconds;
+        client.Socket.SendTimeout = requestTimeoutMs;
+        client.Socket.ReceiveTimeout = requestTimeoutMs;
+        client.Socket.NoDelay = true;
+
         var processor = new NodeConnectionProcessor(id, client, _raft,
             _logger.ForContext("SourceContext", $"NodeConnectionProcessor({id.Id})"))
             {
                 CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(token)
             };
         _nodes.AddOrUpdate(id,
-            _ => processor,
-            (_, old) =>
+            static (_, p) => p.Processor,
+            static (_, old, p) =>
             {
-                _logger.Information(
+                p.Logger.Information(
                     "В списке соединений уже было соединение с для текущего Id. Закрываю старое соединение");
                 old.Dispose();
-                return processor;
-            });
+                return p.Processor;
+            },
+            ( Processor: processor, Logger: _logger ));
         _logger.Debug("Начинаю обработку клиента");
         _ = processor.ProcessClientBackground();
     }

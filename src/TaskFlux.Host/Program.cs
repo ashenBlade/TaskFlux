@@ -1,7 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.IO.Abstractions;
 using System.Net;
-using System.Net.Sockets;
 using Consensus.JobQueue;
 using Consensus.NodeProcessor;
 using Consensus.Peer;
@@ -55,10 +54,7 @@ try
                               {
                                   var endpoint = GetEndpoint(p.Host, p.Port);
                                   var id = new NodeId(p.Id);
-                                  var client = new PacketClient(new Socket(AddressFamily.InterNetwork,
-                                      SocketType.Stream,
-                                      ProtocolType.Tcp));
-                                  IPeer peer = new TcpPeer(client, endpoint, id, nodeId,
+                                  IPeer peer = TcpPeer.Create(nodeId, id, endpoint,
                                       networkOptions.ConnectionTimeout, networkOptions.RequestTimeout,
                                       Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
                                   peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
@@ -83,6 +79,7 @@ try
         new InfoUpdaterConsensusModuleDecorator<Command, Result>(raftConsensusModule, clusterInfo, nodeInfo);
 
     var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, consensusModule,
+        networkOptions.RequestTimeout,
         Log.Logger.ForContext<NodeConnectionManager>());
 
     var stateObserver = new NodeStateObserver(consensusModule, Log.Logger.ForContext<NodeStateObserver>());

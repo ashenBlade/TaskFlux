@@ -240,7 +240,6 @@ public class StoragePersistenceFacade
                 return;
             }
 
-            // TODO: хуйня здесь
             if (bufferStartIndex < -1)
             {
                 throw new ArgumentOutOfRangeException(nameof(startIndex), startIndex,
@@ -554,7 +553,6 @@ public class StoragePersistenceFacade
                 return Array.Empty<LogEntry>();
             }
 
-            // BUG: нет учета глобального индекса
             var startIndex = CalculateLocalIndex(LastAppliedGlobalIndex);
             return _logStorage.ReadFrom(startIndex + 1);
         }
@@ -769,7 +767,6 @@ public class StoragePersistenceFacade
                 return;
             }
 
-            // TODO: очищать только примененные
             if (oldLocalIndex == _logStorage.Count - 1)
             {
                 // Если индекс примененной равен последнему, то полностью очищаем
@@ -780,21 +777,6 @@ public class StoragePersistenceFacade
                 // Если индекс примененной меньше, то очищаем до указанного индекса
                 _logStorage.RemoveUntil(oldLocalIndex);
             }
-
-            //
-            //
-            // var removeUntil = CalculateLocalIndex(LastAppliedGlobalIndex);
-            // if (0 < removeUntil && removeUntil < _logStorage.Count)
-            // {
-            //     if (removeUntil == _logStorage.Count - 1)
-            //     {
-            //         _logStorage.Clear();
-            //     }
-            //     else
-            //     {
-            //         _logStorage.RemoveUntil(removeUntil);
-            //     }
-            // }
         }
     }
 

@@ -28,9 +28,8 @@ public abstract class RaftPacket
         }
     }
 
-    public void Serialize(Stream stream, CancellationToken token)
+    public void Serialize(Stream stream)
     {
-        token.ThrowIfCancellationRequested();
         var estimatedSize = EstimatePacketSize();
         var buffer = ArrayPool<byte>.Shared.Rent(estimatedSize);
         try
