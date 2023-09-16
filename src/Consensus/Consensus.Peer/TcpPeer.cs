@@ -493,7 +493,6 @@ public class TcpPeer : IPeer
                                  NodeId nodeId,
                                  EndPoint endPoint,
                                  TimeSpan requestTimeout,
-                                 TimeSpan connectionTimeout,
                                  ILogger logger)
     {
         var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);

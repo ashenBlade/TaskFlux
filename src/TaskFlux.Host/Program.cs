@@ -54,8 +54,7 @@ try
                               {
                                   var endpoint = GetEndpoint(p.Host, p.Port);
                                   var id = new NodeId(p.Id);
-                                  IPeer peer = TcpPeer.Create(nodeId, id, endpoint,
-                                      networkOptions.ConnectionTimeout, networkOptions.RequestTimeout,
+                                  IPeer peer = TcpPeer.Create(nodeId, id, endpoint, networkOptions.RequestTimeout,
                                       Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
                                   peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
                                   return peer;
