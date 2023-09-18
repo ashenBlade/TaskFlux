@@ -102,6 +102,8 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
                     request.Cancel();
                 }
             }
+
+            _logger.Information("Заканчиваю читать запросы пользователей");
         }
         catch (Exception e)
         {

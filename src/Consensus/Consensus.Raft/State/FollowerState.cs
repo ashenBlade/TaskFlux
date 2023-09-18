@@ -53,14 +53,13 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             VotedFor == request.CandidateId;
 
         // Отдать свободный голос можем только за кандидата 
-        if (canVote
-          &&
-            // У которого лог в консистентном с нашим состоянием
-            !PersistenceFacade.Conflicts(request.LastLogEntryInfo))
+        var logConflicts = PersistenceFacade.Conflicts(request.LastLogEntryInfo);
+        if (canVote && !logConflicts)
         {
             _logger.Debug(
                 "Получен RequestVote от узла за которого можем проголосовать. Id узла {NodeId}, Терм узла {Term}. Обновляю состояние",
                 request.CandidateId.Id, request.CandidateTerm.Value);
+
             ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
@@ -68,9 +67,19 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            _logger.Debug(
-                "Терм кандидата больше, но лог конфликтует: обновляю только терм. Кандидат: {CandidateId}. Моя последняя запись: {MyLastEntry}. Его последняя запись: {CandidateLastEntry}",
-                request.CandidateId, PersistenceFacade.LastEntry, request.LastLogEntryInfo);
+            if (logConflicts)
+            {
+                _logger.Debug(
+                    "Терм кандидата больше, но лог конфликтует: обновляю только терм. Кандидат: {CandidateId}. Моя последняя запись: {MyLastEntry}. Его последняя запись: {CandidateLastEntry}",
+                    request.CandidateId, PersistenceFacade.LastEntry, request.LastLogEntryInfo);
+            }
+            else
+            {
+                _logger.Debug(
+                    "Терм кандидата больше, но голос в терме уже отдал: обновляю только терм. Кандидат: {CandidateId}",
+                    request.CandidateId);
+            }
+
             PersistenceFacade.UpdateState(request.CandidateTerm, null);
         }
 

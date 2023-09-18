@@ -88,6 +88,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
         {
             var peerInfo = new PeerInfo(PersistenceFacade.LastEntry.Index + 1);
             Term? foundGreaterTerm = null;
+            _logger.Information("Обработчик узла начинает работу");
             foreach (var heartbeatOrRequest in _queue.ReadAllRequests(_token))
             {
                 // На предыдущих шагах нашли больший терм
@@ -110,14 +111,16 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
 
                 if (heartbeatOrRequest.TryGetRequest(out var request))
                 {
+                    _logger.Debug("Получен запрос для репликации {Index} записи", request.LogIndex);
                     if (TryReplicateLog(request.LogIndex, peerInfo) is { } greaterTerm)
                     {
-                        _logger.Debug("При отправке AppendEntries узел ответил большим термом. Завершаю работу");
+                        _logger.Debug("При отправке AppendEntries узел ответил большим термом");
                         request.NotifyFoundGreaterTerm(greaterTerm);
                         foundGreaterTerm = greaterTerm;
                     }
                     else
                     {
+                        _logger.Debug("Репликация {Index} индекса закончена", request.LogIndex);
                         request.NotifyComplete();
                     }
                 }
@@ -140,6 +143,8 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                         $"В {nameof(HeartbeatOrRequest)} должен быть либо запрос, либо heartbeat. Ничего не получено");
                 }
             }
+
+            _logger.Information("Обработчик узла заканчивает работу");
         }
         catch (Exception e)
         {
@@ -263,7 +268,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
             if (CurrentTerm < response.Term)
             {
                 // Уведосмляем о большем терме. 
-                // Обновление состояние произойдет позже
+                // Обновление состояния произойдет позже
                 return response.Term;
             }
 
