@@ -148,6 +148,11 @@ public class RaftConsensusModule<TCommand, TResponse>
         _currentState.Dispose();
     }
 
+    public void Start()
+    {
+        _currentState.Initialize();
+    }
+
     public static RaftConsensusModule<TCommand, TResponse> Create(
         NodeId id,
         PeerGroup peerGroup,
@@ -163,7 +168,9 @@ public class RaftConsensusModule<TCommand, TResponse>
             backgroundJobQueue, persistenceFacade, application, commandSerializer, applicationFactory);
         var followerState = module.CreateFollowerState();
         module._currentState = followerState;
-        followerState.Initialize();
+
+        // Инициализация должна быть в Start - запуск таймера выборов
+        // followerState.Initialize();
         return module;
     }
 }

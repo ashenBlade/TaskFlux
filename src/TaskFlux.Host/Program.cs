@@ -110,6 +110,9 @@ try
 
     try
     {
+        Log.Logger.Information("Запускаю таймер выборов");
+        raftConsensusModule.Start();
+
         Log.Logger.Information("Запускаю менеджер подключений узлов");
         nodeConnectionThread.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
 
