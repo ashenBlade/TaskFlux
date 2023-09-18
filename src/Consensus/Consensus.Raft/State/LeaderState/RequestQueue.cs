@@ -16,9 +16,9 @@ internal class RequestQueue : IDisposable
 
     // Сигнал того, что приложение закрывается
     private readonly WaitHandle _processLife;
-    
+
     private volatile bool _disposed;
-    
+
     public RequestQueue(WaitHandle processLife)
     {
         _processLife = processLife;
@@ -35,12 +35,21 @@ internal class RequestQueue : IDisposable
     /// <returns>Поток объектов запросов, передаваемых от лидера</returns>
     public IEnumerable<HeartbeatOrRequest> ReadAllRequests(CancellationToken token)
     {
-        var buffer = new[]
+        WaitHandle[] buffer;
+        try
         {
-            token.WaitHandle, // Если его отменят до момента вызова WaitHandle.WaitAny, то мы просто выйдем сразу
-            _processLife, 
-            _enqueueEvent,
-        };
+            buffer = new[]
+            {
+                token.WaitHandle, // Если его отменят до момента вызова WaitHandle.WaitAny, то мы просто выйдем сразу
+                _processLife, _enqueueEvent,
+            };
+        }
+        catch (ObjectDisposedException)
+        {
+            // Мы стали лидером, но внезапно получили больший терм,
+            // поэтому CancellationTokenSource был сброшен
+            yield break;
+        }
 
         while (!token.IsCancellationRequested)
         {
@@ -69,7 +78,8 @@ internal class RequestQueue : IDisposable
                 yield return data;
             }
 
-            if (Interlocked.CompareExchange(ref _heartbeatSynchronizer, null, _heartbeatSynchronizer) is { } synchronizer)
+            if (Interlocked.CompareExchange(ref _heartbeatSynchronizer, null, _heartbeatSynchronizer) is
+                { } synchronizer)
             {
                 yield return HeartbeatOrRequest.Heartbeat(synchronizer);
             }
@@ -93,6 +103,7 @@ internal class RequestQueue : IDisposable
         {
             return false;
         }
+
         /*
          * Синхронная реализация очереди допустима, т.к.
          * обработка запросов SubmitRequest в приложении последовательная,
@@ -110,7 +121,7 @@ internal class RequestQueue : IDisposable
             synchronizer = default!;
             return false;
         }
-        
+
         if (0 < _queue.Count)
         {
             // Очередь не пуста - есть запросы пользователей

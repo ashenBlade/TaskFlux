@@ -17,12 +17,12 @@ namespace Consensus.Peer;
 public class TcpPeer : IPeer
 {
     private static BinaryPacketDeserializer Deserializer => BinaryPacketDeserializer.Instance;
-    private readonly Socket _socket;
+    private Socket _socket;
     private readonly EndPoint _endPoint;
     private readonly NodeId _currentNodeId;
     private readonly TimeSpan _requestTimeout;
 
-    private readonly Lazy<NetworkStream> _lazy;
+    private Lazy<NetworkStream> _lazy;
     private NetworkStream NetworkStream => _lazy.Value;
 
     private readonly ILogger _logger;
@@ -63,6 +63,7 @@ public class TcpPeer : IPeer
                };
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ValueTask SendPacketAsync(RaftPacket packet, CancellationToken token)
     {
         return packet.SerializeAsync(NetworkStream, token);
@@ -385,51 +386,102 @@ public class TcpPeer : IPeer
         }
 
         _logger.Debug("Начинаю устанавливать соединение");
+
         try
         {
-            _socket.Connect(_endPoint);
-
-            _logger.Debug("Отправляю пакет авторизации");
-            SendPacket(new ConnectRequestPacket(_currentNodeId));
-            _logger.Debug("Начинаю получать ответ подключения от узла");
-            var packet = Deserializer.Deserialize(NetworkStream);
-
-            switch (packet.PacketType)
-            {
-                case RaftPacketType.ConnectResponse:
-
-                    var response = ( ConnectResponsePacket ) packet;
-                    if (response.Success)
-                    {
-                        _logger.Debug("Авторизация прошла успшено");
-                        return true;
-                    }
-
-                    throw new AuthenticationException("Ошибка при попытке авторизации на узле");
-
-                case RaftPacketType.ConnectRequest:
-                case RaftPacketType.RequestVoteRequest:
-                case RaftPacketType.RequestVoteResponse:
-                case RaftPacketType.AppendEntriesRequest:
-                case RaftPacketType.AppendEntriesResponse:
-                case RaftPacketType.InstallSnapshotRequest:
-                case RaftPacketType.InstallSnapshotChunk:
-                case RaftPacketType.InstallSnapshotResponse:
-                    throw new InvalidOperationException(
-                        $"От узла пришел неожиданный ответ: PacketType: {packet.PacketType}");
-                default:
-                    throw new InvalidEnumArgumentException(nameof(packet.PacketType), ( int ) packet.PacketType,
-                        typeof(RaftPacketType));
-            }
+            return ConnectCore();
         }
-        catch (SocketException)
-        {
-        }
-        catch (IOException)
+        catch (InvalidOperationException)
         {
         }
 
+        // Сервер очень быстро разорвал соединение (ungracefully)
+        UpdateSocketState();
+
+        try
+        {
+            return ConnectCore();
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        UpdateSocketState();
         return false;
+
+        bool ConnectCore()
+        {
+            try
+            {
+                _socket.Connect(_endPoint);
+            }
+            catch (SocketException)
+            {
+                return false;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+
+            try
+            {
+                _logger.Debug("Отправляю пакет авторизации");
+                SendPacket(new ConnectRequestPacket(_currentNodeId));
+                _logger.Debug("Начинаю получать ответ подключения от узла");
+                var packet = Deserializer.Deserialize(NetworkStream);
+
+                switch (packet.PacketType)
+                {
+                    case RaftPacketType.ConnectResponse:
+
+                        var response = ( ConnectResponsePacket ) packet;
+                        if (response.Success)
+                        {
+                            _logger.Debug("Авторизация прошла успшено");
+                            return true;
+                        }
+
+                        throw new AuthenticationException("Ошибка при попытке авторизации на узле");
+
+                    case RaftPacketType.ConnectRequest:
+                    case RaftPacketType.RequestVoteRequest:
+                    case RaftPacketType.RequestVoteResponse:
+                    case RaftPacketType.AppendEntriesRequest:
+                    case RaftPacketType.AppendEntriesResponse:
+                    case RaftPacketType.InstallSnapshotRequest:
+                    case RaftPacketType.InstallSnapshotChunk:
+                    case RaftPacketType.InstallSnapshotResponse:
+                        throw new InvalidOperationException(
+                            $"От узла пришел неожиданный ответ: PacketType: {packet.PacketType}");
+                    default:
+                        throw new InvalidEnumArgumentException(nameof(packet.PacketType), ( int ) packet.PacketType,
+                            typeof(RaftPacketType));
+                }
+            }
+            catch (SocketException)
+            {
+            }
+            catch (IOException)
+            {
+            }
+
+            // Пока 
+            UpdateSocketState();
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Метод для замены старого сокета и NetworkStream, когда соединение было разорвано.
+    /// </summary>
+    private void UpdateSocketState()
+    {
+        var newSocket = CreateSocket(_requestTimeout);
+        var newLazy = new Lazy<NetworkStream>(() => new NetworkStream(newSocket));
+        _socket.Close();
+        _socket = newSocket;
+        _lazy = newLazy;
     }
 
     private async ValueTask<bool> TryEstablishConnectionAsync(CancellationToken token = default)
@@ -437,49 +489,62 @@ public class TcpPeer : IPeer
         _logger.Debug("Начинаю устанавливать соединение");
         try
         {
-            await _socket.ConnectAsync(_endPoint, token);
-            _logger.Debug("Отправляю пакет авторизации");
-            var connectRequestPacket = new ConnectRequestPacket(_currentNodeId);
-            await SendPacketAsync(connectRequestPacket, token);
-            _logger.Debug("Начинаю получать ответ от узла");
-            var packet = await ReceivePacketAsync(token);
-
-            switch (packet.PacketType)
-            {
-                case RaftPacketType.ConnectResponse:
-
-                    var response = ( ConnectResponsePacket ) packet;
-                    if (response.Success)
-                    {
-                        _logger.Debug("Авторизация прошла успешно");
-                        return true;
-                    }
-
-                    throw new AuthenticationException("Ошибка при попытке авторизации на узле");
-
-                case RaftPacketType.ConnectRequest:
-                case RaftPacketType.RequestVoteRequest:
-                case RaftPacketType.RequestVoteResponse:
-                case RaftPacketType.AppendEntriesRequest:
-                case RaftPacketType.AppendEntriesResponse:
-                case RaftPacketType.InstallSnapshotRequest:
-                case RaftPacketType.InstallSnapshotChunk:
-                case RaftPacketType.InstallSnapshotResponse:
-                    throw new InvalidOperationException(
-                        $"От узла пришел неожиданный ответ: PacketType: {packet.PacketType}");
-                default:
-                    throw new InvalidEnumArgumentException(nameof(packet.PacketType), ( int ) packet.PacketType,
-                        typeof(RaftPacketType));
-            }
+            return await ConnectAsyncCore(token);
         }
-        catch (SocketException)
-        {
-        }
-        catch (IOException)
+        catch (InvalidOperationException)
         {
         }
 
         return false;
+
+        async ValueTask<bool> ConnectAsyncCore(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _socket.ConnectAsync(_endPoint, cancellationToken);
+                _logger.Debug("Отправляю пакет авторизации");
+                var connectRequestPacket = new ConnectRequestPacket(_currentNodeId);
+                await SendPacketAsync(connectRequestPacket, cancellationToken);
+                _logger.Debug("Начинаю получать ответ от узла");
+                var packet = await ReceivePacketAsync(cancellationToken);
+
+                switch (packet.PacketType)
+                {
+                    case RaftPacketType.ConnectResponse:
+
+                        var response = ( ConnectResponsePacket ) packet;
+                        if (response.Success)
+                        {
+                            _logger.Debug("Авторизация прошла успешно");
+                            return true;
+                        }
+
+                        throw new AuthenticationException("Ошибка при попытке авторизации на узле");
+
+                    case RaftPacketType.ConnectRequest:
+                    case RaftPacketType.RequestVoteRequest:
+                    case RaftPacketType.RequestVoteResponse:
+                    case RaftPacketType.AppendEntriesRequest:
+                    case RaftPacketType.AppendEntriesResponse:
+                    case RaftPacketType.InstallSnapshotRequest:
+                    case RaftPacketType.InstallSnapshotChunk:
+                    case RaftPacketType.InstallSnapshotResponse:
+                        throw new InvalidOperationException(
+                            $"От узла пришел неожиданный ответ: PacketType: {packet.PacketType}");
+                    default:
+                        throw new InvalidEnumArgumentException(nameof(packet.PacketType), ( int ) packet.PacketType,
+                            typeof(RaftPacketType));
+                }
+            }
+            catch (SocketException)
+            {
+            }
+            catch (IOException)
+            {
+            }
+
+            return false;
+        }
     }
 
     private static CancellationTokenSource CreateTimeoutCts(CancellationToken token, TimeSpan timeout)
@@ -489,20 +554,27 @@ public class TcpPeer : IPeer
         return cts;
     }
 
-    public static TcpPeer Create(NodeId currentNodeId,
-                                 NodeId nodeId,
-                                 EndPoint endPoint,
-                                 TimeSpan requestTimeout,
-                                 ILogger logger)
+    private static Socket CreateSocket(TimeSpan requestTimeout)
     {
         var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
 
         // Убираем алгоритм Нагла - отправляем сразу
         socket.NoDelay = true;
 
-        socket.SendTimeout = ( int ) requestTimeout.TotalMilliseconds;
-        socket.ReceiveTimeout = ( int ) requestTimeout.TotalMilliseconds;
+        var timeout = ( int ) requestTimeout.TotalMilliseconds;
+        socket.SendTimeout = timeout;
+        socket.ReceiveTimeout = timeout;
 
+        return socket;
+    }
+
+    public static TcpPeer Create(NodeId currentNodeId,
+                                 NodeId nodeId,
+                                 EndPoint endPoint,
+                                 TimeSpan requestTimeout,
+                                 ILogger logger)
+    {
+        var socket = CreateSocket(requestTimeout);
         var lazyStream = new Lazy<NetworkStream>(() => new NetworkStream(socket));
 
         return new TcpPeer(socket, endPoint, nodeId, currentNodeId, requestTimeout, lazyStream, logger);

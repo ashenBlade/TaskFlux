@@ -1,7 +1,6 @@
 using System.Net.Sockets;
 using Consensus.Network;
 using Consensus.Network.Packets;
-using Consensus.Peer;
 using Consensus.Raft;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Serilog;
@@ -39,6 +38,10 @@ public class NodeConnectionProcessor : IDisposable
             while (token.IsCancellationRequested is false)
             {
                 var packet = await Client.ReceiveAsync(token);
+                if (packet is null)
+                {
+                    break;
+                }
 
                 var success = await ProcessPacket(packet, token);
                 if (!success)
