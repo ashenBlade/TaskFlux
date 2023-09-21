@@ -1,22 +1,7 @@
 ﻿namespace JobQueue.Core;
 
-public interface IJobQueue
+public interface IJobQueue : IReadOnlyJobQueue
 {
-    /// <summary>
-    /// Название текущей очереди
-    /// </summary>
-    public QueueName Name { get; }
-    
-    /// <summary>
-    /// Количество элементов в ней на данный момент
-    /// </summary>
-    public int Count { get; }
-    
-    /// <summary>
-    /// Метаданные очереди
-    /// </summary>
-    public IJobQueueMetadata Metadata { get; }
-    
     /// <summary>
     /// Добавить новый элемент в очередь
     /// </summary>
@@ -24,7 +9,7 @@ public interface IJobQueue
     /// <param name="payload">Данные</param>
     /// <returns><c>true</c> - значение было добавлено в очередь, <c>false</c> - в очереди нет места для новых элементов</returns>
     public bool TryEnqueue(long key, byte[] payload);
-    
+
     /// <summary>
     /// Получить элемент из очереди
     /// </summary>

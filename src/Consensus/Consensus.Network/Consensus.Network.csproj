@@ -8,7 +8,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\TaskFlux.Serialization.Helpers\TaskFlux.Serialization.Helpers.csproj" />
-      <ProjectReference Include="..\Consensus.Core\Consensus.Core.csproj" />
+      <ProjectReference Include="..\Consensus.Raft\Consensus.Raft.csproj"/>
     </ItemGroup>
 
 </Project>

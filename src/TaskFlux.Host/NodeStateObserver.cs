@@ -1,4 +1,4 @@
-using Consensus.Core;
+using Consensus.Raft;
 using Serilog;
 using TaskFlux.Commands;
 
@@ -23,7 +23,7 @@ public class NodeStateObserver
         {
             while (token.IsCancellationRequested is false)
             {
-                _logger.Information("Состояние: {State}; Терм {Term}; Последняя запись лога: {@LastEntry}; Голос За: {VotedFor}", _consensusModule.CurrentRole, _consensusModule.CurrentTerm, _consensusModule.Log.LastEntry, _consensusModule.VotedFor);
+                _logger.Information("Состояние: {State}; Терм {Term}; Последняя запись лога: {@LastEntry}; Голос За: {VotedFor}", _consensusModule.CurrentRole, _consensusModule.CurrentTerm, _consensusModule.PersistenceFacade.LastEntry, _consensusModule.VotedFor);
                 await Task.Delay(TimeSpan.FromSeconds(2.5), token);
             }
         }

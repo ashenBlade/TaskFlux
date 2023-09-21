@@ -1,30 +1,28 @@
-using Consensus.CommandQueue;
-using Consensus.Core;
-using Consensus.Core.Commands.AppendEntries;
-using Consensus.Core.Commands.RequestVote;
-using Consensus.Core.Commands.Submit;
-using Consensus.Core.Log;
-using Consensus.Core.State;
-using Consensus.Core.State.LeaderState;
-using Consensus.StateMachine;
-using Serilog;
+using Consensus.Raft;
+using Consensus.Raft.Commands.AppendEntries;
+using Consensus.Raft.Commands.RequestVote;
+using Consensus.Raft.Commands.Submit;
+using Consensus.Raft.Persistence;
+using Consensus.Raft.State;
 using TaskFlux.Core;
 using TaskFlux.Node;
 
 namespace TaskFlux.Host.Infrastructure;
 
-public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult>: IConsensusModule<TCommand, TResult>
+public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensusModule<TCommand, TResult>
 {
     private readonly IConsensusModule<TCommand, TResult> _module;
     private readonly ClusterInfo _clusterInfo;
     private readonly NodeInfo _nodeInfo;
 
-    public InfoUpdaterConsensusModuleDecorator(IConsensusModule<TCommand, TResult> module, ClusterInfo clusterInfo, NodeInfo nodeInfo)
+    public InfoUpdaterConsensusModuleDecorator(IConsensusModule<TCommand, TResult> module,
+                                               ClusterInfo clusterInfo,
+                                               NodeInfo nodeInfo)
     {
         _module = module;
         _clusterInfo = clusterInfo;
         _nodeInfo = nodeInfo;
-        _module.RoleChanged += OnRoleChanged;    
+        _module.RoleChanged += OnRoleChanged;
     }
 
     private void OnRoleChanged(NodeRole oldRole, NodeRole newRole)
@@ -46,42 +44,27 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult>: IConsensusM
     public NodeId? VotedFor =>
         _module.VotedFor;
 
-    public ConsensusModuleState<TCommand, TResult> CurrentState
-    {
-        get => _module.CurrentState;
-        set => _module.CurrentState = value;
-    }
-    
-    public ITimer ElectionTimer =>
-        _module.ElectionTimer;
+    public State<TCommand, TResult> CurrentState => _module.CurrentState;
 
-    public ITimer HeartbeatTimer =>
-        _module.HeartbeatTimer;
+    public bool TryUpdateState(State<TCommand, TResult> newState,
+                               State<TCommand, TResult> oldState)
+    {
+        return _module.TryUpdateState(newState, oldState);
+    }
 
     public IBackgroundJobQueue BackgroundJobQueue =>
         _module.BackgroundJobQueue;
 
-    public ICommandQueue CommandQueue =>
-        _module.CommandQueue;
-
-    public ILog Log =>
-        _module.Log;
+    public StoragePersistenceFacade PersistenceFacade =>
+        _module.PersistenceFacade;
 
     public PeerGroup PeerGroup =>
         _module.PeerGroup;
 
-    public IStateMachine<TCommand, TResult> StateMachine =>
-        _module.StateMachine;
-
-    public IMetadataStorage MetadataStorage =>
-        _module.MetadataStorage;
-
-    public ISerializer<TCommand> CommandSerializer =>
-        _module.CommandSerializer;
-
-    public void UpdateState(Term newTerm, NodeId? votedFor)
+    public IApplication<TCommand, TResult> Application
     {
-        _module.UpdateState(newTerm, votedFor);
+        get => _module.Application;
+        set => _module.Application = value;
     }
 
     public RequestVoteResponse Handle(RequestVoteRequest request)
@@ -96,13 +79,13 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult>: IConsensusM
         {
             _clusterInfo.LeaderId = request.LeaderId;
         }
+
         return response;
     }
 
     public SubmitResponse<TResult> Handle(SubmitRequest<TCommand> request)
     {
-        var response = _module.Handle(request);
-        return response;
+        return _module.Handle(request);
     }
 
     public event RoleChangedEventHandler? RoleChanged
@@ -111,17 +94,17 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult>: IConsensusM
         remove => _module.RoleChanged -= value;
     }
 
-    public FollowerState<TCommand, TResult> CreateFollowerState()
+    public State<TCommand, TResult> CreateFollowerState()
     {
         return _module.CreateFollowerState();
     }
 
-    public LeaderState<TCommand, TResult> CreateLeaderState()
+    public State<TCommand, TResult> CreateLeaderState()
     {
         return _module.CreateLeaderState();
     }
 
-    public CandidateState<TCommand, TResult> CreateCandidateState()
+    public State<TCommand, TResult> CreateCandidateState()
     {
         return _module.CreateCandidateState();
     }

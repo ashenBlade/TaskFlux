@@ -6,29 +6,30 @@ using TaskFlux.Network.Requests.Serialization;
 
 namespace TaskFlux.Network.Client;
 
-public class TaskFluxClient: ITaskFluxClient, IDisposable
+public class TaskFluxClient : ITaskFluxClient, IDisposable
 {
     private readonly Socket _socket;
     private readonly bool _ownsSocket;
 
     private readonly Lazy<PoolingNetworkPacketSerializer> _lazySerializer;
-    private readonly Lazy<NetworkStream> _lazyStream;
     private PoolingNetworkPacketSerializer Serializer => _lazySerializer.Value;
 
     private TaskFluxClient(Socket socket, bool ownsSocket)
     {
         _socket = socket;
         _ownsSocket = ownsSocket;
-        _lazyStream = new Lazy<NetworkStream>(() => new NetworkStream(_socket));
+        Lazy<NetworkStream> lazyStream = new(() => new NetworkStream(_socket));
         _lazySerializer = new Lazy<PoolingNetworkPacketSerializer>(() =>
-            new PoolingNetworkPacketSerializer(ArrayPool<byte>.Shared, _lazyStream.Value));
+            new PoolingNetworkPacketSerializer(ArrayPool<byte>.Shared, lazyStream.Value));
     }
-    
-    public TaskFluxClient(): this(new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp), true)
-    { }
-    
-    public TaskFluxClient(Socket socket): this(ValidateSocket(socket), false)
-    { }
+
+    public TaskFluxClient() : this(new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp), true)
+    {
+    }
+
+    public TaskFluxClient(Socket socket) : this(ValidateSocket(socket), false)
+    {
+    }
 
     private static Socket ValidateSocket(Socket socket)
     {
@@ -64,6 +65,7 @@ public class TaskFluxClient: ITaskFluxClient, IDisposable
         {
             return Task.FromCanceled(token);
         }
+
         return packet.AcceptAsync(Serializer, token).AsTask();
     }
 
@@ -73,6 +75,7 @@ public class TaskFluxClient: ITaskFluxClient, IDisposable
         {
             return Task.FromCanceled<Packet>(token);
         }
+
         return Serializer.DeserializeAsync(token);
     }
 

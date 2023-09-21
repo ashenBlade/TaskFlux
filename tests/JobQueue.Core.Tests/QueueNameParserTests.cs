@@ -1,5 +1,3 @@
-using System.Buffers;
-using System.Text;
 using Xunit.Sdk;
 
 namespace JobQueue.Core.Tests;
@@ -45,7 +43,7 @@ public class QueueNameParserTests
     [InlineData("---hello---world---!")]
     public void Parse__КогдаСтрокаДлиныНеБольше255СДопустимымиСимволами__ДолженСпарситьКорректно(string name)
     {
-        AssertBase(name);   
+        AssertBase(name);
     }
 
     [Fact]
@@ -57,15 +55,15 @@ public class QueueNameParserTests
     [Fact]
     public void Parse__КогдаСтрокаИз1НедопустимогоСимвола__ДолженСпарситьСОшибкой()
     {
-        var i = (char) 0;
-        while (i < (char) 33)
+        var i = ( char ) 0;
+        while (i < ( char ) 33)
         {
             AssertErrorBase(i.ToString());
             i++;
         }
 
         i = ( char ) 127;
-        while (i != (char) 0)
+        while (i != ( char ) 0)
         {
             AssertErrorBase(i.ToString());
             i++;
@@ -104,7 +102,7 @@ public class QueueNameParserTests
             var expected = ch.ToString();
             try
             {
-                AssertBase(new[]{(byte)ch}, expected);
+                AssertBase(new[] {( byte ) ch}, expected);
             }
             catch (EqualException e)
             {
@@ -141,20 +139,21 @@ public class QueueNameParserTests
     public void Parse__КогдаМассивИз1НедопустимогоСимвола__ДолженСпарситьСОшибкой()
     {
         byte d = 0;
-        while (d < (byte) '!')
+        while (d < ( byte ) '!')
         {
-            AssertErrorBase(new byte[]{d});
+            AssertErrorBase(new[] {d});
             d++;
         }
 
         d = ( ( byte ) '~' ) + 1;
         while (true)
         {
-            AssertErrorBase(new byte[]{d});
+            AssertErrorBase(new[] {d});
             if (d == byte.MaxValue)
             {
                 break;
             }
+
             d++;
         }
     }
@@ -163,7 +162,7 @@ public class QueueNameParserTests
     public void Parse__КогдаВМассиве255Символов__ДолженСпарситьКорректно()
     {
         var b = new byte[255];
-        Array.Fill(b, (byte) 'A');
+        Array.Fill(b, ( byte ) 'A');
         AssertBase(b, QueueNameParser.Encoding.GetString(b));
     }
 
@@ -175,7 +174,7 @@ public class QueueNameParserTests
     public void Parse__КогдаВМассивеБольше255Символов__ДолженСпарситьСОшибкой(int length)
     {
         var b = new byte[length];
-        Array.Fill(b, (byte) 'A');
+        Array.Fill(b, ( byte ) 'A');
         AssertErrorBase(b);
     }
 }

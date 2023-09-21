@@ -1,11 +1,9 @@
 using TaskFlux.Core;
 
-namespace TaskFlux.Commands;
+namespace TaskFlux.Commands.Visitors;
 
-public interface ICommandContext
+public interface ICommandContext : IReadOnlyCommandContext
 {
-    public INode Node { get; }
-    public INodeInfo NodeInfo { get; }
-    public IApplicationInfo ApplicationInfo { get; }
-    public IClusterInfo ClusterInfo { get; }
+    public new INode Node { get; }
+    IReadOnlyNode IReadOnlyCommandContext.Node => Node;
 }

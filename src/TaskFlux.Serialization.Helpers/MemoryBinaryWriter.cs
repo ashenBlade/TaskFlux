@@ -22,16 +22,23 @@ public struct MemoryBinaryWriter
         _index++;
     }
 
-    public void Write(int value)
+    public int Write(int value)
     {
         BinaryPrimitives.WriteInt32BigEndian(_buffer[_index..].Span, value);
         _index += sizeof(int);
+        return sizeof(int);
     }
-    
+
     public void Write(long value)
     {
         BinaryPrimitives.WriteInt64BigEndian(_buffer[_index..].Span, value);
         _index += sizeof(long);
+    }
+
+    public void Write(uint value)
+    {
+        BinaryPrimitives.WriteUInt32BigEndian(_buffer[_index..].Span, value);
+        _index += sizeof(uint);
     }
 
     /// <summary>
@@ -39,12 +46,13 @@ public struct MemoryBinaryWriter
     /// Сериализуется как длина массива, так и сами значения
     /// </summary>
     /// <param name="buffer">Буфер для сериализации</param>
-    public void WriteBuffer(byte[] buffer)
+    public int WriteBuffer(byte[] buffer)
     {
         BinaryPrimitives.WriteInt32BigEndian(_buffer.Slice(_index).Span, buffer.Length);
-        _index+= sizeof(int);
+        _index += sizeof(int);
         buffer.CopyTo(_buffer.Slice(_index).Span);
         _index += buffer.Length;
+        return sizeof(int) + buffer.Length;
     }
 
     /// <summary>
@@ -66,7 +74,7 @@ public struct MemoryBinaryWriter
     {
         var stringLength = Encoding.UTF8.GetByteCount(value);
         EnsureLength(sizeof(int) + stringLength);
-        
+
         var stringByteLength = Encoding.UTF8.GetBytes(value, _buffer.Slice(_index + sizeof(int)).Span);
         BinaryPrimitives.WriteInt32BigEndian(_buffer[_index..].Span, stringByteLength);
         _index += sizeof(int) + stringByteLength;
@@ -83,10 +91,10 @@ public struct MemoryBinaryWriter
         {
             EnsureLength(1);
             // Наверное, часто будет использоваться название по умолчанию (пустая строка)
-            _buffer.Span[_index++] = 0; 
+            _buffer.Span[_index++] = 0;
             return;
         }
-        
+
         // Длина точно в диапазоне [1; 255]
         var length = ( byte ) name.Name.Length;
         EnsureLength(length + 1);
@@ -110,18 +118,18 @@ public struct MemoryBinaryWriter
                 $"В буфере недостаточно места для записи. Требуется {shouldHasLength}. Осталось: {left}");
         }
     }
-    
+
     public static int EstimateResultSize(string value) => sizeof(int)                        // Размер 
                                                         + Encoding.UTF8.GetByteCount(value); // Строка
- 
+
     public static int EstimateResultSize(QueueName name) => sizeof(byte)      // Размер
                                                           + name.Name.Length; // Длина (каждый символ - 1 байт)
-    
+
     public void Write(bool resultSuccess)
     {
         const byte byteTrue = 1;
         const byte byteFalse = 0;
-        
+
         _buffer.Span[_index] = resultSuccess
                                    ? byteTrue
                                    : byteFalse;

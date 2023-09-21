@@ -4,7 +4,7 @@ using TaskFlux.Commands.Visitors;
 
 namespace TaskFlux.Commands.Enqueue;
 
-public class EnqueueCommand: Command
+public class EnqueueCommand : UpdateCommand
 {
     public QueueName Queue { get; }
     public long Key { get; }
@@ -17,8 +17,9 @@ public class EnqueueCommand: Command
         Payload = payload;
         Queue = queue;
     }
-    
+
     public override CommandType Type => CommandType.Enqueue;
+
     public override Result Apply(ICommandContext context)
     {
         var manager = context.Node.GetJobQueueManager();
@@ -27,12 +28,12 @@ public class EnqueueCommand: Command
         {
             return DefaultErrors.QueueDoesNotExist;
         }
-        
+
         if (queue.TryEnqueue(Key, Payload))
         {
             return EnqueueResult.Ok;
         }
-        
+
         return EnqueueResult.Full;
     }
 

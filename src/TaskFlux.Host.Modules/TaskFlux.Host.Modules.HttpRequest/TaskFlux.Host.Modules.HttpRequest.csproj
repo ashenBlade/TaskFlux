@@ -7,10 +7,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\Consensus\Consensus.Core\Consensus.Core.csproj" />
+      <ProjectReference Include="..\..\Consensus\Consensus.Raft\Consensus.Raft.csproj"/>
       <ProjectReference Include="..\..\TaskFlux.Commands\TaskFlux.Commands.csproj" />
-      <ProjectReference Include="..\..\TaskFlux.Network.Requests\TaskFlux.Network.Requests.csproj" />
-      <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.csproj" />
+        <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.csproj"/>
     </ItemGroup>
 
 </Project>

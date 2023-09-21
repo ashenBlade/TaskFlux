@@ -1,19 +1,20 @@
-using System.ComponentModel.Design;
 using Consensus.Network;
 using Consensus.Network.Packets;
 
+#pragma warning disable CS8767 // Nullability of reference types in type of parameter doesn't match implicitly implemented member (possibly because of nullability attributes).
+
 namespace Consensus.Peer.Tests;
 
-public class PacketEqualityComparer: IEqualityComparer<RaftPacket>
+public class PacketEqualityComparer : IEqualityComparer<RaftPacket>
 {
     public static readonly PacketEqualityComparer Instance = new();
-    
+
     public bool Equals(RaftPacket x, RaftPacket y)
     {
         return Check(( dynamic ) x, ( dynamic ) y);
     }
 
-    public bool Check(AppendEntriesRequestPacket first, AppendEntriesRequestPacket second)
+    private bool Check(AppendEntriesRequestPacket first, AppendEntriesRequestPacket second)
     {
         var (f, s) = ( first.Request, second.Request );
         return f.Term == s.Term
@@ -23,35 +24,53 @@ public class PacketEqualityComparer: IEqualityComparer<RaftPacket>
             && f.Entries.SequenceEqual(s.Entries, LogEntryEqualityComparer.Instance);
     }
 
-    public bool Check(AppendEntriesResponsePacket first, AppendEntriesResponsePacket second)
+    private static bool Check(AppendEntriesResponsePacket first, AppendEntriesResponsePacket second)
     {
-        return first.Response.Success == second.Response.Success && 
-               first.Response.Term == second.Response.Term;
+        return first.Response.Success == second.Response.Success && first.Response.Term == second.Response.Term;
     }
 
-    public bool Check(RequestVoteRequestPacket first, RequestVoteRequestPacket second)
+    private static bool Check(RequestVoteRequestPacket first, RequestVoteRequestPacket second)
     {
         return first.Request.CandidateTerm == second.Request.CandidateTerm
             && first.Request.CandidateId == second.Request.CandidateId
             && first.Request.LastLogEntryInfo == second.Request.LastLogEntryInfo;
     }
 
-    public bool Check(RequestVoteResponsePacket first, RequestVoteResponsePacket second)
+    private static bool Check(RequestVoteResponsePacket first, RequestVoteResponsePacket second)
     {
         return first.Response.VoteGranted == second.Response.VoteGranted
             && first.Response.CurrentTerm == second.Response.CurrentTerm;
     }
 
-    public bool Check(ConnectRequestPacket first, ConnectRequestPacket second)
+    private static bool Check(ConnectRequestPacket first, ConnectRequestPacket second)
     {
         return first.Id == second.Id;
     }
 
-    public bool Check(ConnectResponsePacket first, ConnectResponsePacket second)
+    private static bool Check(ConnectResponsePacket first, ConnectResponsePacket second)
     {
         return first.Success == second.Success;
     }
-    
+
+    private static bool Check(InstallSnapshotRequestPacket first, InstallSnapshotRequestPacket second)
+    {
+        return first.LeaderId == second.LeaderId
+            && first.Term == second.Term
+            && first.LastEntry == second.LastEntry;
+    }
+
+    private static bool Check(InstallSnapshotChunkPacket first, InstallSnapshotChunkPacket second)
+    {
+        return first.Chunk
+                    .ToArray()
+                    .SequenceEqual(second.Chunk.ToArray());
+    }
+
+    private static bool Check(InstallSnapshotResponsePacket first, InstallSnapshotResponsePacket second)
+    {
+        return first.CurrentTerm == second.CurrentTerm;
+    }
+
     public int GetHashCode(RaftPacket obj)
     {
         return ( int ) obj.PacketType;

@@ -6,8 +6,8 @@ namespace TaskFlux.Host.Options;
 public class RaftServerOptions
 {
     [ConfigurationKeyName("PEERS")]
-    public PeerInfo[] Peers { get; set; } = Array.Empty<PeerInfo>(); 
-    
+    public PeerInfo[] Peers { get; set; } = Array.Empty<PeerInfo>();
+
     [Required]
     [ConfigurationKeyName("NODE_ID")]
     public int NodeId { get; set; }
@@ -21,17 +21,11 @@ public class RaftServerOptions
     public string Host { get; set; } = "localhost";
 
     [ConfigurationKeyName("RECEIVE_BUFFER_SIZE")]
-    public int ReceiveBufferSize { get; set; } = 128;
+    public int ReceiveBufferSize { get; set; } = 512;
 
     [ConfigurationKeyName("ELECTION_TIMEOUT")]
     public TimeSpan ElectionTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
-    [Required]
-    [ConfigurationKeyName("LOG_FILE")]
-    public string LogFile { get; set; } = null!;
-
-
-    [Required]
-    [ConfigurationKeyName("METADATA_FILE")]
-    public string MetadataFile { get; set; } = null!;
+    [ConfigurationKeyName("DATA_DIR")]
+    public string? DataDirectory { get; set; }
 }

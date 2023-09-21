@@ -30,10 +30,10 @@ public ref struct SpanBinaryWriter
     /// Сериализуется как длина массива, так и сами значения
     /// </summary>
     /// <param name="buffer">Буфер для сериализации</param>
-    public void WriteBuffer(byte[] buffer)
+    public void WriteBuffer(ReadOnlySpan<byte> buffer)
     {
         BinaryPrimitives.WriteInt32BigEndian(Buffer[_index..], buffer.Length);
-        _index+= sizeof(int);
+        _index += sizeof(int);
         buffer.CopyTo(Buffer[_index..]);
         _index += buffer.Length;
     }
@@ -54,7 +54,7 @@ public ref struct SpanBinaryWriter
     /// <param name="value">Строка для сериализации</param>
     public void Write(string value)
     {
-        var stringByteLength = Encoding.UTF8.GetBytes(value, Buffer[(_index + sizeof(int))..]);
+        var stringByteLength = Encoding.UTF8.GetBytes(value, Buffer[( _index + sizeof(int) )..]);
         BinaryPrimitives.WriteInt32BigEndian(Buffer[_index..], stringByteLength);
         _index += sizeof(int) + stringByteLength;
     }

@@ -28,13 +28,13 @@ public class ResultSerializerTests
     [InlineData(2)]
     [InlineData(123)]
     [InlineData(32)]
-    [InlineData(int.MaxValue)]
-    [InlineData(int.MaxValue - 1)]
+    [InlineData(uint.MaxValue)]
+    [InlineData(uint.MaxValue - 1)]
     [InlineData(10)]
-    [InlineData(int.MaxValue / 2)]
+    [InlineData(uint.MaxValue / 2)]
     [InlineData(1 << 10)]
     [InlineData(1 << 2)]
-    public void CountResult__Serialization(int result)
+    public void CountResult__Serialization(uint result)
     {
         AssertBase(new CountResult(result));
     }
@@ -51,7 +51,7 @@ public class ResultSerializerTests
 
     private static IEnumerable<object[]> CreateKeyPayload()
     {
-        var keys = new[] {-1, 0, 1, 2, int.MaxValue, int.MinValue, 100, byte.MaxValue, short.MaxValue, 127 };
+        var keys = new[] {-1, 0, 1, 2, int.MaxValue, int.MinValue, 100, byte.MaxValue, short.MaxValue, 127};
         var payloadSizes = new[] {0, 1, 2, 3, 10, 20, byte.MaxValue};
         foreach (var key in keys)
         {
@@ -68,7 +68,7 @@ public class ResultSerializerTests
     {
         var buffer = new byte[payloadSize];
         Random.Shared.NextBytes(buffer);
-        AssertBase(DequeueResult.Create(key, buffer));    
+        AssertBase(DequeueResult.Create(key, buffer));
     }
 
     [Theory(DisplayName = nameof(ErrorResult))]
@@ -91,7 +91,7 @@ public class ResultSerializerTests
         AssertBase(new OkResult());
     }
 
-    private class StubMetadata: IJobQueueMetadata
+    private class StubMetadata : IJobQueueMetadata
     {
         public StubMetadata(QueueName queueName, uint maxSize, uint count)
         {
@@ -104,72 +104,53 @@ public class ResultSerializerTests
         public uint Count { get; }
         public uint MaxSize { get; }
     }
-    
+
     [Theory(DisplayName = $"{nameof(ListQueuesResult)}-Single")]
     [InlineData("", 0, 0)]
     [InlineData("", 111, 123)]
     [InlineData("queue", 0, 0)]
     [InlineData("SDGGGGGGGJjsdhU&^%*Ahvc`2eu84t((AFP\"vawergf'", 100, 100)]
-    [InlineData("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~", uint.MaxValue, 0)]
+    [InlineData(
+        "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+        uint.MaxValue, 0)]
     [InlineData("-", uint.MaxValue, uint.MaxValue)]
     [InlineData("default", uint.MaxValue - 2, uint.MaxValue - 1)]
     [InlineData("hello,world!", uint.MaxValue - 2, uint.MaxValue - 1)]
     public void ListQueuesResult__SingleQueue__Serialization(string queueName, uint count, uint maxSize)
     {
         var metadata = new StubMetadata(QueueNameParser.Parse(queueName), maxSize, count);
-        AssertBase(new ListQueuesResult(new []{metadata}));
+        AssertBase(new ListQueuesResult(new[] {metadata}));
     }
 
-    public static IEnumerable<object[]> ListQueuesArguments => new[] {
+    public static IEnumerable<object[]> ListQueuesArguments => new[]
+    {
+        new object[] {new (string, uint, uint)[] {( "", 123, 123 ), ( "default", 0, 0 ),},},
         new object[]
         {
             new (string, uint, uint)[]
             {
-                ("", 123, 123),
-                ("default", 0, 0),
+                ( "", 123, 123 ), ( "default", 0, 0 ), ( "queue:test:1", 123, 0 ),
+                ( "hello,world!", uint.MaxValue, 0 )
             },
         },
         new object[]
         {
             new (string, uint, uint)[]
             {
-                ("", 123, 123),
-                ("default", 0, 0),
-                ("queue:test:1", 123, 0),
-                ("hello,world!", uint.MaxValue, 0)
+                ( "______", 0, int.MaxValue ), ( "default", 0, 1232323 ), ( "!!!!!", 123, 3434343434 ),
+                ( "123", uint.MaxValue, 0 ), ( "[[[[[[]]]]]]]", 1, 1 ), ( "UwU", 123123, 999999 ),
             },
+        },
+        new object[]
+        {
+            new (string, uint, uint)[] {( "", 123, 123 ), ( "default", 0, 0 ), ( "```````", uint.MaxValue, 0 )},
         },
         new object[]
         {
             new (string, uint, uint)[]
             {
-                ("______", 0, int.MaxValue),
-                ("default", 0, 1232323),
-                ("!!!!!", 123, 3434343434),
-                ("123", uint.MaxValue, 0),
-                ("[[[[[[]]]]]]]", 1, 1),
-                ("UwU", 123123, 999999),
-            },
-        },
-        new object[]
-        {
-            new (string, uint, uint)[]
-            {
-                ("", 123, 123),
-                ("default", 0, 0),
-                ("```````", uint.MaxValue, 0)
-            },
-        },
-        new object[]
-        {
-            new (string, uint, uint)[]
-            {
-                ("!", 123, 123),
-                ("default", 0, 0),
-                (":", 123, 0),
-                ("~", uint.MaxValue, 0),
-                ("~!", uint.MaxValue, 0),
-                ("~!!", uint.MaxValue, 0),
+                ( "!", 123, 123 ), ( "default", 0, 0 ), ( ":", 123, 0 ), ( "~", uint.MaxValue, 0 ),
+                ( "~!", uint.MaxValue, 0 ), ( "~!!", uint.MaxValue, 0 ),
             },
         },
     };

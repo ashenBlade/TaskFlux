@@ -5,15 +5,16 @@ using TaskFlux.Commands.Visitors;
 
 namespace TaskFlux.Commands.DeleteQueue;
 
-public class DeleteQueueCommand: Command
+public class DeleteQueueCommand : UpdateCommand
 {
     public override CommandType Type => CommandType.DeleteQueue;
     public QueueName QueueName { get; }
+
     public DeleteQueueCommand(QueueName queueName)
     {
         QueueName = queueName;
     }
-    
+
     public override Result Apply(ICommandContext context)
     {
         var manager = context.Node.GetJobQueueManager();

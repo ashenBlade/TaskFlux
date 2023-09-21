@@ -1,42 +1,35 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.IO.Abstractions;
 using System.Net;
-using System.Net.Sockets;
-using Consensus.CommandQueue;
-using Consensus.CommandQueue.Channel;
-using Consensus.Core;
-using Consensus.Core.Log;
-using Consensus.Core.State.LeaderState;
 using Consensus.JobQueue;
-using Consensus.Log;
-using TaskFlux.Host;
-using TaskFlux.Host.Infrastructure;
-using TaskFlux.Host.Options;
+using Consensus.NodeProcessor;
 using Consensus.Peer;
-using Consensus.Peer.Decorators;
-using Consensus.StateMachine;
-using Consensus.StateMachine.JobQueue;
-using Consensus.Storage.File;
-using Consensus.Storage.File.Decorators;
-using Consensus.Storage.File.Log;
-using Consensus.Storage.File.Log.Decorators;
+using Consensus.Raft;
+using Consensus.Raft.Persistence;
+using Consensus.Raft.Persistence.Log;
+using Consensus.Raft.Persistence.Metadata;
+using Consensus.Raft.Persistence.Snapshot;
 using Consensus.Timers;
 using JobQueue.Core;
-using JobQueue.InMemory;
-using JobQueue.PriorityQueue;
-using JobQueue.PriorityQueue.StandardLibrary;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Serialization;
 using TaskFlux.Core;
-using TaskFlux.Host.Modules.BinaryRequest;
+using TaskFlux.Host;
+using TaskFlux.Host.Infrastructure;
+using TaskFlux.Host.Modules;
 using TaskFlux.Host.Modules.HttpRequest;
+using TaskFlux.Host.Modules.SocketRequest;
+using TaskFlux.Host.Options;
+using TaskFlux.Host.RequestAcceptor;
 using TaskFlux.Node;
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()
             .Enrich.FromLogContext()
-            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss.ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
+            .WriteTo.Console(outputTemplate:
+                 "[{Timestamp:HH:mm:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
             .CreateLogger();
 try
 {
@@ -44,12 +37,12 @@ try
                        .AddEnvironmentVariables()
                        .Build();
 
-    var networkOptions = configuration.GetSection("NETWORK") is {} section 
+    var networkOptions = configuration.GetSection("NETWORK") is { } section
                       && section.Exists()
                              ? section.Get<NetworkOptions>() ?? NetworkOptions.Default
                              : NetworkOptions.Default;
 
-    var serverOptions = configuration.Get<RaftServerOptions>() 
+    var serverOptions = configuration.Get<RaftServerOptions>()
                      ?? throw new Exception("Не найдено настроек сервера");
 
     ValidateOptions(serverOptions);
@@ -61,10 +54,8 @@ try
                               {
                                   var endpoint = GetEndpoint(p.Host, p.Port);
                                   var id = new NodeId(p.Id);
-                                  var client = new PacketClient(new Socket(AddressFamily.InterNetwork, SocketType.Stream,
-                                      ProtocolType.Tcp));
-                                  IPeer peer = new TcpPeer(client, endpoint, id, nodeId, networkOptions.ConnectionTimeout, networkOptions.RequestTimeout, Log.ForContext("SourceContext", $"TcpPeer({id.Value})"));
-                                  peer = new ExclusiveAccessPeerDecorator(peer);
+                                  IPeer peer = TcpPeer.Create(nodeId, id, endpoint, networkOptions.RequestTimeout,
+                                      Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
                                   peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
                                   return peer;
                               })
@@ -72,54 +63,42 @@ try
 
     Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
 
-    Log.Logger.Information("Открываю файл с метаданными");
-    await using var metadataFileStream = OpenMetadataFile(serverOptions);
-    Log.Logger.Information("Инициализирую хранилище метаданных");
-    var (metadataStorage, _) = CreateMetadataStorage(metadataFileStream);
+    var facade = CreateStoragePersistenceFacade(serverOptions);
 
-    Log.Information("Открываю файл с логом предзаписи");
-    await using var fileStream = GetLogFileStream(serverOptions);
-    Log.Information("Инициализирую хранилище лога предзаписи");
-    var (storage, fileStorage) = CreateLogStorage(fileStream);
-    var log = new StorageLog(storage);
-    
-    Log.Information("Создаю очередь машины состояний");
     var appInfo = CreateApplicationInfo();
-    var node = CreateNode(appInfo);
     var clusterInfo = CreateClusterInfo(serverOptions);
     var nodeInfo = CreateNodeInfo(serverOptions);
-    var commandContext = new CommandContext(node, nodeInfo, appInfo, clusterInfo);
-    
-    RestoreState(log, fileStorage, commandContext);
-    
-    var jobQueueStateMachine = CreateJobQueueStateMachine(commandContext);
+    var factory = new TaskFluxApplicationFactory(nodeInfo, appInfo, clusterInfo);
+    Log.Information("Восстанавливаю состояние приложения");
+    var taskFluxApplication = RestoreApplication(facade, factory);
 
-    using var electionTimer = new RandomizedTimer(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(3));
-    using var heartbeatTimer = new SystemTimersTimer(TimeSpan.FromSeconds(1));
-    using var commandQueue = new ChannelCommandQueue();
+    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, taskFluxApplication, factory);
 
-    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, electionTimer, heartbeatTimer, log, commandQueue, jobQueueStateMachine, metadataStorage);
     var consensusModule =
         new InfoUpdaterConsensusModuleDecorator<Command, Result>(raftConsensusModule, clusterInfo, nodeInfo);
-    
-    var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, consensusModule, Log.Logger.ForContext<NodeConnectionManager>());
+
+    var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, consensusModule,
+        networkOptions.RequestTimeout,
+        Log.Logger.ForContext<NodeConnectionManager>());
+
     var stateObserver = new NodeStateObserver(consensusModule, Log.Logger.ForContext<NodeStateObserver>());
 
+    using var requestAcceptor =
+        new ExclusiveRequestAcceptor(consensusModule, Log.ForContext("{SourceContext}", "RequestQueue"));
+
     var httpModule = CreateHttpRequestModule(configuration);
-    httpModule.AddHandler(HttpMethod.Post, "/command", new SubmitCommandRequestHandler(consensusModule, clusterInfo, appInfo, Log.ForContext<SubmitCommandRequestHandler>()));
-    
-    var binaryRequestModule = CreateBinaryRequestModule(consensusModule, appInfo, clusterInfo, configuration);
+    httpModule.AddHandler(HttpMethod.Post, "/command",
+        new SubmitCommandRequestHandler(requestAcceptor, clusterInfo, appInfo,
+            Log.ForContext<SubmitCommandRequestHandler>()));
+
+    var binaryRequestModule = CreateBinaryRequestModule(requestAcceptor, appInfo, clusterInfo, configuration);
 
     var nodeConnectionThread = new Thread(o =>
-        {
-            var (manager, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
-            manager.Run(token);
-        })
-        {
-            Priority = ThreadPriority.Highest, 
-            Name = "Обработчик подключений узлов",
-        };
-    
+    {
+        var (manager, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
+        manager.Run(token);
+    }) {Priority = ThreadPriority.Highest, Name = "Обработчик подключений узлов",};
+
     using var cts = new CancellationTokenSource();
 
     // ReSharper disable once AccessToDisposedClosure
@@ -131,18 +110,23 @@ try
 
     try
     {
+        Log.Logger.Information("Запускаю таймер выборов");
+        raftConsensusModule.Start();
+
         Log.Logger.Information("Запускаю менеджер подключений узлов");
         nodeConnectionThread.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
-    
-        Log.Logger.Information("Запускаю Election Timer");
-        electionTimer.Start();
-    
+
         Log.Logger.Information("Запукаю фоновые задачи");
-        await Task.WhenAll(
-            stateObserver.RunAsync(cts.Token),
-            commandQueue.RunAsync(cts.Token),
+        await Task.WhenAll(stateObserver.RunAsync(cts.Token),
             httpModule.RunAsync(cts.Token),
-            binaryRequestModule.RunAsync(cts.Token));
+            binaryRequestModule.RunAsync(cts.Token),
+            Task.Run(() =>
+            {
+                // ReSharper disable once AccessToDisposedClosure
+                var token = cts.Token;
+                // ReSharper disable once AccessToDisposedClosure
+                requestAcceptor.Start(token);
+            }));
     }
     catch (Exception e)
     {
@@ -154,13 +138,22 @@ try
         nodeConnectionThread.Join();
     }
 }
+catch (Exception e)
+{
+    Log.Fatal(e, "Необработанное исключение во время настройки сервера");
+}
 finally
 {
     Log.CloseAndFlush();
 }
 
+return;
 
-BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<Command, Result> consensusModule, IApplicationInfo applicationInfo, IClusterInfo clusterInfo, IConfiguration config)
+
+SocketRequestModule CreateBinaryRequestModule(IRequestAcceptor requestAcceptor,
+                                              IApplicationInfo applicationInfo,
+                                              IClusterInfo clusterInfo,
+                                              IConfiguration config)
 {
     var options = GetOptions();
 
@@ -174,31 +167,32 @@ BinaryRequestModule CreateBinaryRequestModule(IConsensusModule<Command, Result> 
         throw;
     }
 
-    return new BinaryRequestModule(consensusModule,
-        new StaticOptionsMonitor<BinaryRequestModuleOptions>(options),
+    return new SocketRequestModule(requestAcceptor,
+        new StaticOptionsMonitor<SocketRequestModuleOptions>(options),
         clusterInfo,
         applicationInfo,
-        Log.ForContext<BinaryRequestModule>());
+        Log.ForContext<SocketRequestModule>());
 
-    BinaryRequestModuleOptions GetOptions()
+    SocketRequestModuleOptions GetOptions()
     {
         var section = config.GetSection("BINARY_REQUEST");
         if (!section.Exists())
         {
-            return BinaryRequestModuleOptions.Default;
+            return SocketRequestModuleOptions.Default;
         }
-    
-        return section.Get<BinaryRequestModuleOptions>() 
-            ?? BinaryRequestModuleOptions.Default;
+
+        return section.Get<SocketRequestModuleOptions>()
+            ?? SocketRequestModuleOptions.Default;
     }
 }
 
-void ValidateOptions(RaftServerOptions peersOptions)
+void ValidateOptions(RaftServerOptions serverOptions)
 {
     var errors = new List<ValidationResult>();
-    if (!Validator.TryValidateObject(peersOptions, new ValidationContext(peersOptions), errors, true))
+    if (!Validator.TryValidateObject(serverOptions, new ValidationContext(serverOptions), errors, true))
     {
-        throw new Exception($"Найдены ошибки при валидации конфигурации: {string.Join(',', errors.Select(x => x.ErrorMessage))}");
+        throw new Exception(
+            $"Найдены ошибки при валидации конфигурации: {string.Join(',', errors.Select(x => x.ErrorMessage))}");
     }
 }
 
@@ -217,137 +211,265 @@ EndPoint GetEndpoint(string host, int port)
     {
         return new IPEndPoint(ip, port);
     }
-    
+
     return new DnsEndPoint(host, port);
 }
 
-FileStream GetLogFileStream(RaftServerOptions options)
+StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions options)
 {
-    try
+    var dataDirectory = GetDataDirectory(options);
+
+    var fs = new FileSystem();
+    var consensusDirectory = CreateConsensusDirectory();
+
+    var tempDirectory = CreateTemporaryDirectory();
+
+    var fileLogStorage = CreateFileLogStorage();
+    var metadataStorage = CreateMetadataStorage();
+    var snapshotStorage = CreateSnapshotStorage();
+
+    return new StoragePersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage,
+        maxLogFileSize: 1024 /* 1 Кб */);
+
+    DirectoryInfo CreateTemporaryDirectory()
     {
-        return File.Open(options.LogFile, FileMode.OpenOrCreate, FileAccess.ReadWrite);
+        var temporary = new DirectoryInfo(Path.Combine(consensusDirectory.FullName, "temporary"));
+        if (!temporary.Exists)
+        {
+            Log.Information("Директории для временных файлов не найдено. Создаю новую - {Path}", temporary.FullName);
+            try
+            {
+                temporary.Create();
+                return temporary;
+            }
+            catch (Exception e)
+            {
+                Log.Fatal(e, "Ошибка при создании директории для временных файлов в {Path}", temporary.FullName);
+                throw;
+            }
+        }
+
+        return temporary;
     }
-    catch (Exception e)
+
+    DirectoryInfo CreateConsensusDirectory()
     {
-        Log.Fatal(e, "Не удалось получить доступ к файлу лога {Filename}", options.LogFile);
-        throw;
+        var dir = new DirectoryInfo(Path.Combine(dataDirectory, "consensus"));
+        if (!dir.Exists)
+        {
+            Log.Information("Директории для хранения данных не существует. Создаю новую - {Path}",
+                dir.FullName);
+            try
+            {
+                dir.Create();
+            }
+            catch (IOException e)
+            {
+                Log.Fatal(e, "Невозможно создать директорию для данных");
+                throw;
+            }
+        }
+
+        return dir;
+    }
+
+    FileSystemSnapshotStorage CreateSnapshotStorage()
+    {
+        var snapshotFile = new FileInfo(Path.Combine(consensusDirectory.FullName, "raft.snapshot"));
+        if (!snapshotFile.Exists)
+        {
+            Log.Information("Файл снапшота не обнаружен. Создаю новый - {Path}", snapshotFile.FullName);
+            try
+            {
+                // Сразу закроем
+                using var _ = snapshotFile.Create();
+            }
+            catch (Exception e)
+            {
+                Log.Fatal(e, "Ошибка при создании файла снашпота - {Path}", snapshotFile.FullName);
+                throw;
+            }
+        }
+
+        return new FileSystemSnapshotStorage(new FileInfoWrapper(fs, snapshotFile),
+            new DirectoryInfoWrapper(fs, tempDirectory), Log.ForContext("SourceContext", "SnapshotManager"));
+    }
+
+    FileLogStorage CreateFileLogStorage()
+    {
+        try
+        {
+            return FileLogStorage.InitializeFromFileSystem(new DirectoryInfoWrapper(fs, consensusDirectory),
+                new DirectoryInfoWrapper(fs, tempDirectory));
+        }
+        catch (Exception e)
+        {
+            Log.Fatal(e, "Ошибка во время инициализации файла лога");
+            throw;
+        }
+    }
+
+    FileMetadataStorage CreateMetadataStorage()
+    {
+        var metadataFile = new FileInfo(Path.Combine(consensusDirectory.FullName, "raft.metadata"));
+        FileStream fileStream;
+        if (!metadataFile.Exists)
+        {
+            Log.Information("Файла метаданных не обнаружен. Создаю новый - {Path}", metadataFile.FullName);
+            try
+            {
+                fileStream = metadataFile.Create();
+            }
+            catch (Exception e)
+            {
+                Log.Fatal(e, "Не удалось создать новый файл метаданных -  {Path}", metadataFile.FullName);
+                throw;
+            }
+        }
+        else
+        {
+            try
+            {
+                fileStream = metadataFile.Open(FileMode.Open, FileAccess.ReadWrite);
+            }
+            catch (Exception e)
+            {
+                Log.Fatal(e, "Ошибка при открытии файла метаданных");
+                throw;
+            }
+        }
+
+        try
+        {
+            return new FileMetadataStorage(fileStream, new Term(1), null);
+        }
+        catch (InvalidDataException invalidDataException)
+        {
+            Log.Fatal(invalidDataException, "Переданный файл метаданных был в невалидном состоянии");
+            throw;
+        }
+        catch (Exception e)
+        {
+            Log.Fatal(e, "Ошибка во время инициализации файла метаданных");
+            throw;
+        }
+    }
+
+    string GetDataDirectory(RaftServerOptions raftServerOptions)
+    {
+        string workingDirectory;
+        if (!string.IsNullOrWhiteSpace(raftServerOptions.DataDirectory))
+        {
+            workingDirectory = raftServerOptions.DataDirectory;
+            Log.Information("Указана директория данных: {WorkingDirectory}", workingDirectory);
+        }
+        else
+        {
+            Log.Information("Директория данных не указана. Выставляю в рабочую директорию");
+            workingDirectory = Directory.GetCurrentDirectory();
+        }
+
+        if (!Directory.Exists(workingDirectory))
+        {
+            if (File.Exists(workingDirectory))
+            {
+                // Это может быть только в случае, если директория была указана вручную
+                Log.Error("Директория для данных - файл");
+                throw new InvalidDataException(
+                    $"Указанная директория для данных - файл. Указанная директория: {workingDirectory}");
+            }
+
+            Log.Error("Указанная директория для данных не существует");
+            throw new InvalidDataException(
+                $"Указанная директория для данных не существует. Директория данных - {workingDirectory}");
+        }
+
+        try
+        {
+            using var _ = File.Create(Path.Combine(workingDirectory, Path.GetRandomFileName()), 1,
+                FileOptions.DeleteOnClose);
+        }
+        catch (UnauthorizedAccessException access)
+        {
+            Log.Error(access, "Для указанной директории отстутствуют права на запись");
+            throw;
+        }
+        catch (Exception e)
+        {
+            Log.Error(e, "В рабочей директории невозможно создать файл");
+            throw;
+        }
+
+        return workingDirectory;
     }
 }
 
-( ILogStorage, FileLogStorage ) CreateLogStorage(Stream stream)
-{
-    stream = new BufferedStream(stream);
-    FileLogStorage fileStorage;
-    try
-    {
-        fileStorage = FileLogStorage.Initialize(stream);
-    }
-    catch (InvalidDataException invalidDataException)
-    {
-        Log.Fatal(invalidDataException, "Ошибка при инициализации лога из переданного файла");
-        throw;
-    }
-    catch (Exception e)
-    {
-        Log.Fatal(e, "Неизвестная ошибка при инициализации лога");
-        throw;
-    }
-
-    ILogStorage logStorage = new ExclusiveAccessLogStorageDecorator(fileStorage);
-    logStorage = new LastLogEntryCachingFileLogStorageDecorator(logStorage);
-    return ( logStorage, fileStorage );
-}
-
-FileStream OpenMetadataFile(RaftServerOptions options)
-{
-    try
-    {
-        return File.Open(options.MetadataFile, FileMode.OpenOrCreate);
-    }
-    catch (Exception e)
-    {
-        Log.Fatal(e, "Ошибка во время доступа к файлу с метаданными по пути: {File}", options.MetadataFile);
-        throw;
-    }
-}
-
-( IMetadataStorage, FileMetadataStorage ) CreateMetadataStorage(Stream stream)
-{
-    stream = new BufferedStream(stream);
-    FileMetadataStorage fileStorage;
-    try
-    {
-        fileStorage = FileMetadataStorage.Initialize(stream, new Term(1), null);
-    }
-    catch (InvalidDataException invalidDataException)
-    {
-        Log.Fatal(invalidDataException, "Переданный файл метаданных был в невалидном состоянии");
-        throw;
-    }
-    catch (Exception e)
-    {
-        Log.Fatal(e, "Ошибка во время инициализации файла метаданных");
-        throw;
-    }
-    
-    IMetadataStorage storage = new CachingFileMetadataStorageDecorator(fileStorage);
-    storage = new ExclusiveAccessMetadataStorageDecorator(storage);
-    
-    return ( storage, fileStorage );
-}
-
-IStateMachine<Command, Result> CreateJobQueueStateMachine(ICommandContext context)
-{
-    Log.Information("Создаю пустую очередь задач в памяти");
-    return new ProxyJobQueueStateMachine(context);
-}
-
-INode CreateNode(IApplicationInfo applicationInfo)
-{
-    var defaultJobQueue = new UnboundedJobQueue(applicationInfo.DefaultQueueName, new StandardLibraryPriorityQueue<long, byte[]>());
-    var jobQueueManager = new SimpleJobQueueManager(defaultJobQueue);
-    return new SingleJobQueueNode(jobQueueManager);
-}
-
-RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId, IPeer[] peers, ITimer randomizedTimer, ITimer systemTimersTimer, ILog storageLog, ICommandQueue channelCommandQueue, IStateMachine<Command, Result> stateMachine, IMetadataStorage metadataStorage)
+RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
+                                                               IPeer[] peers,
+                                                               StoragePersistenceFacade storage,
+                                                               IApplication<Command, Result> application,
+                                                               TaskFluxApplicationFactory applicationFactory)
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
-    var logger = Log.ForContext("SourceContext", "Raft");
-    var commandSerializer = new ProxyCommandSerializer();
-    var requestQueueFactory = new ChannelRequestQueueFactory(storageLog);
+    var logger = Log.Logger.ForContext("SourceContext", "Raft");
+    var commandSerializer = new ProxyCommandCommandSerializer();
     var peerGroup = new PeerGroup(peers);
-    
-    return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, randomizedTimer, systemTimersTimer, jobQueue, storageLog, channelCommandQueue, stateMachine, metadataStorage, commandSerializer, requestQueueFactory);
+    var timerFactory =
+        new ThreadingTimerFactory(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300),
+            heartbeatTimeout: TimeSpan.FromMilliseconds(100));
+
+    // TODO: ручной запуск таймера
+    return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, timerFactory,
+        jobQueue, storage, application, applicationFactory,
+        commandSerializer);
 }
 
-void RestoreState(StorageLog storageLog, FileLogStorage fileLogStorage, ICommandContext context)
+IApplication<Command, Result> RestoreApplication(StoragePersistenceFacade facade, TaskFluxApplicationFactory factory)
 {
-    if (fileLogStorage.Count == 0)
+    // 1. Восстановить данные из снапшота, если есть, иначе инициализировать пустым
+    // 2. Применить команды из лога
+    IApplication<Command, Result> application;
+    if (facade.TryGetSnapshot(out var snapshot))
     {
-        Log.Information("Пропускаю восстановление из лога: лог пуст");
-        return;
+        Log.Information("Обнаружен существующий файл снашпота. Восстанавливаю состояние");
+        try
+        {
+            application = factory.Restore(snapshot);
+        }
+        catch (Exception e)
+        {
+            Log.Fatal(e, "Ошибка во время восстановления состояния из снапшота");
+            throw;
+        }
     }
-    
+    else
+    {
+        application = factory.CreateEmpty();
+    }
+
     try
     {
         Log.Information("Восстанавливаю предыдущее состояние из лога");
-        
-        var notApplied = storageLog.GetNotApplied();
-        
-        foreach (var (_, payload) in notApplied)
+
+        var notApplied = facade.GetNotApplied();
+        if (notApplied.Count > 0)
         {
-            var command = CommandSerializer.Instance.Deserialize(payload);
-            command.Apply(context);
+            foreach (var (_, payload) in notApplied)
+            {
+                var command = CommandSerializer.Instance.Deserialize(payload);
+                application.ApplyNoResponse(command);
+            }
+
+            Log.Debug("Состояние восстановлено. Применено {Count} записей", notApplied.Count);
         }
-        
-        Log.Debug("Состояние восстановлено. Применено {Count} записей", fileLogStorage.Count);
     }
     catch (Exception e)
     {
-        Log.Fatal(e, "Ошибка во время восстановления лога");
-        Log.CloseAndFlush();
+        Log.Error(e, "Ошибка во время восстановления лога");
         throw;
     }
+
+    return application;
 }
 
 ApplicationInfo CreateApplicationInfo()
@@ -357,7 +479,7 @@ ApplicationInfo CreateApplicationInfo()
 
 ClusterInfo CreateClusterInfo(RaftServerOptions options)
 {
-    return new ClusterInfo(new NodeId( options.NodeId ), options.Peers.Length);
+    return new ClusterInfo(new NodeId(options.NodeId), options.Peers.Length);
 }
 
 NodeInfo CreateNodeInfo(RaftServerOptions options)

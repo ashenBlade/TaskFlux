@@ -8,9 +8,11 @@ using TaskFlux.Commands.Ok;
 
 namespace TaskFlux.Commands.Serialization.Tests;
 
-public class ResultEqualityComparer: IEqualityComparer<Result>
+// ReSharper disable UnusedParameter.Local
+public class ResultEqualityComparer : IEqualityComparer<Result>
 {
     public static readonly ResultEqualityComparer Instance = new();
+
     public bool Equals(Result? x, Result? y)
     {
         return Check(( dynamic ) x!, ( dynamic ) y!);
@@ -18,6 +20,7 @@ public class ResultEqualityComparer: IEqualityComparer<Result>
 
     private static bool Check(CountResult first, CountResult second) => first.Count == second.Count;
     private static bool Check(EnqueueResult first, EnqueueResult second) => first.Success == second.Success;
+
     private static bool Check(DequeueResult first, DequeueResult second)
     {
         var firstOk = first.TryGetResult(out var k1, out var p1);
@@ -31,8 +34,7 @@ public class ResultEqualityComparer: IEqualityComparer<Result>
     }
 
     private static bool Check(ErrorResult first, ErrorResult second) =>
-        first.ErrorType == second.ErrorType && 
-        first.Message == second.Message;
+        first.ErrorType == second.ErrorType && first.Message == second.Message;
 
     private static bool Check(OkResult first, OkResult second) => true;
 
@@ -42,6 +44,7 @@ public class ResultEqualityComparer: IEqualityComparer<Result>
     private class JobQueueMetadataEqualityComparer : IEqualityComparer<IJobQueueMetadata>
     {
         public static JobQueueMetadataEqualityComparer Instance = new();
+
         public bool Equals(IJobQueueMetadata? x, IJobQueueMetadata? y)
         {
             if (x is null || y is null)
@@ -49,9 +52,7 @@ public class ResultEqualityComparer: IEqualityComparer<Result>
                 return y is null && x is null;
             }
 
-            return x.Count == y.Count && 
-                   x.QueueName == y.QueueName && 
-                   x.MaxSize == y.MaxSize;
+            return x.Count == y.Count && x.QueueName == y.QueueName && x.MaxSize == y.MaxSize;
         }
 
         public int GetHashCode(IJobQueueMetadata obj)

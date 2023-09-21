@@ -1,9 +1,9 @@
-using TaskFlux.Commands;
+using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 
 namespace TaskFlux.Host.Infrastructure;
 
-public class CommandContext: ICommandContext
+public class CommandContext : ICommandContext
 {
     public CommandContext(INode node, INodeInfo nodeInfo, IApplicationInfo applicationInfo, IClusterInfo clusterInfo)
     {
@@ -14,6 +14,7 @@ public class CommandContext: ICommandContext
     }
 
     public INode Node { get; }
+
     public INodeInfo NodeInfo { get; }
     public IApplicationInfo ApplicationInfo { get; }
     public IClusterInfo ClusterInfo { get; }
