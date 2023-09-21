@@ -198,11 +198,12 @@ public class LeaderStateTests
 
         var peerTerm = term.Increment();
 
-        var peer = new Mock<IPeer>();
+        var peer = CreateDefaultPeer();
         peer.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
              // Первый вызов для Heartbeat
             .ReturnsAsync(new AppendEntriesResponse(peerTerm, false)); // Второй для нас
-
+        peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
+            .Returns(new AppendEntriesResponse(peerTerm, false));
         using var node = CreateLeaderNode(term, null,
             heartbeatTimer: heartbeatTimer.Object,
             peers: new[] {peer.Object});
@@ -227,14 +228,14 @@ public class LeaderStateTests
         // В логе изначально было 4 записи
         var existingFileEntries = new[] {IntDataEntry(1), IntDataEntry(1), IntDataEntry(2), IntDataEntry(3),};
 
-        var peer = new Mock<IPeer>();
+        var peer = CreateDefaultPeer();
 
         // Достигнуто ли начало лога
         var beginReached = false;
         var sentEntries = Array.Empty<LogEntry>();
         peer.Setup(x =>
-                 x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((AppendEntriesRequest request, CancellationToken _) =>
+                 x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
+            .Returns((AppendEntriesRequest request) =>
              {
                  // Откатываемся до момента начала лога (полностью пуст)
                  if (request.PrevLogEntryInfo.IsTomb)
@@ -287,15 +288,15 @@ public class LeaderStateTests
                           .Skip(storedEntriesIndex + 1)
                           .ToArray();
 
-        var peer = new Mock<IPeer>();
+        var peer = CreateDefaultPeer();
 
         // Достигнуто ли начало лога
         var beginReached = false;
         // Отправленные записи при достижении
         var sentEntries = Array.Empty<LogEntry>();
         peer.Setup(x =>
-                 x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((AppendEntriesRequest request, CancellationToken _) =>
+                 x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
+            .Returns((AppendEntriesRequest request) =>
              {
                  // Откатываемся до момента начала лога (полностью пуст)
                  if (request.PrevLogEntryInfo.Index == storedEntriesIndex)
@@ -429,9 +430,12 @@ public class LeaderStateTests
         var machine = new Mock<IApplication>();
         var command = 1;
         var expectedResponse = 123;
-        var peer = new Mock<IPeer>();
+        var peer = CreateDefaultPeer();
         peer.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AppendEntriesResponse(term, true))
+            .Verifiable();
+        peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
+            .Returns(new AppendEntriesResponse(term, true))
             .Verifiable();
         var request = CreateSubmitRequest(command);
         machine.Setup(x => x.Apply(It.Is<int>(y => y == command)))
@@ -450,6 +454,14 @@ public class LeaderStateTests
         machine.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }
 
+    private static Mock<IPeer> CreateDefaultPeer()
+    {
+        return new Mock<IPeer>(MockBehavior.Strict).Apply(m =>
+        {
+            m.SetupGet(x => x.Id).Returns(AnotherNodeId);
+        });
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
@@ -459,10 +471,15 @@ public class LeaderStateTests
     {
         var term = new Term(1);
         var peers = Enumerable.Range(0, peersCount)
-                              .Select((_, _) => new Mock<IPeer>().Apply(m =>
-                                   m.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(),
-                                         It.IsAny<CancellationToken>()))
-                                    .ReturnsAsync(AppendEntriesResponse.Ok(term))))
+                              .Select((_, _) => CreateDefaultPeer()
+                                  .Apply(m =>
+                                   {
+                                       m.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(),
+                                             It.IsAny<CancellationToken>()))
+                                        .ReturnsAsync(AppendEntriesResponse.Ok(term));
+                                       m.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
+                                        .Returns(AppendEntriesResponse.Ok(term));
+                                   }))
                               .ToArray(peersCount);
 
         using var node = CreateLeaderNode(term, null, peers: peers.Select(x => x.Object));
@@ -478,11 +495,12 @@ public class LeaderStateTests
     public void SubmitRequest__КогдаУзелОтветилБольшимТермомВоВремяРепликации__ДолженВернутьНеЛидер()
     {
         var term = new Term(1);
-        var peer = new Mock<IPeer>();
+        var peer = CreateDefaultPeer();
         var greaterTerm = term.Increment();
         peer.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AppendEntriesResponse(greaterTerm, false));
-
+        peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
+            .Returns(new AppendEntriesResponse(greaterTerm, false));
         using var node = CreateLeaderNode(term, null, peers: new[] {peer.Object});
         var request = new SubmitRequest<int>(new CommandDescriptor<int>(123, false));
         var response = node.Handle(request);
