@@ -15,7 +15,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		docs\raft.md = docs\raft.md
 		docs\commands.md = docs\commands.md
 		docs\func-spec.md = docs\func-spec.md
-		docs\network-protocol.md = docs\network-protocol.md
+		docs\inter-node-network-protocol.md = docs\inter-node-network-protocol.md
+		docs\client-network-protocol.md = docs\client-network-protocol.md
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.Peer.Tests", "tests\Consensus.Peer.Tests\Consensus.Peer.Tests.csproj", "{26303C4D-3C0A-4291-82E5-3053131A65BA}"
