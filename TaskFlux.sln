@@ -32,7 +32,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobQueue.PriorityQueue.Stan
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.Storage.Tests", "tests\Consensus.Storage.Tests\Consensus.Storage.Tests.csproj", "{941E314A-2594-4A74-AE65-1087557993B5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Network.Requests.Serialization.Tests", "tests\TaskFlux.Network.Requests.Serialization.Tests\TaskFlux.Network.Requests.Serialization.Tests.csproj", "{6F5F0BAF-21B7-4654-BEFC-287844026066}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Network.Packets.Serialization.Tests", "tests\TaskFlux.Network.Packets.Serialization.Tests\TaskFlux.Network.Packets.Serialization.Tests.csproj", "{6F5F0BAF-21B7-4654-BEFC-287844026066}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Consensus", "Consensus", "{E70808CD-66D3-4223-9CCB-9F9B90010FA5}"
 EndProject
@@ -58,13 +58,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Host.Modules.Socke
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Core", "src\TaskFlux.Core\TaskFlux.Core.csproj", "{1E7B4B12-FD7C-496A-B904-B61A3F4A4A22}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Network.Requests", "src\TaskFlux.Network.Requests\TaskFlux.Network.Requests.csproj", "{6EBC831F-B51C-43F8-937D-62B0F157BFBA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Network.Packets", "src\TaskFlux.Network.Packets\TaskFlux.Network.Packets.csproj", "{6EBC831F-B51C-43F8-937D-62B0F157BFBA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Network.Requests.Serialization", "src\TaskFlux.Network.Requests.Serialization\TaskFlux.Network.Requests.Serialization.csproj", "{3FB5407A-D049-4445-A8F8-1092EA119DF2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Network.Packets.Serialization", "src\TaskFlux.Network.Packets.Serialization\TaskFlux.Network.Packets.Serialization.csproj", "{3FB5407A-D049-4445-A8F8-1092EA119DF2}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Node", "src\TaskFlux.Node\TaskFlux.Node.csproj", "{8DB75B52-3694-4565-9180-8E4A45699419}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Network.Client", "src\TaskFlux.Network.Client\TaskFlux.Network.Client.csproj", "{D6C9106C-2485-46DA-9148-C9891B1C6C94}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Commands", "src\TaskFlux.Commands\TaskFlux.Commands.csproj", "{B641FBCA-9307-4A9E-9D6B-94D49A8CC360}"
 EndProject
@@ -73,8 +71,6 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Serialization.Helpers", "src\TaskFlux.Serialization.Helpers\TaskFlux.Serialization.Helpers.csproj", "{DF354CDA-04AA-4EC0-9FE6-46D548CE7F36}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Commands.Serialization.Tests", "tests\TaskFlux.Commands.Serialization.Tests\TaskFlux.Commands.Serialization.Tests.csproj", "{5673D018-4282-41C0-991F-0B64AFA6AD38}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Network.Client.Frontend", "src\TaskFlux.Network.Client.Frontend\TaskFlux.Network.Client.Frontend.csproj", "{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "JobQueue.PriorityQueue", "JobQueue.PriorityQueue", "{E5A22E40-1822-4AA9-9276-6853212EF2B1}"
 EndProject
@@ -350,18 +346,6 @@ Global
 		{8DB75B52-3694-4565-9180-8E4A45699419}.Release|x64.Build.0 = Release|Any CPU
 		{8DB75B52-3694-4565-9180-8E4A45699419}.Release|x86.ActiveCfg = Release|Any CPU
 		{8DB75B52-3694-4565-9180-8E4A45699419}.Release|x86.Build.0 = Release|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Debug|x64.Build.0 = Debug|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Debug|x86.Build.0 = Debug|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Release|x64.ActiveCfg = Release|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Release|x64.Build.0 = Release|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Release|x86.ActiveCfg = Release|Any CPU
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94}.Release|x86.Build.0 = Release|Any CPU
 		{B641FBCA-9307-4A9E-9D6B-94D49A8CC360}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{B641FBCA-9307-4A9E-9D6B-94D49A8CC360}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B641FBCA-9307-4A9E-9D6B-94D49A8CC360}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -410,18 +394,6 @@ Global
 		{5673D018-4282-41C0-991F-0B64AFA6AD38}.Release|x64.Build.0 = Release|Any CPU
 		{5673D018-4282-41C0-991F-0B64AFA6AD38}.Release|x86.ActiveCfg = Release|Any CPU
 		{5673D018-4282-41C0-991F-0B64AFA6AD38}.Release|x86.Build.0 = Release|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|x64.Build.0 = Debug|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Debug|x86.Build.0 = Debug|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|Any CPU.Build.0 = Release|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|x64.ActiveCfg = Release|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|x64.Build.0 = Release|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|x86.ActiveCfg = Release|Any CPU
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9}.Release|x86.Build.0 = Release|Any CPU
 		{DCD4AC5E-775B-46F7-B5DA-E2BD72868A18}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{DCD4AC5E-775B-46F7-B5DA-E2BD72868A18}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DCD4AC5E-775B-46F7-B5DA-E2BD72868A18}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -580,12 +552,10 @@ Global
 		{6EBC831F-B51C-43F8-937D-62B0F157BFBA} = {956F79F9-E3EA-4896-9465-D0A066810939}
 		{3FB5407A-D049-4445-A8F8-1092EA119DF2} = {956F79F9-E3EA-4896-9465-D0A066810939}
 		{8DB75B52-3694-4565-9180-8E4A45699419} = {956F79F9-E3EA-4896-9465-D0A066810939}
-		{D6C9106C-2485-46DA-9148-C9891B1C6C94} = {956F79F9-E3EA-4896-9465-D0A066810939}
 		{B641FBCA-9307-4A9E-9D6B-94D49A8CC360} = {956F79F9-E3EA-4896-9465-D0A066810939}
 		{C67A08FC-0A70-404B-96EA-2CFFDA8BCAB4} = {956F79F9-E3EA-4896-9465-D0A066810939}
 		{DF354CDA-04AA-4EC0-9FE6-46D548CE7F36} = {956F79F9-E3EA-4896-9465-D0A066810939}
 		{5673D018-4282-41C0-991F-0B64AFA6AD38} = {750A408B-D4A3-45F8-8D6D-C172679EFF32}
-		{4BEF5DB6-BD26-49E0-92A2-8246B9A6CBD9} = {956F79F9-E3EA-4896-9465-D0A066810939}
 		{E5A22E40-1822-4AA9-9276-6853212EF2B1} = {9B36E68C-007A-4911-B6CC-131989BC02AB}
 		{DCD4AC5E-775B-46F7-B5DA-E2BD72868A18} = {E5A22E40-1822-4AA9-9276-6853212EF2B1}
 		{E25893DB-1565-48A4-B783-D744970F7906} = {E5A22E40-1822-4AA9-9276-6853212EF2B1}

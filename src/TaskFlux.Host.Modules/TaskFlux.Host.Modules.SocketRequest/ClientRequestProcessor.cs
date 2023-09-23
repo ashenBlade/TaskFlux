@@ -10,10 +10,10 @@ using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Serialization;
 using TaskFlux.Core;
 using TaskFlux.Host.Modules.SocketRequest.Exceptions;
-using TaskFlux.Network.Requests;
-using TaskFlux.Network.Requests.Authorization;
-using TaskFlux.Network.Requests.Packets;
-using TaskFlux.Network.Requests.Serialization;
+using TaskFlux.Network.Packets;
+using TaskFlux.Network.Packets.Authorization;
+using TaskFlux.Network.Packets.Packets;
+using TaskFlux.Network.Packets.Serialization;
 
 namespace TaskFlux.Host.Modules.SocketRequest;
 

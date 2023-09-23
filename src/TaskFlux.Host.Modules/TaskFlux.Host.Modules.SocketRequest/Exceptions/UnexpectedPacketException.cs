@@ -1,4 +1,4 @@
-using TaskFlux.Network.Requests;
+using TaskFlux.Network.Packets;
 
 namespace TaskFlux.Host.Modules.SocketRequest.Exceptions;
 
