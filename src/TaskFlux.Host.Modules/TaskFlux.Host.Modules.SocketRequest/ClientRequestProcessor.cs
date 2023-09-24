@@ -450,14 +450,13 @@ internal class ClientRequestProcessor
 
         public ValueTask VisitAsync(ClusterMetadataResponsePacket packet, CancellationToken token = default)
         {
-            ShouldClose = true;
-            return ValueTask.CompletedTask;
+            throw new NotImplementedException();
         }
 
         public ValueTask VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token = default)
         {
-            ShouldClose = true;
-            return ValueTask.CompletedTask;
+            // TODO: 
+            throw new NotImplementedException();
         }
     }
 }

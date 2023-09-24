@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -23,12 +22,12 @@ public class TaskFluxClientFactory : ITaskFluxClientFactory
     /// Конечные точки узлов кластера.
     /// Индекс указывает на Id узла
     /// </summary>
-    internal readonly EndPoint[] Endpoints;
+    private readonly EndPoint[] Endpoints;
 
     /// <summary>
     /// Id текущего известного лидера кластера
     /// </summary>
-    internal int? LeaderId = null;
+    internal int? LeaderId;
 
     /// <summary>
     /// Создать новую фабрику клиентов с предустановленными адресами узлов кластера
@@ -37,6 +36,12 @@ public class TaskFluxClientFactory : ITaskFluxClientFactory
     public TaskFluxClientFactory(EndPoint[] endpoints)
     {
         Endpoints = endpoints;
+    }
+
+    private TaskFluxClientFactory(EndPoint[] endpoints, int? leaderId)
+    {
+        Endpoints = endpoints;
+        LeaderId = leaderId;
     }
 
     public async Task<ITaskFluxClient> CreateClientAsync(CancellationToken token = default)
@@ -213,21 +218,19 @@ public class TaskFluxClientFactory : ITaskFluxClientFactory
                 {
                     case PacketType.AuthorizationResponse:
                         break;
-
                     case PacketType.ErrorResponse:
-                        // Если возникла ошибка на сервере, то сделаем запрос на другой
                         continue;
-
                     case PacketType.CommandRequest:
                     case PacketType.CommandResponse:
                     case PacketType.NotLeader:
                     case PacketType.AuthorizationRequest:
                     case PacketType.BootstrapRequest:
                     case PacketType.BootstrapResponse:
-                        throw new UnexpectedResponseException(response.Type, PacketType.AuthorizationResponse);
                     default:
-                        Debug.Assert(false, $"Получен неожиданный пакет: {response.Type}. Пакет {response}");
-                        throw new ArgumentOutOfRangeException();
+                        Debug.Assert(false, $"Получен неожиданный пакет во время авторизации",
+                            "Получен {0} пакет. Ожидался {1}. Тело: {2}", response.Type,
+                            PacketType.AuthorizationResponse, response);
+                        throw new UnexpectedResponseException(response.Type, PacketType.AuthorizationResponse);
                 }
 
                 var authorizationResponse = ( AuthorizationResponsePacket ) response;
@@ -254,11 +257,11 @@ public class TaskFluxClientFactory : ITaskFluxClientFactory
                     case PacketType.AuthorizationRequest:
                     case PacketType.AuthorizationResponse:
                     case PacketType.BootstrapRequest:
-                        throw new UnexpectedResponseException(response.Type, PacketType.BootstrapResponse);
                     default:
-                        Debug.Assert(false, $"Получен неизвестный тип ");
-                        throw new InvalidEnumArgumentException(nameof(response.Type), ( int ) response.Type,
-                            typeof(PacketType));
+                        Debug.Assert(false, $"Получен неожиданный пакет данных во время настройки",
+                            "Получен {0} пакет. Ожидался {1}. Тело: {2}", response.Type, PacketType.BootstrapResponse,
+                            response);
+                        throw new UnexpectedResponseException(response.Type, PacketType.BootstrapResponse);
                 }
 
                 var bootstrapResponse = ( BootstrapResponsePacket ) response;
@@ -266,7 +269,39 @@ public class TaskFluxClientFactory : ITaskFluxClientFactory
                 {
                     throw new BootstrapException(bootstrapResponse.Reason);
                 }
-                // TODO: получить метаданные кластера и вернуть созданную фабрику
+
+                // 3. Получаем метаданные
+                await client.SendAsync(new ClusterMetadataRequestPacket(), token);
+                response = await client.ReceiveAsync(token);
+
+                switch (response.Type)
+                {
+                    case PacketType.ClusterMetadataResponse:
+                        break;
+                    case PacketType.ErrorResponse:
+                        continue;
+
+                    case PacketType.CommandRequest:
+                    case PacketType.CommandResponse:
+                    case PacketType.NotLeader:
+                    case PacketType.AuthorizationRequest:
+                    case PacketType.AuthorizationResponse:
+                    case PacketType.BootstrapRequest:
+                    case PacketType.BootstrapResponse:
+                    case PacketType.ClusterMetadataRequest:
+                    default:
+                        Debug.Assert(false,
+                            "От сервера получен неожиданный пакет во время получения метаданных кластера",
+                            "От сервера получен {0} пакет. Ожидался {1}. Тело: {2}", response.Type,
+                            PacketType.ClusterMetadataResponse, response);
+                        throw new UnexpectedResponseException(response.Type, PacketType.ClusterMetadataResponse);
+                }
+
+                var clusterMetadataResponse = ( ClusterMetadataResponsePacket ) response;
+                var factory =
+                    new TaskFluxClientFactory(clusterMetadataResponse.EndPoints, clusterMetadataResponse.LeaderId);
+                socket.Close();
+                return factory;
             }
             catch (Exception)
             {
