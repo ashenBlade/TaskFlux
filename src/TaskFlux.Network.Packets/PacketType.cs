@@ -13,4 +13,7 @@ public enum PacketType : byte
 
     BootstrapRequest = ( byte ) 'B',
     BootstrapResponse = ( byte ) 'b',
+
+    ClusterMetadataRequest = ( byte ) 'M',
+    ClusterMetadataResponse = ( byte ) 'm',
 }

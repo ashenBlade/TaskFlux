@@ -3,7 +3,7 @@ namespace TaskFlux.Network.Packets.Serialization.Exceptions;
 /// <summary>
 /// Класс исключения при ошибке десериализации сетевого пакета
 /// </summary>
-public class PacketDeserializationException : ApplicationException
+public class PacketDeserializationException : Exception
 {
     public PacketType PacketType { get; }
 

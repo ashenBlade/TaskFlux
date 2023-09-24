@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
 using TaskFlux.Network.Packets.Authorization;
@@ -9,13 +10,13 @@ using TaskFlux.Serialization.Helpers;
 
 namespace TaskFlux.Network.Packets.Serialization;
 
-public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
+public class TaskFluxPacketClient : IAsyncPacketVisitor
 {
     private const int ByteFalse = 0;
     private Stream Stream { get; }
     private ArrayPool<byte> Pool { get; }
 
-    public PoolingNetworkPacketSerializer(ArrayPool<byte> pool, Stream stream)
+    public TaskFluxPacketClient(ArrayPool<byte> pool, Stream stream)
     {
         Stream = stream;
         Pool = pool;
@@ -29,21 +30,89 @@ public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
     /// <exception cref="OperationCanceledException"> <paramref name="token"/> был отменен</exception>
     /// <exception cref="EndOfStreamException"> - был достигнут конец потока</exception>
     /// <exception cref="PacketDeserializationException"> ошибка при десериализации конкретного пакета</exception>
-    public async Task<Packet> DeserializeAsync(CancellationToken token = default)
+    /// <exception cref="UnknownPacketException">От сервера получен неожиданный маркер пакета</exception>
+    public async Task<Packet> ReceiveAsync(CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
         var marker = await GetPacketTypeAsync(token);
-        return marker switch
-               {
-                   PacketType.CommandRequest        => await DeserializeDataRequest(token),
-                   PacketType.CommandResponse       => await DeserializeDataResponse(token),
-                   PacketType.ErrorResponse         => await DeserializeErrorResponse(token),
-                   PacketType.NotLeader             => await DeserializeNotLeaderResponse(token),
-                   PacketType.AuthorizationRequest  => await DeserializeAuthorizationRequest(token),
-                   PacketType.AuthorizationResponse => await DeserializeAuthorizationResponse(token),
-                   PacketType.BootstrapRequest      => await DeserializeBootstrapRequest(token),
-                   PacketType.BootstrapResponse     => await DeserializeBootstrapResponse(token),
-               };
+        try
+        {
+            return marker switch
+                   {
+                       PacketType.CommandRequest          => await DeserializeDataRequest(token),
+                       PacketType.CommandResponse         => await DeserializeDataResponse(token),
+                       PacketType.ErrorResponse           => await DeserializeErrorResponse(token),
+                       PacketType.NotLeader               => await DeserializeNotLeaderResponse(token),
+                       PacketType.AuthorizationRequest    => await DeserializeAuthorizationRequest(token),
+                       PacketType.AuthorizationResponse   => await DeserializeAuthorizationResponse(token),
+                       PacketType.BootstrapRequest        => await DeserializeBootstrapRequest(token),
+                       PacketType.BootstrapResponse       => await DeserializeBootstrapResponse(token),
+                       PacketType.ClusterMetadataRequest  => await DeserializeClusterMetadataRequest(token),
+                       PacketType.ClusterMetadataResponse => await DeserializeClusterMetadataResponse(token),
+                   };
+        }
+        catch (SwitchExpressionException)
+        {
+            throw new UnknownPacketException(( byte ) marker);
+        }
+    }
+
+    private async Task<ClusterMetadataResponsePacket> DeserializeClusterMetadataResponse(CancellationToken token)
+    {
+        var endpointsCount = await ReadInt32(token);
+        var endpoints = new EndPoint[endpointsCount];
+        for (int i = 0; i < endpointsCount; i++)
+        {
+            var endpointString = await ReadString(PacketType.ClusterMetadataResponse, token);
+            endpoints[i] = ParseEndPoint(endpointString);
+        }
+
+        int? leaderId = await ReadInt32(token);
+        if (leaderId == -1)
+        {
+            leaderId = null;
+        }
+
+        var respondingId = await ReadInt32(token);
+        return new ClusterMetadataResponsePacket(endpoints, leaderId, respondingId);
+    }
+
+    public static EndPoint ParseEndPoint(string address)
+    {
+        if (IPEndPoint.TryParse(address, out var ipEndPoint))
+        {
+            return ipEndPoint;
+        }
+
+        var semicolonIndex = address.IndexOf(':');
+        int port;
+        string host;
+        if (semicolonIndex == -1)
+        {
+            port = 0;
+            host = address;
+        }
+        else if (int.TryParse(address.AsSpan(semicolonIndex + 1), out port))
+        {
+            host = address[..semicolonIndex];
+        }
+        else
+        {
+            throw new ArgumentException($"Не удалось спарсить адрес порта в адресе {address}");
+        }
+
+        if (Uri.CheckHostName(host) != UriHostNameType.Dns)
+        {
+            throw new ArgumentException(
+                $"В переданной строке адреса указана невалидный DNS хост. Полный адрес: {address}. Хост: {host}");
+        }
+
+        return new DnsEndPoint(host, port);
+    }
+
+    private async Task<ClusterMetadataRequestPacket> DeserializeClusterMetadataRequest(CancellationToken token)
+    {
+        return new ClusterMetadataRequestPacket();
     }
 
     private async Task<BootstrapResponsePacket> DeserializeBootstrapResponse(CancellationToken token)
@@ -66,7 +135,7 @@ public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
         return new BootstrapRequestPacket(major, minor, patch);
     }
 
-    public Task SerializeAsync(Packet packet, CancellationToken token = default)
+    public Task SendAsync(Packet packet, CancellationToken token = default)
     {
         return packet.AcceptAsync(this, token).AsTask();
     }
@@ -309,7 +378,7 @@ public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
         }
     }
 
-    public async ValueTask VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
+    async ValueTask IAsyncPacketVisitor.VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
         var estimatedSize = sizeof(PacketType)
@@ -330,7 +399,7 @@ public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
         }
     }
 
-    public async ValueTask VisitAsync(CommandResponsePacket packet, CancellationToken token = default)
+    async ValueTask IAsyncPacketVisitor.VisitAsync(CommandResponsePacket packet, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         var estimatedSize = sizeof(PacketType)
@@ -351,7 +420,7 @@ public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
         }
     }
 
-    public async ValueTask VisitAsync(ErrorResponsePacket packet, CancellationToken token = default)
+    async ValueTask IAsyncPacketVisitor.VisitAsync(ErrorResponsePacket packet, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
         var estimatedSize = sizeof(PacketType)
@@ -372,7 +441,7 @@ public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
         }
     }
 
-    public async ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default)
+    async ValueTask IAsyncPacketVisitor.VisitAsync(NotLeaderPacket packet, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         const int estimatedSize = sizeof(PacketType)
@@ -392,7 +461,7 @@ public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
         }
     }
 
-    public async ValueTask VisitAsync(AuthorizationRequestPacket packet, CancellationToken token = default)
+    async ValueTask IAsyncPacketVisitor.VisitAsync(AuthorizationRequestPacket packet, CancellationToken token)
     {
         const int baseSize = sizeof(PacketType);
         using var visitor = new PayloadSerializerAuthorizationMethodVisitor(Pool);
@@ -455,7 +524,7 @@ public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
         }
     }
 
-    public async ValueTask VisitAsync(AuthorizationResponsePacket packet, CancellationToken token = default)
+    async ValueTask IAsyncPacketVisitor.VisitAsync(AuthorizationResponsePacket packet, CancellationToken token)
     {
         if (packet.TryGetError(out var error))
         {
@@ -498,7 +567,7 @@ public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
         }
     }
 
-    public async ValueTask VisitAsync(BootstrapResponsePacket packet, CancellationToken token = default)
+    async ValueTask IAsyncPacketVisitor.VisitAsync(BootstrapResponsePacket packet, CancellationToken token)
     {
         if (packet.TryGetError(out var message))
         {
@@ -541,7 +610,7 @@ public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
         }
     }
 
-    public async ValueTask VisitAsync(BootstrapRequestPacket packet, CancellationToken token = default)
+    async ValueTask IAsyncPacketVisitor.VisitAsync(BootstrapRequestPacket packet, CancellationToken token)
     {
         const int length = sizeof(PacketType)
                          + sizeof(int)
@@ -561,6 +630,75 @@ public class PoolingNetworkPacketSerializer : IAsyncPacketVisitor
         finally
         {
             Pool.Return(buffer);
+        }
+    }
+
+    async ValueTask IAsyncPacketVisitor.VisitAsync(ClusterMetadataResponsePacket packet, CancellationToken token)
+    {
+        var endPoints = Array.ConvertAll(packet.EndPoints, SerializeEndpoint);
+        var size = sizeof(PacketType)
+                 + sizeof(int) // Длина массива
+                 + ( sizeof(int) * endPoints.Length
+                   + endPoints.Sum(static e => Encoding.UTF8.GetByteCount(e)) ) // Сами строки
+                 + sizeof(int)                                                  // Id лидера
+                 + sizeof(int)                                                  // Id текущего узла
+            ;
+        var array = Pool.Rent(size);
+        try
+        {
+            var memory = array.AsMemory(0, size);
+            var writer = new MemoryBinaryWriter(memory);
+            writer.Write(( byte ) PacketType.ClusterMetadataResponse);
+            writer.Write(endPoints.Length);
+            for (var i = 0; i < endPoints.Length; i++)
+            {
+                writer.Write(endPoints[i]);
+            }
+
+            if (packet.LeaderId is { } leaderId)
+            {
+                writer.Write(leaderId);
+            }
+            else
+            {
+                writer.Write(-1); // В дополнительном коде все биты будут выставлены в 1
+            }
+
+            writer.Write(packet.RespondingId);
+
+            await Stream.WriteAsync(memory, token);
+        }
+        finally
+        {
+            Pool.Return(array);
+        }
+    }
+
+    private static string SerializeEndpoint(EndPoint endPoint)
+    {
+        return endPoint switch
+               {
+                   DnsEndPoint dnsEndPoint =>
+                       $"{dnsEndPoint.Host}:{dnsEndPoint.Port}", // Иногда он может вернуть "Unknown/host:port"
+                   IPEndPoint ipEndPoint => ipEndPoint.ToString(),
+                   _                     => endPoint.ToString() ?? endPoint.Serialize().ToString()
+               };
+    }
+
+    async ValueTask IAsyncPacketVisitor.VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token)
+    {
+        const int size = sizeof(PacketType);
+        var array = Pool.Rent(size);
+        try
+        {
+            var memory = array.AsMemory(0, 1);
+            var writer = new MemoryBinaryWriter(memory);
+            writer.Write(( byte ) PacketType.ClusterMetadataRequest);
+            await Stream.WriteAsync(memory, token);
+        }
+        finally
+        {
+            Pool.Return(array);
         }
     }
 }

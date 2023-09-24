@@ -44,6 +44,16 @@ public class PacketEqualityComparer : IEqualityComparer<Packet>
                _              => false
            };
 
+    private bool Check(ClusterMetadataRequestPacket first, ClusterMetadataRequestPacket second)
+    {
+        return true;
+    }
+
+    private bool Check(ClusterMetadataResponsePacket first, ClusterMetadataResponsePacket second)
+        => first.EndPoints.SequenceEqual(second.EndPoints)
+        && first.LeaderId == second.LeaderId
+        && first.RespondingId == second.RespondingId;
+
     private bool Check(AuthorizationRequestPacket first, AuthorizationRequestPacket second)
     {
         return CheckAuth(( dynamic ) first.AuthorizationMethod, ( dynamic ) second.AuthorizationMethod);

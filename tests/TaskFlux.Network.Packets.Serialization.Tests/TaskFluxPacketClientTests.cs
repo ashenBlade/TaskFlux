@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Net;
 using TaskFlux.Network.Packets.Authorization;
 using TaskFlux.Network.Packets.Packets;
 
@@ -6,19 +7,19 @@ namespace TaskFlux.Network.Packets.Serialization.Tests;
 
 // ReSharper disable StringLiteralTypo
 [Trait("Category", "Serialization")]
-public class PoolingNetworkPacketSerializerTests
+public class TaskFluxPacketClientTests
 {
     private static async Task AssertBase(Packet expected)
     {
         var stream = new MemoryStream();
-        var serializerVisitor = new PoolingNetworkPacketSerializer(ArrayPool<byte>.Shared, stream);
+        var serializerVisitor = new TaskFluxPacketClient(ArrayPool<byte>.Shared, stream);
         await expected.AcceptAsync(serializerVisitor);
         stream.Position = 0;
-        var actual = await serializerVisitor.DeserializeAsync();
+        var actual = await serializerVisitor.ReceiveAsync();
         Assert.Equal(expected, actual, PacketEqualityComparer.Instance);
     }
 
-    [Theory(Timeout = 50)]
+    [Theory(DisplayName = nameof(CommandRequestPacket))]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
@@ -48,7 +49,7 @@ public class PoolingNetworkPacketSerializerTests
         return buffer;
     }
 
-    [Theory(Timeout = 50)]
+    [Theory(DisplayName = nameof(CommandResponsePacket))]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
@@ -69,7 +70,7 @@ public class PoolingNetworkPacketSerializerTests
         await AssertBase(new CommandResponsePacket(buffer));
     }
 
-    [Theory]
+    [Theory(DisplayName = nameof(ErrorResponsePacket))]
     [InlineData("")]
     [InlineData("Необработанное исключение")]
     [InlineData("Invalid data requested")]
@@ -89,7 +90,7 @@ public class PoolingNetworkPacketSerializerTests
         await AssertBase(new ErrorResponsePacket(message));
     }
 
-    [Theory]
+    [Theory(DisplayName = nameof(NotLeaderPacket))]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
@@ -108,20 +109,20 @@ public class PoolingNetworkPacketSerializerTests
 
     public static IEnumerable<object[]> AuthorizationMethods = new[] {new object[] {new NoneAuthorizationMethod()}};
 
-    [Theory]
+    [Theory(DisplayName = nameof(AuthorizationRequestPacket))]
     [MemberData(nameof(AuthorizationMethods))]
     public async Task AuthorizationRequest__Serialization(AuthorizationMethod method)
     {
         await AssertBase(new AuthorizationRequestPacket(method));
     }
 
-    [Fact]
+    [Fact(DisplayName = nameof(AuthorizationResponsePacket) + "_Успех")]
     public async Task AuthorizationResponse__Success__Serialization()
     {
         await AssertBase(AuthorizationResponsePacket.Ok);
     }
 
-    [Theory]
+    [Theory(DisplayName = nameof(AuthorizationResponsePacket) + "_Ошибка")]
     [InlineData("")]
     [InlineData("\0")]
     [InlineData("\n")]
@@ -136,7 +137,7 @@ public class PoolingNetworkPacketSerializerTests
         await AssertBase(AuthorizationResponsePacket.Error(errorReason));
     }
 
-    [Theory]
+    [Theory(DisplayName = nameof(BootstrapRequestPacket))]
     [InlineData(0, 0, 0)]
     [InlineData(0, 0, 1)]
     [InlineData(1, 0, 0)]
@@ -150,13 +151,13 @@ public class PoolingNetworkPacketSerializerTests
         await AssertBase(new BootstrapRequestPacket(major, minor, patch));
     }
 
-    [Fact]
+    [Fact(DisplayName = nameof(BootstrapResponsePacket) + "_Успех")]
     public async Task BootstrapResponse__Success__Serialization()
     {
         await AssertBase(BootstrapResponsePacket.Ok);
     }
 
-    [Theory]
+    [Theory(DisplayName = nameof(BootstrapResponsePacket) + "_Ошибка")]
     [InlineData("")]
     [InlineData("\0")]
     [InlineData("\n")]
@@ -170,5 +171,49 @@ public class PoolingNetworkPacketSerializerTests
     public async Task BootstrapResponse__Error__Serialization(string message)
     {
         await AssertBase(BootstrapResponsePacket.Error(message));
+    }
+
+    public static IEnumerable<object> GetClusterMetadataResponse => new object[]
+    {
+        new object[] {new EndPoint[] {new DnsEndPoint("hello.world.ru", 9000)}, 0, 0},
+        new object?[]
+        {
+            new EndPoint[]
+            {
+                new IPEndPoint(IPAddress.Parse("123.123.123.123"), 2602), new DnsEndPoint("tflux.1", 2622)
+            },
+            new int?(), 1
+        },
+        new object[]
+        {
+            new EndPoint[]
+            {
+                new DnsEndPoint("tflux.1", 2602), new DnsEndPoint("tflux.2", 2602),
+                new DnsEndPoint("tflux.3", 2602)
+            },
+            0, 2
+        },
+        new object?[]
+        {
+            new EndPoint[]
+            {
+                new DnsEndPoint("tflux.1", 2602), new DnsEndPoint("tflux.2", 2602),
+                new IPEndPoint(IPAddress.Parse("192.168.34.10"), 3444)
+            },
+            new int?(), 1
+        }
+    };
+
+    [Theory(DisplayName = nameof(ClusterMetadataResponsePacket))]
+    [MemberData(nameof(GetClusterMetadataResponse))]
+    public async Task ClusterMetadataResponse__Serialization(EndPoint[] endPoints, int? leaderId, int respondingId)
+    {
+        await AssertBase(new ClusterMetadataResponsePacket(endPoints, leaderId, respondingId));
+    }
+
+    [Fact(DisplayName = nameof(ClusterMetadataRequestPacket))]
+    public async Task ClusterMetadataRequest__Serialization()
+    {
+        await AssertBase(new ClusterMetadataRequestPacket());
     }
 }

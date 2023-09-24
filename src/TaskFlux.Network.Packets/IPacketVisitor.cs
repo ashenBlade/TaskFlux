@@ -14,4 +14,6 @@ public interface IPacketVisitor
 
     public void Visit(BootstrapRequestPacket packet);
     public void Visit(BootstrapResponsePacket packet);
+    public void Visit(ClusterMetadataRequestPacket packet);
+    public void Visit(ClusterMetadataResponsePacket packet);
 }
