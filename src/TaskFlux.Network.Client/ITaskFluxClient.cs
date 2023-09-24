@@ -3,7 +3,7 @@ using TaskFlux.Network.Client.Exceptions;
 
 namespace TaskFlux.Network.Client;
 
-public interface ITaskFluxClient : IDisposable, IAsyncDisposable
+public interface ITaskFluxClient : IDisposable
 {
     /// <summary>
     /// Отправить команду на узел для выполения

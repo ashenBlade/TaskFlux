@@ -15,7 +15,7 @@ internal class TaskFluxClient : ITaskFluxClient
     /// Объект соединения с узлом.
     /// Если null, то соединение не установлено/сброшено
     /// </summary>
-    private (TaskFluxPacketClient Client, Socket Socket)? _connection;
+    private (TaskFluxPacketClient Client, System.Net.Sockets.Socket Socket)? _connection;
 
     /// <summary>
     /// Фабрика, которой принадлежит этот клиент.
@@ -172,17 +172,10 @@ internal class TaskFluxClient : ITaskFluxClient
 
         _disposed = true;
 
-        throw new NotImplementedException();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_disposed)
+        if (_connection is {Socket: var socket})
         {
-            return;
+            socket.Close();
+            socket.Dispose();
         }
-
-        _disposed = true;
-        throw new NotImplementedException();
     }
 }
