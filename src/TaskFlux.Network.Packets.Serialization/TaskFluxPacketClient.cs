@@ -1,6 +1,8 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Text;
 using TaskFlux.Network.Packets.Authorization;
@@ -16,6 +18,11 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
     private Stream Stream { get; }
     private ArrayPool<byte> Pool { get; }
 
+    /// <summary>
+    /// Создать нового пакетного клиента
+    /// </summary>
+    /// <param name="pool">Пул байтов для временных буферов</param>
+    /// <param name="stream">Поток, откуда читать и писать. В продакшне будет <see cref="NetworkStream"/></param>
     public TaskFluxPacketClient(ArrayPool<byte> pool, Stream stream)
     {
         Stream = stream;
@@ -47,7 +54,7 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
                        PacketType.AuthorizationResponse   => await DeserializeAuthorizationResponse(token),
                        PacketType.BootstrapRequest        => await DeserializeBootstrapRequest(token),
                        PacketType.BootstrapResponse       => await DeserializeBootstrapResponse(token),
-                       PacketType.ClusterMetadataRequest  => await DeserializeClusterMetadataRequest(token),
+                       PacketType.ClusterMetadataRequest  => new ClusterMetadataRequestPacket(),
                        PacketType.ClusterMetadataResponse => await DeserializeClusterMetadataResponse(token),
                    };
         }
@@ -77,7 +84,7 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
         return new ClusterMetadataResponsePacket(endpoints, leaderId, respondingId);
     }
 
-    public static EndPoint ParseEndPoint(string address)
+    private static EndPoint ParseEndPoint(string address)
     {
         if (IPEndPoint.TryParse(address, out var ipEndPoint))
         {
@@ -110,11 +117,6 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
         return new DnsEndPoint(host, port);
     }
 
-    private async Task<ClusterMetadataRequestPacket> DeserializeClusterMetadataRequest(CancellationToken token)
-    {
-        return new ClusterMetadataRequestPacket();
-    }
-
     private async Task<BootstrapResponsePacket> DeserializeBootstrapResponse(CancellationToken token)
     {
         var success = await ReadBool(token);
@@ -135,9 +137,26 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
         return new BootstrapRequestPacket(major, minor, patch);
     }
 
-    public Task SendAsync(Packet packet, CancellationToken token = default)
+    /// <summary>
+    /// Отправить пакет на сервер
+    /// </summary>
+    /// <param name="packet">Пакет, который нужно отправить</param>
+    /// <param name="token">Токен отмены</param>
+    /// <exception cref="EndOfStreamException">Соединение закрылось во время отправки</exception>
+    public async Task SendAsync(Packet packet, CancellationToken token = default)
     {
-        return packet.AcceptAsync(this, token).AsTask();
+        Debug.Assert(packet != null, "packet != null", "Переданный пакет данных не должен быть null");
+
+        ArgumentNullException.ThrowIfNull(packet);
+        token.ThrowIfCancellationRequested();
+        try
+        {
+            await packet.AcceptAsync(this, token);
+        }
+        catch (IOException io)
+        {
+            throw new EndOfStreamException("Ошибка во время отправки пакета", io);
+        }
     }
 
     private async Task<AuthorizationResponsePacket> DeserializeAuthorizationResponse(CancellationToken token)
@@ -378,7 +397,7 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
         }
     }
 
-    async ValueTask IAsyncPacketVisitor.VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
+    async ValueTask IAsyncPacketVisitor.VisitAsync(CommandRequestPacket packet, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         var estimatedSize = sizeof(PacketType)
@@ -420,7 +439,7 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
         }
     }
 
-    async ValueTask IAsyncPacketVisitor.VisitAsync(ErrorResponsePacket packet, CancellationToken token = default)
+    async ValueTask IAsyncPacketVisitor.VisitAsync(ErrorResponsePacket packet, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         var estimatedSize = sizeof(PacketType)
@@ -637,9 +656,9 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
     {
         var endPoints = Array.ConvertAll(packet.EndPoints, SerializeEndpoint);
         var size = sizeof(PacketType)
-                 + sizeof(int) // Длина массива
+                 + sizeof(int) // Длина массива адресов
                  + ( sizeof(int) * endPoints.Length
-                   + endPoints.Sum(static e => Encoding.UTF8.GetByteCount(e)) ) // Сами строки
+                   + endPoints.Sum(static e => Encoding.UTF8.GetByteCount(e)) ) // Сами адресы
                  + sizeof(int)                                                  // Id лидера
                  + sizeof(int)                                                  // Id текущего узла
             ;
@@ -650,9 +669,9 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
             var writer = new MemoryBinaryWriter(memory);
             writer.Write(( byte ) PacketType.ClusterMetadataResponse);
             writer.Write(endPoints.Length);
-            for (var i = 0; i < endPoints.Length; i++)
+            foreach (var t in endPoints)
             {
-                writer.Write(endPoints[i]);
+                writer.Write(t);
             }
 
             if (packet.LeaderId is { } leaderId)
@@ -661,7 +680,8 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
             }
             else
             {
-                writer.Write(-1); // В дополнительном коде все биты будут выставлены в 1
+                // ReSharper disable once RedundantCast (явно)
+                writer.Write(( int ) -1); // В дополняющем коде все биты будут выставлены в 1
             }
 
             writer.Write(packet.RespondingId);

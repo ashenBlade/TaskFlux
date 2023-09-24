@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net7.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\TaskFlux.Commands.Serialization\TaskFlux.Commands.Serialization.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Commands\TaskFlux.Commands.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Network.Packets.Serialization\TaskFlux.Network.Packets.Serialization.csproj"/>
+    </ItemGroup>
+
+
+    <PropertyGroup>
+        <WarningsAsErrors>CS8509;CS8524</WarningsAsErrors>
+    </PropertyGroup>
+</Project>
