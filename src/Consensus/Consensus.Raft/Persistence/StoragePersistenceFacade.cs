@@ -414,18 +414,6 @@ public class StoragePersistenceFacade
          * Снапшота еще нет, то локальный и глобальный индексы совпадают
          */
         return CalculateLocalIndexRaw(SnapshotStorage.LastLogEntry.Index, globalIndex);
-        if (!SnapshotStorage.HasSnapshot)
-        {
-            return globalIndex;
-        }
-
-        /*
-         * Глобальный индекс: |    10   | 11  | 12  | 13  | 14  |
-         *                    | Снапшот |
-         * Локальный индекс:  |    -1   |  0  |  1  |  2  |  3   |
-         */
-
-        return globalIndex - SnapshotStorage.LastLogEntry.Index - 1;
     }
 
     private static int CalculateLocalIndexRaw(int snapshotLastIndex, int globalIndex)

@@ -1,4 +1,5 @@
 ﻿using Consensus.Raft;
+using Consensus.Raft.Commands;
 using Consensus.Raft.Commands.Submit;
 using Serilog;
 using TaskFlux.Commands;

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Consensus.Raft.Commands;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Commands.Submit;

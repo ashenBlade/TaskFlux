@@ -1,4 +1,4 @@
-namespace Consensus.Raft.Commands.Submit;
+namespace Consensus.Raft.Commands;
 
 public struct CommandDescriptor<TCommand>
 {
@@ -10,10 +10,4 @@ public struct CommandDescriptor<TCommand>
         Command = command;
         IsReadonly = isReadonly;
     }
-}
-
-public static class CommandDescriptor
-{
-    public static CommandDescriptor<TCommand> Create<TCommand>(TCommand command, bool isReadonly = false) =>
-        new(command, isReadonly);
 }
