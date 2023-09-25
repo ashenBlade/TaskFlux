@@ -397,7 +397,9 @@ internal class ClientRequestProcessor
             }
             else
             {
-                responsePacket = new NotLeaderPacket(_processor.ClusterInfo.LeaderId.Id);
+                responsePacket = new NotLeaderPacket(_processor.ClusterInfo.LeaderId is { } id
+                                                         ? id.Id
+                                                         : null);
             }
 
             await responsePacket.AcceptAsync(_client, token);
@@ -450,13 +452,22 @@ internal class ClientRequestProcessor
 
         public ValueTask VisitAsync(ClusterMetadataResponsePacket packet, CancellationToken token = default)
         {
-            throw new NotImplementedException();
+            ShouldClose = true;
+            return ValueTask.CompletedTask;
         }
 
-        public ValueTask VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token = default)
+        public async ValueTask VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token = default)
         {
-            // TODO: 
-            throw new NotImplementedException();
+            var data = new ClusterMetadataResponsePacket(_processor.ClusterInfo.Nodes,
+                GetId(_processor.ClusterInfo.LeaderId), _processor.ClusterInfo.CurrentNodeId.Id);
+            await _client.SendAsync(data, token);
         }
+    }
+
+    private static int? GetId(NodeId? id)
+    {
+        return id is { } i
+                   ? i.Id
+                   : null;
     }
 }

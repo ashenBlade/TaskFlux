@@ -7,7 +7,7 @@ public class ClusterMetadataResponsePacket : Packet
     /// <summary>
     /// Адреса узлов
     /// </summary>
-    public EndPoint[] EndPoints { get; }
+    public IReadOnlyList<EndPoint> EndPoints { get; }
 
     /// <summary>
     /// Id текущего лидера кластера
@@ -19,7 +19,7 @@ public class ClusterMetadataResponsePacket : Packet
     /// </summary>
     public int RespondingId { get; }
 
-    public ClusterMetadataResponsePacket(EndPoint[] endPoints, int? leaderId, int respondingId)
+    public ClusterMetadataResponsePacket(IReadOnlyList<EndPoint> endPoints, int? leaderId, int respondingId)
     {
         EndPoints = endPoints;
         LeaderId = leaderId;

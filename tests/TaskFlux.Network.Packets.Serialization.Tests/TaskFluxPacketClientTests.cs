@@ -102,9 +102,15 @@ public class TaskFluxPacketClientTests
     [InlineData(-2)]
     [InlineData(23)]
     [InlineData(45)]
-    public async Task NotLeaderResponse__Serialization(int id)
+    public async Task NotLeaderPacket__Serialization(int id)
     {
         await AssertBase(new NotLeaderPacket(id));
+    }
+
+    [Fact(DisplayName = nameof(NotLeaderPacket) + "_null")]
+    public async Task NotLeaderPacket__Null__Serialization()
+    {
+        await AssertBase(new NotLeaderPacket(null));
     }
 
     public static IEnumerable<object[]> AuthorizationMethods = new[] {new object[] {new NoneAuthorizationMethod()}};

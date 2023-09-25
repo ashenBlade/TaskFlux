@@ -2,9 +2,9 @@ namespace TaskFlux.Network.Packets.Packets;
 
 public class NotLeaderPacket : Packet
 {
-    public int LeaderId { get; }
+    public int? LeaderId { get; }
 
-    public NotLeaderPacket(int leaderId)
+    public NotLeaderPacket(int? leaderId)
     {
         LeaderId = leaderId;
     }

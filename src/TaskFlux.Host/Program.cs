@@ -24,6 +24,7 @@ using TaskFlux.Host.Modules.SocketRequest;
 using TaskFlux.Host.Options;
 using TaskFlux.Host.RequestAcceptor;
 using TaskFlux.Node;
+using Utils.Network;
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()
@@ -35,6 +36,7 @@ try
 {
     var configuration = new ConfigurationBuilder()
                        .AddEnvironmentVariables()
+                       .AddJsonFile("taskflux.settings.json", true)
                        .Build();
 
     var networkOptions = configuration.GetSection("NETWORK") is { } section
@@ -50,13 +52,13 @@ try
     var nodeId = new NodeId(serverOptions.NodeId);
 
     var peers = serverOptions.Peers
-                             .Select(p =>
+                             .Select((address, i) =>
                               {
-                                  var endpoint = GetEndpoint(p.Host, p.Port);
-                                  var id = new NodeId(p.Id);
+                                  var endpoint = EndPointHelpers.ParseEndPoint(address);
+                                  var id = new NodeId(i);
                                   IPeer peer = TcpPeer.Create(nodeId, id, endpoint, networkOptions.RequestTimeout,
                                       Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
-                                  peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
+                                  peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
                                   return peer;
                               })
                              .ToArray();
@@ -479,7 +481,8 @@ ApplicationInfo CreateApplicationInfo()
 
 ClusterInfo CreateClusterInfo(RaftServerOptions options)
 {
-    return new ClusterInfo(new NodeId(options.NodeId), options.Peers.Length);
+    return new ClusterInfo(new NodeId(options.NodeId), new NodeId(options.NodeId),
+        options.Peers.Select(EndPointHelpers.ParseEndPoint));
 }
 
 NodeInfo CreateNodeInfo(RaftServerOptions options)

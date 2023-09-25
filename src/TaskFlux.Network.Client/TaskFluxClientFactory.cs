@@ -22,7 +22,7 @@ public class TaskFluxClientFactory : ITaskFluxClientFactory
     /// Конечные точки узлов кластера.
     /// Индекс указывает на Id узла
     /// </summary>
-    private readonly EndPoint[] Endpoints;
+    private readonly IReadOnlyList<EndPoint> _endpoints;
 
     /// <summary>
     /// Id текущего известного лидера кластера
@@ -33,14 +33,14 @@ public class TaskFluxClientFactory : ITaskFluxClientFactory
     /// Создать новую фабрику клиентов с предустановленными адресами узлов кластера
     /// </summary>
     /// <param name="endpoints">Адреса узлов с индексами соответствующими Id узла</param>
-    public TaskFluxClientFactory(EndPoint[] endpoints)
+    public TaskFluxClientFactory(IReadOnlyList<EndPoint> endpoints)
     {
-        Endpoints = endpoints;
+        _endpoints = endpoints;
     }
 
-    private TaskFluxClientFactory(EndPoint[] endpoints, int? leaderId)
+    private TaskFluxClientFactory(IReadOnlyList<EndPoint> endpoints, int? leaderId)
     {
-        Endpoints = endpoints;
+        _endpoints = endpoints;
         LeaderId = leaderId;
     }
 
@@ -146,13 +146,13 @@ public class TaskFluxClientFactory : ITaskFluxClientFactory
             if (LeaderId is { } id)
             {
                 // Если можем установить соединение с текущим лидером, то делаем это сразу
-                var leaderEndpoint = Endpoints[id];
+                var leaderEndpoint = _endpoints[id];
                 await socket.ConnectAsync(leaderEndpoint, token);
                 return socket;
             }
 
             // Если лидер неизвестен - пытаемся подключиться к каждому узлу постепенно 
-            foreach (var endPoint in Endpoints)
+            foreach (var endPoint in _endpoints)
             {
                 try
                 {

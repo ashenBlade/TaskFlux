@@ -471,7 +471,7 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
             var buffer = array.AsMemory(0, estimatedSize);
             var writer = new MemoryBinaryWriter(buffer);
             writer.Write(( byte ) PacketType.NotLeader);
-            writer.Write(packet.LeaderId);
+            writer.Write(packet.LeaderId ?? -1);
             await Stream.WriteAsync(buffer, token);
         }
         finally
@@ -654,7 +654,13 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
 
     async ValueTask IAsyncPacketVisitor.VisitAsync(ClusterMetadataResponsePacket packet, CancellationToken token)
     {
-        var endPoints = Array.ConvertAll(packet.EndPoints, SerializeEndpoint);
+        // Думаю, тут пулинг не нужен - этот пакет отправляется очень редко
+        var endPoints = new string[packet.EndPoints.Count];
+        for (var i = 0; i < packet.EndPoints.Count; i++)
+        {
+            endPoints[i] = SerializeEndpoint(packet.EndPoints[i]);
+        }
+
         var size = sizeof(PacketType)
                  + sizeof(int) // Длина массива адресов
                  + ( sizeof(int) * endPoints.Length
