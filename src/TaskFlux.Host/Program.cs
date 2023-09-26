@@ -51,17 +51,7 @@ try
 
     var nodeId = new NodeId(serverOptions.NodeId);
 
-    var peers = serverOptions.Peers
-                             .Select((address, i) =>
-                              {
-                                  var endpoint = EndPointHelpers.ParseEndPoint(address);
-                                  var id = new NodeId(i);
-                                  IPeer peer = TcpPeer.Create(nodeId, id, endpoint, networkOptions.RequestTimeout,
-                                      Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
-                                  peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
-                                  return peer;
-                              })
-                             .ToArray();
+    var peers = ExtractPeers(serverOptions, nodeId, networkOptions);
 
     Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
 
@@ -488,4 +478,33 @@ ClusterInfo CreateClusterInfo(RaftServerOptions options)
 NodeInfo CreateNodeInfo(RaftServerOptions options)
 {
     return new NodeInfo(new NodeId(options.NodeId), NodeRole.Follower);
+}
+
+static IPeer[] ExtractPeers(RaftServerOptions serverOptions, NodeId currentNodeId, NetworkOptions networkOptions)
+{
+    var peers = new IPeer[serverOptions.Peers.Length - 1]; // Все кроме себя
+
+    // Все до текущего узла
+    for (int i = 0; i < currentNodeId.Id; i++)
+    {
+        var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
+        var id = new NodeId(i);
+        IPeer peer = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
+            Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
+        peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
+        peers[i] = peer;
+    }
+
+    // Все после текущего узла
+    for (int i = currentNodeId.Id + 1; i < serverOptions.Peers.Length; i++)
+    {
+        var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
+        var id = new NodeId(i);
+        IPeer peer = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
+            Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
+        peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
+        peers[i - 1] = peer;
+    }
+
+    return peers;
 }
