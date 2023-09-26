@@ -8,6 +8,7 @@ using TaskFlux.Network.Packets;
 using TaskFlux.Network.Packets.Authorization;
 using TaskFlux.Network.Packets.Packets;
 using TaskFlux.Network.Packets.Serialization;
+using Utils.Network;
 
 namespace TaskFlux.Network.Client;
 
@@ -199,7 +200,7 @@ public class TaskFluxClientFactory : ITaskFluxClientFactory
             try
             {
                 // 1. Подключаемся
-                var endpoint = EndPointHelpers.Parse(address, DefaultPort);
+                var endpoint = EndPointHelpers.ParseEndPoint(address, DefaultPort);
                 try
                 {
                     await socket.ConnectAsync(endpoint, token);
