@@ -86,6 +86,11 @@ internal class ClientRequestProcessor
             {
                 packet = await ReceiveNextPacketAsync(client, token);
             }
+            catch (EndOfStreamException)
+            {
+                Logger.Debug("Клиент отключился");
+                return;
+            }
             catch (OperationCanceledException canceled)
                 when (token.IsCancellationRequested)
             {

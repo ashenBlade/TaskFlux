@@ -1,6 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.IO.Abstractions;
-using System.Net;
 using Consensus.JobQueue;
 using Consensus.NodeProcessor;
 using Consensus.Peer;
@@ -30,13 +29,13 @@ Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()
             .Enrich.FromLogContext()
             .WriteTo.Console(outputTemplate:
-                 "[{Timestamp:HH:mm:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
+                 "[{Timestamp:HH:mm:ss:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
             .CreateLogger();
 try
 {
     var configuration = new ConfigurationBuilder()
                        .AddEnvironmentVariables()
-                       .AddJsonFile("taskflux.settings.json", true)
+                       .AddJsonFile("taskflux.settings.json", optional: true)
                        .Build();
 
     var networkOptions = configuration.GetSection("NETWORK") is { } section
@@ -190,21 +189,11 @@ void ValidateOptions(RaftServerOptions serverOptions)
 
 HttpRequestModule CreateHttpRequestModule(IConfiguration config)
 {
-    var httpModuleOptions = config.GetRequiredSection("HTTP")
+    var httpModuleOptions = config.GetSection("HTTP")
                                   .Get<HttpRequestModuleOptions>()
-                         ?? throw new ApplicationException("Настройки для HTTP модуля не найдены");
+                         ?? HttpRequestModuleOptions.Default;
 
     return new HttpRequestModule(httpModuleOptions.Port, Log.ForContext<HttpRequestModule>());
-}
-
-EndPoint GetEndpoint(string host, int port)
-{
-    if (IPAddress.TryParse(host, out var ip))
-    {
-        return new IPEndPoint(ip, port);
-    }
-
-    return new DnsEndPoint(host, port);
 }
 
 StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions options)
@@ -361,37 +350,6 @@ StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions option
             workingDirectory = Directory.GetCurrentDirectory();
         }
 
-        if (!Directory.Exists(workingDirectory))
-        {
-            if (File.Exists(workingDirectory))
-            {
-                // Это может быть только в случае, если директория была указана вручную
-                Log.Error("Директория для данных - файл");
-                throw new InvalidDataException(
-                    $"Указанная директория для данных - файл. Указанная директория: {workingDirectory}");
-            }
-
-            Log.Error("Указанная директория для данных не существует");
-            throw new InvalidDataException(
-                $"Указанная директория для данных не существует. Директория данных - {workingDirectory}");
-        }
-
-        try
-        {
-            using var _ = File.Create(Path.Combine(workingDirectory, Path.GetRandomFileName()), 1,
-                FileOptions.DeleteOnClose);
-        }
-        catch (UnauthorizedAccessException access)
-        {
-            Log.Error(access, "Для указанной директории отстутствуют права на запись");
-            throw;
-        }
-        catch (Exception e)
-        {
-            Log.Error(e, "В рабочей директории невозможно создать файл");
-            throw;
-        }
-
         return workingDirectory;
     }
 }
@@ -410,7 +368,6 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
         new ThreadingTimerFactory(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300),
             heartbeatTimeout: TimeSpan.FromMilliseconds(100));
 
-    // TODO: ручной запуск таймера
     return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, timerFactory,
         jobQueue, storage, application, applicationFactory,
         commandSerializer);

@@ -25,7 +25,7 @@ public class CreateQueueCommand : UpdateCommand
     public override Result Apply(ICommandContext context)
     {
         var manager = context.Node.GetJobQueueManager();
-        if (!manager.HasQueue(Name))
+        if (manager.HasQueue(Name))
         {
             return DefaultErrors.QueueAlreadyExists;
         }
