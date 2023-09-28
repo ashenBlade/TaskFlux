@@ -20,8 +20,11 @@ Console.CancelKeyPress += (_, e) =>
     e.Cancel = true;
 };
 
-var clientFactory = new TaskFluxClientFactory(new EndPoint[] {new DnsEndPoint("localhost", 8080)});
-
+Log.Debug("Подключась к кластеру");
+var clientFactory = new TaskFluxClientFactory(new EndPoint[]
+{
+    new DnsEndPoint("localhost", 8080), new DnsEndPoint("localhost", 8081), new DnsEndPoint("localhost", 8082),
+});
 
 Log.Debug("Создаю клиентов");
 using var consumer = await clientFactory.CreateClientAsync(totalCts.Token);
