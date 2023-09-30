@@ -78,6 +78,10 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
         {
             _logger.Debug("Сбор кворума прерван - задача отменена");
         }
+        catch (ObjectDisposedException ode) when (ode.ObjectName == nameof(CancellationTokenSource))
+        {
+            _logger.Debug("Сбор кворума прерван - задача отменена");
+        }
         catch (Exception unhandled)
         {
             _logger.Fatal(unhandled, "Поймано необработанное исключение во время запуска кворума");
