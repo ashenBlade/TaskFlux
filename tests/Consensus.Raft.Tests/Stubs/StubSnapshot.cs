@@ -4,17 +4,17 @@ namespace Consensus.Raft.Tests.Stubs;
 
 public class StubSnapshot : ISnapshot
 {
-    private readonly byte[] _data;
+    public byte[] Data { get; }
 
     public StubSnapshot(byte[] data)
     {
-        _data = data;
+        Data = data;
     }
 
-    public StubSnapshot(IEnumerable<byte> data) => _data = data.ToArray();
+    public StubSnapshot(IEnumerable<byte> data) => Data = data.ToArray();
 
     public IEnumerable<ReadOnlyMemory<byte>> GetAllChunks(CancellationToken token = default)
     {
-        yield return _data;
+        yield return Data;
     }
 }

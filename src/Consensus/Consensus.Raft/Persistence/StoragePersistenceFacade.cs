@@ -313,9 +313,6 @@ public class StoragePersistenceFacade
         var localIndex = CalculateLocalIndex(globalIndex);
         if (localIndex < -1)
         {
-            Serilog.Log.Debug(
-                "В логе нет указанного индекса {GlobalIndex}. Локальный индекс: {LocalIndex}. Последний индекс: {LastEntry}",
-                globalIndex, localIndex, LastEntry);
             throw new ArgumentOutOfRangeException(nameof(globalIndex), globalIndex, "В логе нет указанного индекса");
         }
 
@@ -598,8 +595,19 @@ public class StoragePersistenceFacade
         // Сохраним индекс, чтобы потом могли очистить лог
         var lastLocalIndex = CalculateLocalIndex(lastIncludedEntry.Index);
 
-        Debug.Assert(lastLocalIndex >= 0, "Последний индекс в снапшоте меньше индекса первой моей команды в логе",
-            "Нельзя установить снапшот, когда последний индекс команды в логе меньше нашей первой команды");
+        /*
+         * Если индекс равен -1, то переданный индекс равен индексу в снапшоте.
+         * В противном случае, это будет локальный индекс.
+         *
+         * Такое может произойти, когда на лидера идет большая нагрузка.
+         * В этом случае, на фолловере (этот узел) будет устанавливаться снапшот.
+         * В это время запросы будут идти, и на лидере уже будет устанавливаться новый снапшот,
+         * но при отправке нового снапшота
+         *
+         */
+        Debug.Assert(-1 <= lastLocalIndex, "Последний индекс в снапшоте меньше индекса первой моей команды в логе",
+            "Нельзя установить снапшот, когда последний индекс команды в логе меньше нашей первой команды. Последний индекс в снашоте: {0}. Мой последний индекс: {1}. Рассчитанный индекс: {2}",
+            lastIncludedEntry.Index, LastEntry.Index, lastLocalIndex);
 
         // 1. Создать временный файл
         var snapshotTempFile = _snapshotStorage.CreateTempSnapshotFile();
@@ -609,7 +617,7 @@ public class StoragePersistenceFacade
         {
             snapshotTempFile.Initialize(lastIncludedEntry);
         }
-        catch (Exception e)
+        catch (Exception)
         {
             snapshotTempFile.Discard();
             throw;

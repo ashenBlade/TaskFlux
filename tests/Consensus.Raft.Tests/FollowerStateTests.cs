@@ -651,15 +651,14 @@ public class FollowerStateTests
     [Fact]
     public void InstallSnapshot__ДолженВыставитьНовоеСостояние()
     {
-        // TODO: заменить StateMachine на Application
-
         var application = new StubApplication(123);
         var applicationFactory = new Mock<IApplicationFactory>().Apply(f =>
         {
             f.Setup(x => x.Restore(It.IsAny<ISnapshot>()))
              .Returns(application);
             f.Setup(x => x.CreateEmpty())
-             .Throws(new InvalidOperationException("Приложение должно восстановиться, а не создаваться заново"));
+             .Throws(new InvalidOperationException(
+                  "Приложение должно восстановиться из снапшота, а не создаваться заново"));
         });
 
         var (node, _, fs) = CreateFollowerNodeNew(factory: applicationFactory.Object);
@@ -734,5 +733,33 @@ public class FollowerStateTests
         persistence.ReadLogFileTest()
                    .Should()
                    .BeEmpty("лог должен быть очищен после установки нового снапшота");
+    }
+
+    [Fact]
+    public void InstallSnapshot__КогдаИндексСнапшотаРавенТекущемуИндексу__ДолженУстановитьСнапшот()
+    {
+        // Такое может случиться, когда на лидера большая нагрузка идет и отправляется тот же самый снапшот
+
+        var (follower, storage, _) = CreateFollowerNodeNew(Helpers.NullApplicationFactory);
+        var snapshot = new StubSnapshot(new byte[] {1, 2, 3});
+        var term = new Term(2);
+        var logEntryInfo = new LogEntryInfo(new Term(2), 1000);
+        var oldSnapshot = new StubSnapshot(new byte[] {4, 5, 6});
+        storage.SnapshotStorage.WriteSnapshotDataTest(logEntryInfo.Term, logEntryInfo.Index, oldSnapshot);
+
+        var request = new InstallSnapshotRequest(term, AnotherNodeId, logEntryInfo, snapshot);
+
+        foreach (var _ in follower.Handle(request))
+        {
+        }
+
+        var (lastIndex, lastTerm, snapshotData) = storage.SnapshotStorage.ReadAllDataTest();
+        lastIndex.Should()
+                 .Be(logEntryInfo.Index, "индекс записи в снапшоте должна быть такая же как и в запросе");
+        lastTerm.Should()
+                .Be(logEntryInfo.Term, "терм записи в снапшоте должна быть такой же как и в запросе");
+        snapshotData
+           .Should()
+           .Equal(snapshot.Data, "данные снапшота должны быть перезаписаны");
     }
 }

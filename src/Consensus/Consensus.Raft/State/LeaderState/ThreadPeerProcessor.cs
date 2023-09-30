@@ -213,7 +213,8 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                         continue;
                     }
 
-                    info.Update(1);
+                    // Новый индекс - следующий после снапшота
+                    info.Set(lastEntry.Index + 1);
                     _logger.Debug("Снапшот отправлен на другой узел");
                     continue;
                 }
@@ -223,11 +224,22 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
             }
 
             // 1. Отправляем запрос с текущим отслеживаемым индексом узла
-            var appendEntriesRequest = new AppendEntriesRequest(Term: CurrentTerm,
-                LeaderCommit: PersistenceFacade.CommitIndex,
-                LeaderId: ConsensusModule.Id,
-                PrevLogEntryInfo: PersistenceFacade.GetPrecedingEntryInfo(info.NextIndex),
-                Entries: entries);
+            AppendEntriesRequest appendEntriesRequest;
+            try
+            {
+                appendEntriesRequest = new AppendEntriesRequest(Term: CurrentTerm,
+                    LeaderCommit: PersistenceFacade.CommitIndex,
+                    LeaderId: ConsensusModule.Id,
+                    PrevLogEntryInfo: PersistenceFacade.GetPrecedingEntryInfo(info.NextIndex),
+                    Entries: entries);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                /*
+                 * Между первым TryGetFrom
+                 */
+                continue;
+            }
 
             AppendEntriesResponse response;
             while (true)
@@ -249,17 +261,16 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
             if (response.Success)
             {
                 // 3.1. Обновить nextIndex = + кол-во Entries в запросе
-                // 3.2. Обновить matchIndex = новый nextIndex - 1
-                info.Update(appendEntriesRequest.Entries.Count);
+                info.Increment(appendEntriesRequest.Entries.Count);
 
-                // 3.3. Если лог не до конца был синхронизирован
+                // 3.2. Если лог не до конца был синхронизирован
                 if (info.NextIndex < replicationIndex)
                 {
                     // Заходим на новый круг и отправляем еще
                     continue;
                 }
 
-                // 3.4. Уведомляем об успешной отправке команды на узел
+                // 3.3. Уведомляем об успешной отправке команды на узел
                 return null;
             }
 
@@ -319,31 +330,39 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
         /// </summary>
         public int NextIndex { get; private set; }
 
-        /// <summary>
-        /// Индекс последней зафиксированной (реплицированной) записи в логе
-        /// </summary>
-        private int MatchIndex { get; set; }
-
         public PeerInfo(int nextIndex)
         {
             NextIndex = nextIndex;
-            MatchIndex = 0;
         }
 
         /// <summary>
-        /// Обновить информацию об имеющися на узле записям
+        /// Добавить к последнему индексу указанное число.
+        /// Используется, когда запись (или несколько) были успешно реплицированы - не отправка снапшота
         /// </summary>
-        /// <param name="appliedCount">Количество успешно отправленных вхождений команд (Entries)</param>
-        public void Update(int appliedCount)
+        /// <param name="appliedCount">Количество успешно отправленных записей</param>
+        public void Increment(int appliedCount)
         {
             var nextIndex = NextIndex + appliedCount;
-            var matchIndex = nextIndex - 1;
-            MatchIndex = matchIndex;
+            Debug.Assert(0 <= nextIndex, "0 <= nextIndex",
+                "Выставленный индекс следующей записи не может получиться отрицательным. Рассчитано: {0}. Кол-во примененных записей: {1}",
+                nextIndex, appliedCount);
             NextIndex = nextIndex;
         }
 
         /// <summary>
-        /// Отктиться назад, если узел ответил на AppendEntries <c>false</c>
+        /// Выставить нужное число 
+        /// </summary>
+        /// <param name="nextIndex">Новый следующий индекс</param>
+        public void Set(int nextIndex)
+        {
+            Debug.Assert(0 <= nextIndex, "Следующий индекс записи не может быть отрицательным",
+                "Нельзя выставлять отрицательный индекс следующей записи. Попытка выставить {0}. Старый следующий индекс: {1}",
+                nextIndex, NextIndex);
+            NextIndex = nextIndex;
+        }
+
+        /// <summary>
+        /// Откатиться назад, если узел ответил на AppendEntries <c>false</c>
         /// </summary>
         /// <exception cref="InvalidOperationException"><see cref="NextIndex"/> равен 0</exception>
         public void Decrement()
@@ -356,6 +375,6 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
             NextIndex--;
         }
 
-        public override string ToString() => $"PeerInfo(NextIndex = {NextIndex}, MatchIndex = {MatchIndex})";
+        public override string ToString() => $"PeerInfo(NextIndex = {NextIndex})";
     }
 }

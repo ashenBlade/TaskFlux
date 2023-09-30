@@ -197,6 +197,8 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
         using var _ = ElectionTimerScope.BeginScope(_electionTimer);
         _logger.Information("Начинаю обработку InstallSnapshot");
+        _logger.Debug("Получен снапшот с индексом {Index} и термом {Term}", request.LastEntry.Index,
+            request.LastEntry.Term);
         if (CurrentTerm < request.Term)
         {
             _logger.Information("Терм лидера больше моего. Обновляю терм до {Term}", request.Term);
