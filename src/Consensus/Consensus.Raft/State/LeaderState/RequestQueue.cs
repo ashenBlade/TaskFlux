@@ -91,6 +91,12 @@ internal class RequestQueue : IDisposable
         {
             yield return data;
         }
+
+        if (Interlocked.CompareExchange(ref _heartbeatSynchronizer, null, _heartbeatSynchronizer) is
+            { } s)
+        {
+            yield return HeartbeatOrRequest.Heartbeat(s);
+        }
     }
 
     /// <summary>

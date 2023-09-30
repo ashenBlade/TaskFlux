@@ -137,11 +137,6 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                         heartbeat.NotifySuccess();
                     }
                 }
-                else
-                {
-                    Debug.Assert(false,
-                        $"В {nameof(HeartbeatOrRequest)} должен быть либо запрос, либо heartbeat. Ничего не получено");
-                }
             }
 
             _logger.Information("Обработчик узла заканчивает работу");
@@ -236,7 +231,9 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
             catch (ArgumentOutOfRangeException)
             {
                 /*
-                 * Между первым TryGetFrom
+                 * Между первым TryGetFrom и GetPrecedingEntryInfo прошло много времени
+                 * и был создан новый снапшот, поэтому info.NextIndex уже нет.
+                 * На следующем круге отправим уже снапшот
                  */
                 continue;
             }
@@ -278,7 +275,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
             // 4. Если вернувшийся терм больше нашего
             if (CurrentTerm < response.Term)
             {
-                // Уведосмляем о большем терме. 
+                // Уведомляем о большем терме. 
                 // Обновление состояния произойдет позже
                 return response.Term;
             }
