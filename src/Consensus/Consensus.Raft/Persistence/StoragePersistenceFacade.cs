@@ -464,21 +464,25 @@ public class StoragePersistenceFacade
                 return;
             }
 
-            var removeCount = localIndex - _logStorage.Count + 1;
-            if (removeCount == 0)
+            var bufferRemoveCount = localIndex - _logStorage.Count + 1;
+            if (bufferRemoveCount == 0)
             {
                 return;
             }
 
-            if (_buffer.Count < removeCount)
+            if (_buffer.Count < bufferRemoveCount)
             {
+#if DEBUG
+                Serilog.Log.Error(
+                    "Требуется закоммитить запись с индексом {Index}, но последний индекс снапшота {SnapshotIndex}, в логе {LogSize} записей, а в буфере {BufferSize} записей",
+                    index, _snapshotStorage.LastLogEntry.Index, _logStorage.Count, _buffer.Count);
+#endif
                 throw new ArgumentOutOfRangeException(nameof(index), index,
                     "Указанный индекс больше количества записей в логе");
             }
 
-            var notCommitted = _buffer.GetRange(0, removeCount);
-            _logStorage.AppendRange(notCommitted);
-            _buffer.RemoveRange(0, removeCount);
+            _logStorage.AppendRange(_buffer.Take(bufferRemoveCount));
+            _buffer.RemoveRange(0, bufferRemoveCount);
         }
     }
 
