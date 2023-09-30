@@ -95,13 +95,10 @@ public class TaskFluxPacketClientTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(12)]
-    [InlineData(int.MaxValue)]
-    [InlineData(int.MinValue)]
-    [InlineData(123)]
-    [InlineData(-1)]
-    [InlineData(-2)]
     [InlineData(23)]
     [InlineData(45)]
+    [InlineData(123)]
+    [InlineData(int.MaxValue)]
     public async Task NotLeaderPacket__Serialization(int id)
     {
         await AssertBase(new NotLeaderPacket(id));

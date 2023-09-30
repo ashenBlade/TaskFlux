@@ -259,6 +259,11 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
     private async Task<NotLeaderPacket> DeserializeNotLeaderResponse(CancellationToken token)
     {
         var id = await ReadInt32(token);
+        if (id == -1)
+        {
+            return new NotLeaderPacket(null);
+        }
+
         return new NotLeaderPacket(id);
     }
 
