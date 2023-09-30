@@ -3,18 +3,44 @@ namespace Consensus.Raft.State.LeaderState;
 public class HeartbeatSynchronizer : IDisposable
 {
     private readonly ManualResetEvent _waitHandle = new(false);
+    private volatile bool _end = false;
     private Term? _greaterTerm = null;
 
     public void NotifySuccess()
     {
-        _waitHandle.Set();
+        if (_end)
+        {
+            return;
+        }
+
+        try
+        {
+            _waitHandle.Set();
+            _end = true;
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     public void NotifyFoundGreaterTerm(Term greaterTerm)
     {
+        if (_end)
+        {
+            return;
+        }
+
         _greaterTerm = greaterTerm;
-        _waitHandle.Set();
+        try
+        {
+            _waitHandle.Set();
+            _end = true;
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
+
 
     /// <summary>
     /// Дождаться завершения обработки Heartbeat запроса
@@ -48,6 +74,7 @@ public class HeartbeatSynchronizer : IDisposable
 
     public void Dispose()
     {
+        _end = true;
         _waitHandle.Dispose();
     }
 }
