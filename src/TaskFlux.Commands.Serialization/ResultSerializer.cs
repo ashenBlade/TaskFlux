@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.Serialization;
 using JobQueue.Core;
 using JobQueue.Core.Exceptions;
@@ -115,6 +116,8 @@ public class ResultSerializer
 
         public void Visit(ListQueuesResult result)
         {
+            Debug.Assert(result is not null, "ListQueuesResult при сериализации не должен быть null");
+
             var estimatedSize = EstimateSize();
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
@@ -157,6 +160,7 @@ public class ResultSerializer
                 // Проверяем словарь
                 foreach (var metadata in result.Metadata)
                 {
+                    Debug.Assert(metadata is not null, "Метаданные не могут быть null");
                     // Размер ключа (название очереди)
                     size += MemoryBinaryWriter.EstimateResultSize(metadata.QueueName);
 

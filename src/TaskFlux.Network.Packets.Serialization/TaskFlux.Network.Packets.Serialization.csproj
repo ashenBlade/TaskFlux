@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net7.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\TaskFlux.Network.Packets\TaskFlux.Network.Packets.csproj"/>
+      <ProjectReference Include="..\TaskFlux.Serialization.Helpers\TaskFlux.Serialization.Helpers.csproj" />
+    </ItemGroup>
+    
+    <PropertyGroup>
+        <WarningsAsErrors>CS8509</WarningsAsErrors>
+        <NoWarn>1701;1702;CS8524</NoWarn>
+    </PropertyGroup>
+</Project>

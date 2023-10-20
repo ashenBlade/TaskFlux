@@ -4,6 +4,8 @@ namespace TaskFlux.Host.Modules.HttpRequest;
 
 public class HttpRequestModuleOptions
 {
+    public static HttpRequestModuleOptions Default => new();
+
     /// <summary>
     /// Порт для биндинга
     /// </summary>

@@ -10,10 +10,10 @@ using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Serialization;
 using TaskFlux.Core;
 using TaskFlux.Host.Modules.SocketRequest.Exceptions;
-using TaskFlux.Network.Requests;
-using TaskFlux.Network.Requests.Authorization;
-using TaskFlux.Network.Requests.Packets;
-using TaskFlux.Network.Requests.Serialization;
+using TaskFlux.Network.Packets;
+using TaskFlux.Network.Packets.Authorization;
+using TaskFlux.Network.Packets.Packets;
+using TaskFlux.Network.Packets.Serialization;
 
 namespace TaskFlux.Host.Modules.SocketRequest;
 
@@ -51,7 +51,7 @@ internal class ClientRequestProcessor
     {
         Logger.Debug("Открываю сетевой поток для коммуницирования к клиентом");
         await using var stream = _client.GetStream();
-        var serializer = new PoolingNetworkPacketSerializer(ArrayPool<byte>.Shared, stream);
+        var serializer = new TaskFluxPacketClient(ArrayPool<byte>.Shared, stream);
         try
         {
             var success = await AcceptClientAsync(serializer, token)
@@ -75,16 +75,21 @@ internal class ClientRequestProcessor
         }
     }
 
-    private async Task ProcessClientMain(PoolingNetworkPacketSerializer serializer, CancellationToken token)
+    private async Task ProcessClientMain(TaskFluxPacketClient client, CancellationToken token)
     {
-        var clientRequestPacketVisitor = new ClientCommandRequestPacketVisitor(this, serializer);
+        var clientRequestPacketVisitor = new ClientCommandRequestPacketVisitor(this, client);
         Logger.Debug("Начинаю обрабатывать клиентские запросы");
         while (token.IsCancellationRequested is false)
         {
             Packet packet;
             try
             {
-                packet = await ReceiveNextPacketAsync(serializer, token);
+                packet = await ReceiveNextPacketAsync(client, token);
+            }
+            catch (EndOfStreamException)
+            {
+                Logger.Debug("Клиент отключился");
+                return;
             }
             catch (OperationCanceledException canceled)
                 when (token.IsCancellationRequested)
@@ -107,21 +112,21 @@ internal class ClientRequestProcessor
         }
     }
 
-    private async Task<Packet> ReceiveNextPacketAsync(PoolingNetworkPacketSerializer serializer,
+    private async Task<Packet> ReceiveNextPacketAsync(TaskFluxPacketClient client,
                                                       CancellationToken token)
     {
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
         linkedCts.CancelAfter(_options.CurrentValue.IdleTimeout);
         Logger.Debug("Начинаю принятие пакета от клиента");
-        return await serializer.DeserializeAsync(token);
+        return await client.ReceiveAsync(token);
     }
 
-    private async Task<bool> AcceptClientAsync(PoolingNetworkPacketSerializer serializer,
+    private async Task<bool> AcceptClientAsync(TaskFluxPacketClient client,
                                                CancellationToken token)
     {
         try
         {
-            await AuthorizeClientAsync(serializer, token);
+            await AuthorizeClientAsync(client, token);
         }
         catch (UnexpectedPacketException unexpected)
         {
@@ -136,7 +141,7 @@ internal class ClientRequestProcessor
 
         try
         {
-            var success = await BootstrapClientAsync(serializer, token);
+            var success = await BootstrapClientAsync(client, token);
             if (!success)
             {
                 return false;
@@ -155,12 +160,12 @@ internal class ClientRequestProcessor
     /// Метод для запуска процесса настройки клиента и сервера
     /// </summary>
     /// <returns><c>true</c> - клиент успешно настроен<br/> <c>false</c> - во время настройки возникла ошибка</returns>
-    private async ValueTask<bool> BootstrapClientAsync(PoolingNetworkPacketSerializer serializer,
+    private async ValueTask<bool> BootstrapClientAsync(TaskFluxPacketClient client,
                                                        CancellationToken token)
     {
         Logger.Debug("Начинаю процесс настройки клиента");
-        var packet = await serializer.DeserializeAsync(token);
-        var bootstrapVisitor = new BootstrapPacketAsyncVisitor(serializer, _applicationInfo);
+        var packet = await client.ReceiveAsync(token);
+        var bootstrapVisitor = new BootstrapPacketAsyncVisitor(client, _applicationInfo);
         await packet.AcceptAsync(bootstrapVisitor, token);
         Logger.Debug("Клиент настроен");
         return !bootstrapVisitor.ShouldClose;
@@ -168,13 +173,13 @@ internal class ClientRequestProcessor
 
     private class BootstrapPacketAsyncVisitor : IAsyncPacketVisitor
     {
-        private readonly PoolingNetworkPacketSerializer _serializer;
+        private readonly TaskFluxPacketClient _client;
         private readonly IApplicationInfo _applicationInfo;
         public bool ShouldClose { get; private set; }
 
-        public BootstrapPacketAsyncVisitor(PoolingNetworkPacketSerializer serializer, IApplicationInfo applicationInfo)
+        public BootstrapPacketAsyncVisitor(TaskFluxPacketClient client, IApplicationInfo applicationInfo)
         {
-            _serializer = serializer;
+            _client = client;
             _applicationInfo = applicationInfo;
         }
 
@@ -218,15 +223,25 @@ internal class ClientRequestProcessor
             var clientVersion = new Version(packet.Major, packet.Minor, packet.Patch);
             if (IsCompatibleWith(clientVersion))
             {
-                await _serializer.SerializeAsync(BootstrapResponsePacket.Ok, token);
+                await _client.SendAsync(BootstrapResponsePacket.Ok, token);
                 return;
             }
 
-            await _serializer.SerializeAsync(
+            await _client.SendAsync(
                 BootstrapResponsePacket.Error(
                     $"Версия клиента несовместима с версией сервера. Версия сервера: {_applicationInfo.Version}. Версия клиента: {clientVersion}"),
                 token);
             ShouldClose = true;
+        }
+
+        public ValueTask VisitAsync(ClusterMetadataResponsePacket packet, CancellationToken token = default)
+        {
+            return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataResponse);
+        }
+
+        public ValueTask VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token = default)
+        {
+            return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataRequest);
         }
 
         private bool IsCompatibleWith(Version clientVersion)
@@ -241,23 +256,23 @@ internal class ClientRequestProcessor
         }
     }
 
-    private async Task AuthorizeClientAsync(PoolingNetworkPacketSerializer serializer,
+    private async Task AuthorizeClientAsync(TaskFluxPacketClient client,
                                             CancellationToken token)
     {
         Logger.Debug("Начинаю процесс авторизации клиента");
-        var packet = await serializer.DeserializeAsync(token);
-        var authorizerVisitor = new AuthorizerClientPacketAsyncVisitor(serializer);
+        var packet = await client.ReceiveAsync(token);
+        var authorizerVisitor = new AuthorizerClientPacketAsyncVisitor(client);
         await packet.AcceptAsync(authorizerVisitor, token);
         Logger.Debug("Клиент авторизовался успешно");
     }
 
     private class AuthorizerClientPacketAsyncVisitor : IAsyncPacketVisitor
     {
-        private readonly PoolingNetworkPacketSerializer _serializer;
+        private readonly TaskFluxPacketClient _client;
 
-        public AuthorizerClientPacketAsyncVisitor(PoolingNetworkPacketSerializer serializer)
+        public AuthorizerClientPacketAsyncVisitor(TaskFluxPacketClient client)
         {
-            _serializer = serializer;
+            _client = client;
         }
 
         public ValueTask VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
@@ -282,7 +297,7 @@ internal class ClientRequestProcessor
 
         public async ValueTask VisitAsync(AuthorizationRequestPacket packet, CancellationToken token = default)
         {
-            var authVisitor = new AuthorizationFlowMethodVisitor(_serializer);
+            var authVisitor = new AuthorizationFlowMethodVisitor(_client);
             await packet.AuthorizationMethod.AcceptAsync(authVisitor, token);
         }
 
@@ -301,18 +316,28 @@ internal class ClientRequestProcessor
             return ReturnThrowUnexpectedPacket(PacketType.BootstrapRequest);
         }
 
+        public ValueTask VisitAsync(ClusterMetadataResponsePacket packet, CancellationToken token = default)
+        {
+            return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataResponse);
+        }
+
+        public ValueTask VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token = default)
+        {
+            return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataRequest);
+        }
+
         private class AuthorizationFlowMethodVisitor : IAsyncAuthorizationMethodVisitor
         {
-            private readonly PoolingNetworkPacketSerializer _serializer;
+            private readonly TaskFluxPacketClient _client;
 
-            public AuthorizationFlowMethodVisitor(PoolingNetworkPacketSerializer serializer)
+            public AuthorizationFlowMethodVisitor(TaskFluxPacketClient client)
             {
-                _serializer = serializer;
+                _client = client;
             }
 
             public async ValueTask VisitAsync(NoneAuthorizationMethod noneAuthorizationMethod, CancellationToken token)
             {
-                await _serializer.SerializeAsync(AuthorizationResponsePacket.Ok, token);
+                await _client.SendAsync(AuthorizationResponsePacket.Ok, token);
             }
         }
     }
@@ -326,15 +351,15 @@ internal class ClientRequestProcessor
     private class ClientCommandRequestPacketVisitor : IAsyncPacketVisitor
     {
         private readonly ClientRequestProcessor _processor;
-        private readonly PoolingNetworkPacketSerializer _serializer;
+        private readonly TaskFluxPacketClient _client;
         private ILogger Logger => _processor.Logger;
         public bool ShouldClose { get; private set; }
 
         public ClientCommandRequestPacketVisitor(ClientRequestProcessor processor,
-                                                 PoolingNetworkPacketSerializer serializer)
+                                                 TaskFluxPacketClient client)
         {
             _processor = processor;
-            _serializer = serializer;
+            _client = client;
         }
 
         public async ValueTask VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
@@ -352,7 +377,7 @@ internal class ClientRequestProcessor
                 // PERF: в статическое поле для оптимизации выделить
                 _processor.Logger.Debug(invalidName,
                     "Ошибка при десериализации команды, включающей название очереди, полученной от клиента");
-                await _serializer.SerializeAsync(
+                await _client.SendAsync(
                     new CommandResponsePacket(ResultSerializer.Serialize(DefaultErrors.InvalidQueueName)),
                     token);
                 return;
@@ -377,10 +402,12 @@ internal class ClientRequestProcessor
             }
             else
             {
-                responsePacket = new NotLeaderPacket(_processor.ClusterInfo.LeaderId.Id);
+                responsePacket = new NotLeaderPacket(_processor.ClusterInfo.LeaderId is { } id
+                                                         ? id.Id
+                                                         : null);
             }
 
-            await responsePacket.AcceptAsync(_serializer, token);
+            await responsePacket.AcceptAsync(_client, token);
         }
 
         public ValueTask VisitAsync(CommandResponsePacket packet, CancellationToken token = default)
@@ -427,5 +454,25 @@ internal class ClientRequestProcessor
             ShouldClose = true;
             return ValueTask.CompletedTask;
         }
+
+        public ValueTask VisitAsync(ClusterMetadataResponsePacket packet, CancellationToken token = default)
+        {
+            ShouldClose = true;
+            return ValueTask.CompletedTask;
+        }
+
+        public async ValueTask VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token = default)
+        {
+            var data = new ClusterMetadataResponsePacket(_processor.ClusterInfo.Nodes,
+                GetId(_processor.ClusterInfo.LeaderId), _processor.ClusterInfo.CurrentNodeId.Id);
+            await _client.SendAsync(data, token);
+        }
+    }
+
+    private static int? GetId(NodeId? id)
+    {
+        return id is { } i
+                   ? i.Id
+                   : null;
     }
 }

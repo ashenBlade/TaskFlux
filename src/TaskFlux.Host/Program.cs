@@ -1,6 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.IO.Abstractions;
-using System.Net;
 using Consensus.JobQueue;
 using Consensus.NodeProcessor;
 using Consensus.Peer;
@@ -24,17 +23,19 @@ using TaskFlux.Host.Modules.SocketRequest;
 using TaskFlux.Host.Options;
 using TaskFlux.Host.RequestAcceptor;
 using TaskFlux.Node;
+using Utils.Network;
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()
             .Enrich.FromLogContext()
             .WriteTo.Console(outputTemplate:
-                 "[{Timestamp:HH:mm:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
+                 "[{Timestamp:HH:mm:ss:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
             .CreateLogger();
 try
 {
     var configuration = new ConfigurationBuilder()
                        .AddEnvironmentVariables()
+                       .AddJsonFile("taskflux.settings.json", optional: true)
                        .Build();
 
     var networkOptions = configuration.GetSection("NETWORK") is { } section
@@ -49,17 +50,7 @@ try
 
     var nodeId = new NodeId(serverOptions.NodeId);
 
-    var peers = serverOptions.Peers
-                             .Select(p =>
-                              {
-                                  var endpoint = GetEndpoint(p.Host, p.Port);
-                                  var id = new NodeId(p.Id);
-                                  IPeer peer = TcpPeer.Create(nodeId, id, endpoint, networkOptions.RequestTimeout,
-                                      Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
-                                  peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(250));
-                                  return peer;
-                              })
-                             .ToArray();
+    var peers = ExtractPeers(serverOptions, nodeId, networkOptions);
 
     Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
 
@@ -198,21 +189,11 @@ void ValidateOptions(RaftServerOptions serverOptions)
 
 HttpRequestModule CreateHttpRequestModule(IConfiguration config)
 {
-    var httpModuleOptions = config.GetRequiredSection("HTTP")
+    var httpModuleOptions = config.GetSection("HTTP")
                                   .Get<HttpRequestModuleOptions>()
-                         ?? throw new ApplicationException("Настройки для HTTP модуля не найдены");
+                         ?? HttpRequestModuleOptions.Default;
 
     return new HttpRequestModule(httpModuleOptions.Port, Log.ForContext<HttpRequestModule>());
-}
-
-EndPoint GetEndpoint(string host, int port)
-{
-    if (IPAddress.TryParse(host, out var ip))
-    {
-        return new IPEndPoint(ip, port);
-    }
-
-    return new DnsEndPoint(host, port);
 }
 
 StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions options)
@@ -369,37 +350,6 @@ StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions option
             workingDirectory = Directory.GetCurrentDirectory();
         }
 
-        if (!Directory.Exists(workingDirectory))
-        {
-            if (File.Exists(workingDirectory))
-            {
-                // Это может быть только в случае, если директория была указана вручную
-                Log.Error("Директория для данных - файл");
-                throw new InvalidDataException(
-                    $"Указанная директория для данных - файл. Указанная директория: {workingDirectory}");
-            }
-
-            Log.Error("Указанная директория для данных не существует");
-            throw new InvalidDataException(
-                $"Указанная директория для данных не существует. Директория данных - {workingDirectory}");
-        }
-
-        try
-        {
-            using var _ = File.Create(Path.Combine(workingDirectory, Path.GetRandomFileName()), 1,
-                FileOptions.DeleteOnClose);
-        }
-        catch (UnauthorizedAccessException access)
-        {
-            Log.Error(access, "Для указанной директории отстутствуют права на запись");
-            throw;
-        }
-        catch (Exception e)
-        {
-            Log.Error(e, "В рабочей директории невозможно создать файл");
-            throw;
-        }
-
         return workingDirectory;
     }
 }
@@ -418,7 +368,6 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
         new ThreadingTimerFactory(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300),
             heartbeatTimeout: TimeSpan.FromMilliseconds(100));
 
-    // TODO: ручной запуск таймера
     return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, timerFactory,
         jobQueue, storage, application, applicationFactory,
         commandSerializer);
@@ -479,10 +428,40 @@ ApplicationInfo CreateApplicationInfo()
 
 ClusterInfo CreateClusterInfo(RaftServerOptions options)
 {
-    return new ClusterInfo(new NodeId(options.NodeId), options.Peers.Length);
+    return new ClusterInfo(new NodeId(options.NodeId), new NodeId(options.NodeId),
+        options.Peers.Select(EndPointHelpers.ParseEndPoint));
 }
 
 NodeInfo CreateNodeInfo(RaftServerOptions options)
 {
     return new NodeInfo(new NodeId(options.NodeId), NodeRole.Follower);
+}
+
+static IPeer[] ExtractPeers(RaftServerOptions serverOptions, NodeId currentNodeId, NetworkOptions networkOptions)
+{
+    var peers = new IPeer[serverOptions.Peers.Length - 1]; // Все кроме себя
+
+    // Все до текущего узла
+    for (int i = 0; i < currentNodeId.Id; i++)
+    {
+        var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
+        var id = new NodeId(i);
+        IPeer peer = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
+            Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
+        peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
+        peers[i] = peer;
+    }
+
+    // Все после текущего узла
+    for (int i = currentNodeId.Id + 1; i < serverOptions.Peers.Length; i++)
+    {
+        var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
+        var id = new NodeId(i);
+        IPeer peer = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
+            Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
+        peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
+        peers[i - 1] = peer;
+    }
+
+    return peers;
 }

@@ -3,7 +3,6 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.Channels;
 using Consensus.Raft.Commands.Submit;
 using Serilog;
 using TaskFlux.Commands;
@@ -54,7 +53,7 @@ public class SubmitCommandRequestHandler : IRequestHandler
 
         _logger.Debug("Читаю строку запроса клиента");
         var requestString = await ReadRequestStringAsync(request);
-        
+
         if (string.IsNullOrWhiteSpace(requestString))
         {
             _logger.Debug("В теле запроса не было данных");
@@ -146,7 +145,7 @@ public class SubmitCommandRequestHandler : IRequestHandler
             responseStatus = HttpStatusCode.TemporaryRedirect;
             resultData = new Dictionary<string, object?>()
             {
-                {"message", "Узел не лидер"}, {"leaderId", _clusterInfo.LeaderId.Id}
+                {"message", "Узел не лидер"}, {"leaderId", _clusterInfo.LeaderId?.ToString() ?? "неизвестен"}
             };
             success = false;
         }

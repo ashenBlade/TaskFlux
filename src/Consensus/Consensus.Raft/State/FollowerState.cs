@@ -97,6 +97,8 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         using var _ = ElectionTimerScope.BeginScope(_electionTimer);
         if (CurrentTerm < request.Term)
         {
+            _logger.Information("Получен AppendEntries с большим термом {GreaterTerm}. Старый терм: {CurrentTerm}",
+                request.Term, CurrentTerm);
             // Мы отстали от общего состояния (старый терм)
             ConsensusModule.PersistenceFacade.UpdateState(request.Term, null);
         }
@@ -104,6 +106,9 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         if (!PersistenceFacade.PrefixMatch(request.PrevLogEntryInfo))
         {
             // Префиксы закомиченных записей лога не совпадают 
+            _logger.Information(
+                "Текущий лог не совпадает с логом узла {NodeId}. Моя последняя запись: {MyLastEntry}. Его предыдущая запись: {HisLastEntry}",
+                request.LeaderId, PersistenceFacade.LastEntry, request.PrevLogEntryInfo);
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
@@ -117,8 +122,6 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             return AppendEntriesResponse.Ok(CurrentTerm);
         }
 
-        // В случае, если какие-то записи были закоммичены лидером, то сделать то же самое у себя.
-
         // Коммитим записи по индексу лидера
         PersistenceFacade.Commit(request.LeaderCommit);
 
@@ -126,7 +129,6 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         var notApplied = PersistenceFacade.GetNotApplied();
         if (notApplied.Count > 0)
         {
-            _logger.Debug("Применяю {Count} команд", notApplied.Count);
             foreach (var entry in notApplied)
             {
                 var command = _commandCommandSerializer.Deserialize(entry.Data);
@@ -142,6 +144,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (PersistenceFacade.IsLogFileSizeExceeded())
         {
+            _logger.Information("Размер файла лога превышен. Создаю снапшот");
             var snapshot = Application.GetSnapshot();
             PersistenceFacade.SaveSnapshot(snapshot);
         }
@@ -197,6 +200,8 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
 
         using var _ = ElectionTimerScope.BeginScope(_electionTimer);
         _logger.Information("Начинаю обработку InstallSnapshot");
+        _logger.Debug("Получен снапшот с индексом {Index} и термом {Term}", request.LastEntry.Index,
+            request.LastEntry.Term);
         if (CurrentTerm < request.Term)
         {
             _logger.Information("Терм лидера больше моего. Обновляю терм до {Term}", request.Term);

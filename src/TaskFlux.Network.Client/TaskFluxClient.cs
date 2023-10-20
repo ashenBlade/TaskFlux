@@ -1,89 +1,181 @@
-﻿using System.Buffers;
-using System.Net;
+using System.Diagnostics;
 using System.Net.Sockets;
-using TaskFlux.Network.Requests;
-using TaskFlux.Network.Requests.Serialization;
+using TaskFlux.Commands;
+using TaskFlux.Network.Client.Exceptions;
+using TaskFlux.Network.Packets;
+using TaskFlux.Network.Packets.Packets;
+using TaskFlux.Network.Packets.Serialization;
+using TaskFlux.Network.Packets.Serialization.Exceptions;
 
 namespace TaskFlux.Network.Client;
 
-public class TaskFluxClient : ITaskFluxClient, IDisposable
+internal class TaskFluxClient : ITaskFluxClient
 {
-    private readonly Socket _socket;
-    private readonly bool _ownsSocket;
+    /// <summary>
+    /// Объект соединения с узлом.
+    /// Если null, то соединение не установлено/сброшено
+    /// </summary>
+    private (TaskFluxPacketClient Client, System.Net.Sockets.Socket Socket)? _connection;
 
-    private readonly Lazy<PoolingNetworkPacketSerializer> _lazySerializer;
-    private PoolingNetworkPacketSerializer Serializer => _lazySerializer.Value;
+    /// <summary>
+    /// Фабрика, которой принадлежит этот клиент.
+    /// Нужна для установления соединений с кластером
+    /// </summary>
+    private readonly TaskFluxClientFactory _factory;
 
-    private TaskFluxClient(Socket socket, bool ownsSocket)
+    private bool _disposed;
+
+
+    public TaskFluxClient((TaskFluxPacketClient, Socket) connection, TaskFluxClientFactory factory)
     {
-        _socket = socket;
-        _ownsSocket = ownsSocket;
-        Lazy<NetworkStream> lazyStream = new(() => new NetworkStream(_socket));
-        _lazySerializer = new Lazy<PoolingNetworkPacketSerializer>(() =>
-            new PoolingNetworkPacketSerializer(ArrayPool<byte>.Shared, lazyStream.Value));
+        _connection = connection;
+        _factory = factory;
     }
 
-    public TaskFluxClient() : this(new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp), true)
+    private void ThrowIfDisposed()
     {
-    }
-
-    public TaskFluxClient(Socket socket) : this(ValidateSocket(socket), false)
-    {
-    }
-
-    private static Socket ValidateSocket(Socket socket)
-    {
-        ArgumentNullException.ThrowIfNull(socket);
-        return socket;
-    }
-
-    public Task ConnectAsync(EndPoint endPoint, CancellationToken token = default)
-    {
-        ArgumentNullException.ThrowIfNull(endPoint);
-        if (token.IsCancellationRequested)
+        if (_disposed)
         {
-            return Task.FromCanceled(token);
+            throw new ObjectDisposedException(nameof(TaskFluxClient));
+        }
+    }
+
+    public async Task<Result> SendAsync(Command command, CancellationToken token = default)
+    {
+        ThrowIfDisposed();
+        token.ThrowIfCancellationRequested();
+
+        TaskFluxPacketClient client;
+        Socket socket;
+        if (_connection == null)
+        {
+            var connection = await _factory.EstablishConnectionAsync(token);
+            _connection = connection;
+            ( client, socket ) = connection;
+        }
+        else
+        {
+            ( client, socket ) = _connection.Value;
         }
 
-        return ConnectAsyncCore(endPoint, token);
-    }
-
-    public Task DisconnectAsync(CancellationToken token = default)
-    {
-        return _socket.DisconnectAsync(true, token).AsTask();
-    }
-
-    private async Task ConnectAsyncCore(EndPoint endPoint, CancellationToken token)
-    {
-        await _socket.ConnectAsync(endPoint, token);
-    }
-
-    public Task SendAsync(Packet packet, CancellationToken token = default)
-    {
-        ArgumentNullException.ThrowIfNull(packet);
-        if (token.IsCancellationRequested)
+        token.ThrowIfCancellationRequested();
+        var commandPacket = new CommandRequestPacket(_factory.CommandSerializer.Serialize(command));
+        while (!token.IsCancellationRequested)
         {
-            return Task.FromCanceled(token);
+            try
+            {
+                var result = await SendCommandCoreAsync(commandPacket, client, token);
+                if (result is not null)
+                {
+                    return result;
+                }
+            }
+            catch (EndOfStreamException)
+            {
+                /*
+                 * Соединение было разорвано
+                 */
+            }
+            catch (UnknownPacketException upe)
+            {
+                socket.Close();
+                _connection = null;
+                throw new InvalidResponseException("От сервера получен неожиданный пакет", upe);
+            }
+            catch (PacketDeserializationException pde)
+            {
+                socket.Close();
+                _connection = null;
+                throw new InvalidResponseException("Ошибка во время десериализации ответа от сервера", pde);
+            }
+            catch (ServerErrorException)
+            {
+                socket.Close();
+                _connection = null;
+                throw;
+            }
+            catch (UnexpectedResponseException)
+            {
+                socket.Close();
+                _connection = null;
+                throw;
+            }
+
+
+            // Пересоздаем подключение
+            socket.Close();
+            _connection = null;
+
+            token.ThrowIfCancellationRequested();
+            var connection = await _factory.EstablishConnectionAsync(token);
+            _connection = connection;
+            ( client, socket ) = connection;
         }
 
-        return packet.AcceptAsync(Serializer, token).AsTask();
+        // Единственный вариант развития событий
+        throw new OperationCanceledException(token);
     }
 
-    public Task<Packet> ReceiveAsync(CancellationToken token = default)
+
+    /// <summary>
+    /// Общая логика отправки команды на узел
+    /// </summary>
+    /// <param name="packet">Пакет команды, которую нужно отправить</param>
+    /// <param name="client">Клиент, который нужно использовать</param>
+    /// <param name="token">Токен отмены</param>
+    /// <returns><see cref="Result"/> - команда выполнена успешно, <c>null</c> - нужно сделать повторную попытку (например, найден новый лидер)</returns>
+    private async Task<Result?> SendCommandCoreAsync(CommandRequestPacket packet,
+                                                     TaskFluxPacketClient client,
+                                                     CancellationToken token = default)
     {
-        if (token.IsCancellationRequested)
+        await client.SendAsync(packet, token);
+        var response = await client.ReceiveAsync(token);
+        switch (response.Type)
         {
-            return Task.FromCanceled<Packet>(token);
+            case PacketType.CommandResponse:
+                break;
+            case PacketType.ErrorResponse:
+                throw new ServerErrorException(( ( ErrorResponsePacket ) response ).Message);
+
+            case PacketType.NotLeader:
+                // Обновляем лидера, делаем повторную попытку
+                var notLeaderResponse = ( NotLeaderPacket ) response;
+                _factory.LeaderId = notLeaderResponse.LeaderId;
+                return null;
+            case PacketType.CommandRequest:
+            case PacketType.AuthorizationRequest:
+            case PacketType.AuthorizationResponse:
+            case PacketType.BootstrapRequest:
+            case PacketType.BootstrapResponse:
+            case PacketType.ClusterMetadataRequest:
+            case PacketType.ClusterMetadataResponse:
+                Debug.Assert(false, "От сервера получен неожиданный пакет", "Ожидался {0}. Получен: {1}. Тело: {2}",
+                    PacketType.CommandResponse, response.Type, response);
+                throw new UnexpectedResponseException(response.Type, PacketType.CommandResponse);
+            default:
+                Debug.Assert(false, "От сервера получен неожиданный пакет", "Ожидался {0}. Получен: {1}. Тело: {2}",
+                    PacketType.CommandResponse, response.Type, response);
+                throw new UnexpectedResponseException(response.Type, PacketType.CommandResponse);
         }
 
-        return Serializer.DeserializeAsync(token);
+        var commandResponse = ( CommandResponsePacket ) response;
+
+        return _factory.ResultSerializer.Deserialize(commandResponse.Payload);
     }
 
     public void Dispose()
     {
-        if (_ownsSocket)
+        if (_disposed)
         {
-            _socket.Dispose();
+            return;
+        }
+
+        _disposed = true;
+
+        if (_connection is {Socket: var socket})
+        {
+            socket.Close();
+            socket.Dispose();
         }
     }
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("JobQueue.Core.Tests")]
@@ -18,6 +19,7 @@ public readonly struct QueueName : IEquatable<QueueName>
 
     internal QueueName(string name)
     {
+        Debug.Assert(name != null, "Название очереди не может быть null");
         Name = name;
     }
 

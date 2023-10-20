@@ -1,47 +1,18 @@
-﻿using System.Net;
-using TaskFlux.Network.Requests;
-using TaskFlux.Network.Requests.Serialization.Exceptions;
+﻿using TaskFlux.Commands;
+using TaskFlux.Network.Client.Exceptions;
 
 namespace TaskFlux.Network.Client;
 
-public interface ITaskFluxClient
+public interface ITaskFluxClient : IDisposable
 {
     /// <summary>
-    /// Подключиться к узлу по переданному <paramref name="endPoint"/> 
+    /// Отправить команду на узел для выполения
     /// </summary>
-    /// <param name="endPoint">Адрес удаленного узла</param>
+    /// <param name="command">Команда, которую нужно выполнить</param>
     /// <param name="token">Токен отмены</param>
-    /// <returns><see cref="ValueTask"/></returns>
+    /// <returns>Результат операции</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="command"/> - null</exception>
     /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
-    /// <exception cref="ArgumentNullException"><paramref name="endPoint"/> - <c>null</c></exception>
-    public Task ConnectAsync(EndPoint endPoint, CancellationToken token = default);
-    
-    /// <summary>
-    /// Отключиться от удаленного узла
-    /// </summary>
-    /// <param name="token">Токен отмены</param>
-    /// <returns><see cref="ValueTask"/>, завершающийся при окончании закрытия соединения</returns>
-    public Task DisconnectAsync(CancellationToken token = default);
-    
-    /// <summary>
-    /// Отправить на удаленный узел указанный пакет
-    /// </summary>
-    /// <param name="packet">Пакет, который необходимо отправить на другой узел</param>
-    /// <param name="token">Токен отмены</param>
-    /// <returns><see cref="ValueTask"/></returns>
-    /// <exception cref="ArgumentNullException"> - <paramref name="packet"/> <c>null</c></exception>
-    /// <exception cref="OperationCanceledException"> - токен был отменен</exception>
-    /// <exception cref="IOException">Ошибка сети во время отправки сообщения</exception>
-    public Task SendAsync(Packet packet, CancellationToken token = default);
-    
-    /// <summary>
-    /// Получить от удаленного узла пакет
-    /// </summary>
-    /// <param name="token">Токен отмены</param>
-    /// <returns><see cref="ValueTask{Packet}"/> который возвращает <see cref="Packet"/> при завершении операции</returns>
-    /// <exception cref="OperationCanceledException">Токен был отменен</exception>
-    /// <exception cref="IOException">Во время чтения возникла ошибка сети</exception>
-    /// <exception cref="EndOfStreamException">Соединение было разорвано во время чтения из потока</exception>
-    /// <exception cref="PacketDeserializationException">Произошла ошибка десериализации конкретного пакета</exception>
-    public Task<Packet> ReceiveAsync(CancellationToken token = default);
+    /// <exception cref="TaskFluxException">Базовый тип исключений</exception>
+    public Task<Result> SendAsync(Command command, CancellationToken token = default);
 }

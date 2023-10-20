@@ -67,6 +67,7 @@ public class SimpleJobQueueManager : IJobQueueManager
             {
                 if (!found && jobQueue.Name.IsDefaultQueue)
                 {
+                    Debug.Assert(!found, "Найдено 2 очереди по умолчанию");
                     found = true;
                 }
 
@@ -122,12 +123,12 @@ public class SimpleJobQueueManager : IJobQueueManager
 
     public IReadOnlyCollection<IJobQueueMetadata> GetAllQueuesMetadata()
     {
-        // Может поменять на IEnumerable и лениво вычислять через yield?
-        var result = new IJobQueueMetadata[QueuesCount];
+        var result = new IJobQueueMetadata[_queues.Values.Count];
         var i = 0;
         foreach (var value in _queues.Values)
         {
             result[i] = value.Metadata;
+            i++;
         }
 
         return result;
