@@ -41,6 +41,40 @@ public class BinaryPacketSerializerTests
         }
     }
 
+    private static void InvertRandomBit(byte[] array)
+    {
+        var index = Random.Shared.Next(0, array.Length);
+        var bitToInvert = ( byte ) ( 1 << Random.Shared.Next(0, 8) );
+        array[index] ^= bitToInvert;
+    }
+
+    public static async Task AssertIntegrityExceptionBase(RaftPacket packet)
+    {
+        // Проверяем, что изменение даже 1 бита приводит к исключению
+
+        // Синхронно
+        {
+            var stream = new MemoryStream();
+            // ReSharper disable once MethodHasAsyncOverload
+            packet.Serialize(stream);
+            stream.Position = 0;
+            var buffer = stream.ToArray();
+            InvertRandomBit(buffer);
+            Assert.ThrowsAny<IntegrityException>(() => Deserializer.Deserialize(new MemoryStream(buffer)));
+        }
+
+        // Асинхронно
+        {
+            var stream = new MemoryStream();
+            await packet.SerializeAsync(stream);
+            stream.Position = 0;
+            var buffer = stream.ToArray();
+            InvertRandomBit(buffer);
+            await Assert.ThrowsAnyAsync<IntegrityException>(() =>
+                Deserializer.DeserializeAsync(new MemoryStream(buffer)).AsTask());
+        }
+    }
+
     [Theory]
     [InlineData(1, 1, 1, 1)]
     [InlineData(1, 2, 1, 4)]
@@ -249,5 +283,13 @@ public class BinaryPacketSerializerTests
     public async Task InstallSnapshotResponse__ДолженДесериализоватьТакуюЖеКоманду(int term)
     {
         await AssertBase(new InstallSnapshotResponsePacket(new Term(term)));
+    }
+
+    [Fact]
+    public async Task AppendEntriesRequest__КогдаЦелостностьНарушена__ДолженКинутьIntegrityException()
+    {
+        await AssertIntegrityExceptionBase(new AppendEntriesRequestPacket(new AppendEntriesRequest(new Term(123), 1234,
+            new NodeId(2), new LogEntryInfo(new Term(34), 1242),
+            new LogEntry[] {new(new Term(32), new byte[] {1, 2, 6, 4, 31, 200, 55})})));
     }
 }
