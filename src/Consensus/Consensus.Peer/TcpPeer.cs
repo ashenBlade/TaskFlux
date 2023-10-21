@@ -49,18 +49,28 @@ public class TcpPeer : IPeer
         AppendEntriesRequest request,
         CancellationToken token)
     {
-        using var cts = CreateTimeoutCts(token, _requestTimeout);
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
 
-        await SendPacketAsync(new AppendEntriesRequestPacket(request), cts.Token);
+            using var cts = CreateTimeoutCts(token, _requestTimeout);
 
-        var packet = await Deserializer.DeserializeAsync(NetworkStream, cts.Token);
+            await SendPacketAsync(new AppendEntriesRequestPacket(request), cts.Token);
 
-        return packet.PacketType switch
-               {
-                   RaftPacketType.AppendEntriesResponse => ( ( AppendEntriesResponsePacket ) packet ).Response,
-                   _ => throw new ArgumentException(
-                            $"От узла пришел неожиданный ответ. Ожидался AppendEntriesResponse. Пришел: {packet.PacketType}")
-               };
+            var packet = await Deserializer.DeserializeAsync(NetworkStream, cts.Token);
+
+            switch (packet.PacketType)
+            {
+                case RaftPacketType.AppendEntriesResponse:
+                    return ( ( AppendEntriesResponsePacket ) packet ).Response;
+                case RaftPacketType.RetransmitRequest:
+                    // Повторяем отправку
+                    continue;
+                default:
+                    throw new ArgumentException(
+                        $"От узла пришел неожиданный ответ. Ожидался AppendEntriesResponse. Пришел: {packet.PacketType}");
+            }
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -149,16 +159,24 @@ public class TcpPeer : IPeer
 
     private AppendEntriesResponse SendAppendEntriesCore(AppendEntriesRequestPacket requestPacket)
     {
-        requestPacket.Serialize(NetworkStream);
+        while (true)
+        {
+            requestPacket.Serialize(NetworkStream);
 
-        var responsePacket = Deserializer.Deserialize(NetworkStream);
+            var responsePacket = Deserializer.Deserialize(NetworkStream);
 
-        return responsePacket.PacketType switch
-               {
-                   RaftPacketType.AppendEntriesResponse => ( ( AppendEntriesResponsePacket ) responsePacket ).Response,
-                   _ => throw new ArgumentException(
-                            $"От узла пришел неожиданный ответ. Ожидался AppendEntriesResponse. Пришел: {responsePacket.PacketType}")
-               };
+            switch (responsePacket.PacketType)
+            {
+                case RaftPacketType.AppendEntriesResponse:
+                    return ( ( AppendEntriesResponsePacket ) responsePacket ).Response;
+                case RaftPacketType.RetransmitRequest:
+                    // Повторно отправляем в случае нарушения целостности
+                    continue;
+                default:
+                    throw new ArgumentException(
+                        $"От узла пришел неожиданный ответ. Ожидался AppendEntriesResponse. Пришел: {responsePacket.PacketType}");
+            }
+        }
     }
 
     private RequestVoteResponse SendRequestVoteCore(RequestVoteRequestPacket requestPacket)
@@ -284,11 +302,13 @@ public class TcpPeer : IPeer
     private IEnumerable<InstallSnapshotResponse?> SendInstallSnapshotCore(InstallSnapshotRequest request,
                                                                           CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         _logger.Debug("Отправляю снапшот на узел {NodeId}", Id);
 
         // 1. Отправляем заголовок
         var requestPacket = new InstallSnapshotRequestPacket(request.Term, request.LeaderId, request.LastEntry);
         _logger.Debug("Посылаю InstallSnapshotChunk пакет");
+        // Делаем только одну попытку установления соединения
         var requestResponse = SendPacketReturning(requestPacket);
         if (requestResponse is null)
         {
@@ -306,6 +326,7 @@ public class TcpPeer : IPeer
             }
         }
 
+        // RetransmitRequest получить не можем - отправляем заголовок
         var response = GetInstallSnapshotResponse(requestResponse);
         _logger.Debug("Ответ получен. Терм узла: {Term}", response.CurrentTerm);
         yield return response;
@@ -314,19 +335,30 @@ public class TcpPeer : IPeer
         var chunkNumber = 1;
         foreach (var chunk in request.Snapshot.GetAllChunks(token))
         {
-            _logger.Debug("Отправляю {Number} чанк данных", chunkNumber);
-            var chunkResponse = SendPacketReturning(new InstallSnapshotChunkPacket(chunk));
-            if (chunkResponse is null)
+            while (true)
             {
-                _logger.Debug("Во время отправки чанка данных соединение было разорвано");
-                yield return null;
-                yield break;
-            }
+                token.ThrowIfCancellationRequested();
+                _logger.Debug("Отправляю {Number} чанк данных", chunkNumber);
+                var chunkResponse = SendPacketReturning(new InstallSnapshotChunkPacket(chunk));
+                if (chunkResponse is null)
+                {
+                    _logger.Debug("Во время отправки чанка данных соединение было разорвано");
+                    yield return null;
+                    yield break;
+                }
 
-            yield return GetInstallSnapshotResponse(chunkResponse);
+                if (TryGetInstallSnapshotResponse(chunkResponse, out var installSnapshotResponse))
+                {
+                    yield return installSnapshotResponse;
+                    break;
+                }
+
+                // Делаем повторную попытку отправки - целостность была нарушена
+            }
         }
 
         // Отправляем последний пустой пакет - окончание передачи
+        while (true)
         {
             _logger.Debug("Отправка чанков закончена. Отправляю последний пакет");
             var chunkResponse = SendPacketReturning(new InstallSnapshotChunkPacket(Memory<byte>.Empty));
@@ -337,7 +369,11 @@ public class TcpPeer : IPeer
                 yield break;
             }
 
-            yield return GetInstallSnapshotResponse(chunkResponse);
+            if (TryGetInstallSnapshotResponse(chunkResponse, out var installSnapshotResponse))
+            {
+                yield return installSnapshotResponse;
+                break;
+            }
         }
 
         // Это для явного разделения конца метода и локальной функции
@@ -358,6 +394,23 @@ public class TcpPeer : IPeer
 
             throw new Exception(
                 $"Тип пакета {RaftPacketType.InstallSnapshotResponse}, но тип объекта не {nameof(InstallSnapshotResponsePacket)}");
+        }
+
+        static bool TryGetInstallSnapshotResponse(RaftPacket packet, out InstallSnapshotResponse response)
+        {
+            switch (packet.PacketType)
+            {
+                case RaftPacketType.InstallSnapshotResponse:
+                    var installSnapshotResponsePacket = ( InstallSnapshotResponsePacket ) packet;
+                    response = new InstallSnapshotResponse(installSnapshotResponsePacket.CurrentTerm);
+                    return true;
+                case RaftPacketType.RetransmitRequest:
+                    response = default!;
+                    return false;
+                default:
+                    throw new Exception(
+                        $"Неожиданный пакет получен от узла. Ожидался {RaftPacketType.InstallSnapshotResponse}. Получен: {packet.PacketType}");
+            }
         }
     }
 
@@ -452,6 +505,7 @@ public class TcpPeer : IPeer
                     case RaftPacketType.InstallSnapshotRequest:
                     case RaftPacketType.InstallSnapshotChunk:
                     case RaftPacketType.InstallSnapshotResponse:
+                    case RaftPacketType.RetransmitRequest:
                         throw new InvalidOperationException(
                             $"От узла пришел неожиданный ответ: PacketType: {packet.PacketType}");
                     default:
