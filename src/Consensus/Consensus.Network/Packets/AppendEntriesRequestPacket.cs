@@ -6,6 +6,19 @@ namespace Consensus.Network.Packets;
 
 public class AppendEntriesRequestPacket : RaftPacket
 {
+    /// <summary>
+    /// Позиция с которой начинаются сами данные.
+    /// Нужно для тестов
+    /// </summary>
+    internal const int DataStartPosition = 1  // Маркер
+                                         + 4  // Размер
+                                         + 4  // Leader Id
+                                         + 4  // LeaderCommit 
+                                         + 4  // Term
+                                         + 4  // PrevLogEntry Term
+                                         + 4  // PrevLogEntry Index
+                                         + 4; // Entries Count
+
     public override RaftPacketType PacketType => RaftPacketType.AppendEntriesRequest;
 
     protected override int EstimatePacketSize()
@@ -48,6 +61,8 @@ public class AppendEntriesRequestPacket : RaftPacket
         writer.Write(Request.PrevLogEntryInfo.Term.Value);
         writer.Write(Request.PrevLogEntryInfo.Index);
         writer.Write(Request.Entries.Count);
+
+        var dataStartPosition = writer.Index;
         if (Request.Entries.Count > 0)
         {
             foreach (var entry in Request.Entries)
@@ -57,7 +72,7 @@ public class AppendEntriesRequestPacket : RaftPacket
             }
         }
 
-        var checkSum = Crc32CheckSum.Compute(buffer[..^4]);
+        var checkSum = Crc32CheckSum.Compute(buffer[dataStartPosition..writer.Index]);
         writer.Write(checkSum);
     }
 
@@ -66,5 +81,17 @@ public class AppendEntriesRequestPacket : RaftPacket
     public AppendEntriesRequestPacket(AppendEntriesRequest request)
     {
         Request = request;
+    }
+
+    /// <summary>
+    /// Получить индекс на котором в сериализованном буфере заканчиваются данные.
+    /// Нужен для тестов на проверку целостности
+    /// </summary>
+    internal int GetDataEndPosition()
+    {
+        return DataStartPosition
+             + Request.Entries.Sum(entry => 4 // Term
+                                          + 4 // Размер
+                                          + entry.Data.Length);
     }
 }

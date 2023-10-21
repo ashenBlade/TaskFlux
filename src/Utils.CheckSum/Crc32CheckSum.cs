@@ -70,8 +70,18 @@ public static class Crc32CheckSum
         };
     }
 
-    public static uint Compute(Span<byte> payload)
+    public static uint Compute(ReadOnlySpan<byte> payload)
     {
+        if (payload.Length == 0)
+        {
+            /*
+             * Такое часто будет встречаться, т.к. чек-сумма вычисляется и для Heartbeat.
+             * Входных байтов нет, поэтому регистр модифицироваться не будет.
+             */
+
+            return InitialValue;
+        }
+
         var register = InitialValue;
 
         foreach (var b in payload)

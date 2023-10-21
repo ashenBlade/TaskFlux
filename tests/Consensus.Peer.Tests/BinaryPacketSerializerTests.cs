@@ -41,14 +41,15 @@ public class BinaryPacketSerializerTests
         }
     }
 
-    private static void InvertRandomBit(byte[] array)
+    private static void InvertRandomBit(byte[] array, int start, int end)
     {
-        var index = Random.Shared.Next(0, array.Length);
+        // Не трогаем байт маркера
+        var index = Random.Shared.Next(start, end);
         var bitToInvert = ( byte ) ( 1 << Random.Shared.Next(0, 8) );
         array[index] ^= bitToInvert;
     }
 
-    public static async Task AssertIntegrityExceptionBase(RaftPacket packet)
+    public static async Task AssertIntegrityExceptionBase(RaftPacket packet, int start, int end)
     {
         // Проверяем, что изменение даже 1 бита приводит к исключению
 
@@ -59,7 +60,7 @@ public class BinaryPacketSerializerTests
             packet.Serialize(stream);
             stream.Position = 0;
             var buffer = stream.ToArray();
-            InvertRandomBit(buffer);
+            InvertRandomBit(buffer, start, end);
             Assert.ThrowsAny<IntegrityException>(() => Deserializer.Deserialize(new MemoryStream(buffer)));
         }
 
@@ -69,7 +70,7 @@ public class BinaryPacketSerializerTests
             await packet.SerializeAsync(stream);
             stream.Position = 0;
             var buffer = stream.ToArray();
-            InvertRandomBit(buffer);
+            InvertRandomBit(buffer, start, end);
             await Assert.ThrowsAnyAsync<IntegrityException>(() =>
                 Deserializer.DeserializeAsync(new MemoryStream(buffer)).AsTask());
         }
@@ -288,8 +289,21 @@ public class BinaryPacketSerializerTests
     [Fact]
     public async Task AppendEntriesRequest__КогдаЦелостностьНарушена__ДолженКинутьIntegrityException()
     {
-        await AssertIntegrityExceptionBase(new AppendEntriesRequestPacket(new AppendEntriesRequest(new Term(123), 1234,
+        var packet = new AppendEntriesRequestPacket(new AppendEntriesRequest(new Term(123), 1234,
             new NodeId(2), new LogEntryInfo(new Term(34), 1242),
-            new LogEntry[] {new(new Term(32), new byte[] {1, 2, 6, 4, 31, 200, 55})})));
+            new LogEntry[] {new(new Term(32), new byte[] {1, 2, 6, 4, 31, 200, 55})}));
+        await AssertIntegrityExceptionBase(packet, AppendEntriesRequestPacket.DataStartPosition,
+            packet.GetDataEndPosition());
+    }
+
+    [Fact]
+    public async Task InstallSnapshotChunk__КогдаЦелостностьНарушена__ДолженКинутьIntegrityException()
+    {
+        var packet = new InstallSnapshotChunkPacket(new byte[]
+        {
+            1, 2, 3, 4, 5, 6, 7, 8, 100, 22, byte.MinValue, byte.MaxValue, 0, 0, 4
+        });
+        await AssertIntegrityExceptionBase(packet, InstallSnapshotChunkPacket.DataStartPosition,
+            packet.GetDataEndPosition());
     }
 }

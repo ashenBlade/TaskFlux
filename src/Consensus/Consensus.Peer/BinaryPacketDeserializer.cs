@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics;
 using System.Net.Sockets;
 using Consensus.Network;
 using Consensus.Network.Packets;
@@ -125,26 +126,21 @@ public class BinaryPacketDeserializer
 
     private static InstallSnapshotChunkPacket DeserializeInstallSnapshotChunkPacket(Stream stream)
     {
-        var (buffer, memory) = ReadRequiredLength(stream, sizeof(int));
-        int length;
+        // Читаем размер данных
+        Span<byte> headerBuffer = stackalloc byte[4];
+        FillBuffer(stream, headerBuffer);
+        var payloadLength = new SpanBinaryReader(headerBuffer)
+           .ReadInt32();
+
+        var leftPacketSize = payloadLength + sizeof(uint);
+        var buffer = ArrayPool<byte>.Shared.Rent(leftPacketSize);
         try
         {
-            length = new SpanBinaryReader(memory.Span).ReadInt32();
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
-
-        if (length == 0)
-        {
-            return new InstallSnapshotChunkPacket(Array.Empty<byte>());
-        }
-
-        ( buffer, memory ) = ReadRequiredLength(stream, length);
-        try
-        {
-            return new InstallSnapshotChunkPacket(memory.ToArray());
+            // Читаем оставшийся пакет
+            var dataSpan = buffer.AsSpan(0, leftPacketSize);
+            FillBuffer(stream, dataSpan);
+            // Десериализуем
+            return DeserializeInstallSnapshotChunkPacket(dataSpan);
         }
         finally
         {
@@ -156,8 +152,9 @@ public class BinaryPacketDeserializer
         Stream stream,
         CancellationToken token)
     {
-        var (buffer, memory) = await ReadRequiredLengthAsync(stream, sizeof(int), token);
+        // Читаем, сколько в буфере занимают данные
         int length;
+        var (buffer, memory) = await ReadRequiredLengthAsync(stream, sizeof(int), token);
         try
         {
             length = new SpanBinaryReader(memory.Span).ReadInt32();
@@ -167,19 +164,45 @@ public class BinaryPacketDeserializer
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        if (length == 0)
-        {
-            return new InstallSnapshotChunkPacket(Array.Empty<byte>());
-        }
+        var totalPacketSize = length        // Данные
+                            + sizeof(uint); // Чек-сумма
 
-        ( buffer, memory ) = await ReadRequiredLengthAsync(stream, length, token);
+        // Читаем оставшийся пакет
+        buffer = ArrayPool<byte>.Shared.Rent(totalPacketSize);
         try
         {
-            return new InstallSnapshotChunkPacket(memory.ToArray());
+            await FillBufferAsync(stream, buffer.AsMemory(0, totalPacketSize), token);
+            // Десериализуем пакет
+            return DeserializeInstallSnapshotChunkPacket(buffer.AsSpan(0, totalPacketSize));
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private static InstallSnapshotChunkPacket DeserializeInstallSnapshotChunkPacket(Span<byte> payload)
+    {
+        Debug.Assert(payload.Length >= 4, "payload.Length >= 4",
+            "Размер данных не может быть меньше 4 - чек-сумма занимает минимум 4 байта");
+        ValidateChecksum(payload);
+
+        if (payload.Length == 4)
+        {
+            return new InstallSnapshotChunkPacket(Array.Empty<byte>());
+        }
+
+        return new InstallSnapshotChunkPacket(payload[..^4].ToArray());
+
+        static void ValidateChecksum(Span<byte> buffer)
+        {
+            var crcReader = new SpanBinaryReader(buffer[^4..]);
+            var storedCrc = crcReader.ReadUInt32();
+            var calculatedCrc = Crc32CheckSum.Compute(buffer[..^4]);
+            if (storedCrc != calculatedCrc)
+            {
+                throw new IntegrityException();
+            }
         }
     }
 
@@ -287,40 +310,31 @@ public class BinaryPacketDeserializer
 
     private static AppendEntriesRequestPacket DeserializeAppendEntriesRequestPacket(Stream stream)
     {
-        var temp = ArrayPool<byte>.Shared.Rent(5);
+        // Сначала определим полный размер пакета
+        // ReSharper disable once RedundantAssignment
+        var (buffer, memory) = ReadRequiredLength(stream, sizeof(int));
+        int payloadSize;
         try
         {
-            // ReSharper disable once RedundantAssignment
-            var (buffer, memory) = ReadRequiredLength(stream, sizeof(int));
-            int payloadSize;
-            try
-            {
-                var reader = new ArrayBinaryReader(buffer);
-                payloadSize = reader.ReadInt32();
-                temp[0] = ( byte ) RaftPacketType.AppendEntriesRequest;
-                memory.Span.CopyTo(temp.AsSpan(1, 4));
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-
-            var totalPacketSize = sizeof(RaftPacketType) + sizeof(int) + payloadSize;
-            buffer = ArrayPool<byte>.Shared.Rent(totalPacketSize);
-            try
-            {
-                temp.AsSpan(0, 5).CopyTo(buffer.AsSpan(0, 5));
-                FillBuffer(stream, buffer.AsSpan(5, totalPacketSize - 5));
-                return DeserializeAppendEntriesRequestPacket(buffer.AsMemory(0, totalPacketSize));
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
+            var reader = new SpanBinaryReader(memory.Span);
+            payloadSize = reader.ReadInt32();
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(temp);
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        // Запишем все байты и десериализуем пакет
+        buffer = ArrayPool<byte>.Shared.Rent(payloadSize);
+        try
+        {
+            var dataSpan = buffer.AsSpan(0, payloadSize);
+            FillBuffer(stream, dataSpan);
+            return DeserializeAppendEntriesRequestPacket(dataSpan);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
@@ -329,49 +343,36 @@ public class BinaryPacketDeserializer
         CancellationToken token)
     {
         // Временный массив для 
-        var temp = ArrayPool<byte>.Shared.Rent(5);
+        int payloadSize;
+        var (buffer, memory) = await ReadRequiredLengthAsync(stream, sizeof(int), token);
         try
         {
-            int payloadSize;
-            var (buffer, memory) = await ReadRequiredLengthAsync(stream, sizeof(int), token);
-            try
-            {
-                var reader = new ArrayBinaryReader(buffer);
-                payloadSize = reader.ReadInt32();
-
-                // Заполняем байты буфера для дальнейшего подсчета контрольной суммы
-                // Маркер + байты размера нагрузки
-                temp[0] = ( byte ) RaftPacketType.AppendEntriesRequest;
-                memory.Span.CopyTo(temp.AsSpan(1, 4));
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
-
-            var totalPacketSize = sizeof(RaftPacketType) + sizeof(int) + payloadSize;
-            buffer = ArrayPool<byte>.Shared.Rent(totalPacketSize);
-            try
-            {
-                temp.AsSpan(0, 5).CopyTo(buffer.AsSpan(0, 5));
-                await FillBufferAsync(stream, buffer.AsMemory(5, totalPacketSize - 5), token);
-                return DeserializeAppendEntriesRequestPacket(buffer.AsMemory(0, totalPacketSize));
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-            }
+            var reader = new ArrayBinaryReader(buffer);
+            payloadSize = reader.ReadInt32();
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(temp);
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        buffer = ArrayPool<byte>.Shared.Rent(payloadSize);
+        try
+        {
+            await FillBufferAsync(stream, buffer.AsMemory(0, payloadSize), token);
+            return DeserializeAppendEntriesRequestPacket(buffer.AsSpan(0, payloadSize));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
-    private static AppendEntriesRequestPacket DeserializeAppendEntriesRequestPacket(Memory<byte> buffer)
+    private static AppendEntriesRequestPacket DeserializeAppendEntriesRequestPacket(Span<byte> buffer)
     {
-        // Получаемых буффер содержит весь пакет
-        var reader = new SpanBinaryReader(buffer.Span[5..]);
+        // Сперва валидируем чек-сумму
+        ValidateCheckSum(buffer);
+
+        var reader = new SpanBinaryReader(buffer);
 
         var term = reader.ReadInt32();
         var leaderId = reader.ReadInt32();
@@ -379,6 +380,7 @@ public class BinaryPacketDeserializer
         var entryTerm = reader.ReadInt32();
         var entryIndex = reader.ReadInt32();
         var entriesCount = reader.ReadInt32();
+
         IReadOnlyList<LogEntry> entries;
         if (entriesCount == 0)
         {
@@ -397,16 +399,25 @@ public class BinaryPacketDeserializer
             entries = list;
         }
 
-        // Проверяем CRC
-        var storedCrc = reader.ReadUInt32();
-        var actualCrc = Crc32CheckSum.Compute(buffer.Span[..^4]);
-        if (storedCrc != actualCrc)
-        {
-            throw new IntegrityException();
-        }
-
         return new AppendEntriesRequestPacket(new AppendEntriesRequest(new Term(term), leaderCommit,
             new NodeId(leaderId), new LogEntryInfo(new Term(entryTerm), entryIndex), entries));
+
+        static void ValidateCheckSum(Span<byte> buffer)
+        {
+            var crcReader = new SpanBinaryReader(buffer[^4..]);
+            var storedCrc = crcReader.ReadUInt32();
+            const int dataStartPosition = 4  // Терм  
+                                        + 4  // Id лидера  
+                                        + 4  // Коммит лидера
+                                        + 4  // Терм последней записи
+                                        + 4  // Индекс последней записи
+                                        + 4; // Количество записей
+            var calculatedCrc = Crc32CheckSum.Compute(buffer[dataStartPosition..^4]);
+            if (storedCrc != calculatedCrc)
+            {
+                throw new IntegrityException();
+            }
+        }
     }
 
     #endregion

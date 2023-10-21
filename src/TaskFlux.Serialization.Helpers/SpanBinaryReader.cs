@@ -8,6 +8,11 @@ public ref struct SpanBinaryReader
     private readonly Span<byte> _buffer = Span<byte>.Empty;
     private int _index = 0;
 
+    /// <summary>
+    /// Позиция, с которой начинается чтение данных
+    /// </summary>
+    public int Index => _index;
+
     public SpanBinaryReader(Span<byte> buffer)
     {
         _buffer = buffer;

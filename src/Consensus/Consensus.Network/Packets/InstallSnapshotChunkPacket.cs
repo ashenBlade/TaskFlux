@@ -5,6 +5,9 @@ namespace Consensus.Network.Packets;
 
 public class InstallSnapshotChunkPacket : RaftPacket
 {
+    internal const int DataStartPosition = 1  // Маркер
+                                         + 4; // Размер чанка
+
     public ReadOnlyMemory<byte> Chunk { get; }
     public override RaftPacketType PacketType => RaftPacketType.InstallSnapshotChunk;
 
@@ -23,10 +26,17 @@ public class InstallSnapshotChunkPacket : RaftPacket
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
+        var checkSum = Crc32CheckSum.Compute(Chunk.Span);
         var writer = new SpanBinaryWriter(buffer);
         writer.Write(( byte ) RaftPacketType.InstallSnapshotChunk);
         writer.WriteBuffer(Chunk.Span);
-        var checkSum = Crc32CheckSum.Compute(buffer[..^sizeof(uint)]);
         writer.Write(checkSum);
+    }
+
+    internal int GetDataEndPosition()
+    {
+        return 1             // Маркер
+             + 4             // Размер данных
+             + Chunk.Length; // Сами данные
     }
 }
