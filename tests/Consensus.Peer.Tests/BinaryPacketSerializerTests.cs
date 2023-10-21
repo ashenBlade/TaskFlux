@@ -18,6 +18,7 @@ public class BinaryPacketSerializerTests
 
     private static async Task AssertBase(RaftPacket expected)
     {
+        // Синхронно
         {
             var stream = new MemoryStream();
             // ReSharper disable once MethodHasAsyncOverload
@@ -29,6 +30,7 @@ public class BinaryPacketSerializerTests
                   .Be(expected, PacketEqualityComparer.Instance, "синхронная реализация");
         }
 
+        // Асинхронно
         {
             var stream = new MemoryStream();
             await expected.SerializeAsync(stream);

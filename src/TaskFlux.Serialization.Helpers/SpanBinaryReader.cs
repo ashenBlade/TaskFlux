@@ -59,4 +59,11 @@ public ref struct SpanBinaryReader
         _index++;
         return value != 0;
     }
+
+    public uint ReadUInt32()
+    {
+        var stored = BinaryPrimitives.ReadUInt32BigEndian(_buffer.Slice(_index, 4));
+        _index += sizeof(uint);
+        return stored;
+    }
 }

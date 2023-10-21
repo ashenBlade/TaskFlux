@@ -8,6 +8,7 @@ using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Persistence;
 using TaskFlux.Core;
 using TaskFlux.Serialization.Helpers;
+using Utils.CheckSum;
 
 namespace Consensus.Peer;
 
@@ -27,12 +28,12 @@ public class BinaryPacketDeserializer
         var packetType = ( RaftPacketType ) array[0];
         return packetType switch
                {
-                   RaftPacketType.ConnectRequest          => DeserializeConnectRequestPacket(stream),
-                   RaftPacketType.ConnectResponse         => DeserializeConnectResponsePacket(stream),
-                   RaftPacketType.RequestVoteRequest      => DeserializeRequestVoteRequestPacket(stream),
-                   RaftPacketType.RequestVoteResponse     => DeserializeRequestVoteResponsePacket(stream),
                    RaftPacketType.AppendEntriesRequest    => DeserializeAppendEntriesRequestPacket(stream),
                    RaftPacketType.AppendEntriesResponse   => DeserializeAppendEntriesResponsePacket(stream),
+                   RaftPacketType.RequestVoteResponse     => DeserializeRequestVoteResponsePacket(stream),
+                   RaftPacketType.RequestVoteRequest      => DeserializeRequestVoteRequestPacket(stream),
+                   RaftPacketType.ConnectRequest          => DeserializeConnectRequestPacket(stream),
+                   RaftPacketType.ConnectResponse         => DeserializeConnectResponsePacket(stream),
                    RaftPacketType.InstallSnapshotRequest  => DeserializeInstallSnapshotRequestPacket(stream),
                    RaftPacketType.InstallSnapshotChunk    => DeserializeInstallSnapshotChunkPacket(stream),
                    RaftPacketType.InstallSnapshotResponse => DeserializeInstallSnapshotResponsePacket(stream),
@@ -60,14 +61,14 @@ public class BinaryPacketDeserializer
 
         return packetType switch
                {
-                   RaftPacketType.ConnectRequest      => await DeserializeConnectRequestPacketAsync(stream, token),
-                   RaftPacketType.ConnectResponse     => await DeserializeConnectResponsePacketAsync(stream, token),
-                   RaftPacketType.RequestVoteRequest  => await DeserializeRequestVoteRequestPacketAsync(stream, token),
-                   RaftPacketType.RequestVoteResponse => await DeserializeRequestVoteResponsePacketAsync(stream, token),
                    RaftPacketType.AppendEntriesRequest => await DeserializeAppendEntriesRequestPacketAsync(stream,
                                                               token),
                    RaftPacketType.AppendEntriesResponse => await DeserializeAppendEntriesResponsePacketAsync(stream,
                                                                token),
+                   RaftPacketType.RequestVoteRequest  => await DeserializeRequestVoteRequestPacketAsync(stream, token),
+                   RaftPacketType.RequestVoteResponse => await DeserializeRequestVoteResponsePacketAsync(stream, token),
+                   RaftPacketType.ConnectRequest      => await DeserializeConnectRequestPacketAsync(stream, token),
+                   RaftPacketType.ConnectResponse     => await DeserializeConnectResponsePacketAsync(stream, token),
                    RaftPacketType.InstallSnapshotChunk => await DeserializeInstallSnapshotChunkPacketAsync(stream,
                                                               token),
                    RaftPacketType.InstallSnapshotRequest => await DeserializeInstallSnapshotRequestPacketAsync(stream,
@@ -284,29 +285,42 @@ public class BinaryPacketDeserializer
 
     #region AppendEntriesRequest
 
-    private AppendEntriesRequestPacket DeserializeAppendEntriesRequestPacket(Stream stream)
+    private static AppendEntriesRequestPacket DeserializeAppendEntriesRequestPacket(Stream stream)
     {
-        // ReSharper disable once RedundantAssignment
-        var (buffer, memory) = ReadRequiredLength(stream, sizeof(int));
-        int totalPacketLength;
+        var temp = ArrayPool<byte>.Shared.Rent(5);
         try
         {
-            var reader = new ArrayBinaryReader(buffer);
-            totalPacketLength = reader.ReadInt32();
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+            // ReSharper disable once RedundantAssignment
+            var (buffer, memory) = ReadRequiredLength(stream, sizeof(int));
+            int payloadSize;
+            try
+            {
+                var reader = new ArrayBinaryReader(buffer);
+                payloadSize = reader.ReadInt32();
+                temp[0] = ( byte ) RaftPacketType.AppendEntriesRequest;
+                memory.Span.CopyTo(temp.AsSpan(1, 4));
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
 
-        ( buffer, memory ) = ReadRequiredLength(stream, totalPacketLength);
-        try
-        {
-            return DeserializeAppendEntriesRequestPacket(memory);
+            var totalPacketSize = sizeof(RaftPacketType) + sizeof(int) + payloadSize;
+            buffer = ArrayPool<byte>.Shared.Rent(totalPacketSize);
+            try
+            {
+                temp.AsSpan(0, 5).CopyTo(buffer.AsSpan(0, 5));
+                FillBuffer(stream, buffer.AsSpan(5, totalPacketSize - 5));
+                return DeserializeAppendEntriesRequestPacket(buffer.AsMemory(0, totalPacketSize));
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            ArrayPool<byte>.Shared.Return(temp);
         }
     }
 
@@ -314,33 +328,50 @@ public class BinaryPacketDeserializer
         Stream stream,
         CancellationToken token)
     {
-        // ReSharper disable once RedundantAssignment
-        var (buffer, memory) = await ReadRequiredLengthAsync(stream, sizeof(int), token);
-        int totalPacketLength;
+        // Временный массив для 
+        var temp = ArrayPool<byte>.Shared.Rent(5);
         try
         {
-            var reader = new ArrayBinaryReader(buffer);
-            totalPacketLength = reader.ReadInt32();
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+            int payloadSize;
+            var (buffer, memory) = await ReadRequiredLengthAsync(stream, sizeof(int), token);
+            try
+            {
+                var reader = new ArrayBinaryReader(buffer);
+                payloadSize = reader.ReadInt32();
 
-        ( buffer, memory ) = await ReadRequiredLengthAsync(stream, totalPacketLength, token);
-        try
-        {
-            return DeserializeAppendEntriesRequestPacket(memory);
+                // Заполняем байты буфера для дальнейшего подсчета контрольной суммы
+                // Маркер + байты размера нагрузки
+                temp[0] = ( byte ) RaftPacketType.AppendEntriesRequest;
+                memory.Span.CopyTo(temp.AsSpan(1, 4));
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+
+            var totalPacketSize = sizeof(RaftPacketType) + sizeof(int) + payloadSize;
+            buffer = ArrayPool<byte>.Shared.Rent(totalPacketSize);
+            try
+            {
+                temp.AsSpan(0, 5).CopyTo(buffer.AsSpan(0, 5));
+                await FillBufferAsync(stream, buffer.AsMemory(5, totalPacketSize - 5), token);
+                return DeserializeAppendEntriesRequestPacket(buffer.AsMemory(0, totalPacketSize));
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            ArrayPool<byte>.Shared.Return(temp);
         }
     }
 
     private static AppendEntriesRequestPacket DeserializeAppendEntriesRequestPacket(Memory<byte> buffer)
     {
-        var reader = new SpanBinaryReader(buffer.Span);
+        // Получаемых буффер содержит весь пакет
+        var reader = new SpanBinaryReader(buffer.Span[5..]);
 
         var term = reader.ReadInt32();
         var leaderId = reader.ReadInt32();
@@ -364,6 +395,14 @@ public class BinaryPacketDeserializer
             }
 
             entries = list;
+        }
+
+        // Проверяем CRC
+        var storedCrc = reader.ReadUInt32();
+        var actualCrc = Crc32CheckSum.Compute(buffer.Span[..^4]);
+        if (storedCrc != actualCrc)
+        {
+            throw new IntegrityException();
         }
 
         return new AppendEntriesRequestPacket(new AppendEntriesRequest(new Term(term), leaderCommit,
@@ -555,20 +594,7 @@ public class BinaryPacketDeserializer
         var buffer = ArrayPool<byte>.Shared.Rent(length);
         try
         {
-            var left = length;
-            var index = 0;
-            while (0 < left)
-            {
-                var read = await stream.ReadAsync(buffer.AsMemory(index, left), token);
-                if (read == 0)
-                {
-                    throw new EndOfStreamException("Не удалось прочитать указанное количество байт");
-                }
-
-                left -= read;
-                index += read;
-            }
-
+            await stream.ReadExactlyAsync(buffer.AsMemory(0, length), token);
             return ( buffer, buffer.AsMemory(0, length) );
         }
         catch (Exception)
@@ -583,20 +609,7 @@ public class BinaryPacketDeserializer
         var buffer = ArrayPool<byte>.Shared.Rent(length);
         try
         {
-            var left = length;
-            var index = 0;
-            while (0 < left)
-            {
-                var read = stream.Read(buffer.AsSpan(index, left));
-                if (read == 0)
-                {
-                    throw new EndOfStreamException("Не удалось прочитать указанное количество байт");
-                }
-
-                left -= read;
-                index += read;
-            }
-
+            stream.ReadExactly(buffer.AsSpan(0, length));
             return ( buffer, buffer.AsMemory(0, length) );
         }
         catch (Exception)
@@ -604,5 +617,15 @@ public class BinaryPacketDeserializer
             ArrayPool<byte>.Shared.Return(buffer);
             throw;
         }
+    }
+
+    private static void FillBuffer(Stream stream, Span<byte> buffer)
+    {
+        stream.ReadExactly(buffer);
+    }
+
+    private static async ValueTask FillBufferAsync(Stream stream, Memory<byte> buffer, CancellationToken token)
+    {
+        await stream.ReadExactlyAsync(buffer, token);
     }
 }

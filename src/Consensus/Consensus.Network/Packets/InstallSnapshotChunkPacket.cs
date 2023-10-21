@@ -1,4 +1,5 @@
 using TaskFlux.Serialization.Helpers;
+using Utils.CheckSum;
 
 namespace Consensus.Network.Packets;
 
@@ -16,7 +17,8 @@ public class InstallSnapshotChunkPacket : RaftPacket
     {
         return sizeof(RaftPacketType) // Маркер
              + sizeof(int)            // Размер
-             + Chunk.Length;          // Данные
+             + Chunk.Length           // Данные
+             + sizeof(uint);          // Чек-сумма
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
@@ -24,5 +26,7 @@ public class InstallSnapshotChunkPacket : RaftPacket
         var writer = new SpanBinaryWriter(buffer);
         writer.Write(( byte ) RaftPacketType.InstallSnapshotChunk);
         writer.WriteBuffer(Chunk.Span);
+        var checkSum = Crc32CheckSum.Compute(buffer[..^sizeof(uint)]);
+        writer.Write(checkSum);
     }
 }

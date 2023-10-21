@@ -68,4 +68,10 @@ public ref struct SpanBinaryWriter
                              : byteFalse;
         _index++;
     }
+
+    public void Write(uint value)
+    {
+        BinaryPrimitives.WriteUInt32BigEndian(Buffer[_index..], value);
+        _index += sizeof(uint);
+    }
 }
