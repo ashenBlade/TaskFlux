@@ -1,4 +1,4 @@
-namespace Consensus.Peer;
+namespace Consensus.Peer.Exceptions;
 
 /// <summary>
 /// Исключение возникающее когда обнаруживается ошибка при проверки целостности полученного пакета.

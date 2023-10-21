@@ -1,8 +1,9 @@
 using System.Buffers;
 using System.Diagnostics;
-using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using Consensus.Network;
 using Consensus.Network.Packets;
+using Consensus.Peer.Exceptions;
 using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.RequestVote;
@@ -17,66 +18,101 @@ public class BinaryPacketDeserializer
 {
     public static readonly BinaryPacketDeserializer Instance = new();
 
+    /// <summary>
+    /// Десериализовать пакет из переданного потока
+    /// </summary>
+    /// <param name="stream">Поток, из которого нужно десериализовать пакет</param>
+    /// <returns>Десериализованный пакет</returns>
+    /// <exception cref="EndOfStreamException">Соединение было закрыто во время чтения пакета</exception>
+    /// <exception cref="IntegrityException">При чтении пакета с пользовательскими данными обнаружена ошибка</exception>
+    /// <exception cref="UnknownPacketException">Получен неизвестный маркер пакета</exception>
     public RaftPacket Deserialize(Stream stream)
     {
         Span<byte> array = stackalloc byte[1];
         var read = stream.Read(array);
         if (read == 0)
         {
-            throw new SocketException(( int ) SocketError.Shutdown);
+            throw new EndOfStreamException("Соединение было закрыто во время чтения маркера пакета");
         }
 
         var packetType = ( RaftPacketType ) array[0];
-        return packetType switch
-               {
-                   RaftPacketType.AppendEntriesRequest    => DeserializeAppendEntriesRequestPacket(stream),
-                   RaftPacketType.AppendEntriesResponse   => DeserializeAppendEntriesResponsePacket(stream),
-                   RaftPacketType.RequestVoteResponse     => DeserializeRequestVoteResponsePacket(stream),
-                   RaftPacketType.RequestVoteRequest      => DeserializeRequestVoteRequestPacket(stream),
-                   RaftPacketType.ConnectRequest          => DeserializeConnectRequestPacket(stream),
-                   RaftPacketType.ConnectResponse         => DeserializeConnectResponsePacket(stream),
-                   RaftPacketType.InstallSnapshotRequest  => DeserializeInstallSnapshotRequestPacket(stream),
-                   RaftPacketType.InstallSnapshotChunk    => DeserializeInstallSnapshotChunkPacket(stream),
-                   RaftPacketType.InstallSnapshotResponse => DeserializeInstallSnapshotResponsePacket(stream),
-               };
+        try
+        {
+            return packetType switch
+                   {
+                       RaftPacketType.AppendEntriesRequest    => DeserializeAppendEntriesRequestPacket(stream),
+                       RaftPacketType.AppendEntriesResponse   => DeserializeAppendEntriesResponsePacket(stream),
+                       RaftPacketType.RequestVoteResponse     => DeserializeRequestVoteResponsePacket(stream),
+                       RaftPacketType.RequestVoteRequest      => DeserializeRequestVoteRequestPacket(stream),
+                       RaftPacketType.ConnectRequest          => DeserializeConnectRequestPacket(stream),
+                       RaftPacketType.ConnectResponse         => DeserializeConnectResponsePacket(stream),
+                       RaftPacketType.InstallSnapshotRequest  => DeserializeInstallSnapshotRequestPacket(stream),
+                       RaftPacketType.InstallSnapshotChunk    => DeserializeInstallSnapshotChunkPacket(stream),
+                       RaftPacketType.InstallSnapshotResponse => DeserializeInstallSnapshotResponsePacket(stream),
+                   };
+        }
+        catch (SwitchExpressionException)
+        {
+            throw new UnknownPacketException(array[0]);
+        }
     }
 
+    /// <summary>
+    /// Десериализовать пакет из переданного потока
+    /// </summary>
+    /// <param name="stream">Поток, из которого нужно десериализовать пакет</param>
+    /// <returns>Десериализованный пакет</returns>
+    /// <exception cref="EndOfStreamException">Соединение было закрыто во время чтения пакета</exception>
+    /// <exception cref="IntegrityException">При чтении пакета с пользовательскими данными обнаружена ошибка</exception>
+    /// <exception cref="UnknownPacketException">Получен неизвестный маркер пакета</exception>
     public async ValueTask<RaftPacket> DeserializeAsync(Stream stream, CancellationToken token = default)
     {
         var array = ArrayPool<byte>.Shared.Rent(1);
+        byte marker;
         RaftPacketType packetType;
         try
         {
             var read = await stream.ReadAsync(array.AsMemory(0, 1), token);
             if (read == 0)
             {
-                throw new SocketException(( int ) SocketError.Shutdown);
+                throw new EndOfStreamException("Соединение было закрыто во время чтения маркера пакета");
             }
 
-            packetType = ( RaftPacketType ) array[0];
+            packetType = ( RaftPacketType ) ( marker = array[0] );
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(array);
         }
 
-        return packetType switch
-               {
-                   RaftPacketType.AppendEntriesRequest => await DeserializeAppendEntriesRequestPacketAsync(stream,
-                                                              token),
-                   RaftPacketType.AppendEntriesResponse => await DeserializeAppendEntriesResponsePacketAsync(stream,
-                                                               token),
-                   RaftPacketType.RequestVoteRequest  => await DeserializeRequestVoteRequestPacketAsync(stream, token),
-                   RaftPacketType.RequestVoteResponse => await DeserializeRequestVoteResponsePacketAsync(stream, token),
-                   RaftPacketType.ConnectRequest      => await DeserializeConnectRequestPacketAsync(stream, token),
-                   RaftPacketType.ConnectResponse     => await DeserializeConnectResponsePacketAsync(stream, token),
-                   RaftPacketType.InstallSnapshotChunk => await DeserializeInstallSnapshotChunkPacketAsync(stream,
-                                                              token),
-                   RaftPacketType.InstallSnapshotRequest => await DeserializeInstallSnapshotRequestPacketAsync(stream,
+        try
+        {
+            return packetType switch
+                   {
+                       RaftPacketType.AppendEntriesRequest => await DeserializeAppendEntriesRequestPacketAsync(stream,
+                                                                  token),
+                       RaftPacketType.AppendEntriesResponse => await DeserializeAppendEntriesResponsePacketAsync(stream,
+                                                                   token),
+                       RaftPacketType.RequestVoteRequest => await DeserializeRequestVoteRequestPacketAsync(stream,
                                                                 token),
-                   RaftPacketType.InstallSnapshotResponse => await DeserializeInstallSnapshotResponsePacketAsync(stream,
+                       RaftPacketType.RequestVoteResponse => await DeserializeRequestVoteResponsePacketAsync(stream,
                                                                  token),
-               };
+                       RaftPacketType.ConnectRequest  => await DeserializeConnectRequestPacketAsync(stream, token),
+                       RaftPacketType.ConnectResponse => await DeserializeConnectResponsePacketAsync(stream, token),
+                       RaftPacketType.InstallSnapshotChunk => await DeserializeInstallSnapshotChunkPacketAsync(stream,
+                                                                  token),
+                       RaftPacketType.InstallSnapshotRequest => await DeserializeInstallSnapshotRequestPacketAsync(
+                                                                    stream,
+                                                                    token),
+                       RaftPacketType.InstallSnapshotResponse => await DeserializeInstallSnapshotResponsePacketAsync(
+                                                                     stream,
+                                                                     token),
+                   };
+        }
+        catch (SwitchExpressionException)
+        {
+            throw new UnknownPacketException(marker);
+        }
     }
 
     #region InstallSnapshotResponse
@@ -344,7 +380,7 @@ public class BinaryPacketDeserializer
     {
         // Временный массив для 
         int payloadSize;
-        var (buffer, memory) = await ReadRequiredLengthAsync(stream, sizeof(int), token);
+        var (buffer, _) = await ReadRequiredLengthAsync(stream, sizeof(int), token);
         try
         {
             var reader = new ArrayBinaryReader(buffer);

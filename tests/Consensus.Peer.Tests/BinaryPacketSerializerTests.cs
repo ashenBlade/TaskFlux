@@ -1,6 +1,7 @@
 using System.Text;
 using Consensus.Network;
 using Consensus.Network.Packets;
+using Consensus.Peer.Exceptions;
 using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.RequestVote;
