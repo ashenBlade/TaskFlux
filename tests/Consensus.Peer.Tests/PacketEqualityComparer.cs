@@ -71,6 +71,9 @@ public class PacketEqualityComparer : IEqualityComparer<RaftPacket>
         return first.CurrentTerm == second.CurrentTerm;
     }
 
+    private static bool Check(RetransmitRequestPacket first, RetransmitRequestPacket second)
+        => first.PacketType == second.PacketType;
+
     public int GetHashCode(RaftPacket obj)
     {
         return ( int ) obj.PacketType;

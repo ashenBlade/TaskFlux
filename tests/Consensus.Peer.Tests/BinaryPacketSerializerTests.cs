@@ -307,4 +307,10 @@ public class BinaryPacketSerializerTests
         await AssertIntegrityExceptionBase(packet, InstallSnapshotChunkPacket.DataStartPosition,
             packet.GetDataEndPosition());
     }
+
+    [Fact]
+    public async Task RetransmitRequestPacket__ДолженДесериализоватьТакуюЖеКоманду()
+    {
+        await AssertBase(new RetransmitRequestPacket());
+    }
 }
