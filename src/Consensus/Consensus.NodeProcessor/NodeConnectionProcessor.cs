@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using Consensus.Network;
 using Consensus.Network.Packets;
+using Consensus.Peer.Exceptions;
 using Consensus.Raft;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Serilog;
@@ -37,7 +38,7 @@ public class NodeConnectionProcessor : IDisposable
         {
             while (token.IsCancellationRequested is false)
             {
-                var packet = await Client.ReceiveAsync(token);
+                var packet = await ReceivePacketAsync(token);
                 if (packet is null)
                 {
                     break;
@@ -62,12 +63,34 @@ public class NodeConnectionProcessor : IDisposable
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
+        catch (UnknownPacketException upe)
+        {
+            Logger.Warning(upe, "От узла получен неожиданный пакет данных");
+        }
         catch (Exception e)
         {
             Logger.Warning(e, "Во время обработки узла {Node} возникло необработанное исключение", Id);
         }
 
         CloseClient();
+    }
+
+    private async ValueTask<RaftPacket?> ReceivePacketAsync(CancellationToken token)
+    {
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            try
+            {
+                return await Client.ReceiveAsync(token);
+            }
+            catch (IntegrityException)
+            {
+            }
+
+            Logger.Debug("От узла получен пакет с нарушенной целосностью. Отправляю RetransmitRequest");
+            await Client.SendAsync(new RetransmitRequestPacket(), token);
+        }
     }
 
     /// <summary>

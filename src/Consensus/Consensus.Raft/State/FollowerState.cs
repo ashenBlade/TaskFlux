@@ -214,7 +214,6 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             PersistenceFacade.UpdateState(request.Term, votedFor);
         }
 
-        // 1. Обновляем файл снапшота
         _electionTimer.Stop();
         _electionTimer.Schedule();
         _logger.Debug("Начинаю получать чанки снашота");
@@ -225,7 +224,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             _electionTimer.Stop();
             _logger.Debug("Очередной чанк снапшота установлен. Возвращаю ответ");
             yield return new InstallSnapshotResponse(CurrentTerm);
-            _electionTimer.Schedule();
+
             if (!success)
             {
                 yield break;
