@@ -1,5 +1,5 @@
 using System.Buffers.Binary;
-using JobQueue.Core;
+using TaskQueue.Core;
 
 namespace TaskFlux.Serialization.Helpers;
 

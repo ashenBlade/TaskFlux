@@ -1,8 +1,8 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
-using JobQueue.Core;
-using JobQueue.Core.Exceptions;
+using TaskQueue.Core;
+using TaskQueue.Core.Exceptions;
 
 namespace TaskFlux.Serialization.Helpers;
 
@@ -13,7 +13,8 @@ public struct StreamBinaryReader
 
     private bool CheckEnd()
     {
-        Debug.Assert(Stream.CanSeek, "Чтобы проверять достижение конца потока, поток должен поддерживать Seek операцию");
+        Debug.Assert(Stream.CanSeek,
+            "Чтобы проверять достижение конца потока, поток должен поддерживать Seek операцию");
         var read = Stream.ReadByte();
         if (read == -1)
         {

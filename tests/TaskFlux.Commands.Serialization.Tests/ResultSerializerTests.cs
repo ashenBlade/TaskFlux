@@ -1,10 +1,10 @@
-using JobQueue.Core;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
+using TaskQueue.Core;
 using Xunit;
 
 namespace TaskFlux.Commands.Serialization.Tests;
@@ -91,7 +91,7 @@ public class ResultSerializerTests
         AssertBase(new OkResult());
     }
 
-    private class StubMetadata : IJobQueueMetadata
+    private class StubMetadata : ITaskQueueMetadata
     {
         public StubMetadata(QueueName queueName, uint maxSize, uint count)
         {
@@ -167,6 +167,6 @@ public class ResultSerializerTests
     [Fact(DisplayName = $"{nameof(ListQueuesResult)}-Empty")]
     public void ListQueuesResult__Empty__Serialization()
     {
-        AssertBase(new ListQueuesResult(Array.Empty<IJobQueueMetadata>()));
+        AssertBase(new ListQueuesResult(Array.Empty<ITaskQueueMetadata>()));
     }
 }

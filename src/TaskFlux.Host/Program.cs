@@ -9,7 +9,6 @@ using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
 using Consensus.Timers;
-using JobQueue.Core;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 using TaskFlux.Commands;
@@ -23,6 +22,7 @@ using TaskFlux.Host.Modules.SocketRequest;
 using TaskFlux.Host.Options;
 using TaskFlux.Host.RequestAcceptor;
 using TaskFlux.Node;
+using TaskQueue.Core;
 using Utils.Network;
 
 Log.Logger = new LoggerConfiguration()

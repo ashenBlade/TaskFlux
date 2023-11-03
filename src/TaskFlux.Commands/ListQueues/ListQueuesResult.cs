@@ -1,13 +1,14 @@
-using JobQueue.Core;
 using TaskFlux.Commands.Visitors;
+using TaskQueue.Core;
 
 namespace TaskFlux.Commands.ListQueues;
 
-public class ListQueuesResult: Result
+public class ListQueuesResult : Result
 {
     public override ResultType Type => ResultType.ListQueues;
-    public IReadOnlyCollection<IJobQueueMetadata> Metadata { get; }
-    public ListQueuesResult(IReadOnlyCollection<IJobQueueMetadata> metadata)
+    public IReadOnlyCollection<ITaskQueueMetadata> Metadata { get; }
+
+    public ListQueuesResult(IReadOnlyCollection<ITaskQueueMetadata> metadata)
     {
         ArgumentNullException.ThrowIfNull(metadata);
         Metadata = metadata;

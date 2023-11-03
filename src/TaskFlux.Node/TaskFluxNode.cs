@@ -1,19 +1,19 @@
-﻿using JobQueue.Core;
-using TaskFlux.Core;
+﻿using TaskFlux.Core;
+using TaskQueue.Core;
 
 namespace TaskFlux.Node;
 
-public class TaskFluxNode: INode
+public class TaskFluxNode : INode
 {
-    private readonly IJobQueueManager _jobQueueManager;
+    private readonly ITaskQueueManager _manager;
 
-    public TaskFluxNode(IJobQueueManager jobQueueManager)
+    public TaskFluxNode(ITaskQueueManager manager)
     {
-        _jobQueueManager = jobQueueManager;
+        _manager = manager;
     }
-    
-    public IJobQueueManager GetJobQueueManager()
+
+    public ITaskQueueManager GetTaskQueueManager()
     {
-        return _jobQueueManager;
+        return _manager;
     }
 }

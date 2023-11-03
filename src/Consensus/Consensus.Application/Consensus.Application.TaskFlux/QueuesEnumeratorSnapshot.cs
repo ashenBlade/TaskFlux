@@ -1,6 +1,6 @@
 using Consensus.Application.TaskFlux.Serialization;
 using Consensus.Raft.Persistence;
-using JobQueue.Core;
+using TaskQueue.Core;
 
 namespace Consensus.Application.TaskFlux;
 
@@ -9,10 +9,10 @@ namespace Consensus.Application.TaskFlux;
 /// </summary>
 public class QueuesEnumeratorSnapshot : ISnapshot
 {
-    private readonly IJobQueueManager _manager;
-    private readonly IJobQueueSnapshotSerializer _serializer;
+    private readonly ITaskQueueManager _manager;
+    private readonly ITaskQueueSnapshotSerializer _serializer;
 
-    public QueuesEnumeratorSnapshot(IJobQueueManager manager, IJobQueueSnapshotSerializer serializer)
+    public QueuesEnumeratorSnapshot(ITaskQueueManager manager, ITaskQueueSnapshotSerializer serializer)
     {
         _manager = manager;
         _serializer = serializer;

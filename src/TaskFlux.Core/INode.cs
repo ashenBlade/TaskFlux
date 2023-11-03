@@ -1,9 +1,9 @@
-﻿using JobQueue.Core;
+﻿using TaskQueue.Core;
 
 namespace TaskFlux.Core;
 
 public interface INode : IReadOnlyNode
 {
-    public new IJobQueueManager GetJobQueueManager();
-    IReadOnlyJobQueueManager IReadOnlyNode.GetJobQueueManager() => GetJobQueueManager();
+    public new ITaskQueueManager GetTaskQueueManager();
+    IReadOnlyTaskQueueManager IReadOnlyNode.GetTaskQueueManager() => GetTaskQueueManager();
 }

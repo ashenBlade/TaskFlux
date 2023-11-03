@@ -1,7 +1,7 @@
-using JobQueue.Core;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
+using TaskQueue.Core;
 
 namespace TaskFlux.Commands.DeleteQueue;
 
@@ -17,7 +17,7 @@ public class DeleteQueueCommand : UpdateCommand
 
     public override Result Apply(ICommandContext context)
     {
-        var manager = context.Node.GetJobQueueManager();
+        var manager = context.Node.GetTaskQueueManager();
         if (!manager.HasQueue(QueueName))
         {
             return DefaultErrors.QueueDoesNotExist;
@@ -33,7 +33,7 @@ public class DeleteQueueCommand : UpdateCommand
 
     public override void ApplyNoResult(ICommandContext context)
     {
-        var manager = context.Node.GetJobQueueManager();
+        var manager = context.Node.GetTaskQueueManager();
         if (!manager.HasQueue(QueueName))
         {
             return;

@@ -1,7 +1,5 @@
 using System.Diagnostics;
 using System.Runtime.Serialization;
-using JobQueue.Core;
-using JobQueue.Core.Exceptions;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
@@ -10,6 +8,7 @@ using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Serialization.Helpers;
+using TaskQueue.Core;
 
 namespace TaskFlux.Commands.Serialization;
 
@@ -226,16 +225,16 @@ public class ResultSerializer
         {
             // Такого быть не может, т.к. всегда как минимум 1 очередь (по умолчанию), 
             // но на всякий случай
-            return new ListQueuesResult(Array.Empty<IJobQueueMetadata>());
+            return new ListQueuesResult(Array.Empty<ITaskQueueMetadata>());
         }
 
-        var result = new List<IJobQueueMetadata>(metadataCount);
+        var result = new List<ITaskQueueMetadata>(metadataCount);
 
         for (int i = 0; i < metadataCount; i++)
         {
             var queueName = reader.ReadQueueName();
             var size = reader.ReadInt32();
-            var builder = new PlainJobQueueMetadata.Builder();
+            var builder = new PlainTaskQueueMetadata.Builder();
             builder.WithQueueName(queueName);
 
             for (int j = 0; j < size; j++)

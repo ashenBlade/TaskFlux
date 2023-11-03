@@ -18,13 +18,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.Peer.Tests", "tests\Consensus.Peer.Tests\Consensus.Peer.Tests.csproj", "{26303C4D-3C0A-4291-82E5-3053131A65BA}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "JobQueue", "JobQueue", "{9B36E68C-007A-4911-B6CC-131989BC02AB}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "TaskQueue", "TaskQueue", "{9B36E68C-007A-4911-B6CC-131989BC02AB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobQueue.Core", "src\JobQueue\JobQueue.Core\JobQueue.Core.csproj", "{BB69AF5A-9A4A-4EF9-9804-33025BC687F5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskQueue.Core", "src\JobQueue\TaskQueue.Core\TaskQueue.Core.csproj", "{BB69AF5A-9A4A-4EF9-9804-33025BC687F5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobQueue.InMemory", "src\JobQueue\JobQueue.InMemory\JobQueue.InMemory.csproj", "{4D4A05E6-4527-43A6-85A0-BCF1171BF152}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskQueue.InMemory", "src\JobQueue\TaskQueue.InMemory\TaskQueue.InMemory.csproj", "{4D4A05E6-4527-43A6-85A0-BCF1171BF152}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobQueue.PriorityQueue.StandardLibrary.Tests", "tests\JobQueue.PriorityQueue.StandardLibrary.Tests\JobQueue.PriorityQueue.StandardLibrary.Tests.csproj", "{55E03A2F-3731-4523-A32C-CD9B1982E7A0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskQueue.PriorityQueue.StandardLibrary.Tests", "tests\TaskQueue.PriorityQueue.StandardLibrary.Tests\TaskQueue.PriorityQueue.StandardLibrary.Tests.csproj", "{55E03A2F-3731-4523-A32C-CD9B1982E7A0}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.Storage.Tests", "tests\Consensus.Storage.Tests\Consensus.Storage.Tests.csproj", "{941E314A-2594-4A74-AE65-1087557993B5}"
 EndProject
@@ -68,19 +68,19 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Serialization.Help
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.Commands.Serialization.Tests", "tests\TaskFlux.Commands.Serialization.Tests\TaskFlux.Commands.Serialization.Tests.csproj", "{5673D018-4282-41C0-991F-0B64AFA6AD38}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "JobQueue.PriorityQueue", "JobQueue.PriorityQueue", "{E5A22E40-1822-4AA9-9276-6853212EF2B1}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "TaskQueue.PriorityQueue", "TaskQueue.PriorityQueue", "{E5A22E40-1822-4AA9-9276-6853212EF2B1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobQueue.PriorityQueue", "src\JobQueue\JobQueue.PriorityQueue\JobQueue.PriorityQueue\JobQueue.PriorityQueue.csproj", "{DCD4AC5E-775B-46F7-B5DA-E2BD72868A18}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskQueue.PriorityQueue", "src\JobQueue\JobQueue.PriorityQueue\TaskQueue.PriorityQueue\TaskQueue.PriorityQueue.csproj", "{DCD4AC5E-775B-46F7-B5DA-E2BD72868A18}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobQueue.PriorityQueue.StandardLibrary", "src\JobQueue\JobQueue.PriorityQueue\JobQueue.PriorityQueue.StandardLibrary\JobQueue.PriorityQueue.StandardLibrary.csproj", "{E25893DB-1565-48A4-B783-D744970F7906}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskQueue.PriorityQueue.StandardLibrary", "src\JobQueue\JobQueue.PriorityQueue\TaskQueue.PriorityQueue.StandardLibrary\TaskQueue.PriorityQueue.StandardLibrary.csproj", "{E25893DB-1565-48A4-B783-D744970F7906}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobQueue.Core.Tests", "tests\JobQueue.Core.Tests\JobQueue.Core.Tests.csproj", "{D0191C73-5481-45F9-9321-519BDCCCB955}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskQueue.Core.Tests", "tests\TaskQueue.Core.Tests\TaskQueue.Core.Tests.csproj", "{D0191C73-5481-45F9-9321-519BDCCCB955}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobQueue.Serialization", "src\JobQueue\JobQueue.Serialization\JobQueue.Serialization.csproj", "{5DA4A298-43CE-4721-805C-36E64937E090}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskQueue.Serialization", "src\JobQueue\TaskQueue.Serialization\TaskQueue.Serialization.csproj", "{5DA4A298-43CE-4721-805C-36E64937E090}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobQueue.Serialization.Tests", "tests\JobQueue.Serialization.Tests\JobQueue.Serialization.Tests.csproj", "{236BA177-0897-40D8-BE31-21BEF53E0A7D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskQueue.Serialization.Tests", "tests\TaskQueue.Serialization.Tests\TaskQueue.Serialization.Tests.csproj", "{236BA177-0897-40D8-BE31-21BEF53E0A7D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobQueue.Core.TestHelpers", "tests\JobQueue.Core.TestHelpers\JobQueue.Core.TestHelpers.csproj", "{22ECB3E1-A6CA-4650-AAF9-55EEDA1B6A29}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskQueue.Core.TestHelpers", "tests\TaskQueue.Core.TestHelpers\TaskQueue.Core.TestHelpers.csproj", "{22ECB3E1-A6CA-4650-AAF9-55EEDA1B6A29}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.NodeProcessor", "src\Consensus\Consensus.NodeProcessor\Consensus.NodeProcessor.csproj", "{3183671C-91D2-47AA-AB15-3FA2F7348E0F}"
 EndProject

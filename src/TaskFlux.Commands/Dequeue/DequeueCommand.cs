@@ -1,12 +1,13 @@
-using JobQueue.Core;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Visitors;
+using TaskQueue.Core;
 
 namespace TaskFlux.Commands.Dequeue;
 
 public class DequeueCommand : UpdateCommand
 {
-    public QueueName Queue { get; }
+    public
+        QueueName Queue { get; }
 
     public DequeueCommand(QueueName queue)
     {
@@ -17,7 +18,7 @@ public class DequeueCommand : UpdateCommand
 
     public override Result Apply(ICommandContext context)
     {
-        var manager = context.Node.GetJobQueueManager();
+        var manager = context.Node.GetTaskQueueManager();
 
         if (!manager.TryGetQueue(Queue, out var queue))
         {
@@ -34,7 +35,7 @@ public class DequeueCommand : UpdateCommand
 
     public override void ApplyNoResult(ICommandContext context)
     {
-        var manager = context.Node.GetJobQueueManager();
+        var manager = context.Node.GetTaskQueueManager();
 
         if (!manager.TryGetQueue(Queue, out var queue))
         {

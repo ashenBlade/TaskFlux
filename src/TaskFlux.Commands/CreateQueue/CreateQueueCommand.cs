@@ -1,9 +1,9 @@
-using JobQueue.Core;
-using JobQueue.InMemory;
-using JobQueue.PriorityQueue.StandardLibrary;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
+using TaskQueue.Core;
+using TaskQueue.InMemory;
+using TaskQueue.PriorityQueue.StandardLibrary;
 
 namespace TaskFlux.Commands.CreateQueue;
 
@@ -13,8 +13,8 @@ public class CreateQueueCommand : UpdateCommand
     public QueueName Name { get; }
     public uint Size { get; }
 
-    private IJobQueue CreateJobQueue() =>
-        new PrioritizedJobQueue(Name, Size, new StandardLibraryPriorityQueue<long, byte[]>());
+    private ITaskQueue CreateTaskQueue() =>
+        new PrioritizedTaskQueue(Name, Size, new StandardLibraryPriorityQueue<long, byte[]>());
 
     public CreateQueueCommand(QueueName name, uint size)
     {
@@ -24,13 +24,13 @@ public class CreateQueueCommand : UpdateCommand
 
     public override Result Apply(ICommandContext context)
     {
-        var manager = context.Node.GetJobQueueManager();
+        var manager = context.Node.GetTaskQueueManager();
         if (manager.HasQueue(Name))
         {
             return DefaultErrors.QueueAlreadyExists;
         }
 
-        var queue = CreateJobQueue();
+        var queue = CreateTaskQueue();
         if (manager.TryAddQueue(Name, queue))
         {
             return OkResult.Instance;
@@ -41,13 +41,13 @@ public class CreateQueueCommand : UpdateCommand
 
     public override void ApplyNoResult(ICommandContext context)
     {
-        var manager = context.Node.GetJobQueueManager();
+        var manager = context.Node.GetTaskQueueManager();
         if (!manager.HasQueue(Name))
         {
             return;
         }
 
-        var queue = CreateJobQueue();
+        var queue = CreateTaskQueue();
         manager.TryAddQueue(Name, queue);
     }
 

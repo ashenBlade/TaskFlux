@@ -9,9 +9,9 @@ namespace Consensus.Application.TaskFlux;
 public class TaskFluxApplication : IApplication<Command, Result>
 {
     private readonly ICommandContext _context;
-    private readonly IJobQueueSnapshotSerializer _serializer;
+    private readonly ITaskQueueSnapshotSerializer _serializer;
 
-    public TaskFluxApplication(ICommandContext context, IJobQueueSnapshotSerializer serializer)
+    public TaskFluxApplication(ICommandContext context, ITaskQueueSnapshotSerializer serializer)
     {
         _context = context;
         _serializer = serializer;
@@ -29,6 +29,6 @@ public class TaskFluxApplication : IApplication<Command, Result>
 
     public ISnapshot GetSnapshot()
     {
-        return new QueuesEnumeratorSnapshot(_context.Node.GetJobQueueManager(), _serializer);
+        return new QueuesEnumeratorSnapshot(_context.Node.GetTaskQueueManager(), _serializer);
     }
 }

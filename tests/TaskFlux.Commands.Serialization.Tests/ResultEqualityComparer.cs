@@ -1,10 +1,10 @@
-using JobQueue.Core;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
+using TaskQueue.Core;
 
 namespace TaskFlux.Commands.Serialization.Tests;
 
@@ -39,13 +39,13 @@ public class ResultEqualityComparer : IEqualityComparer<Result>
     private static bool Check(OkResult first, OkResult second) => true;
 
     private static bool Check(ListQueuesResult first, ListQueuesResult second) =>
-        first.Metadata.SequenceEqual(second.Metadata, JobQueueMetadataEqualityComparer.Instance);
+        first.Metadata.SequenceEqual(second.Metadata, TaskQueueMetadataEqualityComparer.Instance);
 
-    private class JobQueueMetadataEqualityComparer : IEqualityComparer<IJobQueueMetadata>
+    private class TaskQueueMetadataEqualityComparer : IEqualityComparer<ITaskQueueMetadata>
     {
-        public static JobQueueMetadataEqualityComparer Instance = new();
+        public static TaskQueueMetadataEqualityComparer Instance = new();
 
-        public bool Equals(IJobQueueMetadata? x, IJobQueueMetadata? y)
+        public bool Equals(ITaskQueueMetadata? x, ITaskQueueMetadata? y)
         {
             if (x is null || y is null)
             {
@@ -55,7 +55,7 @@ public class ResultEqualityComparer : IEqualityComparer<Result>
             return x.Count == y.Count && x.QueueName == y.QueueName && x.MaxSize == y.MaxSize;
         }
 
-        public int GetHashCode(IJobQueueMetadata obj)
+        public int GetHashCode(ITaskQueueMetadata obj)
         {
             return HashCode.Combine(obj.QueueName, obj.Count, obj.MaxSize);
         }

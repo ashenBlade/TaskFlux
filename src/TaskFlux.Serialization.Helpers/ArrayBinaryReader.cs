@@ -1,8 +1,8 @@
 using System.Buffers.Binary;
 using System.Runtime.Serialization;
 using System.Text;
-using JobQueue.Core;
-using JobQueue.Core.Exceptions;
+using TaskQueue.Core;
+using TaskQueue.Core.Exceptions;
 
 namespace TaskFlux.Serialization.Helpers;
 
@@ -197,7 +197,7 @@ public struct ArrayBinaryReader
         {
             throw new SerializationException("Невозможно прочитать название очереди: в буфере не осталось места");
         }
-        
+
         var length = _buffer[_index];
         EnsureLength(length);
         var span = _buffer.AsSpan(++_index, length);

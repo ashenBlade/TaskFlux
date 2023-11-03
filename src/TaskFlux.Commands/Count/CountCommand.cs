@@ -1,6 +1,6 @@
-using JobQueue.Core;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Visitors;
+using TaskQueue.Core;
 
 namespace TaskFlux.Commands.Count;
 
@@ -16,7 +16,7 @@ public class CountCommand : ReadOnlyCommand
 
     protected override Result Apply(IReadOnlyCommandContext context)
     {
-        var manager = context.Node.GetJobQueueManager();
+        var manager = context.Node.GetTaskQueueManager();
 
         if (!manager.TryGetQueue(Queue, out var queue))
         {

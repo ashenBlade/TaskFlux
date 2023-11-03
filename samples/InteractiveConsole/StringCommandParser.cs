@@ -1,4 +1,3 @@
-using JobQueue.Core;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.CreateQueue;
@@ -6,6 +5,7 @@ using TaskFlux.Commands.DeleteQueue;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.ListQueues;
+using TaskQueue.Core;
 
 namespace InteractiveConsole;
 

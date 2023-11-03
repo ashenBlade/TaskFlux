@@ -2,7 +2,6 @@ using System.Buffers;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
-using JobQueue.Core.Exceptions;
 using Microsoft.Extensions.Options;
 using Serilog;
 using TaskFlux.Commands;
@@ -14,6 +13,7 @@ using TaskFlux.Network.Packets;
 using TaskFlux.Network.Packets.Authorization;
 using TaskFlux.Network.Packets.Packets;
 using TaskFlux.Network.Packets.Serialization;
+using TaskQueue.Core.Exceptions;
 
 namespace TaskFlux.Host.Modules.SocketRequest;
 

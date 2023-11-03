@@ -9,7 +9,7 @@ public class ListQueuesCommand : ReadOnlyCommand
 
     protected override Result Apply(IReadOnlyCommandContext context)
     {
-        var manager = context.Node.GetJobQueueManager();
+        var manager = context.Node.GetTaskQueueManager();
         var result = manager.GetAllQueuesMetadata();
         return new ListQueuesResult(result);
     }

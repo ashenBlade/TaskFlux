@@ -1,7 +1,7 @@
-﻿using JobQueue.Core;
-using TaskFlux.Commands.Count;
+﻿using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
+using TaskQueue.Core;
 using Xunit;
 
 namespace TaskFlux.Commands.Serialization.Tests;
@@ -66,7 +66,7 @@ public class CommandSerializerTests
     [InlineData(long.MinValue, 1, "nope")]
     [InlineData(long.MaxValue, 1, "uiii")]
     [InlineData(long.MaxValue, 100, "q123oeire")]
-    [InlineData((long) int.MaxValue + 1, 100, "!dfd...dsf")]
+    [InlineData(( long ) int.MaxValue + 1, 100, "!dfd...dsf")]
     [InlineData(long.MaxValue - 1, 2, "asdfv")]
     [InlineData(-1, byte.MaxValue, "dfdq135f")]
     public void EnqueueCommand__Serialization(long key, int payloadLength, string queueName)

@@ -1,4 +1,4 @@
-using JobQueue.Core;
+using TaskQueue.Core;
 
 namespace TaskFlux.Core;
 
