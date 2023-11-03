@@ -7,5 +7,5 @@ public class NetworkOptions
     public static NetworkOptions Default => new();
 
     [ConfigurationKeyName("REQUEST_TIMEOUT")]
-    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromMilliseconds(500);
+    public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(3);
 }

@@ -8,6 +8,11 @@ public ref struct SpanBinaryReader
     private readonly Span<byte> _buffer = Span<byte>.Empty;
     private int _index = 0;
 
+    /// <summary>
+    /// Позиция, с которой начинается чтение данных
+    /// </summary>
+    public int Index => _index;
+
     public SpanBinaryReader(Span<byte> buffer)
     {
         _buffer = buffer;
@@ -58,5 +63,12 @@ public ref struct SpanBinaryReader
         var value = _buffer[_index];
         _index++;
         return value != 0;
+    }
+
+    public uint ReadUInt32()
+    {
+        var stored = BinaryPrimitives.ReadUInt32BigEndian(_buffer.Slice(_index, 4));
+        _index += sizeof(uint);
+        return stored;
     }
 }

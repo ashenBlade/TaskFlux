@@ -6,7 +6,13 @@ namespace TaskFlux.Serialization.Helpers;
 public ref struct SpanBinaryWriter
 {
     public Span<byte> Buffer = Span<byte>.Empty;
+
     private int _index = 0;
+
+    /// <summary>
+    /// Текущий индекс начала записи в <see cref="Buffer"/>
+    /// </summary>
+    public int Index => _index;
 
     public SpanBinaryWriter(Span<byte> buffer)
     {
@@ -67,5 +73,11 @@ public ref struct SpanBinaryWriter
                              ? byteTrue
                              : byteFalse;
         _index++;
+    }
+
+    public void Write(uint value)
+    {
+        BinaryPrimitives.WriteUInt32BigEndian(Buffer[_index..], value);
+        _index += sizeof(uint);
     }
 }

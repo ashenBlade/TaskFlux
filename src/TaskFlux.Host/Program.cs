@@ -50,11 +50,11 @@ try
 
     var nodeId = new NodeId(serverOptions.NodeId);
 
-    var peers = ExtractPeers(serverOptions, nodeId, networkOptions);
 
     Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
 
     var facade = CreateStoragePersistenceFacade(serverOptions);
+    var peers = ExtractPeers(serverOptions, nodeId, networkOptions);
 
     var appInfo = CreateApplicationInfo();
     var clusterInfo = CreateClusterInfo(serverOptions);

@@ -14,4 +14,6 @@ public enum RaftPacketType : byte
     InstallSnapshotRequest = ( byte ) 'S',
     InstallSnapshotChunk = ( byte ) 'b',
     InstallSnapshotResponse = ( byte ) 's',
+
+    RetransmitRequest = ( byte ) 'R',
 }

@@ -8,7 +8,14 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\TaskFlux.Serialization.Helpers\TaskFlux.Serialization.Helpers.csproj" />
+        <ProjectReference Include="..\..\Utils.CheckSum\Utils.CheckSum.csproj"/>
       <ProjectReference Include="..\Consensus.Raft\Consensus.Raft.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+            <_Parameter1>Consensus.Peer.Tests</_Parameter1>
+        </AssemblyAttribute>
     </ItemGroup>
 
 </Project>
