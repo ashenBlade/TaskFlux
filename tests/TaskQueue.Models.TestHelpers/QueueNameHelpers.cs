@@ -1,4 +1,6 @@
-﻿namespace TaskQueue.Core.TestHelpers;
+﻿using TaskQueue.Core;
+
+namespace TaskQueue.Models.TestHelpers;
 
 public static class QueueNameHelpers
 {

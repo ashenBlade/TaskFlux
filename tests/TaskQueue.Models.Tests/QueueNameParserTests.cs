@@ -1,6 +1,8 @@
+using TaskQueue.Core;
+using Xunit;
 using Xunit.Sdk;
 
-namespace TaskQueue.Core.Tests;
+namespace TaskQueue.Models.Tests;
 
 [Trait("Category", "BusinessLogic")]
 public class QueueNameParserTests
