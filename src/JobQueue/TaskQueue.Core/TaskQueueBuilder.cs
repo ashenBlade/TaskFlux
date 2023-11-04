@@ -77,6 +77,7 @@ public class TaskQueueBuilder
     private StandardLibraryPriorityQueue<long, byte[]> BuildPriorityQueue()
     {
         var priorityQueue = new StandardLibraryPriorityQueue<long, byte[]>();
+
         if (_payload is {Count: > 0} payload)
         {
             foreach (var (key, value) in payload)
