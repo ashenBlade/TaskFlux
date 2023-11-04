@@ -9,23 +9,58 @@ public class CreateQueueCommand : UpdateCommand
 {
     public override CommandType Type => CommandType.CreateQueue;
     public QueueName Name { get; }
-    public int? Size { get; }
+    public int? MaxQueueSize { get; }
+    public int? MaxPayloadSize { get; }
+    public (long, long)? PriorityRange { get; }
 
     private ITaskQueue CreateTaskQueue()
     {
         var builder = new TaskQueueBuilder(Name);
-        if (Size is { } size)
+
+        if (MaxQueueSize is { } maxQueueSize)
         {
-            builder.WithMaxSize(size);
+            builder.WithMaxQueueSize(maxQueueSize);
+        }
+
+        if (MaxPayloadSize is { } maxPayloadSize)
+        {
+            builder.WithMaxPayloadSize(maxPayloadSize);
+        }
+
+        if (PriorityRange is var (min, max))
+        {
+            builder.WithPriorityRange(min, max);
         }
 
         return builder.Build();
     }
 
-    public CreateQueueCommand(QueueName name, int? size)
+    public CreateQueueCommand(QueueName name,
+                              int? maxQueueSize,
+                              int? maxPayloadSize,
+                              (long, long)? priorityRange)
     {
+        if (priorityRange is var (min, max) && max < min)
+        {
+            throw new ArgumentException("Минимальное значение ключа не может быть больше максимального");
+        }
+
+        if (maxPayloadSize is < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxPayloadSize), maxPayloadSize,
+                "Максимальный размер сообщения не может быть отрицательным значением");
+        }
+
+        if (maxQueueSize is < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxQueueSize), maxQueueSize,
+                "Максимальный размер очереди не может быть отрицательным значением");
+        }
+
         Name = name;
-        Size = size;
+        MaxQueueSize = maxQueueSize;
+        MaxPayloadSize = maxPayloadSize;
+        PriorityRange = priorityRange;
     }
 
     public override Result Apply(ICommandContext context)

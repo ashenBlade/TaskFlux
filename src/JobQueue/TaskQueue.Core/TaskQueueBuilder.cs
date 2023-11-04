@@ -29,7 +29,7 @@ public class TaskQueueBuilder
         return this;
     }
 
-    public TaskQueueBuilder WithMaxSize(int maxSize)
+    public TaskQueueBuilder WithMaxQueueSize(int maxSize)
     {
         if (maxSize < 0)
         {

@@ -16,7 +16,7 @@ public class BuilderTaskQueueFactory : ITaskQueueFactory
         var builder = new TaskQueueBuilder(name);
         if (maxSize is { } ms)
         {
-            builder.WithMaxSize(ms);
+            builder.WithMaxQueueSize(ms);
         }
 
         if (priorityRange is var (min, max))
