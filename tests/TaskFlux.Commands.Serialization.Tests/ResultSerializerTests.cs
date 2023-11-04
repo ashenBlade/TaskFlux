@@ -1,11 +1,11 @@
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
-using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
 using TaskQueue.Core;
 using Xunit;
+using EnqueueResult = TaskFlux.Commands.Enqueue.EnqueueResult;
 
 namespace TaskFlux.Commands.Serialization.Tests;
 
@@ -28,13 +28,13 @@ public class ResultSerializerTests
     [InlineData(2)]
     [InlineData(123)]
     [InlineData(32)]
-    [InlineData(uint.MaxValue)]
-    [InlineData(uint.MaxValue - 1)]
+    [InlineData(int.MaxValue)]
+    [InlineData(int.MaxValue - 1)]
     [InlineData(10)]
-    [InlineData(uint.MaxValue / 2)]
+    [InlineData(int.MaxValue / 2)]
     [InlineData(1 << 10)]
     [InlineData(1 << 2)]
-    public void CountResult__Serialization(uint result)
+    public void CountResult__Serialization(int result)
     {
         AssertBase(new CountResult(result));
     }
@@ -93,7 +93,7 @@ public class ResultSerializerTests
 
     private class StubMetadata : ITaskQueueMetadata
     {
-        public StubMetadata(QueueName queueName, uint maxSize, uint count)
+        public StubMetadata(QueueName queueName, int? maxSize, int count)
         {
             QueueName = queueName;
             MaxSize = maxSize;
@@ -101,8 +101,10 @@ public class ResultSerializerTests
         }
 
         public QueueName QueueName { get; }
-        public uint Count { get; }
-        public uint MaxSize { get; }
+        public int Count { get; }
+        public int? MaxSize { get; }
+        public uint? MaxPayloadSize { get; }
+        public (long Min, long Max)? PriorityRange { get; }
     }
 
     [Theory(DisplayName = $"{nameof(ListQueuesResult)}-Single")]
@@ -112,11 +114,11 @@ public class ResultSerializerTests
     [InlineData("SDGGGGGGGJjsdhU&^%*Ahvc`2eu84t((AFP\"vawergf'", 100, 100)]
     [InlineData(
         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-        uint.MaxValue, 0)]
-    [InlineData("-", uint.MaxValue, uint.MaxValue)]
-    [InlineData("default", uint.MaxValue - 2, uint.MaxValue - 1)]
-    [InlineData("hello,world!", uint.MaxValue - 2, uint.MaxValue - 1)]
-    public void ListQueuesResult__SingleQueue__Serialization(string queueName, uint count, uint maxSize)
+        int.MaxValue, 0)]
+    [InlineData("-", int.MaxValue, int.MaxValue)]
+    [InlineData("default", int.MaxValue - 2, int.MaxValue - 1)]
+    [InlineData("hello,world!", int.MaxValue - 2, int.MaxValue - 1)]
+    public void ListQueuesResult__SingleQueue__Serialization(string queueName, int count, int maxSize)
     {
         var metadata = new StubMetadata(QueueNameParser.Parse(queueName), maxSize, count);
         AssertBase(new ListQueuesResult(new[] {metadata}));
@@ -157,7 +159,7 @@ public class ResultSerializerTests
 
     [Theory(DisplayName = $"{nameof(ListQueuesResult)}-MultipleItems")]
     [MemberData(nameof(ListQueuesArguments))]
-    public void ListQueuesResult__MultipleQueues__Serialization((string Name, uint Count, uint MaxSize)[] values)
+    public void ListQueuesResult__MultipleQueues__Serialization((string Name, int Count, int? MaxSize)[] values)
     {
         var metadata = values.Select(v => new StubMetadata(QueueNameParser.Parse(v.Name), v.MaxSize, v.Count))
                              .ToList();

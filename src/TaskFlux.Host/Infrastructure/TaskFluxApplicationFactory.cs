@@ -7,8 +7,6 @@ using TaskFlux.Core;
 using TaskFlux.Host.Helpers;
 using TaskFlux.Node;
 using TaskQueue.Core;
-using TaskQueue.InMemory;
-using TaskQueue.PriorityQueue.StandardLibrary;
 using TaskQueue.Serialization;
 
 namespace TaskFlux.Host.Infrastructure;
@@ -20,7 +18,7 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Result>
     private readonly IClusterInfo _clusterInfo;
 
     private readonly ITaskQueueSnapshotSerializer _fileTaskQueueSnapshotSerializer =
-        new FileTaskQueueSnapshotSerializer(PrioritizedTaskQueueFactory.Instance);
+        new FileTaskQueueSnapshotSerializer(BuilderTaskQueueFactory.Instance);
 
     public TaskFluxApplicationFactory(INodeInfo nodeInfo, IApplicationInfo appInfo, IClusterInfo clusterInfo)
     {
@@ -31,11 +29,11 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Result>
 
     public IApplication<Command, Result> CreateEmpty()
     {
-        var node = new TaskFluxNode(new SimpleTaskQueueManager(new PrioritizedTaskQueue(QueueName.Default, 0,
-            new StandardLibraryPriorityQueue<long, byte[]>())));
+        var queue = new TaskQueueBuilder(QueueName.Default)
+           .Build();
+        var node = new TaskFluxNode(new TaskQueueManager(queue));
         var commandContext = new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo);
-        var serializer = _fileTaskQueueSnapshotSerializer;
-        return new TaskFluxApplication(commandContext, serializer);
+        return new TaskFluxApplication(commandContext, _fileTaskQueueSnapshotSerializer);
     }
 
     public IApplication<Command, Result> Restore(ISnapshot snapshot)
@@ -50,7 +48,7 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Result>
         var queues = _fileTaskQueueSnapshotSerializer.Deserialize(memoryStream)
                                                      .ToList();
 
-        var node = new TaskFluxNode(new SimpleTaskQueueManager(queues));
+        var node = new TaskFluxNode(new TaskQueueManager(queues));
         return new TaskFluxApplication(new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo),
             _fileTaskQueueSnapshotSerializer);
     }

@@ -5,9 +5,11 @@ namespace TaskQueue.Serialization.Tests;
 public class StubTaskQueueFactory : ITaskQueueFactory
 {
     public ITaskQueue CreateTaskQueue(QueueName name,
-                                      uint maxSize,
-                                      IReadOnlyCollection<(long Priority, byte[] Payload)> data)
+                                      int? maxSize,
+                                      (long Min, long Max)? priorityRange,
+                                      uint? maxPayloadSize,
+                                      IReadOnlyCollection<(long Key, byte[] Value)> payload)
     {
-        return new StubTaskQueue(name, maxSize, data);
+        return new StubTaskQueue(name, maxSize, priorityRange, maxPayloadSize, payload);
     }
 }

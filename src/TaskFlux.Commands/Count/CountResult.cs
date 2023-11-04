@@ -5,9 +5,9 @@ namespace TaskFlux.Commands.Count;
 public class CountResult : Result
 {
     public static readonly CountResult Empty = new(0);
-    public uint Count { get; }
+    public int Count { get; }
 
-    public CountResult(uint count)
+    public CountResult(int count)
     {
         Count = count;
     }

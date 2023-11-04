@@ -84,4 +84,14 @@ public struct StreamBinaryWriter
     /// Если нужно добавить длину - есть <see cref="WriteBuffer"/>
     /// </remarks>
     public void Write(ReadOnlyMemory<byte> data) => Write(data.Span);
+
+    public void Write(bool value)
+    {
+        Span<byte> span = stackalloc byte[1];
+        span[0] = ( byte ) ( value
+                                 ? 1
+                                 : 0 );
+
+        Stream.Write(span);
+    }
 }

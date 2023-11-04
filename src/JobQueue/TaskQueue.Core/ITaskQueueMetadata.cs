@@ -10,16 +10,19 @@ public interface ITaskQueueMetadata
     /// <summary>
     /// Текущий размер очереди (количество элементов в ней)
     /// </summary>
-    public uint Count { get; }
+    public int Count { get; }
 
     /// <summary>
     /// Максимальный размер очереди
     /// </summary>
-    /// <remarks>0 означает отсутствие предела</remarks>
-    public uint MaxSize { get; }
+    public int? MaxSize { get; }
 
     /// <summary>
     /// Имеет ли очередь предел количества элементов
     /// </summary>
-    public bool HasMaxSize => MaxSize > 0;
+    public bool HasMaxSize => MaxSize is not null;
+
+    public uint? MaxPayloadSize { get; }
+
+    public (long Min, long Max)? PriorityRange { get; }
 }

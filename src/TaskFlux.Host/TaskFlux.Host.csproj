@@ -17,7 +17,6 @@
         <ProjectReference Include="..\Consensus\Consensus.JobQueue\Consensus.JobQueue.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.Peer\Consensus.Peer.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.Timers\Consensus.Timers.csproj"/>
-        <ProjectReference Include="..\JobQueue\TaskQueue.InMemory\TaskQueue.InMemory.csproj"/>
         <ProjectReference Include="..\JobQueue\JobQueue.PriorityQueue\TaskQueue.PriorityQueue.StandardLibrary\TaskQueue.PriorityQueue.StandardLibrary.csproj"/>
         <ProjectReference Include="..\JobQueue\TaskQueue.Serialization\TaskQueue.Serialization.csproj"/>
         <ProjectReference Include="..\TaskFlux.Commands.Serialization\TaskFlux.Commands.Serialization.csproj"/>

@@ -1,9 +1,8 @@
 using System.Diagnostics;
-using TaskQueue.Core;
 
-namespace TaskQueue.InMemory;
+namespace TaskQueue.Core;
 
-public class SimpleTaskQueueManager : ITaskQueueManager
+public class TaskQueueManager : ITaskQueueManager
 {
     // Если решим добавить одну очередь, но под разными именами, то такое нужно обрабатывать правильно
     public int QueuesCount => _queues.Count;
@@ -32,7 +31,7 @@ public class SimpleTaskQueueManager : ITaskQueueManager
 
     private readonly Dictionary<QueueName, ITaskQueue> _queues;
 
-    public SimpleTaskQueueManager(ITaskQueue defaultTaskQueue)
+    public TaskQueueManager(ITaskQueue defaultTaskQueue)
     {
         _queues = new Dictionary<QueueName, ITaskQueue>(QueueNameEqualityComparer.Instance)
         {
@@ -50,7 +49,7 @@ public class SimpleTaskQueueManager : ITaskQueueManager
     /// - Есть несколько очередей с одинаковым названием
     /// </exception>
     /// <exception cref="ArgumentNullException">Какой-то объект в коллекции <paramref name="queues"/> - <c>null</c></exception>
-    public SimpleTaskQueueManager(IReadOnlyCollection<ITaskQueue> queues)
+    public TaskQueueManager(IReadOnlyCollection<ITaskQueue> queues)
     {
         _queues = CreateTaskQueueDictCheck(queues);
     }

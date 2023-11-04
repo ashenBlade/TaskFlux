@@ -8,9 +8,9 @@ public interface IReadOnlyTaskQueue
     public QueueName Name { get; }
 
     /// <summary>
-    /// Количество элементов в ней на данный момент
+    /// Количество элементов в очереди
     /// </summary>
-    public uint Count { get; }
+    public int Count { get; }
 
     /// <summary>
     /// Метаданные очереди
@@ -25,5 +25,5 @@ public interface IReadOnlyTaskQueue
     /// Метод предназначен для сериализации.
     /// Список возвращаемых данных не обязан быть в правильном порядке
     /// </remarks>
-    public IReadOnlyCollection<(long Priority, byte[] Payload)> GetAllData();
+    public IReadOnlyCollection<(long Priority, byte[] Payload)> ReadAllData();
 }

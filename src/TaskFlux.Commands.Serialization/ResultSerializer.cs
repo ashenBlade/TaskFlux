@@ -2,13 +2,14 @@ using System.Diagnostics;
 using System.Runtime.Serialization;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
-using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Serialization.Helpers;
 using TaskQueue.Core;
+using TaskQueue.Core.Exceptions;
+using EnqueueResult = TaskFlux.Commands.Enqueue.EnqueueResult;
 
 namespace TaskFlux.Commands.Serialization;
 
@@ -115,7 +116,8 @@ public class ResultSerializer
 
         public void Visit(ListQueuesResult result)
         {
-            Debug.Assert(result is not null, "ListQueuesResult при сериализации не должен быть null");
+            Debug.Assert(result is not null, "result is not null",
+                "ListQueuesResult при сериализации не должен быть null");
 
             var estimatedSize = EstimateSize();
             var buffer = new byte[estimatedSize];
@@ -173,6 +175,7 @@ public class ResultSerializer
                         size += MemoryBinaryWriter.EstimateResultSize(metadata.Count.ToString());
 
                         size += MemoryBinaryWriter.EstimateResultSize("limit");
+                        // BUG: неправильная сериализация Result
                         size += MemoryBinaryWriter.EstimateResultSize(metadata.MaxSize.ToString());
                     }
                     else
@@ -244,10 +247,10 @@ public class ResultSerializer
                 switch (attribute)
                 {
                     case "count":
-                        builder.WithCount(uint.Parse(value));
+                        builder.WithCount(int.Parse(value));
                         break;
                     case "limit":
-                        builder.WithMaxSize(uint.Parse(value));
+                        builder.WithMaxSize(int.Parse(value));
                         break;
                     default:
                         // Если попали сюда, то другая версия или типа того.
@@ -271,7 +274,7 @@ public class ResultSerializer
 
     private static CountResult DeserializeCountResult(ArrayBinaryReader reader)
     {
-        var count = reader.ReadUInt32();
+        var count = reader.ReadInt32();
         if (count == 0)
         {
             return CountResult.Empty;

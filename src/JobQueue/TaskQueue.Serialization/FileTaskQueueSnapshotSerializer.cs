@@ -18,25 +18,66 @@ public class FileTaskQueueSnapshotSerializer : ITaskQueueSnapshotSerializer
     {
         var memory = new MemoryStream();
         var writer = new StreamBinaryWriter(memory);
+
+        Serialize(queue, ref writer);
+
+        return memory.ToArray();
+    }
+
+    private static void Serialize(ITaskQueue queue, ref StreamBinaryWriter writer)
+    {
         // Заголовок
         var metadata = queue.Metadata;
+
+        // Название очереди
         writer.Write(metadata.QueueName);
-        writer.Write(metadata.MaxSize);
+
+        // Установленный максимальный размер
+        if (metadata.MaxSize is { } maxSize)
+        {
+            writer.Write(maxSize);
+        }
+        else
+        {
+            writer.Write(-1);
+        }
+
+        // Диапазон ключей
+        if (metadata.PriorityRange is var (min, max))
+        {
+            writer.Write(true);
+            writer.Write(min);
+            writer.Write(max);
+        }
+        else
+        {
+            writer.Write(false);
+        }
+
+        // Максимальный размер нагрузки
+        if (metadata.MaxPayloadSize is { } maxPayloadSize)
+        {
+            writer.Write(true);
+            writer.Write(maxPayloadSize);
+        }
+        else
+        {
+            writer.Write(false);
+        }
+
         var count = metadata.Count;
         writer.Write(count);
 
         if (count == 0)
         {
-            return memory.ToArray();
+            return;
         }
 
-        foreach (var (priority, payload) in queue.GetAllData())
+        foreach (var (priority, payload) in queue.ReadAllData())
         {
             writer.Write(priority);
             writer.WriteBuffer(payload);
         }
-
-        return memory.ToArray();
     }
 
     /// <summary>
@@ -51,26 +92,10 @@ public class FileTaskQueueSnapshotSerializer : ITaskQueueSnapshotSerializer
         // но лучше сразу передавать забуферизированный поток (BufferedStream)
         // - меньше головной боли по поводу реализации
         var writer = new StreamBinaryWriter(destination);
+
         foreach (var queue in queues)
         {
-            // Заголовок
-            var metadata = queue.Metadata;
-            writer.Write(metadata.QueueName);
-            writer.Write(metadata.MaxSize);
-            var count = metadata.Count;
-            writer.Write(count);
-
-            if (count == 0)
-            {
-                continue;
-            }
-
-            foreach (var (priority, payload) in queue.GetAllData())
-            {
-                writer.Write(priority);
-                writer.WriteBuffer(payload);
-            }
-
+            Serialize(queue, ref writer);
             token.ThrowIfCancellationRequested();
         }
 
@@ -101,7 +126,31 @@ public class FileTaskQueueSnapshotSerializer : ITaskQueueSnapshotSerializer
         while (!reader.IsEnd)
         {
             var name = reader.ReadQueueName();
-            var maxSize = reader.ReadUInt32();
+
+            // Максимальный размер очереди
+            int? maxSize = reader.ReadInt32();
+            if (maxSize != -1)
+            {
+                maxSize = null;
+            }
+
+            // Диапазон значений приоритетов/ключей
+            (long Min, long Max)? priorityRange = null;
+            if (reader.ReadBool())
+            {
+                var min = reader.ReadInt64();
+                var max = reader.ReadInt64();
+                priorityRange = ( min, max );
+            }
+
+            // Максимальный размер нагрузки
+            uint? maxPayloadSize = null;
+            if (reader.ReadBool())
+            {
+                maxPayloadSize = reader.ReadUInt32();
+            }
+
+            // Сами элементы
             var count = reader.ReadUInt32();
 
             IReadOnlyCollection<(long, byte[])> elements =
@@ -109,7 +158,7 @@ public class FileTaskQueueSnapshotSerializer : ITaskQueueSnapshotSerializer
                     ? Array.Empty<(long, byte[])>()
                     : new StreamQueueElementsCollection(file, count);
 
-            result.Add(_factory.CreateTaskQueue(name, maxSize, elements));
+            result.Add(_factory.CreateTaskQueue(name, maxSize, priorityRange, maxPayloadSize, elements));
         }
 
         return result;

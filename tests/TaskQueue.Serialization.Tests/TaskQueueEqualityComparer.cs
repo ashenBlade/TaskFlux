@@ -12,7 +12,7 @@ public class TaskQueueEqualityComparer : IEqualityComparer<ITaskQueue>
             && y is not null
             && x.Name.Equals(y.Name)
             && MetadataEquals(x.Metadata, y.Metadata)
-            && StoredDataEquals(x.GetAllData(), y.GetAllData());
+            && StoredDataEquals(x.ReadAllData(), y.ReadAllData());
     }
 
     public int GetHashCode(ITaskQueue obj)

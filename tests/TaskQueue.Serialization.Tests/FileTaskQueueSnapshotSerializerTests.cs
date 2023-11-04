@@ -34,20 +34,20 @@ public class FileTaskQueueSnapshotSerializerTests
     [Fact]
     public void Serialize__КогдаПереданаПустаяОчередьБезПредела()
     {
-        AssertBase(new StubTaskQueue(DefaultName, 0, EmptyQueueData));
+        AssertBase(new StubTaskQueue(DefaultName, 0, null, null, EmptyQueueData));
     }
 
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
-    [InlineData(uint.MaxValue)]
+    [InlineData(int.MaxValue)]
     [InlineData(100)]
     [InlineData(128)]
     [InlineData(1000)]
     [InlineData(98765423)]
-    public void Serialize__КогдаПереданаПустаяОчередьСПределом(uint limit)
+    public void Serialize__КогдаПереданаПустаяОчередьСПределом(int limit)
     {
-        AssertBase(new StubTaskQueue(DefaultName, limit, EmptyQueueData));
+        AssertBase(new StubTaskQueue(DefaultName, limit, null, null, EmptyQueueData));
     }
 
     [Theory]
@@ -59,7 +59,7 @@ public class FileTaskQueueSnapshotSerializerTests
     [InlineData(123123, new byte[] {byte.MaxValue, 1, 2, 3, 4, 5, 6, byte.MinValue})]
     public void Serialize__КогдаПереданаОчередьС1ЭлементомБезПредела(long priority, byte[] data)
     {
-        AssertBase(new StubTaskQueue(DefaultName, 0, new[] {( priority, data )}));
+        AssertBase(new StubTaskQueue(DefaultName, null, null, null, new[] {( priority, data )}));
     }
 
     private static readonly Random Random = new Random(87);
@@ -83,7 +83,7 @@ public class FileTaskQueueSnapshotSerializerTests
     [InlineData(128)]
     public void Serialize__КогдаЭлементовНесколько(int count)
     {
-        AssertBase(new StubTaskQueue(DefaultName, 0, CreateRandomQueueElements(count)));
+        AssertBase(new StubTaskQueue(DefaultName, 0, null, null, CreateRandomQueueElements(count)));
     }
 
     [Theory]
@@ -98,6 +98,7 @@ public class FileTaskQueueSnapshotSerializerTests
         var queues = Enumerable.Range(0, count)
                                .Select(_ =>
                                     new StubTaskQueue(QueueNameHelpers.CreateRandomQueueName(), 0,
+                                        null, null,
                                         Array.Empty<(long, byte[])>()));
         AssertBase(queues);
     }
@@ -112,6 +113,7 @@ public class FileTaskQueueSnapshotSerializerTests
     {
         var queues = Enumerable.Range(0, count)
                                .Select(_ => new StubTaskQueue(QueueNameHelpers.CreateRandomQueueName(), 0,
+                                    null, null,
                                     CreateRandomQueueElements(Random.Next(0, 255))));
         AssertBase(queues);
     }
@@ -130,7 +132,8 @@ public class FileTaskQueueSnapshotSerializerTests
                                 {
                                     var limit = Random.Next(0, 255);
                                     var data = CreateRandomQueueElements(Random.Next(0, limit));
-                                    return new StubTaskQueue(QueueNameHelpers.CreateRandomQueueName(), ( uint ) limit,
+                                    return new StubTaskQueue(QueueNameHelpers.CreateRandomQueueName(), limit, null,
+                                        null,
                                         data);
                                 });
         AssertBase(queues);

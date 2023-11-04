@@ -83,7 +83,7 @@ public class CommandSerializer
             var writer = new MemoryBinaryWriter(buffer);
             writer.Write(( byte ) CommandType.CreateQueue);
             writer.Write(command.Name);
-            writer.Write(command.Size);
+            // writer.Write(command.Size);
             _result = buffer;
         }
 
@@ -163,7 +163,7 @@ public class CommandSerializer
     private static CreateQueueCommand DeserializeCreateQueueCommand(ArrayBinaryReader reader)
     {
         var queueName = reader.ReadQueueName();
-        var limit = reader.ReadUInt32();
+        var limit = reader.ReadInt32();
         return new CreateQueueCommand(queueName, limit);
     }
 

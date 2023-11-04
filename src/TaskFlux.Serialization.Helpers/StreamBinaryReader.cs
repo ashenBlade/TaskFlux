@@ -102,4 +102,15 @@ public struct StreamBinaryReader
         Stream.ReadExactly(buffer);
         return BinaryPrimitives.ReadInt32BigEndian(buffer);
     }
+
+    public bool ReadBool()
+    {
+        var data = Stream.ReadByte();
+        if (data == -1)
+        {
+            throw new EndOfStreamException("Не удалось прочитать Bool - достигнут конец потока");
+        }
+
+        return ( byte ) data == 1;
+    }
 }

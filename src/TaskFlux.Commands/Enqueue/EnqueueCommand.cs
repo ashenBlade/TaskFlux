@@ -29,11 +29,13 @@ public class EnqueueCommand : UpdateCommand
             return DefaultErrors.QueueDoesNotExist;
         }
 
-        if (queue.TryEnqueue(Key, Payload))
+        var result = queue.Enqueue(Key, Payload);
+        if (result.IsSuccess)
         {
             return EnqueueResult.Ok;
         }
 
+        // TODO: учитывать ошибки (не только полный может быть)
         return EnqueueResult.Full;
     }
 
@@ -46,7 +48,7 @@ public class EnqueueCommand : UpdateCommand
             return;
         }
 
-        queue.TryEnqueue(Key, Payload);
+        queue.Enqueue(Key, Payload);
     }
 
     public override void Accept(ICommandVisitor visitor)

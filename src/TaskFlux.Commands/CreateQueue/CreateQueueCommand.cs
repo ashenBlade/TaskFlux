@@ -2,8 +2,6 @@ using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
 using TaskQueue.Core;
-using TaskQueue.InMemory;
-using TaskQueue.PriorityQueue.StandardLibrary;
 
 namespace TaskFlux.Commands.CreateQueue;
 
@@ -11,12 +9,20 @@ public class CreateQueueCommand : UpdateCommand
 {
     public override CommandType Type => CommandType.CreateQueue;
     public QueueName Name { get; }
-    public uint Size { get; }
+    public int? Size { get; }
 
-    private ITaskQueue CreateTaskQueue() =>
-        new PrioritizedTaskQueue(Name, Size, new StandardLibraryPriorityQueue<long, byte[]>());
+    private ITaskQueue CreateTaskQueue()
+    {
+        var builder = new TaskQueueBuilder(Name);
+        if (Size is { } size)
+        {
+            builder.WithMaxSize(size);
+        }
 
-    public CreateQueueCommand(QueueName name, uint size)
+        return builder.Build();
+    }
+
+    public CreateQueueCommand(QueueName name, int? size)
     {
         Name = name;
         Size = size;

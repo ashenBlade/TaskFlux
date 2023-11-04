@@ -4,19 +4,33 @@ namespace TaskQueue.Serialization.Tests;
 
 public class StubTaskQueue : ITaskQueue
 {
-    private readonly uint _maxSize;
+    private readonly int? _maxSize;
+    private readonly (long, long)? _priority;
+    private readonly uint? _maxPayloadSize;
 
-    public StubTaskQueue(QueueName name, uint maxSize = 0, (long, byte[])[]? elements = null)
+    public StubTaskQueue(QueueName name,
+                         int? maxSize = null,
+                         (long, long)? priority = null,
+                         uint? maxPayloadSize = null,
+                         (long, byte[])[]? elements = null)
     {
         _maxSize = maxSize;
+        _priority = priority;
+        _maxPayloadSize = maxPayloadSize;
         Name = name;
         _data = elements ?? Array.Empty<(long, byte[])>();
         Metadata = new StubMetadata(this);
     }
 
-    public StubTaskQueue(QueueName name, uint maxSize = 0, IEnumerable<(long, byte[])>? elements = null)
+    public StubTaskQueue(QueueName name,
+                         int? maxSize = null,
+                         (long, long)? priority = null,
+                         uint? maxPayloadSize = null,
+                         IEnumerable<(long, byte[])>? elements = null)
     {
         _maxSize = maxSize;
+        _priority = priority;
+        _maxPayloadSize = maxPayloadSize;
         Name = name;
         _data = elements is null
                     ? Array.Empty<(long, byte[])>()
@@ -27,13 +41,13 @@ public class StubTaskQueue : ITaskQueue
     private readonly (long, byte[])[] _data;
 
     public QueueName Name { get; }
-    public uint Count => ( uint ) _data.Length;
+    public int Count => _data.Length;
     public ITaskQueueMetadata Metadata { get; }
 
-    public bool TryEnqueue(long key, byte[] payload)
+    public EnqueueResult Enqueue(long key, byte[] payload)
     {
         Assert.True(false, "Метод не должен быть вызван при серилазации");
-        return false;
+        throw new InvalidOperationException("Нельзя этот методы вызывать во время сериализации");
     }
 
     public bool TryDequeue(out long key, out byte[] payload)
@@ -44,7 +58,7 @@ public class StubTaskQueue : ITaskQueue
         return false;
     }
 
-    public IReadOnlyCollection<(long Priority, byte[] Payload)> GetAllData()
+    public IReadOnlyCollection<(long Priority, byte[] Payload)> ReadAllData()
     {
         return _data;
     }
@@ -59,7 +73,9 @@ public class StubTaskQueue : ITaskQueue
         }
 
         public QueueName QueueName => _parent.Name;
-        public uint Count => _parent.Count;
-        public uint MaxSize => _parent._maxSize;
+        public int Count => _parent.Count;
+        public int? MaxSize => _parent._maxSize;
+        public uint? MaxPayloadSize => _parent._maxPayloadSize;
+        public (long Min, long Max)? PriorityRange => _parent._priority;
     }
 }
