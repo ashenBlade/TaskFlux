@@ -58,7 +58,7 @@ internal class PlainTaskQueueMetadata : ITaskQueueMetadata
 
         private (long, long)? _priority;
 
-        public Builder WithPriority((long, long) priority)
+        public Builder WithPriorityRange((long, long) priority)
         {
             _priority = priority;
             return this;

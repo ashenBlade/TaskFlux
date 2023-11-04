@@ -2,17 +2,19 @@ using System.Diagnostics;
 using System.Runtime.Serialization;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
+using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Serialization.Helpers;
-using TaskQueue.Core;
 using TaskQueue.Core.Exceptions;
-using EnqueueResult = TaskFlux.Commands.Enqueue.EnqueueResult;
 
 namespace TaskFlux.Commands.Serialization;
 
+/// <summary>
+/// Сериализатор класса <see cref="Result"/> для сетевой передачи
+/// </summary>
 public class ResultSerializer
 {
     public static readonly ResultSerializer Instance = new();
@@ -116,77 +118,11 @@ public class ResultSerializer
 
         public void Visit(ListQueuesResult result)
         {
-            Debug.Assert(result is not null, "result is not null",
+            Debug.Assert(result is not null,
+                "result is not null",
                 "ListQueuesResult при сериализации не должен быть null");
 
-            var estimatedSize = EstimateSize();
-            var buffer = new byte[estimatedSize];
-            var writer = new MemoryBinaryWriter(buffer);
-
-            writer.Write(( byte ) ResultType.ListQueues);
-            writer.Write(result.Metadata.Count);
-
-            foreach (var metadata in result.Metadata)
-            {
-                // Название очереди (ключ)
-                writer.Write(metadata.QueueName);
-
-                // Метаданные очереди (список)
-                if (metadata.HasMaxSize)
-                {
-                    writer.Write(2); // Размер очереди + максимальный размер
-
-                    writer.Write("count");
-                    writer.Write(metadata.Count.ToString());
-
-                    writer.Write("limit");
-                    writer.Write(metadata.MaxSize.ToString());
-                }
-                else
-                {
-                    writer.Write(1); // Размер очереди
-
-                    writer.Write("count");
-                    writer.Write(metadata.Count.ToString());
-                }
-            }
-
-            _buffer = buffer;
-
-            int EstimateSize()
-            {
-                var size = sizeof(ResultType) // Маркер
-                         + sizeof(int);       // Кол-во элементов в словаре
-
-                // Проверяем словарь
-                foreach (var metadata in result.Metadata)
-                {
-                    Debug.Assert(metadata is not null, "Метаданные не могут быть null");
-                    // Размер ключа (название очереди)
-                    size += MemoryBinaryWriter.EstimateResultSize(metadata.QueueName);
-
-                    // Кол-во элементов списка
-                    size += sizeof(int);
-
-                    // Сами данные
-                    if (metadata.HasMaxSize)
-                    {
-                        size += MemoryBinaryWriter.EstimateResultSize("count");
-                        size += MemoryBinaryWriter.EstimateResultSize(metadata.Count.ToString());
-
-                        size += MemoryBinaryWriter.EstimateResultSize("limit");
-                        // BUG: неправильная сериализация Result
-                        size += MemoryBinaryWriter.EstimateResultSize(metadata.MaxSize.ToString());
-                    }
-                    else
-                    {
-                        size += MemoryBinaryWriter.EstimateResultSize("count");
-                        size += MemoryBinaryWriter.EstimateResultSize(metadata.Count.ToString());
-                    }
-                }
-
-                return size;
-            }
+            _buffer = MetadataSerializerHelpers.SerializeMetadata(result.Metadata);
         }
     }
 
@@ -210,69 +146,29 @@ public class ResultSerializer
         var marker = ( ResultType ) reader.ReadByte();
         return marker switch
                {
-                   ResultType.Count      => DeserializeCountResult(reader),
-                   ResultType.Dequeue    => DeserializeDequeueResult(reader),
-                   ResultType.Enqueue    => DeserializeEnqueueResult(reader),
-                   ResultType.Error      => DeserializeErrorResult(reader),
+                   ResultType.Count      => DeserializeCountResult(ref reader),
+                   ResultType.Dequeue    => DeserializeDequeueResult(ref reader),
+                   ResultType.Enqueue    => DeserializeEnqueueResult(ref reader),
+                   ResultType.Error      => DeserializeErrorResult(ref reader),
                    ResultType.Ok         => OkResult.Instance,
-                   ResultType.ListQueues => DeserializeListQueuesResult(reader),
+                   ResultType.ListQueues => DeserializeListQueuesResult(ref reader),
                };
     }
 
-    private ListQueuesResult DeserializeListQueuesResult(ArrayBinaryReader reader)
+    private ListQueuesResult DeserializeListQueuesResult(ref ArrayBinaryReader reader)
     {
-        // Размер словаря (кол-во элементов в нем)
-        var metadataCount = reader.ReadInt32();
-
-        if (metadataCount == 0)
-        {
-            // Такого быть не может, т.к. всегда как минимум 1 очередь (по умолчанию), 
-            // но на всякий случай
-            return new ListQueuesResult(Array.Empty<ITaskQueueMetadata>());
-        }
-
-        var result = new List<ITaskQueueMetadata>(metadataCount);
-
-        for (int i = 0; i < metadataCount; i++)
-        {
-            var queueName = reader.ReadQueueName();
-            var size = reader.ReadInt32();
-            var builder = new PlainTaskQueueMetadata.Builder();
-            builder.WithQueueName(queueName);
-
-            for (int j = 0; j < size; j++)
-            {
-                var attribute = reader.ReadString();
-                var value = reader.ReadString();
-                switch (attribute)
-                {
-                    case "count":
-                        builder.WithCount(int.Parse(value));
-                        break;
-                    case "limit":
-                        builder.WithMaxSize(int.Parse(value));
-                        break;
-                    default:
-                        // Если попали сюда, то другая версия или типа того.
-                        // В любом случае, если обязательные поля отсутствуют, то исключение будет дальше.
-                        break;
-                }
-            }
-
-            result.Add(builder.Build());
-        }
-
-        return new ListQueuesResult(result);
+        var infos = MetadataSerializerHelpers.DeserializeMetadata(ref reader);
+        return new ListQueuesResult(infos);
     }
 
-    private static ErrorResult DeserializeErrorResult(ArrayBinaryReader reader)
+    private static ErrorResult DeserializeErrorResult(ref ArrayBinaryReader reader)
     {
         var subtype = ( ErrorType ) reader.ReadByte();
         var message = reader.ReadString();
         return new ErrorResult(subtype, message);
     }
 
-    private static CountResult DeserializeCountResult(ArrayBinaryReader reader)
+    private static CountResult DeserializeCountResult(ref ArrayBinaryReader reader)
     {
         var count = reader.ReadInt32();
         if (count == 0)
@@ -283,7 +179,7 @@ public class ResultSerializer
         return new CountResult(count);
     }
 
-    private EnqueueResult DeserializeEnqueueResult(ArrayBinaryReader reader)
+    private EnqueueResult DeserializeEnqueueResult(ref ArrayBinaryReader reader)
     {
         var success = reader.ReadBoolean();
         return success
@@ -291,7 +187,7 @@ public class ResultSerializer
                    : EnqueueResult.Full;
     }
 
-    private DequeueResult DeserializeDequeueResult(ArrayBinaryReader reader)
+    private DequeueResult DeserializeDequeueResult(ref ArrayBinaryReader reader)
     {
         var hasValue = reader.ReadBoolean();
         if (!hasValue)

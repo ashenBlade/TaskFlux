@@ -93,11 +93,17 @@ public class ResultSerializerTests
 
     private class StubMetadata : ITaskQueueMetadata
     {
-        public StubMetadata(QueueName queueName, int? maxSize, int count)
+        public StubMetadata(QueueName queueName,
+                            int? maxSize,
+                            int count,
+                            int? maxPayloadSize,
+                            (long, long)? priorityRange)
         {
             QueueName = queueName;
             MaxSize = maxSize;
             Count = count;
+            MaxPayloadSize = maxPayloadSize;
+            PriorityRange = priorityRange;
         }
 
         public QueueName QueueName { get; }
@@ -108,61 +114,88 @@ public class ResultSerializerTests
     }
 
     [Theory(DisplayName = $"{nameof(ListQueuesResult)}-Single")]
-    [InlineData("", 0, 0)]
-    [InlineData("", 111, 123)]
-    [InlineData("queue", 0, 0)]
-    [InlineData("SDGGGGGGGJjsdhU&^%*Ahvc`2eu84t((AFP\"vawergf'", 100, 100)]
+    [InlineData("", 0, 0, 123, 0L, 1000L)]
+    [InlineData("", 111, 123, 0, long.MinValue, long.MaxValue)]
+    [InlineData("queue", 0, 0, int.MaxValue, -123123, 12314122)]
+    [InlineData("SDGGGGGGGJjsdhU&^%*Ahvc`2eu84t((AFP\"vawergf'", 100, 100, 123412, 0, 0)]
     [InlineData(
         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-        int.MaxValue, 0)]
-    [InlineData("-", int.MaxValue, int.MaxValue)]
-    [InlineData("default", int.MaxValue - 2, int.MaxValue - 1)]
-    [InlineData("hello,world!", int.MaxValue - 2, int.MaxValue - 1)]
-    public void ListQueuesResult__SingleQueue__Serialization(string queueName, int count, int maxSize)
+        int.MaxValue, 0, 13425435436, 1L, long.MaxValue)]
+    [InlineData("-", int.MaxValue, int.MaxValue, int.MaxValue, long.MaxValue - 2, long.MaxValue - 1)]
+    [InlineData("default", int.MaxValue - 2, int.MaxValue - 1, 11111111, 1L << 63, ( 1L << 63 ) + 1)]
+    [InlineData("hello,world!", int.MaxValue - 2, int.MaxValue - 1, 0, 0, 0)]
+    public void ListQueuesResult__SingleQueue__Serialization(string queueName,
+                                                             int count,
+                                                             int maxSize,
+                                                             int maxPayloadSize,
+                                                             long min,
+                                                             long max)
     {
-        var metadata = new StubMetadata(QueueNameParser.Parse(queueName), maxSize, count);
+        var metadata = new StubMetadata(QueueNameParser.Parse(queueName), maxSize, count, maxPayloadSize, ( min, max ));
         AssertBase(new ListQueuesResult(new[] {metadata}));
     }
 
     public static IEnumerable<object[]> ListQueuesArguments => new[]
     {
-        new object[] {new (string, uint, uint)[] {( "", 123, 123 ), ( "default", 0, 0 ),},},
         new object[]
         {
-            new (string, uint, uint)[]
+            new (string, int, int?, int?, (long, long)?)[]
             {
-                ( "", 123, 123 ), ( "default", 0, 0 ), ( "queue:test:1", 123, 0 ),
-                ( "hello,world!", uint.MaxValue, 0 )
+                ( "", 123, null, null, null ), ( "default", 0, 0, 1, ( 0L, long.MaxValue ) ),
             },
         },
         new object[]
         {
-            new (string, uint, uint)[]
+            new (string, int, int?, int?, (long, long)?)[]
             {
-                ( "______", 0, int.MaxValue ), ( "default", 0, 1232323 ), ( "!!!!!", 123, 3434343434 ),
-                ( "123", uint.MaxValue, 0 ), ( "[[[[[[]]]]]]]", 1, 1 ), ( "UwU", 123123, 999999 ),
+                ( "", 123, null, int.MaxValue, ( long.MinValue, long.MaxValue ) ),
+                ( "default", 0, null, 0, ( -1L, -1L ) ),
+                ( "queue:test:1", 123, null, null, ( -1000L, 1000L ) ),
+                ( "hello,world!", int.MaxValue, 0, 1024 * 1024, ( 123123123L, 123123124L ) )
             },
         },
         new object[]
         {
-            new (string, uint, uint)[] {( "", 123, 123 ), ( "default", 0, 0 ), ( "```````", uint.MaxValue, 0 )},
+            new (string, int, int?, int?, (long, long)?)[]
+            {
+                ( "______", 0, int.MaxValue, 1024 * 1024 * 2, ( 0L, 3L ) ),
+                ( "default", 0, 1232323, 9090 * 123, ( -1000L, 3333L ) ),
+                ( "!!!!!", 123, null, null, ( 9L, 23L ) ),
+                ( "123", int.MaxValue, 0, null, ( 1000L, 50000L ) ),
+                ( "[[[[[[]]]]]]]", 1, 1, ( int ) ( 1024 * 1024 * 1.4 ), null ),
+                ( "UwU", 123123, 999999, 1024, ( -1L, 10L ) ),
+            },
         },
         new object[]
         {
-            new (string, uint, uint)[]
+            new (string, int, int?, int?, (long, long)?)[]
             {
-                ( "!", 123, 123 ), ( "default", 0, 0 ), ( ":", 123, 0 ), ( "~", uint.MaxValue, 0 ),
-                ( "~!", uint.MaxValue, 0 ), ( "~!!", uint.MaxValue, 0 ),
+                ( "", 123, 123, null, ( 1L, 1L ) ), ( "default", 0, 0, 20480, null ),
+                ( "```````", int.MaxValue, 0, 7890, ( 123L, 125L ) )
+            },
+        },
+        new object[]
+        {
+            new (string, int, int?, int?, (long, long)?)[]
+            {
+                ( "!", 123, 123, 1, ( long.MinValue, 0L ) ), ( "default", 0, 0, null, null ),
+                ( ":", 123, 0, int.MaxValue / 2, ( 0L, long.MaxValue ) ),
+                ( "~", int.MaxValue, 0, 20 * 1024 * 1024, null ),
+                ( "~!", int.MaxValue, null, 512 + 256 + 128, ( long.MinValue / 16, long.MaxValue / 16 ) ),
+                ( "~!!", int.MaxValue, 0, null, ( 1L, 5L ) ),
             },
         },
     };
 
     [Theory(DisplayName = $"{nameof(ListQueuesResult)}-MultipleItems")]
     [MemberData(nameof(ListQueuesArguments))]
-    public void ListQueuesResult__MultipleQueues__Serialization((string Name, int Count, int? MaxSize)[] values)
+    public void ListQueuesResult__MultipleQueues__Serialization(
+        (string Name, int Count, int? MaxSize, int? MaxPayloadSize, (long, long)? PriorityRange)[] values)
     {
-        var metadata = values.Select(v => new StubMetadata(QueueNameParser.Parse(v.Name), v.MaxSize, v.Count))
-                             .ToList();
+        var metadata = values
+                      .Select(v => new StubMetadata(QueueNameParser.Parse(v.Name), v.MaxSize, v.Count, v.MaxPayloadSize,
+                           v.PriorityRange))
+                      .ToList();
         AssertBase(new ListQueuesResult(metadata));
     }
 
