@@ -4,10 +4,14 @@ namespace TaskQueue.Core.Policies;
 
 public class MaxPayloadSizeQueuePolicy : QueuePolicy
 {
-    public uint MaxSize { get; }
+    public int MaxSize { get; }
 
-    public MaxPayloadSizeQueuePolicy(uint maxSize)
+    public MaxPayloadSizeQueuePolicy(int maxSize)
     {
+        Debug.Assert(maxSize >= 0,
+            "maxSize >= 0",
+            "Максимальный размер сообщения не может быть отрицательным");
+
         MaxSize = maxSize;
     }
 

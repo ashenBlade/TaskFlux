@@ -9,7 +9,7 @@ internal class PlainTaskQueueMetadata : ITaskQueueMetadata
                                    int count,
                                    int? maxSize,
                                    (long, long)? priorityRange,
-                                   uint? maxPayloadSize)
+                                   int? maxPayloadSize)
     {
         QueueName = queueName;
         Count = count;
@@ -21,7 +21,7 @@ internal class PlainTaskQueueMetadata : ITaskQueueMetadata
     public QueueName QueueName { get; }
     public int Count { get; }
     public int? MaxSize { get; }
-    public uint? MaxPayloadSize { get; }
+    public int? MaxPayloadSize { get; }
     public (long Min, long Max)? PriorityRange { get; }
 
     public struct Builder
@@ -64,9 +64,9 @@ internal class PlainTaskQueueMetadata : ITaskQueueMetadata
             return this;
         }
 
-        private uint? _maxPayloadSize;
+        private int? _maxPayloadSize;
 
-        public Builder WithMaxPayloadSize(uint maxPayloadSize)
+        public Builder WithMaxPayloadSize(int maxPayloadSize)
         {
             _maxPayloadSize = maxPayloadSize;
             return this;

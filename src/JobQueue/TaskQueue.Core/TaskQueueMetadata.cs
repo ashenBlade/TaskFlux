@@ -13,6 +13,6 @@ public class TaskQueueMetadata : ITaskQueueMetadata
     public int Count => _parent.Count;
 
     public (long Min, long Max)? PriorityRange { get; internal set; } = null;
-    public uint? MaxPayloadSize { get; internal set; }
+    public int? MaxPayloadSize { get; internal set; }
     public int? MaxSize { get; internal set; }
 }

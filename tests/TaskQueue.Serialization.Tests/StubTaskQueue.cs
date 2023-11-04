@@ -6,43 +6,28 @@ public class StubTaskQueue : ITaskQueue
 {
     private readonly int? _maxSize;
     private readonly (long, long)? _priority;
-    private readonly uint? _maxPayloadSize;
+    private readonly int? _maxPayloadSize;
+    private readonly (long, byte[])[] _data;
+    public QueueName Name { get; }
+    public int Count => _data.Length;
+    public ITaskQueueMetadata Metadata { get; }
 
     public StubTaskQueue(QueueName name,
                          int? maxSize = null,
                          (long, long)? priority = null,
-                         uint? maxPayloadSize = null,
-                         (long, byte[])[]? elements = null)
-    {
-        _maxSize = maxSize;
-        _priority = priority;
-        _maxPayloadSize = maxPayloadSize;
-        Name = name;
-        _data = elements ?? Array.Empty<(long, byte[])>();
-        Metadata = new StubMetadata(this);
-    }
-
-    public StubTaskQueue(QueueName name,
-                         int? maxSize = null,
-                         (long, long)? priority = null,
-                         uint? maxPayloadSize = null,
+                         int? maxPayloadSize = null,
                          IEnumerable<(long, byte[])>? elements = null)
     {
         _maxSize = maxSize;
         _priority = priority;
         _maxPayloadSize = maxPayloadSize;
+        _data = elements?.ToArray()
+             ?? Array.Empty<(long, byte[])>();
+
         Name = name;
-        _data = elements is null
-                    ? Array.Empty<(long, byte[])>()
-                    : elements.ToArray();
         Metadata = new StubMetadata(this);
     }
 
-    private readonly (long, byte[])[] _data;
-
-    public QueueName Name { get; }
-    public int Count => _data.Length;
-    public ITaskQueueMetadata Metadata { get; }
 
     public Result Enqueue(long key, byte[] payload)
     {
@@ -75,7 +60,7 @@ public class StubTaskQueue : ITaskQueue
         public QueueName QueueName => _parent.Name;
         public int Count => _parent.Count;
         public int? MaxSize => _parent._maxSize;
-        public uint? MaxPayloadSize => _parent._maxPayloadSize;
+        public int? MaxPayloadSize => _parent._maxPayloadSize;
         public (long Min, long Max)? PriorityRange => _parent._priority;
     }
 }

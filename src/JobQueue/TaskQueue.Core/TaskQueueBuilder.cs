@@ -10,7 +10,7 @@ public class TaskQueueBuilder
 
     private int? _maxSize;
     private (long Min, long Max)? _priorityRange;
-    private uint? _maxPayloadSize;
+    private int? _maxPayloadSize;
 
     public TaskQueueBuilder(QueueName name)
     {
@@ -53,7 +53,7 @@ public class TaskQueueBuilder
         return this;
     }
 
-    public TaskQueueBuilder WithMaxPayloadSize(uint maxPayloadSize)
+    public TaskQueueBuilder WithMaxPayloadSize(int maxPayloadSize)
     {
         _maxPayloadSize = maxPayloadSize;
         return this;

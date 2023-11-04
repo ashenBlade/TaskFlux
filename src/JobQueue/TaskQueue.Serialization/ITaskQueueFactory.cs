@@ -7,6 +7,6 @@ public interface ITaskQueueFactory
     public ITaskQueue CreateTaskQueue(QueueName name,
                                       int? maxSize,
                                       (long Min, long Max)? priorityRange,
-                                      uint? maxPayloadSize,
+                                      int? maxPayloadSize,
                                       IReadOnlyCollection<(long Key, byte[] Value)> payload);
 }

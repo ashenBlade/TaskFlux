@@ -23,9 +23,11 @@ public class TaskQueueEqualityComparer : IEqualityComparer<ITaskQueue>
     private static bool MetadataEquals(ITaskQueueMetadata first, ITaskQueueMetadata second)
     {
         return first.QueueName.Equals(second.QueueName)
+            && first.MaxSize == second.MaxSize
             && first.Count == second.Count
             && first.HasMaxSize == second.HasMaxSize
-            && first.MaxSize == second.MaxSize;
+            && first.MaxPayloadSize == second.MaxPayloadSize
+            && first.PriorityRange == second.PriorityRange;
     }
 
     private static bool StoredDataEquals(IReadOnlyCollection<(long, byte[])> first,

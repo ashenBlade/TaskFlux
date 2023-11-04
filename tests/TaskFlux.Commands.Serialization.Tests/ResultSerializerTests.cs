@@ -1,11 +1,11 @@
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
+using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
 using TaskQueue.Core;
 using Xunit;
-using EnqueueResult = TaskFlux.Commands.Enqueue.EnqueueResult;
 
 namespace TaskFlux.Commands.Serialization.Tests;
 
@@ -103,7 +103,7 @@ public class ResultSerializerTests
         public QueueName QueueName { get; }
         public int Count { get; }
         public int? MaxSize { get; }
-        public uint? MaxPayloadSize { get; }
+        public int? MaxPayloadSize { get; }
         public (long Min, long Max)? PriorityRange { get; }
     }
 

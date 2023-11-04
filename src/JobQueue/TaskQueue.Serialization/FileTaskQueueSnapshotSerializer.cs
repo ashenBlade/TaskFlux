@@ -24,61 +24,6 @@ public class FileTaskQueueSnapshotSerializer : ITaskQueueSnapshotSerializer
         return memory.ToArray();
     }
 
-    private static void Serialize(ITaskQueue queue, ref StreamBinaryWriter writer)
-    {
-        // Заголовок
-        var metadata = queue.Metadata;
-
-        // Название очереди
-        writer.Write(metadata.QueueName);
-
-        // Установленный максимальный размер
-        if (metadata.MaxSize is { } maxSize)
-        {
-            writer.Write(maxSize);
-        }
-        else
-        {
-            writer.Write(-1);
-        }
-
-        // Диапазон ключей
-        if (metadata.PriorityRange is var (min, max))
-        {
-            writer.Write(true);
-            writer.Write(min);
-            writer.Write(max);
-        }
-        else
-        {
-            writer.Write(false);
-        }
-
-        // Максимальный размер нагрузки
-        if (metadata.MaxPayloadSize is { } maxPayloadSize)
-        {
-            writer.Write(true);
-            writer.Write(maxPayloadSize);
-        }
-        else
-        {
-            writer.Write(false);
-        }
-
-        var count = metadata.Count;
-        writer.Write(count);
-
-        if (count == 0)
-        {
-            return;
-        }
-
-        foreach (var (priority, payload) in queue.ReadAllData())
-        {
-            writer.Write(priority);
-            writer.WriteBuffer(payload);
-        }
-    }
 
     /// <summary>
     /// Сериализовать все переданные очереди в поток (файл) снапшота
@@ -103,6 +48,83 @@ public class FileTaskQueueSnapshotSerializer : ITaskQueueSnapshotSerializer
     }
 
     /// <summary>
+    /// Описание структуры формата сериализованной очереди
+    /// </summary>
+    /// <remarks>
+    /// Нужно только для разработки - нигде лучше не использовать
+    /// </remarks>
+    // ReSharper disable once UnusedMember.Local
+    private const string QueueFileFormat = "\n"
+                                         + "Название (QueueName)\n"
+                                         + "Максимальный размер очереди (Int32, -1 = нет лимита)\n"
+                                         + "Диапазон ключей (Nullable<Pair<long, long>>)\n"
+                                         + "Максимальный размер сообщения (Int32, -1 = нет лимита)\n"
+                                         + "Содержимое очереди (размер + данные)";
+
+    /// <summary>
+    /// Сериализовать одну очередь, используя переданный <paramref name="writer"/>
+    /// </summary>
+    /// <param name="queue">Очередь, которую нужно сериализовать</param>
+    /// <param name="writer">Объект для записи данных</param>
+    private static void Serialize(IReadOnlyTaskQueue queue, ref StreamBinaryWriter writer)
+    {
+        // 1. Заголовок
+        var metadata = queue.Metadata;
+
+        // 1.1 Название очереди
+        writer.Write(metadata.QueueName);
+
+        // 1.2 Установленный максимальный размер
+        if (metadata.MaxSize is { } maxSize)
+        {
+            writer.Write(maxSize);
+        }
+        else
+        {
+            writer.Write(-1);
+        }
+
+        // 1.3 Диапазон ключей
+        if (metadata.PriorityRange is var (min, max))
+        {
+            writer.Write(true);
+            writer.Write(min);
+            writer.Write(max);
+        }
+        else
+        {
+            writer.Write(false);
+        }
+
+        // 1.4 Максимальный размер сообщения
+        if (metadata.MaxPayloadSize is { } maxPayloadSize)
+        {
+            writer.Write(true);
+            writer.Write(maxPayloadSize);
+        }
+        else
+        {
+            writer.Write(false);
+        }
+
+        // 2. Сами данные очереди
+        var count = metadata.Count;
+        writer.Write(count);
+
+        if (count == 0)
+        {
+            // Заканчиваем, если очередь пуста
+            return;
+        }
+
+        foreach (var (priority, payload) in queue.ReadAllData())
+        {
+            writer.Write(priority);
+            writer.WriteBuffer(payload);
+        }
+    }
+
+    /// <summary>
     /// Десериализовать одну очередь из потока
     /// </summary>
     /// <param name="file">
@@ -116,7 +138,6 @@ public class FileTaskQueueSnapshotSerializer : ITaskQueueSnapshotSerializer
     /// Данный метод только десериализует очереди.
     /// Проверка бизнес-правил остается на вызывающем
     /// </remarks>
-    /// 
     public IEnumerable<ITaskQueue> Deserialize(Stream file, CancellationToken token = default)
     {
         var reader = new StreamBinaryReader(file);
@@ -129,7 +150,7 @@ public class FileTaskQueueSnapshotSerializer : ITaskQueueSnapshotSerializer
 
             // Максимальный размер очереди
             int? maxSize = reader.ReadInt32();
-            if (maxSize != -1)
+            if (maxSize == -1)
             {
                 maxSize = null;
             }
@@ -144,21 +165,22 @@ public class FileTaskQueueSnapshotSerializer : ITaskQueueSnapshotSerializer
             }
 
             // Максимальный размер нагрузки
-            uint? maxPayloadSize = null;
+            int? maxPayloadSize = null;
             if (reader.ReadBool())
             {
-                maxPayloadSize = reader.ReadUInt32();
+                maxPayloadSize = reader.ReadInt32();
             }
 
             // Сами элементы
-            var count = reader.ReadUInt32();
+            var count = reader.ReadInt32();
 
             IReadOnlyCollection<(long, byte[])> elements =
                 count == 0
                     ? Array.Empty<(long, byte[])>()
                     : new StreamQueueElementsCollection(file, count);
 
-            result.Add(_factory.CreateTaskQueue(name, maxSize, priorityRange, maxPayloadSize, elements));
+            var queue = _factory.CreateTaskQueue(name, maxSize, priorityRange, maxPayloadSize, elements);
+            result.Add(queue);
         }
 
         return result;
@@ -167,18 +189,18 @@ public class FileTaskQueueSnapshotSerializer : ITaskQueueSnapshotSerializer
     private class StreamQueueElementsCollection : IReadOnlyCollection<(long, byte[])>
     {
         private readonly Stream _stream;
-        private readonly uint _count;
+        public int Count { get; }
 
-        public StreamQueueElementsCollection(Stream stream, uint count)
+        public StreamQueueElementsCollection(Stream stream, int count)
         {
             _stream = stream;
-            _count = count;
+            Count = count;
         }
 
         public IEnumerator<(long, byte[])> GetEnumerator()
         {
             var reader = new StreamBinaryReader(_stream);
-            for (int i = 0; i < _count; i++)
+            for (var i = 0; i < Count; i++)
             {
                 var priority = reader.ReadInt64();
                 var payload = reader.ReadBuffer();
@@ -190,7 +212,5 @@ public class FileTaskQueueSnapshotSerializer : ITaskQueueSnapshotSerializer
         {
             return GetEnumerator();
         }
-
-        public int Count => ( int ) _count;
     }
 }

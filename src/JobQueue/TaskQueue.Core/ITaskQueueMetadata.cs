@@ -22,7 +22,7 @@ public interface ITaskQueueMetadata
     /// </summary>
     public bool HasMaxSize => MaxSize is not null;
 
-    public uint? MaxPayloadSize { get; }
+    public int? MaxPayloadSize { get; }
 
     public (long Min, long Max)? PriorityRange { get; }
 }

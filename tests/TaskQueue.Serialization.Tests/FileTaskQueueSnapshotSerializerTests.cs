@@ -138,4 +138,36 @@ public class FileTaskQueueSnapshotSerializerTests
                                 });
         AssertBase(queues);
     }
+
+    [Theory]
+    [InlineData(0L, 3L)]
+    [InlineData(-10L, 10L)]
+    [InlineData(long.MinValue, long.MaxValue)]
+    [InlineData(0, 0)]
+    [InlineData(long.MinValue / 2, long.MaxValue / 2)]
+    [InlineData(0, long.MaxValue)]
+    public void Serialize__КогдаПереданУказанныйДиапазонПриоритетов__ДолженПравильноДесерилазовать(long min, long max)
+    {
+        AssertBase(new StubTaskQueue(QueueName.Default,
+            maxSize: null,
+            priority: ( min, max ),
+            maxPayloadSize: null,
+            elements: null));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(int.MaxValue)]
+    [InlineData(1024 * 1024)]
+    [InlineData(1024 * 1024 * 2)]
+    public void Serialize__КогдаПереданМаксимальныйРазмерСообщения__ДолженПравильноДесериализовать(int maxPayloadSize)
+    {
+        AssertBase(new StubTaskQueue(QueueName.Default,
+            maxSize: null,
+            priority: null,
+            maxPayloadSize: maxPayloadSize,
+            elements: null));
+    }
 }
