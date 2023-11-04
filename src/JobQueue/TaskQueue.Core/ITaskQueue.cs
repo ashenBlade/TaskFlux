@@ -7,8 +7,11 @@ public interface ITaskQueue : IReadOnlyTaskQueue
     /// </summary>
     /// <param name="key">Ключ</param>
     /// <param name="payload">Данные</param>
-    /// <returns><c>true</c> - значение было добавлено в очередь, <c>false</c> - в очереди нет места для новых элементов</returns>
-    public EnqueueResult Enqueue(long key, byte[] payload);
+    /// <returns>
+    /// <c>true</c> - значение было добавлено в очередь, <br/>
+    /// <c>false</c> - в очереди нет места для новых элементов
+    /// </returns>
+    public Result Enqueue(long key, byte[] payload);
 
     /// <summary>
     /// Получить элемент из очереди

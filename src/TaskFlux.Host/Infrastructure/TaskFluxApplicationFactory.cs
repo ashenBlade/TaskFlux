@@ -8,6 +8,7 @@ using TaskFlux.Host.Helpers;
 using TaskFlux.Node;
 using TaskQueue.Core;
 using TaskQueue.Serialization;
+using Result = TaskFlux.Commands.Result;
 
 namespace TaskFlux.Host.Infrastructure;
 

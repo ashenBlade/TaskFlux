@@ -44,7 +44,7 @@ public class StubTaskQueue : ITaskQueue
     public int Count => _data.Length;
     public ITaskQueueMetadata Metadata { get; }
 
-    public EnqueueResult Enqueue(long key, byte[] payload)
+    public Result Enqueue(long key, byte[] payload)
     {
         Assert.True(false, "Метод не должен быть вызван при серилазации");
         throw new InvalidOperationException("Нельзя этот методы вызывать во время сериализации");

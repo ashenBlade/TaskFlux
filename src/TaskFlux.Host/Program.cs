@@ -24,6 +24,7 @@ using TaskFlux.Host.RequestAcceptor;
 using TaskFlux.Node;
 using TaskQueue.Core;
 using Utils.Network;
+using Result = TaskFlux.Commands.Result;
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()

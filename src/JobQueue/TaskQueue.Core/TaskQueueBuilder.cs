@@ -88,23 +88,23 @@ public class TaskQueueBuilder
         return priorityQueue;
     }
 
-    private IPriorityQueuePolicy[] BuildPolicies()
+    private QueuePolicy[] BuildPolicies()
     {
-        var result = new List<IPriorityQueuePolicy>();
+        var result = new List<QueuePolicy>();
 
         if (_maxSize is { } maxSize)
         {
-            result.Add(new MaxSizePolicy(maxSize));
+            result.Add(new MaxSizeQueuePolicy(maxSize));
         }
 
         if (_priorityRange is var (min, max))
         {
-            result.Add(new PriorityRangePolicy(min, max));
+            result.Add(new PriorityRangeQueuePolicy(min, max));
         }
 
         if (_maxPayloadSize is { } maxPayloadSize)
         {
-            result.Add(new MaxPayloadSizePolicy(maxPayloadSize));
+            result.Add(new MaxPayloadSizeQueuePolicy(maxPayloadSize));
         }
 
         return result.ToArray();
