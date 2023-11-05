@@ -10,11 +10,11 @@ using TaskFlux.Commands.Visitors;
 
 namespace InteractiveConsole;
 
-public class OperationResultPrinterVisitor : IResultVisitor
+public class OperationResponsePrinterVisitor : IResponseVisitor
 {
-    public void Visit(EnqueueResult result)
+    public void Visit(EnqueueResponse response)
     {
-        if (result.Success)
+        if (response.Success)
         {
             Console.WriteLine($"Запись успешно добавлена");
         }
@@ -24,14 +24,14 @@ public class OperationResultPrinterVisitor : IResultVisitor
         }
     }
 
-    public void Visit(DequeueResult result)
+    public void Visit(DequeueResponse response)
     {
-        if (result.Success)
+        if (response.Success)
         {
             try
             {
-                var str = Encoding.UTF8.GetString(result.Payload);
-                Console.WriteLine($"Получена запись: Ключ = {result.Key}; Данные = {str}");
+                var str = Encoding.UTF8.GetString(response.Payload);
+                Console.WriteLine($"Получена запись: Ключ = {response.Key}; Данные = {str}");
                 return;
             }
             catch (DecoderFallbackException)
@@ -40,7 +40,7 @@ public class OperationResultPrinterVisitor : IResultVisitor
 
             Log.Warning("Ошибка при декодированни нагрузки в строку");
             Console.WriteLine(
-                $"Получена запись: Ключ = {result.Key}; Данные = {BitConverter.ToString(result.Payload).Replace("-", "")}");
+                $"Получена запись: Ключ = {response.Key}; Данные = {BitConverter.ToString(response.Payload).Replace("-", "")}");
         }
         else
         {
@@ -48,25 +48,25 @@ public class OperationResultPrinterVisitor : IResultVisitor
         }
     }
 
-    public void Visit(CountResult result)
+    public void Visit(CountResponse response)
     {
-        Console.WriteLine($"Размер очереди: {result.Count}");
+        Console.WriteLine($"Размер очереди: {response.Count}");
     }
 
-    public void Visit(ErrorResult result)
+    public void Visit(ErrorResponse response)
     {
-        Console.WriteLine($"Ошибка: {result.Message}");
+        Console.WriteLine($"Ошибка: {response.Message}");
     }
 
-    public void Visit(OkResult result)
+    public void Visit(OkResponse response)
     {
         Console.WriteLine($"Команда выполнена");
     }
 
-    public void Visit(ListQueuesResult result)
+    public void Visit(ListQueuesResponse response)
     {
         Console.WriteLine($"Хранящиеся очереди:");
-        foreach (var metadata in result.Metadata)
+        foreach (var metadata in response.Metadata)
         {
             Console.WriteLine($" - Название: {metadata.QueueName.Name}");
             Console.WriteLine($"   Размер: {metadata.Count}");

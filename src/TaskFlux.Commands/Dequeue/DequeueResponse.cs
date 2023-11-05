@@ -2,22 +2,22 @@ using TaskFlux.Commands.Visitors;
 
 namespace TaskFlux.Commands.Dequeue;
 
-public class DequeueResult: Result
+public class DequeueResponse : Response
 {
-    public static readonly DequeueResult Empty = new(false, 0, null);
-    public static DequeueResult Create(long key, byte[] payload) => new(true, key, payload);
-    
+    public static readonly DequeueResponse Empty = new(false, 0, null);
+    public static DequeueResponse Create(long key, byte[] payload) => new(true, key, payload);
+
     public bool Success { get; }
     public long Key { get; }
     public byte[] Payload { get; }
 
-    internal DequeueResult(bool success, long key, byte[]? payload)
+    internal DequeueResponse(bool success, long key, byte[]? payload)
     {
         Success = success;
         Key = key;
         Payload = payload ?? Array.Empty<byte>();
     }
-    
+
     public bool TryGetResult(out long key, out byte[] payload)
     {
         if (Success)
@@ -33,13 +33,14 @@ public class DequeueResult: Result
     }
 
 
-    public override ResultType Type => ResultType.Dequeue;
-    public override void Accept(IResultVisitor visitor)
+    public override ResponseType Type => ResponseType.Dequeue;
+
+    public override void Accept(IResponseVisitor visitor)
     {
         visitor.Visit(this);
     }
-    
-    public override ValueTask AcceptAsync(IAsyncResultVisitor visitor, CancellationToken token = default)
+
+    public override ValueTask AcceptAsync(IAsyncResponseVisitor visitor, CancellationToken token = default)
     {
         return visitor.VisitAsync(this, token);
     }

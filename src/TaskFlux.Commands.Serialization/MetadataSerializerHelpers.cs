@@ -1,13 +1,13 @@
 using System.Buffers;
 using System.Diagnostics;
+using TaskFlux.Abstractions;
 using TaskFlux.Commands.ListQueues;
-using TaskFlux.Core;
 using Utils.Serialization;
 
 namespace TaskFlux.Commands.Serialization;
 
 /// <summary>
-/// Вспомогательный класс для сериализации и десериализации <see cref="ListQueuesResult"/>
+/// Вспомогательный класс для сериализации и десериализации <see cref="ListQueuesResponse"/>
 /// </summary>
 internal static class MetadataSerializerHelpers
 {
@@ -38,7 +38,7 @@ internal static class MetadataSerializerHelpers
             var writer = new MemoryBinaryWriter(memory);
 
             // Маркерный байт
-            writer.Write(( byte ) ResultType.ListQueues);
+            writer.Write(( byte ) ResponseType.ListQueues);
 
             // Количество сериализованных элементов
             writer.Write(infos.Length);
@@ -189,9 +189,9 @@ internal static class MetadataSerializerHelpers
             serializedDataSize += infos[i].EstimateMetadataSize();
         }
 
-        return sizeof(int)         // Количество метаданных (длина массива)
-             + sizeof(ResultType)  // Маркерный байт
-             + serializedDataSize; // Сериализованные данные очередей
+        return sizeof(int)          // Количество метаданных (длина массива)
+             + sizeof(ResponseType) // Маркерный байт
+             + serializedDataSize;  // Сериализованные данные очередей
     }
 
     private static QueueMetadataInfo[] ExtractInfo(IReadOnlyCollection<ITaskQueueMetadata> metadata)

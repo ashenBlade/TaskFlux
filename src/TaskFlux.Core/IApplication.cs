@@ -1,4 +1,6 @@
-namespace TaskFlux.Core;
+using TaskFlux.Core;
+
+namespace TaskFlux.Abstractions;
 
 public interface IApplication : IReadOnlyApplication
 {

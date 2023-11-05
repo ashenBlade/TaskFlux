@@ -1,3 +1,5 @@
+using TaskFlux.Abstractions;
+
 namespace TaskFlux.Core;
 
 public class TaskFluxApplication : IApplication

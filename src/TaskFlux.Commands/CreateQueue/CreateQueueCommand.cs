@@ -1,3 +1,4 @@
+using TaskFlux.Abstractions;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
@@ -64,7 +65,7 @@ public class CreateQueueCommand : UpdateCommand
         PriorityRange = priorityRange;
     }
 
-    public override Result Apply(IApplication context)
+    public override Response Apply(IApplication context)
     {
         var manager = context.TaskQueueManager;
         if (manager.HasQueue(Name))
@@ -75,10 +76,10 @@ public class CreateQueueCommand : UpdateCommand
         var queue = CreateTaskQueue();
         if (manager.TryAddQueue(Name, queue))
         {
-            return OkResult.Instance;
+            return OkResponse.Instance;
         }
 
-        return new ErrorResult(ErrorType.Unknown, "Не удалось создать указанную очередь. Неизвестная ошибка");
+        return new ErrorResponse(ErrorType.Unknown, "Не удалось создать указанную очередь. Неизвестная ошибка");
     }
 
     public override void ApplyNoResult(IApplication context)

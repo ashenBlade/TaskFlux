@@ -10,7 +10,7 @@ using TaskFlux.Serialization;
 
 namespace TaskFlux.Host.Infrastructure;
 
-public class TaskFluxApplicationFactory : IApplicationFactory<Command, Result>
+public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
 {
     private readonly INodeInfo _nodeInfo;
     private readonly IApplicationInfo _appInfo;
@@ -26,7 +26,7 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Result>
         _clusterInfo = clusterInfo;
     }
 
-    public IApplication<Command, Result> CreateEmpty()
+    public IApplication<Command, Response> CreateEmpty()
     {
         var queue = new TaskQueueBuilder(QueueName.Default)
            .Build();
@@ -36,7 +36,7 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Result>
         return application;
     }
 
-    public IApplication<Command, Result> Restore(ISnapshot snapshot)
+    public IApplication<Command, Response> Restore(ISnapshot snapshot)
     {
         // Читаем снапшот (потом надо сделать свой поток-обертку)
         var memoryStream = new MemoryStream();

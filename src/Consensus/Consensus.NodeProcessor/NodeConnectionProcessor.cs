@@ -14,7 +14,7 @@ public class NodeConnectionProcessor : IDisposable
 {
     public NodeConnectionProcessor(NodeId id,
                                    PacketClient client,
-                                   IConsensusModule<Command, Result> consensusModule,
+                                   IConsensusModule<Command, Response> consensusModule,
                                    ILogger logger)
     {
         Id = id;
@@ -27,7 +27,7 @@ public class NodeConnectionProcessor : IDisposable
     private NodeId Id { get; }
     private Socket Socket => Client.Socket;
     private PacketClient Client { get; }
-    private IConsensusModule<Command, Result> ConsensusModule { get; }
+    private IConsensusModule<Command, Response> ConsensusModule { get; }
     private ILogger Logger { get; }
 
     public async Task ProcessClientBackground()

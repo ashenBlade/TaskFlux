@@ -1,14 +1,13 @@
 using System.Diagnostics;
-using TaskQueue.Core.Policies;
 
-namespace TaskQueue.Core;
+namespace TaskFlux.Core;
 
 public class Result<T> : Result
 {
     /// <summary>
     /// Результат успешно выполненной операции
     /// </summary>
-    private readonly T? _result;
+    private readonly T _result;
 
     /// <summary>
     /// Получить результат успешно выполненной операции
@@ -16,12 +15,22 @@ public class Result<T> : Result
     /// <exception cref="InvalidOperationException">
     /// <see cref="Result{T}"/> хранил объект нарушенной политики (результата операции нет)
     /// </exception>
-    public T SuccessResult =>
-        _result
-     ?? throw new InvalidOperationException("Result содержит нарушенную политику. Нельзя получить успешный результат");
+    public T SuccessResult
+    {
+        get
+        {
+            if (ViolatedPolicy is not null)
+            {
+                throw new InvalidOperationException(
+                    "Result содержит нарушенную политику. Нельзя получить успешный результат");
+            }
 
-    private Result(T? result, QueuePolicy? violatedPolicy, ErrorCode? code)
-        : base(violatedPolicy, code)
+            return _result;
+        }
+    }
+
+    private Result(T result, QueuePolicy? violatedPolicy)
+        : base(violatedPolicy)
     {
         _result = result;
     }
@@ -42,11 +51,7 @@ public class Result<T> : Result
 
     public static Result<T> Success(T value)
     {
-        Debug.Assert(value is not null,
-            "value is not null",
-            "Результат операции не может быть null");
-
-        return new Result<T>(value, null, null);
+        return new Result<T>(value, null);
     }
 
     public new static Result<T> PolicyViolation(QueuePolicy policy)
@@ -54,12 +59,9 @@ public class Result<T> : Result
         Debug.Assert(policy is not null,
             "policy is not null",
             "Объект политики должен быть указан");
-        return new Result<T>(default, policy, null);
-    }
+        ArgumentNullException.ThrowIfNull(policy);
 
-    public new static Result<T> Error(ErrorCode code)
-    {
-        return new Result<T>(default, null, code);
+        return new Result<T>(default!, policy);
     }
 }
 
@@ -68,49 +70,30 @@ public class Result
     /// <summary>
     /// Успешно ли выполнена операция
     /// </summary>
-    public bool IsSuccess => _violatedPolicy is null // Никакая политика не нарушена 
-                          && _errorCode is null;     // Завершились без ошибки
+    public bool IsSuccess => ViolatedPolicy is null;
 
     /// <summary>
     /// Политика, которая была нарушена в результате выполнения команды
     /// </summary>
-    private readonly QueuePolicy? _violatedPolicy;
+    protected readonly QueuePolicy? ViolatedPolicy;
 
-    /// <summary>
-    /// Ошибка, возникшая в результате выполнения работы
-    /// </summary>
-    private readonly ErrorCode? _errorCode;
-
-    protected Result(QueuePolicy? violatedPolicy, ErrorCode? errorCode)
+    protected Result(QueuePolicy? violatedPolicy)
     {
-        _violatedPolicy = violatedPolicy;
-        _errorCode = errorCode;
+        ViolatedPolicy = violatedPolicy;
     }
 
     public bool TryGetResult()
     {
-        return _violatedPolicy is null;
-    }
-
-    public bool TryGetErrorCode(out ErrorCode code)
-    {
-        if (_errorCode is { } c)
-        {
-            code = c;
-            return true;
-        }
-
-        code = default!;
-        return false;
+        return ViolatedPolicy is null;
     }
 
     public bool TryGetViolatedPolicy(out QueuePolicy violatedPolicy)
     {
-        violatedPolicy = _violatedPolicy!;
-        return _violatedPolicy is not null;
+        violatedPolicy = ViolatedPolicy!;
+        return ViolatedPolicy is not null;
     }
 
-    private static readonly Result SuccessResult = new(null, null);
+    private static readonly Result SuccessResult = new(null);
 
     public static Result Success()
     {
@@ -123,11 +106,6 @@ public class Result
             "violatedPolicy is not null",
             "Объект нарушенной политики должен быть указан");
 
-        return new Result(violatedPolicy, null);
-    }
-
-    public static Result Error(ErrorCode code)
-    {
-        return new Result(null, code);
+        return new Result(violatedPolicy);
     }
 }

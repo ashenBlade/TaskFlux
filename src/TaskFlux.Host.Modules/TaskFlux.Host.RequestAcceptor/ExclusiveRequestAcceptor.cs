@@ -9,14 +9,14 @@ namespace TaskFlux.Host.RequestAcceptor;
 
 public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 {
-    private readonly IConsensusModule<Command, Result> _module;
+    private readonly IConsensusModule<Command, Response> _module;
     private readonly ILogger _logger;
     private readonly BlockingChannel<UserRequest> _channel = new();
     private readonly CancellationTokenSource _cts = new();
     private CancellationTokenRegistration? _tokenRegistration = null;
     private Thread? _thread;
 
-    public ExclusiveRequestAcceptor(IConsensusModule<Command, Result> module, ILogger logger)
+    public ExclusiveRequestAcceptor(IConsensusModule<Command, Response> module, ILogger logger)
     {
         _module = module;
         _logger = logger;
@@ -24,11 +24,11 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 
     private record UserRequest(Command Command, CancellationToken Token)
     {
-        private readonly TaskCompletionSource<SubmitResponse<Result>> _tcs = new();
-        public Task<SubmitResponse<Result>> CommandTask => _tcs.Task;
+        private readonly TaskCompletionSource<SubmitResponse<Response>> _tcs = new();
+        public Task<SubmitResponse<Response>> CommandTask => _tcs.Task;
         public bool IsCancelled => CommandTask.IsCanceled;
 
-        public void SetResult(SubmitResponse<Result> result)
+        public void SetResult(SubmitResponse<Response> result)
         {
             _tcs.TrySetResult(result);
         }
@@ -44,7 +44,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
         }
     }
 
-    public async Task<SubmitResponse<Result>> AcceptAsync(Command command, CancellationToken token = default)
+    public async Task<SubmitResponse<Response>> AcceptAsync(Command command, CancellationToken token = default)
     {
         var request = new UserRequest(command, token);
         var registration = new CancellationTokenRegistration();

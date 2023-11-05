@@ -11,5 +11,5 @@ public interface IRequestAcceptor
     /// <param name="command">Команда, которую нужно выполнить</param>
     /// <param name="token">Токен отмены</param>
     /// <returns>Результат выполнения запроса</returns>
-    public Task<SubmitResponse<Result>> AcceptAsync(Command command, CancellationToken token = default);
+    public Task<SubmitResponse<Response>> AcceptAsync(Command command, CancellationToken token = default);
 }

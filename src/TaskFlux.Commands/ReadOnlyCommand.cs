@@ -1,4 +1,4 @@
-using TaskFlux.Core;
+using TaskFlux.Abstractions;
 
 namespace TaskFlux.Commands;
 
@@ -9,7 +9,7 @@ public abstract class ReadOnlyCommand : Command
 {
     public sealed override bool IsReadOnly => true;
 
-    public sealed override Result Apply(IApplication application)
+    public sealed override Response Apply(IApplication application)
     {
         return Apply(application);
     }
@@ -19,6 +19,6 @@ public abstract class ReadOnlyCommand : Command
         ApplyNoResult(context);
     }
 
-    protected abstract Result Apply(IReadOnlyApplication context);
+    protected abstract Response Apply(IReadOnlyApplication context);
     protected abstract void ApplyNoResult(IReadOnlyApplication context);
 }

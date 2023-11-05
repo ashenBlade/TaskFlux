@@ -14,5 +14,5 @@ public interface ITaskFluxClient : IDisposable
     /// <exception cref="ArgumentNullException"><paramref name="command"/> - null</exception>
     /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
     /// <exception cref="TaskFluxException">Базовый тип исключений</exception>
-    public Task<Result> SendAsync(Command command, CancellationToken token = default);
+    public Task<Response> SendAsync(Command command, CancellationToken token = default);
 }

@@ -1,3 +1,4 @@
+using TaskFlux.Abstractions;
 using TaskFlux.Core;
 
 namespace TaskQueue.Serialization.Tests;

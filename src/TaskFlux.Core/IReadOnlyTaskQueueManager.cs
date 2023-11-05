@@ -1,6 +1,7 @@
+using TaskFlux.Core;
 using TaskFlux.Models;
 
-namespace TaskFlux.Core;
+namespace TaskFlux.Abstractions;
 
 public interface IReadOnlyTaskQueueManager
 {

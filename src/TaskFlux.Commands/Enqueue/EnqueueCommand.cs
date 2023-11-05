@@ -1,6 +1,6 @@
+using TaskFlux.Abstractions;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Visitors;
-using TaskFlux.Core;
 using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Enqueue;
@@ -21,7 +21,7 @@ public class EnqueueCommand : UpdateCommand
 
     public override CommandType Type => CommandType.Enqueue;
 
-    public override Result Apply(IApplication application)
+    public override Response Apply(IApplication application)
     {
         if (!application.TaskQueueManager.TryGetQueue(Queue, out var queue))
         {
@@ -31,10 +31,10 @@ public class EnqueueCommand : UpdateCommand
         var result = queue.Enqueue(Key, Payload);
         if (result.IsSuccess)
         {
-            return EnqueueResult.Ok;
+            return EnqueueResponse.Ok;
         }
 
-        return EnqueueResult.Full;
+        return EnqueueResponse.Full;
     }
 
     public override void ApplyNoResult(IApplication context)

@@ -34,7 +34,7 @@ Log.Logger.Debug($"Создаю клиента");
 using var client = await CreateClientAsync(clientFactory, cts.Token);
 Log.Logger.Debug("Клиент создан");
 
-var resultPrinterVisitor = new OperationResultPrinterVisitor();
+var resultPrinterVisitor = new OperationResponsePrinterVisitor();
 
 while (!cts.IsCancellationRequested)
 {
@@ -64,10 +64,10 @@ while (!cts.IsCancellationRequested)
 
     if (StringCommandParser.TryParseCommand(commandString, out var command))
     {
-        Result result;
+        Response response;
         try
         {
-            result = await client.SendAsync(command, cts.Token);
+            response = await client.SendAsync(command, cts.Token);
         }
         catch (TaskFluxException tfe)
         {
@@ -79,7 +79,7 @@ while (!cts.IsCancellationRequested)
             break;
         }
 
-        result.Accept(resultPrinterVisitor);
+        response.Accept(resultPrinterVisitor);
     }
     else
     {

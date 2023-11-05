@@ -66,7 +66,7 @@ try
     using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, taskFluxApplication, factory);
 
     var consensusModule =
-        new InfoUpdaterConsensusModuleDecorator<Command, Result>(raftConsensusModule, clusterInfo, nodeInfo);
+        new InfoUpdaterConsensusModuleDecorator<Command, Response>(raftConsensusModule, clusterInfo, nodeInfo);
 
     var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, consensusModule,
         networkOptions.RequestTimeout,
@@ -354,11 +354,11 @@ StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions option
     }
 }
 
-RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
-                                                               IPeer[] peers,
-                                                               StoragePersistenceFacade storage,
-                                                               IApplication<Command, Result> application,
-                                                               TaskFluxApplicationFactory applicationFactory)
+RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
+                                                                 IPeer[] peers,
+                                                                 StoragePersistenceFacade storage,
+                                                                 IApplication<Command, Response> application,
+                                                                 TaskFluxApplicationFactory applicationFactory)
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
     var logger = Log.Logger.ForContext("SourceContext", "Raft");
@@ -368,16 +368,16 @@ RaftConsensusModule<Command, Result> CreateRaftConsensusModule(NodeId nodeId,
         new ThreadingTimerFactory(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300),
             heartbeatTimeout: TimeSpan.FromMilliseconds(100));
 
-    return RaftConsensusModule<Command, Result>.Create(nodeId, peerGroup, logger, timerFactory,
+    return RaftConsensusModule<Command, Response>.Create(nodeId, peerGroup, logger, timerFactory,
         jobQueue, storage, application, applicationFactory,
         commandSerializer);
 }
 
-IApplication<Command, Result> RestoreApplication(StoragePersistenceFacade facade, TaskFluxApplicationFactory factory)
+IApplication<Command, Response> RestoreApplication(StoragePersistenceFacade facade, TaskFluxApplicationFactory factory)
 {
     // 1. Восстановить данные из снапшота, если есть, иначе инициализировать пустым
     // 2. Применить команды из лога
-    IApplication<Command, Result> application;
+    IApplication<Command, Response> application;
     if (facade.TryGetSnapshot(out var snapshot))
     {
         Log.Information("Обнаружен существующий файл снашпота. Восстанавливаю состояние");

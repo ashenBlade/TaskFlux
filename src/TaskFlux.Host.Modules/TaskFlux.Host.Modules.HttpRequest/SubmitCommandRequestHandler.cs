@@ -119,7 +119,7 @@ public class SubmitCommandRequestHandler : IRequestHandler
     }
 
     private async Task RespondAsync(HttpListenerResponse httpResponse,
-                                    SubmitResponse<Result> submitResponse)
+                                    SubmitResponse<Commands.Response> submitResponse)
     {
         Dictionary<string, object?> resultData;
         HttpStatusCode responseStatus;
@@ -155,11 +155,11 @@ public class SubmitCommandRequestHandler : IRequestHandler
         await writer.WriteAsync(SerializeResponse(success, resultData));
     }
 
-    private class HttpResponseJobQueueResponseVisitor : IResultVisitor
+    private class HttpResponseJobQueueResponseVisitor : IResponseVisitor
     {
         public Dictionary<string, object?> Payload { get; private set; } = new();
 
-        public void Visit(DequeueResult response)
+        public void Visit(DequeueResponse response)
         {
             Payload["type"] = "dequeue";
             if (response.Success)
@@ -174,33 +174,33 @@ public class SubmitCommandRequestHandler : IRequestHandler
             }
         }
 
-        public void Visit(EnqueueResult response)
+        public void Visit(EnqueueResponse response)
         {
             Payload["type"] = "enqueue";
             Payload["ok"] = response.Success;
         }
 
-        public void Visit(CountResult response)
+        public void Visit(CountResponse response)
         {
             Payload["count"] = response.Count;
         }
 
-        public void Visit(ErrorResult result)
+        public void Visit(ErrorResponse response)
         {
             Payload["type"] = "error";
-            Payload["subtype"] = ( byte ) result.ErrorType;
-            Payload["message"] = result.Message;
+            Payload["subtype"] = ( byte ) response.ErrorType;
+            Payload["message"] = response.Message;
         }
 
-        public void Visit(OkResult result)
+        public void Visit(OkResponse response)
         {
             Payload["type"] = "ok";
         }
 
-        public void Visit(ListQueuesResult result)
+        public void Visit(ListQueuesResponse response)
         {
             Payload["type"] = "list-queues";
-            Payload["data"] = result.Metadata.ToDictionary(m => m.QueueName, m => new Dictionary<string, object?>()
+            Payload["data"] = response.Metadata.ToDictionary(m => m.QueueName, m => new Dictionary<string, object?>()
             {
                 {"count", m.Count},
                 {

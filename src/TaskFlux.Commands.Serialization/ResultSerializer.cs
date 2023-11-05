@@ -13,56 +13,56 @@ using Utils.Serialization;
 namespace TaskFlux.Commands.Serialization;
 
 /// <summary>
-/// Сериализатор класса <see cref="Result"/> для сетевой передачи
+/// Сериализатор класса <see cref="Response"/> для сетевой передачи
 /// </summary>
 public class ResultSerializer
 {
     public static readonly ResultSerializer Instance = new();
 
     /// <summary>
-    /// Сериализовать <see cref="Result"/> для передачи по сети
+    /// Сериализовать <see cref="Response"/> для передачи по сети
     /// </summary>
-    /// <param name="result">Результат выполнения запроса</param>
-    /// <returns>Сериализованный <paramref name="result"/> в байты</returns>
+    /// <param name="response">Результат выполнения запроса</param>
+    /// <returns>Сериализованный <paramref name="response"/> в байты</returns>
     /// <exception cref="SerializationException">Ошибка во время сериализации объекта</exception>
-    public byte[] Serialize(Result result)
+    public byte[] Serialize(Response response)
     {
-        var visitor = new SerializerResultVisitor();
-        result.Accept(visitor);
+        var visitor = new SerializerResponseVisitor();
+        response.Accept(visitor);
         return visitor.Buffer;
     }
 
     // Сделать с возвращением результата (для оптимизации памяти)
-    private class SerializerResultVisitor : IResultVisitor
+    private class SerializerResponseVisitor : IResponseVisitor
     {
         private byte[]? _buffer;
 
         public byte[] Buffer =>
             _buffer ?? throw new ArgumentNullException(nameof(_buffer), "Сериализованное значениеу не выставлено");
 
-        public void Visit(EnqueueResult result)
+        public void Visit(EnqueueResponse response)
         {
-            var estimatedSize = sizeof(ResultType)
+            var estimatedSize = sizeof(ResponseType)
                               + sizeof(bool);
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write(( byte ) ResultType.Enqueue);
-            writer.Write(result.Success);
+            writer.Write(( byte ) ResponseType.Enqueue);
+            writer.Write(response.Success);
             _buffer = buffer;
         }
 
-        public void Visit(DequeueResult result)
+        public void Visit(DequeueResponse response)
         {
-            if (result.TryGetResult(out var key, out var payload))
+            if (response.TryGetResult(out var key, out var payload))
             {
-                var estimatedSize = sizeof(ResultType)     // Маркер
-                                  + sizeof(bool)           // Успех
-                                  + sizeof(long)           // Ключ
-                                  + sizeof(int)            // Размер данных
-                                  + result.Payload.Length; // Данные
+                var estimatedSize = sizeof(ResponseType)     // Маркер
+                                  + sizeof(bool)             // Успех
+                                  + sizeof(long)             // Ключ
+                                  + sizeof(int)              // Размер данных
+                                  + response.Payload.Length; // Данные
                 var buffer = new byte[estimatedSize];
                 var writer = new MemoryBinaryWriter(buffer);
-                writer.Write(( byte ) ResultType.Dequeue);
+                writer.Write(( byte ) ResponseType.Dequeue);
                 writer.Write(true);
                 writer.Write(key);
                 writer.WriteBuffer(payload);
@@ -72,69 +72,69 @@ public class ResultSerializer
             {
                 _buffer = new byte[]
                 {
-                    ( byte ) ResultType.Dequeue, 0 // Успех: false
+                    ( byte ) ResponseType.Dequeue, 0 // Успех: false
                 };
             }
         }
 
-        public void Visit(CountResult result)
+        public void Visit(CountResponse response)
         {
-            var estimatedSize = sizeof(ResultType) // Маркер
-                              + sizeof(int);       // Количество
+            var estimatedSize = sizeof(ResponseType) // Маркер
+                              + sizeof(int);         // Количество
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
-            writer.Write(( byte ) ResultType.Count);
-            writer.Write(result.Count);
+            writer.Write(( byte ) ResponseType.Count);
+            writer.Write(response.Count);
             _buffer = buffer;
         }
 
-        public void Visit(ErrorResult result)
+        public void Visit(ErrorResponse response)
         {
-            var estimatedMessageSize = MemoryBinaryWriter.EstimateResultSize(result.Message);
-            var estimatedSize = sizeof(ResultType)    // Маркер
+            var estimatedMessageSize = MemoryBinaryWriter.EstimateResultSize(response.Message);
+            var estimatedSize = sizeof(ResponseType)  // Маркер
                               + sizeof(ErrorType)     // Тип ошибки
                               + estimatedMessageSize; // Сообщение 
 
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
 
-            writer.Write(( byte ) ResultType.Error);
-            writer.Write(( byte ) result.ErrorType);
-            writer.Write(result.Message);
+            writer.Write(( byte ) ResponseType.Error);
+            writer.Write(( byte ) response.ErrorType);
+            writer.Write(response.Message);
 
             _buffer = buffer;
         }
 
-        public void Visit(OkResult result)
+        public void Visit(OkResponse response)
         {
-            var estimatedSize = sizeof(ResultType);
+            var estimatedSize = sizeof(ResponseType);
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
 
-            writer.Write(( byte ) ResultType.Ok);
+            writer.Write(( byte ) ResponseType.Ok);
 
             _buffer = buffer;
         }
 
-        public void Visit(ListQueuesResult result)
+        public void Visit(ListQueuesResponse response)
         {
-            Debug.Assert(result is not null,
+            Debug.Assert(response is not null,
                 "result is not null",
                 "ListQueuesResult при сериализации не должен быть null");
 
-            _buffer = MetadataSerializerHelpers.SerializeMetadata(result.Metadata);
+            _buffer = MetadataSerializerHelpers.SerializeMetadata(response.Metadata);
         }
     }
 
     /// <summary>
     /// Десериализовать массив байт в объект результата выполнения запроса
     /// </summary>
-    /// <param name="payload">Сериализованное представление <see cref="Result"/></param>
-    /// <returns>Десериализованный <see cref="Result"/></returns>
+    /// <param name="payload">Сериализованное представление <see cref="Response"/></param>
+    /// <returns>Десериализованный <see cref="Response"/></returns>
     /// <exception cref="InvalidQueueNameException">В поле названия очереди было представлено неверное значение</exception>
     /// <exception cref="SerializationException">Ошибка десериализации</exception>
     /// <exception cref="ArgumentNullException"><paramref name="payload"/> - <c>null</c></exception>
-    public Result Deserialize(byte[] payload)
+    public Response Deserialize(byte[] payload)
     {
         ArgumentNullException.ThrowIfNull(payload);
         if (payload.Length == 0)
@@ -143,60 +143,60 @@ public class ResultSerializer
         }
 
         var reader = new ArrayBinaryReader(payload);
-        var marker = ( ResultType ) reader.ReadByte();
+        var marker = ( ResponseType ) reader.ReadByte();
         return marker switch
                {
-                   ResultType.Count      => DeserializeCountResult(ref reader),
-                   ResultType.Dequeue    => DeserializeDequeueResult(ref reader),
-                   ResultType.Enqueue    => DeserializeEnqueueResult(ref reader),
-                   ResultType.Error      => DeserializeErrorResult(ref reader),
-                   ResultType.Ok         => OkResult.Instance,
-                   ResultType.ListQueues => DeserializeListQueuesResult(ref reader),
+                   ResponseType.Count      => DeserializeCountResult(ref reader),
+                   ResponseType.Dequeue    => DeserializeDequeueResult(ref reader),
+                   ResponseType.Enqueue    => DeserializeEnqueueResult(ref reader),
+                   ResponseType.Error      => DeserializeErrorResult(ref reader),
+                   ResponseType.Ok         => OkResponse.Instance,
+                   ResponseType.ListQueues => DeserializeListQueuesResult(ref reader),
                };
     }
 
-    private ListQueuesResult DeserializeListQueuesResult(ref ArrayBinaryReader reader)
+    private ListQueuesResponse DeserializeListQueuesResult(ref ArrayBinaryReader reader)
     {
         var infos = MetadataSerializerHelpers.DeserializeMetadata(ref reader);
-        return new ListQueuesResult(infos);
+        return new ListQueuesResponse(infos);
     }
 
-    private static ErrorResult DeserializeErrorResult(ref ArrayBinaryReader reader)
+    private static ErrorResponse DeserializeErrorResult(ref ArrayBinaryReader reader)
     {
         var subtype = ( ErrorType ) reader.ReadByte();
         var message = reader.ReadString();
-        return new ErrorResult(subtype, message);
+        return new ErrorResponse(subtype, message);
     }
 
-    private static CountResult DeserializeCountResult(ref ArrayBinaryReader reader)
+    private static CountResponse DeserializeCountResult(ref ArrayBinaryReader reader)
     {
         var count = reader.ReadInt32();
         if (count == 0)
         {
-            return CountResult.Empty;
+            return CountResponse.Empty;
         }
 
-        return new CountResult(count);
+        return new CountResponse(count);
     }
 
-    private EnqueueResult DeserializeEnqueueResult(ref ArrayBinaryReader reader)
+    private EnqueueResponse DeserializeEnqueueResult(ref ArrayBinaryReader reader)
     {
         var success = reader.ReadBoolean();
         return success
-                   ? EnqueueResult.Ok
-                   : EnqueueResult.Full;
+                   ? EnqueueResponse.Ok
+                   : EnqueueResponse.Full;
     }
 
-    private DequeueResult DeserializeDequeueResult(ref ArrayBinaryReader reader)
+    private DequeueResponse DeserializeDequeueResult(ref ArrayBinaryReader reader)
     {
         var hasValue = reader.ReadBoolean();
         if (!hasValue)
         {
-            return DequeueResult.Empty;
+            return DequeueResponse.Empty;
         }
 
         var key = reader.ReadInt64();
         var payload = reader.ReadBuffer();
-        return DequeueResult.Create(key, payload);
+        return DequeueResponse.Create(key, payload);
     }
 }

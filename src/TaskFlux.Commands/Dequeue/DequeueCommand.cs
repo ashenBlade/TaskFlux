@@ -1,6 +1,6 @@
+using TaskFlux.Abstractions;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Visitors;
-using TaskFlux.Core;
 using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Dequeue;
@@ -16,7 +16,7 @@ public class DequeueCommand : UpdateCommand
 
     public override CommandType Type => CommandType.Dequeue;
 
-    public override Result Apply(IApplication context)
+    public override Response Apply(IApplication context)
     {
         var manager = context.TaskQueueManager;
 
@@ -27,10 +27,10 @@ public class DequeueCommand : UpdateCommand
 
         if (queue.TryDequeue(out var key, out var payload))
         {
-            return DequeueResult.Create(key, payload);
+            return DequeueResponse.Create(key, payload);
         }
 
-        return DequeueResult.Empty;
+        return DequeueResponse.Empty;
     }
 
     public override void ApplyNoResult(IApplication context)

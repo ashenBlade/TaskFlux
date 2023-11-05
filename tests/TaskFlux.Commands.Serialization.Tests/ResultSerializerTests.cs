@@ -1,10 +1,10 @@
+using TaskFlux.Abstractions;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
-using TaskFlux.Core;
 using TaskFlux.Models;
 using TaskQueue.Core;
 using Xunit;
@@ -17,14 +17,14 @@ public class ResultSerializerTests
 {
     private static readonly ResultSerializer Serializer = new();
 
-    private static void AssertBase(Result expected)
+    private static void AssertBase(Response expected)
     {
         var serialized = Serializer.Serialize(expected);
         var actual = Serializer.Deserialize(serialized);
         Assert.Equal(expected, actual, ResultEqualityComparer.Instance);
     }
 
-    [Theory(DisplayName = nameof(CountResult))]
+    [Theory(DisplayName = nameof(CountResponse))]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
@@ -38,15 +38,15 @@ public class ResultSerializerTests
     [InlineData(1 << 2)]
     public void CountResult__Serialization(int result)
     {
-        AssertBase(new CountResult(result));
+        AssertBase(new CountResponse(result));
     }
 
-    [Theory(DisplayName = nameof(EnqueueResult))]
+    [Theory(DisplayName = nameof(EnqueueResponse))]
     [InlineData(true)]
     [InlineData(false)]
     public void EnqueueResult__Serialization(bool success)
     {
-        AssertBase(new EnqueueResult(success));
+        AssertBase(new EnqueueResponse(success));
     }
 
     public static IEnumerable<object[]> KeyPayloadSize => CreateKeyPayload();
@@ -64,16 +64,16 @@ public class ResultSerializerTests
         }
     }
 
-    [Theory(DisplayName = nameof(DequeueResult))]
+    [Theory(DisplayName = nameof(DequeueResponse))]
     [MemberData(nameof(KeyPayloadSize))]
     public void DequeueResult__Success__Serialization(int key, int payloadSize)
     {
         var buffer = new byte[payloadSize];
         Random.Shared.NextBytes(buffer);
-        AssertBase(DequeueResult.Create(key, buffer));
+        AssertBase(DequeueResponse.Create(key, buffer));
     }
 
-    [Theory(DisplayName = nameof(ErrorResult))]
+    [Theory(DisplayName = nameof(ErrorResponse))]
     [InlineData(ErrorType.Unknown, "")]
     [InlineData(ErrorType.Unknown, "Some message error")]
     [InlineData(ErrorType.Unknown, "Странный ключ??!.")]
@@ -84,13 +84,13 @@ public class ResultSerializerTests
     [InlineData(ErrorType.QueueDoesNotExist, "Такой очереди не существует")]
     public void ErrorResult__Serialization(ErrorType errorType, string message)
     {
-        AssertBase(new ErrorResult(errorType, message));
+        AssertBase(new ErrorResponse(errorType, message));
     }
 
-    [Fact(DisplayName = nameof(OkResult))]
+    [Fact(DisplayName = nameof(OkResponse))]
     public void OkResult__Serialization()
     {
-        AssertBase(new OkResult());
+        AssertBase(new OkResponse());
     }
 
     private class StubMetadata : ITaskQueueMetadata
@@ -115,7 +115,7 @@ public class ResultSerializerTests
         public (long Min, long Max)? PriorityRange { get; }
     }
 
-    [Theory(DisplayName = $"{nameof(ListQueuesResult)}-Single")]
+    [Theory(DisplayName = $"{nameof(ListQueuesResponse)}-Single")]
     [InlineData("", 0, 0, 123, 0L, 1000L)]
     [InlineData("", 111, 123, 0, long.MinValue, long.MaxValue)]
     [InlineData("queue", 0, 0, int.MaxValue, -123123, 12314122)]
@@ -134,7 +134,7 @@ public class ResultSerializerTests
                                                              long max)
     {
         var metadata = new StubMetadata(QueueNameParser.Parse(queueName), maxSize, count, maxPayloadSize, ( min, max ));
-        AssertBase(new ListQueuesResult(new[] {metadata}));
+        AssertBase(new ListQueuesResponse(new[] {metadata}));
     }
 
     public static IEnumerable<object[]> ListQueuesArguments => new[]
@@ -189,7 +189,7 @@ public class ResultSerializerTests
         },
     };
 
-    [Theory(DisplayName = $"{nameof(ListQueuesResult)}-MultipleItems")]
+    [Theory(DisplayName = $"{nameof(ListQueuesResponse)}-MultipleItems")]
     [MemberData(nameof(ListQueuesArguments))]
     public void ListQueuesResult__MultipleQueues__Serialization(
         (string Name, int Count, int? MaxSize, int? MaxPayloadSize, (long, long)? PriorityRange)[] values)
@@ -198,12 +198,12 @@ public class ResultSerializerTests
                       .Select(v => new StubMetadata(QueueNameParser.Parse(v.Name), v.MaxSize, v.Count, v.MaxPayloadSize,
                            v.PriorityRange))
                       .ToList();
-        AssertBase(new ListQueuesResult(metadata));
+        AssertBase(new ListQueuesResponse(metadata));
     }
 
-    [Fact(DisplayName = $"{nameof(ListQueuesResult)}-Empty")]
+    [Fact(DisplayName = $"{nameof(ListQueuesResponse)}-Empty")]
     public void ListQueuesResult__Empty__Serialization()
     {
-        AssertBase(new ListQueuesResult(Array.Empty<ITaskQueueMetadata>()));
+        AssertBase(new ListQueuesResponse(Array.Empty<ITaskQueueMetadata>()));
     }
 }

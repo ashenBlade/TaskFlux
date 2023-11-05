@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using Consensus.Application.TaskFlux.Serialization;
+using TaskFlux.Abstractions;
 using TaskFlux.Core;
 using Utils.Serialization;
 

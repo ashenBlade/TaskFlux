@@ -1,5 +1,5 @@
+using TaskFlux.Abstractions;
 using TaskFlux.Commands.Visitors;
-using TaskFlux.Core;
 
 namespace TaskFlux.Commands.ListQueues;
 
@@ -8,10 +8,10 @@ public class ListQueuesCommand : ReadOnlyCommand
     public override CommandType Type => CommandType.ListQueues;
     public static readonly ListQueuesCommand Instance = new();
 
-    protected override Result Apply(IReadOnlyApplication context)
+    protected override Response Apply(IReadOnlyApplication context)
     {
         var result = context.TaskQueueManager.GetAllQueuesMetadata();
-        return new ListQueuesResult(result);
+        return new ListQueuesResponse(result);
     }
 
     protected override void ApplyNoResult(IReadOnlyApplication context)

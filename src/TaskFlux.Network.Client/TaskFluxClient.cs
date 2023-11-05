@@ -40,7 +40,7 @@ internal class TaskFluxClient : ITaskFluxClient
         }
     }
 
-    public async Task<Result> SendAsync(Command command, CancellationToken token = default)
+    public async Task<Response> SendAsync(Command command, CancellationToken token = default)
     {
         ThrowIfDisposed();
         token.ThrowIfCancellationRequested();
@@ -123,10 +123,10 @@ internal class TaskFluxClient : ITaskFluxClient
     /// <param name="packet">Пакет команды, которую нужно отправить</param>
     /// <param name="client">Клиент, который нужно использовать</param>
     /// <param name="token">Токен отмены</param>
-    /// <returns><see cref="Result"/> - команда выполнена успешно, <c>null</c> - нужно сделать повторную попытку (например, найден новый лидер)</returns>
-    private async Task<Result?> SendCommandCoreAsync(CommandRequestPacket packet,
-                                                     TaskFluxPacketClient client,
-                                                     CancellationToken token = default)
+    /// <returns><see cref="Response"/> - команда выполнена успешно, <c>null</c> - нужно сделать повторную попытку (например, найден новый лидер)</returns>
+    private async Task<Response?> SendCommandCoreAsync(CommandRequestPacket packet,
+                                                       TaskFluxPacketClient client,
+                                                       CancellationToken token = default)
     {
         await client.SendAsync(packet, token);
         var response = await client.ReceiveAsync(token);

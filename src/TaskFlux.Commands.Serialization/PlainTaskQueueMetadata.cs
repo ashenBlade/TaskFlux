@@ -1,5 +1,5 @@
 using System.Runtime.Serialization;
-using TaskFlux.Core;
+using TaskFlux.Abstractions;
 using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Serialization;

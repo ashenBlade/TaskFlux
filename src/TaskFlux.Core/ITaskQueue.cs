@@ -1,4 +1,4 @@
-﻿using TaskQueue.Core;
+﻿using TaskFlux.Abstractions;
 
 namespace TaskFlux.Core;
 

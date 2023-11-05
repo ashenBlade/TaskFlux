@@ -1,6 +1,6 @@
-using TaskFlux.Core;
+using TaskFlux.Abstractions;
 
-namespace TaskQueue.Core.Policies;
+namespace TaskFlux.Core;
 
 /// <summary>
 /// Политика выполнения операций над очередью
