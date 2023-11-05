@@ -12,7 +12,7 @@ namespace TaskFlux.Commands.Serialization;
 internal static class MetadataSerializerHelpers
 {
     // Основные заголовки для метаданных
-    private const string MaxSizeHeader = "max-size";
+    private const string MaxSizeHeader = "max-queue-size";
     private const string MaxPayloadSizeHeader = "max-payload-size";
     private const string PriorityRangeHeader = "priority-range";
 
