@@ -160,7 +160,7 @@ internal class TaskFluxClient : ITaskFluxClient
 
         var commandResponse = ( CommandResponsePacket ) response;
 
-        return _factory.ResultSerializer.Deserialize(commandResponse.Payload);
+        return _factory.ResponseSerializer.Deserialize(commandResponse.Payload);
     }
 
     public void Dispose()

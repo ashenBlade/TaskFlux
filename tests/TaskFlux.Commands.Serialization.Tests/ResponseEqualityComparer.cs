@@ -1,17 +1,18 @@
-using TaskFlux.Abstractions;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
-using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
+using TaskFlux.Commands.PolicyViolation;
+using TaskFlux.Core.Policies;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Commands.Serialization.Tests;
 
 // ReSharper disable UnusedParameter.Local
-public class ResultEqualityComparer : IEqualityComparer<Response>
+public class ResponseEqualityComparer : IEqualityComparer<Response>
 {
-    public static readonly ResultEqualityComparer Instance = new();
+    public static readonly ResponseEqualityComparer Instance = new();
 
     public bool Equals(Response? x, Response? y)
     {
@@ -19,7 +20,6 @@ public class ResultEqualityComparer : IEqualityComparer<Response>
     }
 
     private static bool Check(CountResponse first, CountResponse second) => first.Count == second.Count;
-    private static bool Check(EnqueueResponse first, EnqueueResponse second) => first.Success == second.Success;
 
     private static bool Check(DequeueResponse first, DequeueResponse second)
     {
@@ -40,6 +40,20 @@ public class ResultEqualityComparer : IEqualityComparer<Response>
 
     private static bool Check(ListQueuesResponse first, ListQueuesResponse second) =>
         first.Metadata.SequenceEqual(second.Metadata, TaskQueueMetadataEqualityComparer.Instance);
+
+    private static bool Check(PolicyViolationResponse left, PolicyViolationResponse right)
+    {
+        return CheckPolicy(( dynamic ) left.ViolatedPolicy, ( dynamic ) right.ViolatedPolicy);
+    }
+
+    private static bool CheckPolicy(MaxQueueSizeQueuePolicy left, MaxQueueSizeQueuePolicy right) =>
+        left.MaxQueueSize == right.MaxQueueSize;
+
+    private static bool CheckPolicy(MaxPayloadSizeQueuePolicy left, MaxPayloadSizeQueuePolicy right) =>
+        left.MaxPayloadSize == right.MaxPayloadSize;
+
+    private static bool CheckPolicy(PriorityRangeQueuePolicy left, PriorityRangeQueuePolicy right) =>
+        ( left.Min, left.Max ) == ( right.Min, right.Max );
 
     private class TaskQueueMetadataEqualityComparer : IEqualityComparer<ITaskQueueMetadata>
     {

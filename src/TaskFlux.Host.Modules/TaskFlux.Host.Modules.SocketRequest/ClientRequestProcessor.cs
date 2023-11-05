@@ -29,8 +29,8 @@ internal class ClientRequestProcessor
     private static CommandSerializer CommandSerializer =>
         CommandSerializer.Instance;
 
-    private static ResultSerializer ResultSerializer =>
-        ResultSerializer.Instance;
+    private static ResponseSerializer ResponseSerializer =>
+        ResponseSerializer.Instance;
 
     public ClientRequestProcessor(TcpClient client,
                                   IRequestAcceptor requestAcceptor,
@@ -378,7 +378,7 @@ internal class ClientRequestProcessor
                 _processor.Logger.Debug(invalidName,
                     "Ошибка при десериализации команды, включающей название очереди, полученной от клиента");
                 await _client.SendAsync(
-                    new CommandResponsePacket(ResultSerializer.Serialize(DefaultErrors.InvalidQueueName)),
+                    new CommandResponsePacket(ResponseSerializer.Serialize(DefaultErrors.InvalidQueueName)),
                     token);
                 return;
             }
@@ -394,7 +394,7 @@ internal class ClientRequestProcessor
             Packet responsePacket;
             if (result.TryGetResponse(out var response))
             {
-                responsePacket = new CommandResponsePacket(ResultSerializer.Serialize(response));
+                responsePacket = new CommandResponsePacket(ResponseSerializer.Serialize(response));
             }
             else if (result.WasLeader)
             {

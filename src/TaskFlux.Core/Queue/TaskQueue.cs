@@ -1,8 +1,7 @@
-using TaskFlux.Abstractions;
 using TaskFlux.Models;
 using TaskQueue.PriorityQueue;
 
-namespace TaskFlux.Core;
+namespace TaskFlux.Core.Queue;
 
 internal class TaskQueue : ITaskQueue
 {

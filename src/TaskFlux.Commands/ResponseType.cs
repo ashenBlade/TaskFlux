@@ -2,10 +2,11 @@ namespace TaskFlux.Commands;
 
 public enum ResponseType : byte
 {
-    Enqueue = ( byte ) 'e',
+    Ok = ( byte ) 'k',
+    Error = ( byte ) 'x',
+    PolicyViolation = ( byte ) 'p',
+
     Dequeue = ( byte ) 'd',
     Count = ( byte ) 'c',
-    Error = ( byte ) 'x',
-    Ok = ( byte ) 'k',
     ListQueues = ( byte ) 'l',
 }

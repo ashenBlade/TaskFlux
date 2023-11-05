@@ -1,4 +1,4 @@
-using TaskFlux.Core;
+using TaskFlux.Core.Queue;
 
 namespace Consensus.Application.TaskFlux.Serialization;
 

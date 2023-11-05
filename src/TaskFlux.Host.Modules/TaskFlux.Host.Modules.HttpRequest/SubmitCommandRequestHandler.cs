@@ -12,6 +12,7 @@ using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
+using TaskFlux.Commands.PolicyViolation;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 
@@ -174,12 +175,6 @@ public class SubmitCommandRequestHandler : IRequestHandler
             }
         }
 
-        public void Visit(EnqueueResponse response)
-        {
-            Payload["type"] = "enqueue";
-            Payload["ok"] = response.Success;
-        }
-
         public void Visit(CountResponse response)
         {
             Payload["count"] = response.Count;
@@ -209,6 +204,11 @@ public class SubmitCommandRequestHandler : IRequestHandler
                                  : null
                 }
             });
+        }
+
+        public void Visit(PolicyViolationResponse response)
+        {
+            Payload["type"] = "ok";
         }
     }
 

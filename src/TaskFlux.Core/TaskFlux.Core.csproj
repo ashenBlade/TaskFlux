@@ -10,6 +10,7 @@
         <ProjectReference Include="..\JobQueue\JobQueue.PriorityQueue\TaskQueue.PriorityQueue.StandardLibrary\TaskQueue.PriorityQueue.StandardLibrary.csproj"/>
         <ProjectReference Include="..\JobQueue\JobQueue.PriorityQueue\TaskQueue.PriorityQueue\TaskQueue.PriorityQueue.csproj"/>
         <ProjectReference Include="..\TaskFlux.Models\TaskFlux.Models.csproj"/>
+        <ProjectReference Include="..\Utils.Serialization\Utils.Serialization.csproj"/>
     </ItemGroup>
 
 </Project>

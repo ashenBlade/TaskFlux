@@ -2,7 +2,7 @@ using TaskFlux.Core.Policies;
 using TaskFlux.Models;
 using TaskQueue.PriorityQueue.StandardLibrary;
 
-namespace TaskFlux.Core;
+namespace TaskFlux.Core.Queue;
 
 public class TaskQueueBuilder
 {
@@ -66,7 +66,7 @@ public class TaskQueueBuilder
         var policies = BuildPolicies();
         var priorityQueue = BuildPriorityQueue();
 
-        var queue = new TaskFlux.Core.TaskQueue(name, priorityQueue, policies);
+        var queue = new TaskQueue(name, priorityQueue, policies);
         return queue;
     }
 
@@ -96,7 +96,7 @@ public class TaskQueueBuilder
 
         if (_maxSize is { } maxSize)
         {
-            result.Add(new MaxSizeQueuePolicy(maxSize));
+            result.Add(new MaxQueueSizeQueuePolicy(maxSize));
         }
 
         if (_priorityRange is var (min, max))

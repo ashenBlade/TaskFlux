@@ -1,7 +1,6 @@
 ﻿using System.Collections;
 using Consensus.Application.TaskFlux.Serialization;
-using TaskFlux.Abstractions;
-using TaskFlux.Core;
+using TaskFlux.Core.Queue;
 using Utils.Serialization;
 
 namespace TaskFlux.Serialization;

@@ -1,6 +1,4 @@
-﻿using TaskFlux.Abstractions;
-
-namespace TaskFlux.Core;
+﻿namespace TaskFlux.Core.Queue;
 
 public interface ITaskQueue : IReadOnlyTaskQueue
 {

@@ -1,4 +1,5 @@
-using TaskFlux.Abstractions;
+using TaskFlux.Core.Policies;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Core;
 
@@ -7,8 +8,6 @@ namespace TaskFlux.Core;
 /// </summary>
 public abstract class QueuePolicy
 {
-    // TODO: код и сообщение об ошибке (Message) абстрактные
-
     /// <summary>
     /// Сделать проверку на возможность добавления записи в очередь
     /// </summary>
@@ -19,12 +18,14 @@ public abstract class QueuePolicy
     /// <c>true</c> - проверка прошла успешно,
     /// <c>false</c> - добавлять нельзя
     /// </returns>
-    public abstract bool CanEnqueue(long key, byte[] payload, IReadOnlyTaskQueue queue);
+    internal abstract bool CanEnqueue(long key, byte[] payload, IReadOnlyTaskQueue queue);
 
     /// <summary>
     /// Записать информацию о себе в переданную структуру метаданных.
     /// Политика должна обновить информацю о себе в метаданных
     /// </summary>
     /// <param name="metadata">Метаданные, в которые нужно записать информацию о себе</param>
-    public abstract void Enrich(TaskQueueMetadata metadata);
+    internal abstract void Enrich(TaskQueueMetadata metadata);
+
+    public abstract TReturn Accept<TReturn>(IQueuePolicyVisitor<TReturn> visitor);
 }

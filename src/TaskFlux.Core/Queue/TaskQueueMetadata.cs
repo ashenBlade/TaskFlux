@@ -1,7 +1,6 @@
-using TaskFlux.Abstractions;
 using TaskFlux.Models;
 
-namespace TaskFlux.Core;
+namespace TaskFlux.Core.Queue;
 
 public class TaskQueueMetadata : ITaskQueueMetadata
 {

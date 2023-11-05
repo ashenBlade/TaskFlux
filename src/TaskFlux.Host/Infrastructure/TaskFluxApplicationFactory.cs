@@ -4,6 +4,7 @@ using Consensus.Raft;
 using Consensus.Raft.Persistence;
 using TaskFlux.Commands;
 using TaskFlux.Core;
+using TaskFlux.Core.Queue;
 using TaskFlux.Host.Helpers;
 using TaskFlux.Models;
 using TaskFlux.Serialization;

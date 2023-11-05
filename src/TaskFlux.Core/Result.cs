@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace TaskFlux.Core;
 
-public class Result<T> : Result
+public sealed class Result<T> : Result
 {
     /// <summary>
     /// Результат успешно выполненной операции
@@ -19,13 +19,13 @@ public class Result<T> : Result
     {
         get
         {
-            if (ViolatedPolicy is not null)
+            if (IsSuccess)
             {
-                throw new InvalidOperationException(
-                    "Result содержит нарушенную политику. Нельзя получить успешный результат");
+                return _result;
             }
 
-            return _result;
+            throw new InvalidOperationException(
+                "Result содержит нарушенную политику. Нельзя получить успешный результат");
         }
     }
 
@@ -70,27 +70,39 @@ public class Result
     /// <summary>
     /// Успешно ли выполнена операция
     /// </summary>
-    public bool IsSuccess => ViolatedPolicy is null;
+    public bool IsSuccess => _violatedPolicy is null;
 
     /// <summary>
     /// Политика, которая была нарушена в результате выполнения команды
     /// </summary>
-    protected readonly QueuePolicy? ViolatedPolicy;
+    private readonly QueuePolicy? _violatedPolicy;
 
-    protected Result(QueuePolicy? violatedPolicy)
+    /// <summary>
+    /// Метод для получения объекта нарушенной политики 
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Результат представляет успешное выполнение (объекта нарушенной политики нет)
+    /// </exception>
+    public QueuePolicy ViolatedPolicy =>
+        _violatedPolicy
+     ?? throw new InvalidOperationException(
+            "Нельзя получить объект нарушенной политики: результат выполнения успешный");
+
+
+    internal Result(QueuePolicy? violatedPolicy)
     {
-        ViolatedPolicy = violatedPolicy;
+        _violatedPolicy = violatedPolicy;
     }
 
     public bool TryGetResult()
     {
-        return ViolatedPolicy is null;
+        return _violatedPolicy is null;
     }
 
     public bool TryGetViolatedPolicy(out QueuePolicy violatedPolicy)
     {
-        violatedPolicy = ViolatedPolicy!;
-        return ViolatedPolicy is not null;
+        violatedPolicy = _violatedPolicy!;
+        return _violatedPolicy is not null;
     }
 
     private static readonly Result SuccessResult = new(null);

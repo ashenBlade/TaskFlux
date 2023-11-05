@@ -1,9 +1,8 @@
 using System.Diagnostics;
-using TaskFlux.Abstractions;
 using TaskFlux.Models;
 using TaskQueue.Core;
 
-namespace TaskFlux.Core;
+namespace TaskFlux.Core.Queue;
 
 public class TaskQueueManager : ITaskQueueManager
 {

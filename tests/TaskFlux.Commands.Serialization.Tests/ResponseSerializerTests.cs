@@ -1,10 +1,11 @@
-using TaskFlux.Abstractions;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.Dequeue;
-using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
+using TaskFlux.Commands.PolicyViolation;
+using TaskFlux.Core.Policies;
+using TaskFlux.Core.Queue;
 using TaskFlux.Models;
 using TaskQueue.Core;
 using Xunit;
@@ -13,15 +14,15 @@ namespace TaskFlux.Commands.Serialization.Tests;
 
 // ReSharper disable StringLiteralTypo
 [Trait("Category", "Serialization")]
-public class ResultSerializerTests
+public class ResponseSerializerTests
 {
-    private static readonly ResultSerializer Serializer = new();
+    private static readonly ResponseSerializer Serializer = new();
 
     private static void AssertBase(Response expected)
     {
         var serialized = Serializer.Serialize(expected);
         var actual = Serializer.Deserialize(serialized);
-        Assert.Equal(expected, actual, ResultEqualityComparer.Instance);
+        Assert.Equal(expected, actual, ResponseEqualityComparer.Instance);
     }
 
     [Theory(DisplayName = nameof(CountResponse))]
@@ -39,14 +40,6 @@ public class ResultSerializerTests
     public void CountResult__Serialization(int result)
     {
         AssertBase(new CountResponse(result));
-    }
-
-    [Theory(DisplayName = nameof(EnqueueResponse))]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void EnqueueResult__Serialization(bool success)
-    {
-        AssertBase(new EnqueueResponse(success));
     }
 
     public static IEnumerable<object[]> KeyPayloadSize => CreateKeyPayload();
@@ -122,7 +115,7 @@ public class ResultSerializerTests
     [InlineData("SDGGGGGGGJjsdhU&^%*Ahvc`2eu84t((AFP\"vawergf'", 100, 100, 123412, 0, 0)]
     [InlineData(
         "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-        int.MaxValue, 0, 13425435436, 1L, long.MaxValue)]
+        int.MaxValue, 0, 1342543, 1L, long.MaxValue)]
     [InlineData("-", int.MaxValue, int.MaxValue, int.MaxValue, long.MaxValue - 2, long.MaxValue - 1)]
     [InlineData("default", int.MaxValue - 2, int.MaxValue - 1, 11111111, 1L << 63, ( 1L << 63 ) + 1)]
     [InlineData("hello,world!", int.MaxValue - 2, int.MaxValue - 1, 0, 0, 0)]
@@ -205,5 +198,39 @@ public class ResultSerializerTests
     public void ListQueuesResult__Empty__Serialization()
     {
         AssertBase(new ListQueuesResponse(Array.Empty<ITaskQueueMetadata>()));
+    }
+
+    [Theory(DisplayName = $"{nameof(PolicyViolationResponse)}-MaxQueueSize")]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(10)]
+    [InlineData(1000)]
+    [InlineData(int.MaxValue - 1)]
+    [InlineData(int.MaxValue)]
+    public void PolicyViolationResult__MaxQueueSize__Serialization(int maxQueueSize)
+    {
+        AssertBase(new PolicyViolationResponse(new MaxQueueSizeQueuePolicy(maxQueueSize)));
+    }
+
+    [Theory(DisplayName = $"{nameof(PolicyViolationResponse)}-MaxPayloadSize")]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(1024)]
+    [InlineData(int.MaxValue - 1)]
+    [InlineData(int.MaxValue)]
+    public void PolicyViolationResponse__MaxPayloadSize__Serialization(int maxPayloadSize)
+    {
+        AssertBase(new PolicyViolationResponse(new MaxPayloadSizeQueuePolicy(maxPayloadSize)));
+    }
+
+    [Theory(DisplayName = $"{nameof(PolicyViolationResponse)}-PriorityRange")]
+    [InlineData(0L, 0L)]
+    [InlineData(long.MinValue, long.MaxValue)]
+    [InlineData(0L, long.MaxValue)]
+    [InlineData(-10L, 100L)]
+    public void PolicyViolationResponse__PriorityRange__Serialization(long min, long max)
+    {
+        AssertBase(new PolicyViolationResponse(new PriorityRangeQueuePolicy(min, max)));
     }
 }

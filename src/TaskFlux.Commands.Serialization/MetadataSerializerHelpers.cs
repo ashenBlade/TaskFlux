@@ -1,7 +1,7 @@
 using System.Buffers;
 using System.Diagnostics;
-using TaskFlux.Abstractions;
 using TaskFlux.Commands.ListQueues;
+using TaskFlux.Core.Queue;
 using Utils.Serialization;
 
 namespace TaskFlux.Commands.Serialization;

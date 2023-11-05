@@ -1,7 +1,6 @@
 using Consensus.Application.TaskFlux.Serialization;
 using Consensus.Raft;
 using Consensus.Raft.Persistence;
-using TaskFlux.Abstractions;
 using TaskFlux.Commands;
 using TaskFlux.Core;
 

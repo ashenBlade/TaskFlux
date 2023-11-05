@@ -1,27 +1,27 @@
 using System.Diagnostics;
-using TaskFlux.Abstractions;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Core.Policies;
 
 public class MaxPayloadSizeQueuePolicy : QueuePolicy
 {
-    public int MaxSize { get; }
+    public int MaxPayloadSize { get; }
 
-    public MaxPayloadSizeQueuePolicy(int maxSize)
+    public MaxPayloadSizeQueuePolicy(int maxPayloadSize)
     {
-        Debug.Assert(maxSize >= 0,
+        Debug.Assert(maxPayloadSize >= 0,
             "maxSize >= 0",
             "Максимальный размер сообщения не может быть отрицательным");
 
-        MaxSize = maxSize;
+        MaxPayloadSize = maxPayloadSize;
     }
 
-    public override bool CanEnqueue(long key, byte[] payload, IReadOnlyTaskQueue queue)
+    internal override bool CanEnqueue(long key, byte[] payload, IReadOnlyTaskQueue queue)
     {
         Debug.Assert(queue is not null, "queue is not null", "Объект очереди не может быть null");
         Debug.Assert(payload is not null, "payload is not null", "Массив байтов сообщения не может быть null");
 
-        if (MaxSize < payload.Length)
+        if (MaxPayloadSize < payload.Length)
         {
             return false;
         }
@@ -29,8 +29,13 @@ public class MaxPayloadSizeQueuePolicy : QueuePolicy
         return true;
     }
 
-    public override void Enrich(TaskQueueMetadata metadata)
+    internal override void Enrich(TaskQueueMetadata metadata)
     {
-        metadata.MaxPayloadSize = MaxSize;
+        metadata.MaxPayloadSize = MaxPayloadSize;
+    }
+
+    public override TReturn Accept<TReturn>(IQueuePolicyVisitor<TReturn> visitor)
+    {
+        return visitor.Visit(this);
     }
 }

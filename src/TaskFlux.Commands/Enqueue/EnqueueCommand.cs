@@ -1,6 +1,8 @@
-using TaskFlux.Abstractions;
 using TaskFlux.Commands.Error;
+using TaskFlux.Commands.Ok;
+using TaskFlux.Commands.PolicyViolation;
 using TaskFlux.Commands.Visitors;
+using TaskFlux.Core;
 using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Enqueue;
@@ -29,12 +31,13 @@ public class EnqueueCommand : UpdateCommand
         }
 
         var result = queue.Enqueue(Key, Payload);
-        if (result.IsSuccess)
+
+        if (result.TryGetResult())
         {
-            return EnqueueResponse.Ok;
+            return OkResponse.Instance;
         }
 
-        return EnqueueResponse.Full;
+        return new PolicyViolationResponse(result.ViolatedPolicy);
     }
 
     public override void ApplyNoResult(IApplication context)

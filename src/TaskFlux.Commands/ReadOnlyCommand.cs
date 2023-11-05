@@ -1,4 +1,4 @@
-using TaskFlux.Abstractions;
+using TaskFlux.Core;
 
 namespace TaskFlux.Commands;
 

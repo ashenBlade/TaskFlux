@@ -1,11 +1,11 @@
-using TaskFlux.Abstractions;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Core.Policies;
 
 public class PriorityRangeQueuePolicy : QueuePolicy
 {
-    private readonly long _min;
-    private readonly long _max;
+    public long Min { get; }
+    public long Max { get; }
 
     public PriorityRangeQueuePolicy(long min, long max)
     {
@@ -15,13 +15,13 @@ public class PriorityRangeQueuePolicy : QueuePolicy
                 $"Минимальное значение диапазона ключей не может быть больше максимального.\nМинимальный {min}\nМаксимальный {max}");
         }
 
-        _min = min;
-        _max = max;
+        Min = min;
+        Max = max;
     }
 
-    public override bool CanEnqueue(long key, byte[] payload, IReadOnlyTaskQueue queue)
+    internal override bool CanEnqueue(long key, byte[] payload, IReadOnlyTaskQueue queue)
     {
-        if (key < _min || _max < key)
+        if (key < Min || Max < key)
         {
             return false;
         }
@@ -29,8 +29,13 @@ public class PriorityRangeQueuePolicy : QueuePolicy
         return false;
     }
 
-    public override void Enrich(TaskQueueMetadata metadata)
+    internal override void Enrich(TaskQueueMetadata metadata)
     {
-        metadata.PriorityRange = ( _min, _max );
+        metadata.PriorityRange = ( Min, Max );
+    }
+
+    public override TReturn Accept<TReturn>(IQueuePolicyVisitor<TReturn> visitor)
+    {
+        return visitor.Visit(this);
     }
 }

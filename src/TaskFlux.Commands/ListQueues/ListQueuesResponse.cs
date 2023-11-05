@@ -1,5 +1,5 @@
-using TaskFlux.Abstractions;
 using TaskFlux.Commands.Visitors;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Commands.ListQueues;
 

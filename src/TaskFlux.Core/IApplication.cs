@@ -1,6 +1,6 @@
-using TaskFlux.Core;
+using TaskFlux.Core.Queue;
 
-namespace TaskFlux.Abstractions;
+namespace TaskFlux.Core;
 
 public interface IApplication : IReadOnlyApplication
 {
