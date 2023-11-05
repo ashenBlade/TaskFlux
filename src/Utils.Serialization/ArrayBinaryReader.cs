@@ -2,8 +2,7 @@ using System.Buffers.Binary;
 using System.Runtime.Serialization;
 using System.Text;
 using TaskFlux.Models;
-using TaskQueue.Core;
-using TaskQueue.Core.Exceptions;
+using TaskFlux.Models.Exceptions;
 
 namespace Utils.Serialization;
 

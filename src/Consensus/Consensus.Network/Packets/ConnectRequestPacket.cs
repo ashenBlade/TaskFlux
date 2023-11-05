@@ -1,4 +1,4 @@
-using TaskFlux.Core;
+using TaskFlux.Models;
 using Utils.Serialization;
 
 namespace Consensus.Network.Packets;

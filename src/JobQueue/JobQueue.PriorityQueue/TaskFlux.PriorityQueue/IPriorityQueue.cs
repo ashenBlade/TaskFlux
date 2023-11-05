@@ -1,4 +1,4 @@
-namespace TaskQueue.PriorityQueue;
+namespace TaskFlux.PriorityQueue;
 
 public interface IPriorityQueue<TKey, TValue>
 {

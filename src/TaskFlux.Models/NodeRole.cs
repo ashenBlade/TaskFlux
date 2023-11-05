@@ -1,4 +1,4 @@
-namespace TaskFlux.Core;
+namespace TaskFlux.Models;
 
 public enum NodeRole
 {

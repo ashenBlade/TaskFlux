@@ -2,7 +2,7 @@
 using TaskFlux.Commands.CreateQueue;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
-using TaskQueue.Core;
+using TaskFlux.Models;
 using Xunit;
 
 namespace TaskFlux.Commands.Serialization.Tests;

@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using TaskFlux.Core;
+using TaskFlux.Models;
 using Utils.Serialization;
 
 namespace Consensus.Raft.Persistence.Metadata;

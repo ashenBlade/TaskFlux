@@ -1,4 +1,4 @@
-namespace TaskQueue.Core.Exceptions;
+namespace TaskFlux.Models.Exceptions;
 
 public class InvalidQueueNameException : FormatException
 {

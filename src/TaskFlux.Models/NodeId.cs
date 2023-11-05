@@ -1,4 +1,4 @@
-namespace TaskFlux.Core;
+namespace TaskFlux.Models;
 
 public readonly struct NodeId : IEquatable<NodeId>
 {

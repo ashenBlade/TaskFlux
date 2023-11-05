@@ -3,7 +3,7 @@ using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Persistence;
 using Serilog;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.Raft.State.LeaderState;
 

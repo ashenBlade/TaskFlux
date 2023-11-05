@@ -10,7 +10,7 @@ using TaskFlux.Commands.Serialization.Exceptions;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 using TaskFlux.Core.Policies;
-using TaskQueue.Core.Exceptions;
+using TaskFlux.Models.Exceptions;
 using Utils.Serialization;
 
 namespace TaskFlux.Commands.Serialization;

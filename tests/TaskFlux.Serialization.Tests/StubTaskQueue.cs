@@ -2,7 +2,7 @@ using TaskFlux.Core;
 using TaskFlux.Core.Queue;
 using TaskFlux.Models;
 
-namespace TaskQueue.Serialization.Tests;
+namespace TaskFlux.Serialization.Tests;
 
 public class StubTaskQueue : ITaskQueue
 {

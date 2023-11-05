@@ -8,7 +8,7 @@ using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Persistence;
-using TaskFlux.Core;
+using TaskFlux.Models;
 using Utils.CheckSum;
 using Utils.Serialization;
 

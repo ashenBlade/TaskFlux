@@ -1,6 +1,6 @@
 using Consensus.Raft;
 using Consensus.Raft.Persistence.Metadata;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.Storage.Tests;
 

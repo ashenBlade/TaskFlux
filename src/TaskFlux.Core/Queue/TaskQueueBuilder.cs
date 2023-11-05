@@ -1,6 +1,6 @@
 using TaskFlux.Core.Policies;
 using TaskFlux.Models;
-using TaskQueue.PriorityQueue.StandardLibrary;
+using TaskFlux.PriorityQueue.StandardLibrary;
 
 namespace TaskFlux.Core.Queue;
 

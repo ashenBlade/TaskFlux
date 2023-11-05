@@ -7,7 +7,7 @@ using Consensus.Raft.Persistence;
 using Consensus.Raft.State;
 using Consensus.Raft.State.LeaderState;
 using Serilog;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.Raft;
 

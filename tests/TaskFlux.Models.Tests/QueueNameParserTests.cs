@@ -1,4 +1,3 @@
-using TaskQueue.Core;
 using Xunit;
 using Xunit.Sdk;
 

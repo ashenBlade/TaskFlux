@@ -6,7 +6,7 @@ using Consensus.Network.Packets;
 using Consensus.Raft;
 using Serilog;
 using TaskFlux.Commands;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.NodeProcessor;
 

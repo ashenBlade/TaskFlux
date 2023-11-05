@@ -9,11 +9,12 @@ using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Serialization;
 using TaskFlux.Core;
 using TaskFlux.Host.Modules.SocketRequest.Exceptions;
+using TaskFlux.Models;
+using TaskFlux.Models.Exceptions;
 using TaskFlux.Network.Packets;
 using TaskFlux.Network.Packets.Authorization;
 using TaskFlux.Network.Packets.Packets;
 using TaskFlux.Network.Packets.Serialization;
-using TaskQueue.Core.Exceptions;
 
 namespace TaskFlux.Host.Modules.SocketRequest;
 

@@ -1,8 +1,7 @@
 using TaskFlux.Core.Queue;
 using TaskFlux.Models;
-using TaskFlux.Serialization;
 
-namespace TaskQueue.Serialization.Tests;
+namespace TaskFlux.Serialization.Tests;
 
 public class StubTaskQueueFactory : ITaskQueueFactory
 {

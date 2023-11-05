@@ -1,6 +1,6 @@
 using TaskFlux.Core.Queue;
 
-namespace TaskQueue.Serialization.Tests;
+namespace TaskFlux.Serialization.Tests;
 
 public class TaskQueueEqualityComparer : IEqualityComparer<ITaskQueue>
 {

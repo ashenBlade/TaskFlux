@@ -2,7 +2,7 @@ using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace TaskFlux.Host.Infrastructure;
 

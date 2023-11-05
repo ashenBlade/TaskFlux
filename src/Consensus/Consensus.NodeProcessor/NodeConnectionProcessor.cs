@@ -6,7 +6,7 @@ using Consensus.Raft;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Serilog;
 using TaskFlux.Commands;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.NodeProcessor;
 

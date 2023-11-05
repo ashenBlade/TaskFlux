@@ -1,6 +1,4 @@
-using TaskFlux.Models;
-
-namespace TaskQueue.Core;
+namespace TaskFlux.Models;
 
 public class QueueNameEqualityComparer : IEqualityComparer<QueueName>
 {

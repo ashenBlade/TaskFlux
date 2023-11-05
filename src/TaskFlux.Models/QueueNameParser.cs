@@ -1,8 +1,7 @@
 using System.Text;
-using TaskFlux.Models;
-using TaskQueue.Core.Exceptions;
+using TaskFlux.Models.Exceptions;
 
-namespace TaskQueue.Core;
+namespace TaskFlux.Models;
 
 /// <summary>
 /// Вспомогательный класс для парсинга названия очереди

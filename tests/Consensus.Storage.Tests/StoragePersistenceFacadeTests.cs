@@ -8,7 +8,7 @@ using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
 using FluentAssertions;
 using Serilog.Core;
-using TaskFlux.Core;
+using TaskFlux.Models;
 using Constants = Consensus.Raft.Persistence.Constants;
 
 // ReSharper disable UseUtf8StringLiteral

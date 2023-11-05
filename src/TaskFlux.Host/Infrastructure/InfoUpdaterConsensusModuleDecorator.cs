@@ -4,7 +4,7 @@ using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.State;
-using TaskFlux.Core;
+using TaskFlux.Models;
 using TaskFlux.Node;
 
 namespace TaskFlux.Host.Infrastructure;

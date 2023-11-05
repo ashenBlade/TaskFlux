@@ -1,9 +1,7 @@
 using TaskFlux.Models;
 using TaskFlux.Models.TestHelpers;
-using TaskFlux.Serialization;
-using TaskQueue.Core;
 
-namespace TaskQueue.Serialization.Tests;
+namespace TaskFlux.Serialization.Tests;
 
 [Trait("Category", "Serialization")]
 public class FileTaskQueueSnapshotSerializerTests

@@ -7,7 +7,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\TaskQueue.PriorityQueue\TaskQueue.PriorityQueue.csproj"/>
+        <ProjectReference Include="..\TaskFlux.PriorityQueue\TaskFlux.PriorityQueue.csproj"/>
     </ItemGroup>
 
 </Project>

@@ -22,8 +22,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\JobQueue\JobQueue.PriorityQueue\TaskQueue.PriorityQueue.StandardLibrary\TaskQueue.PriorityQueue.StandardLibrary.csproj"/>
-        <ProjectReference Include="..\..\src\JobQueue\JobQueue.PriorityQueue\TaskQueue.PriorityQueue\TaskQueue.PriorityQueue.csproj"/>
+        <ProjectReference Include="..\..\src\JobQueue\JobQueue.PriorityQueue\TaskFlux.PriorityQueue.StandardLibrary\TaskFlux.PriorityQueue.StandardLibrary.csproj"/>
+        <ProjectReference Include="..\..\src\JobQueue\JobQueue.PriorityQueue\TaskFlux.PriorityQueue\TaskFlux.PriorityQueue.csproj"/>
     </ItemGroup>
 
 </Project>

@@ -1,5 +1,5 @@
 using TaskFlux.Models;
-using TaskQueue.PriorityQueue;
+using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
 

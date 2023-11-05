@@ -1,6 +1,4 @@
-﻿using TaskQueue.Core;
-
-namespace TaskFlux.Models.TestHelpers;
+﻿namespace TaskFlux.Models.TestHelpers;
 
 public static class QueueNameHelpers
 {
