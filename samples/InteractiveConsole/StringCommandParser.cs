@@ -49,7 +49,10 @@ public static class StringCommandParser
     private static CreateQueueCommand GetCreateQueueCommand(string[] args)
     {
         var queueName = QueueNameParser.Parse(args[1]);
-        return new CreateQueueCommand(queueName, 0);
+        return new CreateQueueCommand(queueName,
+            maxQueueSize: null,
+            maxPayloadSize: null,
+            priorityRange: null);
     }
 
     private static DeleteQueueCommand GetDeleteQueueCommand(string[] args)
