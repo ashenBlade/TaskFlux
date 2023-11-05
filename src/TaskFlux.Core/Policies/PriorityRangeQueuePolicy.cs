@@ -19,14 +19,9 @@ public class PriorityRangeQueuePolicy : QueuePolicy
         Max = max;
     }
 
-    internal override bool CanEnqueue(long key, byte[] payload, IReadOnlyTaskQueue queue)
+    internal override bool CanEnqueue(long key, IReadOnlyList<byte> payload, IReadOnlyTaskQueue queue)
     {
-        if (key < Min || Max < key)
-        {
-            return false;
-        }
-
-        return false;
+        return Min <= key && key <= Max;
     }
 
     internal override void Enrich(TaskQueueMetadata metadata)

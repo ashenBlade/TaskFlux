@@ -18,7 +18,7 @@ public abstract class QueuePolicy
     /// <c>true</c> - проверка прошла успешно,
     /// <c>false</c> - добавлять нельзя
     /// </returns>
-    internal abstract bool CanEnqueue(long key, byte[] payload, IReadOnlyTaskQueue queue);
+    internal abstract bool CanEnqueue(long key, IReadOnlyList<byte> payload, IReadOnlyTaskQueue queue);
 
     /// <summary>
     /// Записать информацию о себе в переданную структуру метаданных.

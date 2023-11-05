@@ -18,16 +18,11 @@ public class MaxQueueSizeQueuePolicy : QueuePolicy
         MaxQueueSize = maxQueueSize;
     }
 
-    internal override bool CanEnqueue(long key, byte[] payload, IReadOnlyTaskQueue queue)
+    internal override bool CanEnqueue(long key, IReadOnlyList<byte> payload, IReadOnlyTaskQueue queue)
     {
         Debug.Assert(queue is not null, "queue is not null", "Объект очереди не может быть null");
 
-        if (MaxQueueSize <= queue.Count)
-        {
-            return false;
-        }
-
-        return false;
+        return queue.Count < MaxQueueSize;
     }
 
 

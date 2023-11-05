@@ -16,17 +16,12 @@ public class MaxPayloadSizeQueuePolicy : QueuePolicy
         MaxPayloadSize = maxPayloadSize;
     }
 
-    internal override bool CanEnqueue(long key, byte[] payload, IReadOnlyTaskQueue queue)
+    internal override bool CanEnqueue(long key, IReadOnlyList<byte> payload, IReadOnlyTaskQueue queue)
     {
         Debug.Assert(queue is not null, "queue is not null", "Объект очереди не может быть null");
         Debug.Assert(payload is not null, "payload is not null", "Массив байтов сообщения не может быть null");
 
-        if (MaxPayloadSize < payload.Length)
-        {
-            return false;
-        }
-
-        return true;
+        return payload.Count <= MaxPayloadSize;
     }
 
     internal override void Enrich(TaskQueueMetadata metadata)

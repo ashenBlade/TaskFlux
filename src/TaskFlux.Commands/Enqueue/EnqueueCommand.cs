@@ -32,12 +32,12 @@ public class EnqueueCommand : UpdateCommand
 
         var result = queue.Enqueue(Key, Payload);
 
-        if (result.TryGetResult())
+        if (result.TryGetViolatedPolicy(out var policy))
         {
-            return OkResponse.Instance;
+            return new PolicyViolationResponse(policy);
         }
 
-        return new PolicyViolationResponse(result.ViolatedPolicy);
+        return OkResponse.Instance;
     }
 
     public override void ApplyNoResult(IApplication context)

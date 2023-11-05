@@ -126,8 +126,11 @@ static IEnumerable<string> GetCommandDescriptions()
                  QUEUE_NAME - название очереди. Пропустить, если использовать стандартную
                  """;
     yield return """
-                  - create QUEUE_NAME - создать новую очередь с указанным названием
+                  - create QUEUE_NAME [WITHMAXSIZE max_size] [WITHMAXPAYLOAD max_payload] [WITHPRIORITYRANGE min max] - создать новую очередь с указанным названием
                  QUEUE_NAME - название очереди
+                 WITHMAXSIZE max_size - выставить ограничение на максимальный размер очереди в max_size
+                 WITHMAXPAYLOAD max_payload - выставить ограничение на максимальный размер сообщения в max_payload байтов
+                 WITHPRIORITYRANGE min max - ограничить допустимый диапазон выставляемых ключей с min до max включительно
                  """;
     yield return """
                   - delete QUEUE_NAME - удалить очередь с указанным названием

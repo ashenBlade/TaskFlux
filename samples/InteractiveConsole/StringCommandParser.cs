@@ -50,10 +50,36 @@ public static class StringCommandParser
     private static CreateQueueCommand GetCreateQueueCommand(string[] args)
     {
         var queueName = QueueNameParser.Parse(args[1]);
+
+        int? maxQueueSize = null;
+        int? maxPayloadSize = null;
+        (long, long)? priorityRange = null;
+
+        for (var i = 2; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "WITHMAXSIZE":
+                    maxQueueSize = int.Parse(args[i + 1]);
+                    i++;
+                    break;
+                case "WITHMAXPAYLOAD":
+                    maxPayloadSize = int.Parse(args[i + 1]);
+                    i++;
+                    break;
+                case "WITHPRIORITYRANGE":
+                    priorityRange = ( long.Parse(args[i + 1]), long.Parse(args[i + 1]) );
+                    i += 2;
+                    break;
+                default:
+                    throw new Exception($"Неизвестный аргумент: {args[i]}");
+            }
+        }
+
         return new CreateQueueCommand(queueName,
-            maxQueueSize: null,
-            maxPayloadSize: null,
-            priorityRange: null);
+            maxQueueSize: maxQueueSize,
+            maxPayloadSize: maxPayloadSize,
+            priorityRange: priorityRange);
     }
 
     private static DeleteQueueCommand GetDeleteQueueCommand(string[] args)
