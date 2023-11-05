@@ -12,6 +12,7 @@ using FluentAssertions;
 using Moq;
 using Serilog.Core;
 using TaskFlux.Core;
+using IApplication = Consensus.Raft.Tests.Infrastructure.IApplication;
 
 namespace Consensus.Raft.Tests;
 

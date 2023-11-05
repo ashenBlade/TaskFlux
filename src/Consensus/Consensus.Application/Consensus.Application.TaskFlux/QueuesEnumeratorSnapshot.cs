@@ -1,6 +1,6 @@
 using Consensus.Application.TaskFlux.Serialization;
 using Consensus.Raft.Persistence;
-using TaskQueue.Core;
+using TaskFlux.Core;
 
 namespace Consensus.Application.TaskFlux;
 

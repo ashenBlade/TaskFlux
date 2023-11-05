@@ -3,7 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Abstractions;
 using Serilog;
-using TaskFlux.Serialization.Helpers;
+using Utils.Serialization;
 
 namespace Consensus.Raft.Persistence.Snapshot;
 

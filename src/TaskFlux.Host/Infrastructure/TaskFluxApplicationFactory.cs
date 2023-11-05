@@ -5,11 +5,8 @@ using Consensus.Raft.Persistence;
 using TaskFlux.Commands;
 using TaskFlux.Core;
 using TaskFlux.Host.Helpers;
-using TaskFlux.Node;
-using TaskQueue.Core;
-using TaskQueue.Models;
-using TaskQueue.Serialization;
-using Result = TaskFlux.Commands.Result;
+using TaskFlux.Models;
+using TaskFlux.Serialization;
 
 namespace TaskFlux.Host.Infrastructure;
 
@@ -33,25 +30,32 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Result>
     {
         var queue = new TaskQueueBuilder(QueueName.Default)
            .Build();
-        var node = new TaskFluxNode(new TaskQueueManager(queue));
-        var commandContext = new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo);
-        return new TaskFluxApplication(commandContext, _fileTaskQueueSnapshotSerializer);
+        var queueManager = new TaskQueueManager(queue);
+        var application = new ProxyTaskFluxApplication(
+            new TaskFluxApplication(_nodeInfo, _clusterInfo, _appInfo, queueManager), _fileTaskQueueSnapshotSerializer);
+        return application;
     }
 
     public IApplication<Command, Result> Restore(ISnapshot snapshot)
     {
+        // Читаем снапшот (потом надо сделать свой поток-обертку)
         var memoryStream = new MemoryStream();
         foreach (var chunk in snapshot.GetAllChunks())
         {
             memoryStream.Write(chunk.Span);
         }
 
+        // Откатываемся в начало снапшота
         memoryStream.Position = 0;
-        var queues = _fileTaskQueueSnapshotSerializer.Deserialize(memoryStream)
-                                                     .ToList();
 
-        var node = new TaskFluxNode(new TaskQueueManager(queues));
-        return new TaskFluxApplication(new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo),
+        // Десериализуем
+        var queues = _fileTaskQueueSnapshotSerializer
+                    .Deserialize(memoryStream)
+                    .ToList();
+
+        // Создаем основные объекты
+        var node = new TaskQueueManager(queues);
+        return new ProxyTaskFluxApplication(new TaskFluxApplication(_nodeInfo, _clusterInfo, _appInfo, node),
             _fileTaskQueueSnapshotSerializer);
     }
 }

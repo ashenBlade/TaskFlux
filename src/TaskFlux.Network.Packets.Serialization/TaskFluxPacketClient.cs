@@ -8,7 +8,7 @@ using System.Text;
 using TaskFlux.Network.Packets.Authorization;
 using TaskFlux.Network.Packets.Packets;
 using TaskFlux.Network.Packets.Serialization.Exceptions;
-using TaskFlux.Serialization.Helpers;
+using Utils.Serialization;
 
 namespace TaskFlux.Network.Packets.Serialization;
 

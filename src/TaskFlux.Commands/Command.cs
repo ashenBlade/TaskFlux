@@ -1,4 +1,5 @@
 ﻿using TaskFlux.Commands.Visitors;
+using TaskFlux.Core;
 
 namespace TaskFlux.Commands;
 
@@ -15,8 +16,8 @@ public abstract class Command
     public abstract bool IsReadOnly { get; }
     public abstract CommandType Type { get; }
 
-    public abstract Result Apply(ICommandContext context);
-    public abstract void ApplyNoResult(ICommandContext context);
+    public abstract Result Apply(IApplication application);
+    public abstract void ApplyNoResult(IApplication context);
 
     public abstract void Accept(ICommandVisitor visitor);
     public abstract T Accept<T>(IReturningCommandVisitor<T> visitor);

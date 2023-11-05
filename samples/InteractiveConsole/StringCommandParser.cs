@@ -5,8 +5,8 @@ using TaskFlux.Commands.DeleteQueue;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.ListQueues;
+using TaskFlux.Models;
 using TaskQueue.Core;
-using TaskQueue.Models;
 
 namespace InteractiveConsole;
 

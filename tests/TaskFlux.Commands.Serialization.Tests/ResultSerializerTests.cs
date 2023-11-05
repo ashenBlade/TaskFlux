@@ -4,8 +4,9 @@ using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
+using TaskFlux.Core;
+using TaskFlux.Models;
 using TaskQueue.Core;
-using TaskQueue.Models;
 using Xunit;
 
 namespace TaskFlux.Commands.Serialization.Tests;

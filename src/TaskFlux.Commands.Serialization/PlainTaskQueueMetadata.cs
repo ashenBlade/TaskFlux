@@ -1,6 +1,6 @@
 using System.Runtime.Serialization;
-using TaskQueue.Core;
-using TaskQueue.Models;
+using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Serialization;
 

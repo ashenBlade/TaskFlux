@@ -3,8 +3,8 @@ using System.Net;
 using Serilog;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
+using TaskFlux.Models;
 using TaskFlux.Network.Client;
-using TaskQueue.Models;
 
 // ReSharper disable once AccessToDisposedClosure
 

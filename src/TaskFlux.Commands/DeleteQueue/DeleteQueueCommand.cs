@@ -1,7 +1,8 @@
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
-using TaskQueue.Models;
+using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace TaskFlux.Commands.DeleteQueue;
 
@@ -15,9 +16,9 @@ public class DeleteQueueCommand : UpdateCommand
         QueueName = queueName;
     }
 
-    public override Result Apply(ICommandContext context)
+    public override Result Apply(IApplication context)
     {
-        var manager = context.Node.GetTaskQueueManager();
+        var manager = context.TaskQueueManager;
         if (!manager.HasQueue(QueueName))
         {
             return DefaultErrors.QueueDoesNotExist;
@@ -31,9 +32,9 @@ public class DeleteQueueCommand : UpdateCommand
         return new ErrorResult(ErrorType.Unknown, "Неизвестная ошибка при удалении очереди. Очередь не была удалена");
     }
 
-    public override void ApplyNoResult(ICommandContext context)
+    public override void ApplyNoResult(IApplication context)
     {
-        var manager = context.Node.GetTaskQueueManager();
+        var manager = context.TaskQueueManager;
         if (!manager.HasQueue(QueueName))
         {
             return;

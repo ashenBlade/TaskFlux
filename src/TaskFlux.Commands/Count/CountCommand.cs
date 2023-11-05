@@ -1,6 +1,7 @@
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Visitors;
-using TaskQueue.Models;
+using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Count;
 
@@ -14,9 +15,9 @@ public class CountCommand : ReadOnlyCommand
         Queue = queue;
     }
 
-    protected override Result Apply(IReadOnlyCommandContext context)
+    protected override Result Apply(IReadOnlyApplication context)
     {
-        var manager = context.Node.GetTaskQueueManager();
+        var manager = context.TaskQueueManager;
 
         if (!manager.TryGetQueue(Queue, out var queue))
         {
@@ -32,7 +33,7 @@ public class CountCommand : ReadOnlyCommand
         return new CountResult(count);
     }
 
-    protected override void ApplyNoResult(IReadOnlyCommandContext context)
+    protected override void ApplyNoResult(IReadOnlyApplication context)
     {
     }
 

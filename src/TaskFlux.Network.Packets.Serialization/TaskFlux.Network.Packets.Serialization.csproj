@@ -8,7 +8,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\TaskFlux.Network.Packets\TaskFlux.Network.Packets.csproj"/>
-      <ProjectReference Include="..\TaskFlux.Serialization.Helpers\TaskFlux.Serialization.Helpers.csproj" />
+        <ProjectReference Include="..\Utils.Serialization\Utils.Serialization.csproj"/>
     </ItemGroup>
     
     <PropertyGroup>

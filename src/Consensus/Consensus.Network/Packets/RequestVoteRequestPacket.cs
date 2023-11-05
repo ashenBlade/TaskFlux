@@ -1,5 +1,5 @@
 using Consensus.Raft.Commands.RequestVote;
-using TaskFlux.Serialization.Helpers;
+using Utils.Serialization;
 
 namespace Consensus.Network.Packets;
 

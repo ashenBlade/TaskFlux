@@ -1,18 +1,18 @@
 using System.Runtime.CompilerServices;
-using TaskFlux.Serialization.Helpers;
+using Utils.Serialization;
 
 namespace Consensus.Network.Packets;
 
-public class ConnectResponsePacket: RaftPacket
+public class ConnectResponsePacket : RaftPacket
 {
     public override RaftPacketType PacketType => RaftPacketType.ConnectResponse;
     public bool Success { get; }
 
-    public ConnectResponsePacket(bool success) 
+    public ConnectResponsePacket(bool success)
     {
         Success = success;
     }
-    
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected override int EstimatePacketSize()
     {
@@ -23,7 +23,7 @@ public class ConnectResponsePacket: RaftPacket
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write((byte)RaftPacketType.ConnectResponse);
+        writer.Write(( byte ) RaftPacketType.ConnectResponse);
         writer.Write(Success);
     }
 }

@@ -7,7 +7,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\JobQueue\TaskQueue.Core\TaskQueue.Core.csproj"/>
+        <ProjectReference Include="..\JobQueue\JobQueue.PriorityQueue\TaskQueue.PriorityQueue.StandardLibrary\TaskQueue.PriorityQueue.StandardLibrary.csproj"/>
+        <ProjectReference Include="..\JobQueue\JobQueue.PriorityQueue\TaskQueue.PriorityQueue\TaskQueue.PriorityQueue.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Models\TaskFlux.Models.csproj"/>
     </ItemGroup>
 
 </Project>

@@ -1,5 +1,6 @@
-using TaskQueue.Core;
-using TaskQueue.Models;
+using TaskFlux.Core;
+using TaskFlux.Models;
+using TaskFlux.Serialization;
 
 namespace TaskQueue.Serialization.Tests;
 

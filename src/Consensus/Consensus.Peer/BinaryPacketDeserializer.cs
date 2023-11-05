@@ -9,8 +9,8 @@ using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Persistence;
 using TaskFlux.Core;
-using TaskFlux.Serialization.Helpers;
 using Utils.CheckSum;
+using Utils.Serialization;
 
 namespace Consensus.Peer;
 

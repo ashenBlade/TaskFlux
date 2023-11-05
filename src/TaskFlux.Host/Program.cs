@@ -21,8 +21,8 @@ using TaskFlux.Host.Modules.HttpRequest;
 using TaskFlux.Host.Modules.SocketRequest;
 using TaskFlux.Host.Options;
 using TaskFlux.Host.RequestAcceptor;
+using TaskFlux.Models;
 using TaskFlux.Node;
-using TaskQueue.Models;
 using Utils.Network;
 
 Log.Logger = new LoggerConfiguration()

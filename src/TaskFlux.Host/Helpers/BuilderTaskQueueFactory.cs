@@ -1,6 +1,6 @@
-using TaskQueue.Core;
-using TaskQueue.Models;
-using TaskQueue.Serialization;
+using TaskFlux.Core;
+using TaskFlux.Models;
+using TaskFlux.Serialization;
 
 namespace TaskFlux.Host.Helpers;
 

@@ -1,6 +1,7 @@
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Visitors;
-using TaskQueue.Models;
+using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Enqueue;
 
@@ -20,11 +21,9 @@ public class EnqueueCommand : UpdateCommand
 
     public override CommandType Type => CommandType.Enqueue;
 
-    public override Result Apply(ICommandContext context)
+    public override Result Apply(IApplication application)
     {
-        var manager = context.Node.GetTaskQueueManager();
-
-        if (!manager.TryGetQueue(Queue, out var queue))
+        if (!application.TaskQueueManager.TryGetQueue(Queue, out var queue))
         {
             return DefaultErrors.QueueDoesNotExist;
         }
@@ -35,15 +34,12 @@ public class EnqueueCommand : UpdateCommand
             return EnqueueResult.Ok;
         }
 
-        // TODO: учитывать ошибки (не только полный может быть)
         return EnqueueResult.Full;
     }
 
-    public override void ApplyNoResult(ICommandContext context)
+    public override void ApplyNoResult(IApplication context)
     {
-        var manager = context.Node.GetTaskQueueManager();
-
-        if (!manager.TryGetQueue(Queue, out var queue))
+        if (!context.TaskQueueManager.TryGetQueue(Queue, out var queue))
         {
             return;
         }

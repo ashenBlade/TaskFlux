@@ -1,13 +1,13 @@
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Visitors;
-using TaskQueue.Models;
+using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Dequeue;
 
 public class DequeueCommand : UpdateCommand
 {
-    public
-        QueueName Queue { get; }
+    public QueueName Queue { get; }
 
     public DequeueCommand(QueueName queue)
     {
@@ -16,9 +16,9 @@ public class DequeueCommand : UpdateCommand
 
     public override CommandType Type => CommandType.Dequeue;
 
-    public override Result Apply(ICommandContext context)
+    public override Result Apply(IApplication context)
     {
-        var manager = context.Node.GetTaskQueueManager();
+        var manager = context.TaskQueueManager;
 
         if (!manager.TryGetQueue(Queue, out var queue))
         {
@@ -33,9 +33,9 @@ public class DequeueCommand : UpdateCommand
         return DequeueResult.Empty;
     }
 
-    public override void ApplyNoResult(ICommandContext context)
+    public override void ApplyNoResult(IApplication context)
     {
-        var manager = context.Node.GetTaskQueueManager();
+        var manager = context.TaskQueueManager;
 
         if (!manager.TryGetQueue(Queue, out var queue))
         {
