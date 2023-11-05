@@ -4,9 +4,8 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("TaskQueue.Core.Tests")]
 [assembly: InternalsVisibleTo("TaskFlux.Commands.Serialization.Tests")]
 
-namespace TaskQueue.Core;
+namespace TaskQueue.Models;
 
-// TODO: вынести в TaskQueue.Models
 /// <summary>
 /// Объект представляющий название очереди, удовлетворяющее бизнес-логике
 /// </summary>

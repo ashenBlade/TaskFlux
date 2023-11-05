@@ -782,9 +782,6 @@ public class StoragePersistenceFacadeTests
            .Equal(expectedBuffer, LogEntryComparisonFunc, "команды в буфере должны удалиться до нужного количества");
     }
 
-    // TODO: тесты на применение оставшихся команд
-    // TODO: тесты на обновление состояния после установки снапшота
-
     private static byte[] RandomBytes(int size)
     {
         var bytes = new byte[size];

@@ -1,4 +1,5 @@
 using TaskQueue.Core;
+using TaskQueue.Models;
 using TaskQueue.Models.TestHelpers;
 
 namespace TaskQueue.Serialization.Tests;

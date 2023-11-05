@@ -4,7 +4,7 @@ using Serilog;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Network.Client;
-using TaskQueue.Core;
+using TaskQueue.Models;
 
 // ReSharper disable once AccessToDisposedClosure
 

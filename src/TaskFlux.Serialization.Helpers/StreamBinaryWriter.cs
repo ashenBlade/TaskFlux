@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using TaskQueue.Core;
+using TaskQueue.Models;
 
 namespace TaskFlux.Serialization.Helpers;
 

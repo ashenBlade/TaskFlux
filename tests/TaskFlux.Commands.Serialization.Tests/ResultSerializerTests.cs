@@ -5,6 +5,7 @@ using TaskFlux.Commands.Error;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Ok;
 using TaskQueue.Core;
+using TaskQueue.Models;
 using Xunit;
 
 namespace TaskFlux.Commands.Serialization.Tests;

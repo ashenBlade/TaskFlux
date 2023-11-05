@@ -1,4 +1,5 @@
 using TaskQueue.Core;
+using TaskQueue.Models;
 
 namespace TaskQueue.Serialization;
 

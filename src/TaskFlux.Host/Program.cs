@@ -22,9 +22,8 @@ using TaskFlux.Host.Modules.SocketRequest;
 using TaskFlux.Host.Options;
 using TaskFlux.Host.RequestAcceptor;
 using TaskFlux.Node;
-using TaskQueue.Core;
+using TaskQueue.Models;
 using Utils.Network;
-using Result = TaskFlux.Commands.Result;
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Verbose()

@@ -1,5 +1,5 @@
 using TaskFlux.Core;
-using TaskQueue.Core;
+using TaskQueue.Models;
 
 namespace TaskFlux.Node;
 

@@ -1,4 +1,5 @@
 using TaskQueue.Core.Policies;
+using TaskQueue.Models;
 using TaskQueue.PriorityQueue;
 
 namespace TaskQueue.Core;

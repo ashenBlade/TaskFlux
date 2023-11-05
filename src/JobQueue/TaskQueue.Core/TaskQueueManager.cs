@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using TaskQueue.Models;
 
 namespace TaskQueue.Core;
 

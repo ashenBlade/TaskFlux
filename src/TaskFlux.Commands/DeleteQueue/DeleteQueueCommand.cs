@@ -1,7 +1,7 @@
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
-using TaskQueue.Core;
+using TaskQueue.Models;
 
 namespace TaskFlux.Commands.DeleteQueue;
 

@@ -7,6 +7,7 @@ using TaskFlux.Core;
 using TaskFlux.Host.Helpers;
 using TaskFlux.Node;
 using TaskQueue.Core;
+using TaskQueue.Models;
 using TaskQueue.Serialization;
 using Result = TaskFlux.Commands.Result;
 

@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using TaskQueue.Core;
 using TaskQueue.Core.Exceptions;
+using TaskQueue.Models;
 
 namespace TaskFlux.Serialization.Helpers;
 

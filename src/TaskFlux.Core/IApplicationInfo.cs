@@ -1,4 +1,4 @@
-using TaskQueue.Core;
+using TaskQueue.Models;
 
 namespace TaskFlux.Core;
 

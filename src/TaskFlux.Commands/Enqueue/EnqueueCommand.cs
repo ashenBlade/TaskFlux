@@ -1,6 +1,6 @@
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Visitors;
-using TaskQueue.Core;
+using TaskQueue.Models;
 
 namespace TaskFlux.Commands.Enqueue;
 

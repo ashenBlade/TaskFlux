@@ -1,3 +1,5 @@
+using TaskQueue.Models;
+
 namespace TaskQueue.Core;
 
 public class QueueNameEqualityComparer : IEqualityComparer<QueueName>

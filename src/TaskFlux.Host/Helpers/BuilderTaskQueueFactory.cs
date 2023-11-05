@@ -1,4 +1,5 @@
 using TaskQueue.Core;
+using TaskQueue.Models;
 using TaskQueue.Serialization;
 
 namespace TaskFlux.Host.Helpers;

@@ -1,5 +1,6 @@
 using System.Text;
 using TaskQueue.Core.Exceptions;
+using TaskQueue.Models;
 
 namespace TaskQueue.Core;
 
