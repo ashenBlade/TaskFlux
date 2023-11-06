@@ -1,3 +1,4 @@
+using TaskFlux.PriorityQueue.StandardLibrary;
 using Xunit;
 
 namespace TaskFlux.PriorityQueue.Tests;
