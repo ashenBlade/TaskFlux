@@ -1,14 +1,14 @@
 using FluentAssertions;
-using TaskFlux.PriorityQueue.ArrayList;
+using TaskFlux.PriorityQueue.QueueArray;
 using Xunit;
 
 namespace TaskFlux.PriorityQueue.Tests;
 
 public class ArrayListPriorityQueueTests
 {
-    private static ArrayListPriorityQueue<byte[]> CreateQueue(long min,
-                                                              long max,
-                                                              IEnumerable<(long, byte[])>? payload = null) =>
+    private static QueueArrayPriorityQueue<byte[]> CreateQueue(long min,
+                                                               long max,
+                                                               IEnumerable<(long, byte[])>? payload = null) =>
         payload is null
             ? new(min, max)
             : new(min, max, payload);

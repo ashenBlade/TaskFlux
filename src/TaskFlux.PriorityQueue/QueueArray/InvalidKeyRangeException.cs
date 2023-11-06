@@ -1,4 +1,4 @@
-namespace TaskFlux.PriorityQueue.ArrayList;
+namespace TaskFlux.PriorityQueue.QueueArray;
 
 public class InvalidKeyRangeException : ArgumentOutOfRangeException
 {

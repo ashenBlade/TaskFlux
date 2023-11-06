@@ -1,9 +1,15 @@
 using System.Collections;
 using System.Diagnostics;
 
-namespace TaskFlux.PriorityQueue.ArrayList;
+namespace TaskFlux.PriorityQueue.QueueArray;
 
-public class ArrayListPriorityQueue<TValue> : IPriorityQueue<long, TValue>
+/// <summary>
+/// Реализация приоритетной очереди,
+/// которая использует массив списков,
+/// где индексами являются ключи записей
+/// </summary>
+/// <typeparam name="TValue">Тип хранимых данных</typeparam>
+public class QueueArrayPriorityQueue<TValue> : IPriorityQueue<long, TValue>
 {
     /// <summary>
     /// Начальное значение ключа (включительно)
@@ -31,7 +37,7 @@ public class ArrayListPriorityQueue<TValue> : IPriorityQueue<long, TValue>
 
     public int Count => _queues?.Sum(x => x?.Count ?? 0) ?? 0;
 
-    public ArrayListPriorityQueue(long min, long max)
+    public QueueArrayPriorityQueue(long min, long max)
     {
         if (max < min)
         {
@@ -51,7 +57,7 @@ public class ArrayListPriorityQueue<TValue> : IPriorityQueue<long, TValue>
     /// <param name="max">Максимальный ключ</param>
     /// <param name="values">Значения для инициализации</param>
     /// <remarks>Порядок в заполняемых значениях не учитывается. Чтобы порядок сохранился, вручную заполняй</remarks>
-    internal ArrayListPriorityQueue(long min, long max, IEnumerable<(long Key, TValue Data)> values) : this(min, max)
+    internal QueueArrayPriorityQueue(long min, long max, IEnumerable<(long Key, TValue Data)> values) : this(min, max)
     {
         var queues = CreateEmptyQueueArray();
 
@@ -130,9 +136,9 @@ public class ArrayListPriorityQueue<TValue> : IPriorityQueue<long, TValue>
 
     private class NullableQueueArrayCollection : IReadOnlyCollection<(long, TValue)>
     {
-        private readonly ArrayListPriorityQueue<TValue> _parent;
+        private readonly QueueArrayPriorityQueue<TValue> _parent;
 
-        public NullableQueueArrayCollection(ArrayListPriorityQueue<TValue> parent)
+        public NullableQueueArrayCollection(QueueArrayPriorityQueue<TValue> parent)
         {
             _parent = parent;
         }
