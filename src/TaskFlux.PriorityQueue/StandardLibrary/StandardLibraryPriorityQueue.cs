@@ -4,28 +4,28 @@ using System.Runtime.CompilerServices;
 
 namespace TaskFlux.PriorityQueue.StandardLibrary;
 
-public class StandardLibraryPriorityQueue<TKey, TValue> : IPriorityQueue<TKey, TValue>
+public class StandardLibraryPriorityQueue : IPriorityQueue
 {
-    private readonly PriorityQueue<TValue, TKey> _queue = new();
+    private readonly PriorityQueue<byte[], long> _queue = new();
     public int Count => _queue.Count;
 
-    public void Enqueue(TKey key, TValue value)
+    public void Enqueue(long key, byte[] value)
     {
         _queue.Enqueue(value, key);
     }
 
-    public bool TryDequeue(out TKey key, out TValue value)
+    public bool TryDequeue(out long key, out byte[] value)
     {
         return _queue.TryDequeue(out value!, out key!);
     }
 
-    public IReadOnlyCollection<(TKey Priority, TValue Payload)> ReadAllData()
+    public IReadOnlyCollection<(long Priority, byte[] Payload)> ReadAllData()
     {
-        return new ChunkedQueueDataCollection<TKey, TValue>(_queue.UnorderedItems);
+        return new ChunkedQueueDataCollection<long, byte[]>(_queue.UnorderedItems);
     }
 
     // Для тестов
-    internal List<(TKey, TValue)> GetElementsFromQueue()
+    internal List<(long, byte[])> GetElementsFromQueue()
     {
         return _queue.UnorderedItems.Select(tuple => ( tuple.Priority, tuple.Element )).ToList();
     }

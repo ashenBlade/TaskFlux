@@ -6,7 +6,7 @@ namespace TaskFlux.PriorityQueue.Tests;
 [Trait("Category", "BusinessLogic")]
 public class StandardLibraryPriorityQueueTests
 {
-    private static StandardLibraryPriorityQueue<int, int> CreateQueue() => new();
+    private static StandardLibraryPriorityQueue CreateQueue() => new();
 
     [Fact]
     public void TryDequeue__СПустойОчередью__ДолженВозвращатьFalse()
@@ -20,7 +20,7 @@ public class StandardLibraryPriorityQueueTests
     public void TryDequeue__КогдаОчередьНеПуста__ДолженВернутьХранившийсяЭлемент()
     {
         var queue = CreateQueue();
-        var expected = ( Key: 1, Value: 2 );
+        var expected = ( Key: 1, Value: new byte[] {1, 2, 3} );
         queue.Enqueue(expected.Key, expected.Value);
         queue.TryDequeue(out var actualKey, out var actualValue);
         var actual = ( actualKey, actualValue );
@@ -31,7 +31,7 @@ public class StandardLibraryPriorityQueueTests
     public void TryDequeue__КогдаОчередьНеПуста__ДолженВернутьTrue()
     {
         var queue = CreateQueue();
-        queue.Enqueue(1, 2);
+        queue.Enqueue(1, new byte[] {1, 2, 3});
         var success = queue.TryDequeue(out _, out _);
         Assert.True(success);
     }
@@ -40,7 +40,7 @@ public class StandardLibraryPriorityQueueTests
     public void Enqueue__СПустойОчередью__ДолженДобавитьЭлементВОчередь()
     {
         var queue = CreateQueue();
-        var expected = ( Key: 1, Value: 123 );
+        var expected = ( Key: 1, Value: new byte[] {1, 2, 3} );
         queue.Enqueue(expected.Key, expected.Value);
         queue.TryDequeue(out var key, out var value);
         var actual = ( key, value );
@@ -59,10 +59,10 @@ public class StandardLibraryPriorityQueueTests
         var queue = CreateQueue();
         foreach (var i in Enumerable.Range(1, elementsCount))
         {
-            queue.Enqueue(i, Random.Shared.Next());
+            queue.Enqueue(i, Random.Shared.RandomBuffer(2));
         }
 
-        var expected = ( Key: 1, Value: 123 );
+        var expected = ( Key: 1, Value: new byte[] {1, 2, 3, 4} );
         queue.Enqueue(expected.Key, expected.Value);
 
         var elements = queue.GetElementsFromQueue();
@@ -79,7 +79,7 @@ public class StandardLibraryPriorityQueueTests
     [InlineData(int.MaxValue - 10, int.MaxValue - 7, int.MaxValue - 4, int.MaxValue - 1)]
     public void TryDequeue__КогдаВОчередиНесколькоЭлементов__ДолженВернутьЭлементСНаименьшимКлючом(params int[] keys)
     {
-        var elements = keys.Select(k => ( Key: k, Value: Random.Shared.Next() )).ToList();
+        var elements = keys.Select(k => ( Key: k, Value: Random.Shared.RandomBuffer() )).ToList();
         var expected = elements.MinBy(x => x.Key);
 
         var queue = CreateQueue();
@@ -116,7 +116,7 @@ public class StandardLibraryPriorityQueueTests
 
         foreach (var i in Enumerable.Range(0, elementsCount))
         {
-            queue.Enqueue(i, Random.Shared.Next());
+            queue.Enqueue(i, Random.Shared.RandomBuffer());
         }
 
         Assert.Equal(elementsCount, queue.Count);
@@ -126,8 +126,8 @@ public class StandardLibraryPriorityQueueTests
     public void Count__КогдаВОчередьДобавляется2ЭлементаСОдинаковымиКлючами__ДолженДобавитьОбаЭлемента()
     {
         var queue = CreateQueue();
-        var first = ( Key: 1, Value: 2 );
-        var second = ( Key: 1, Value: 3 );
+        var first = ( Key: 1, Value: new byte[] {1, 2, 3, 80, 11} );
+        var second = ( Key: 1, Value: new byte[] {7, 6, 100, 43} );
 
         queue.Enqueue(first.Key, first.Value);
         queue.Enqueue(second.Key, second.Value);
@@ -141,8 +141,8 @@ public class StandardLibraryPriorityQueueTests
         TryDequeue__КогдаВОчередьДобавляется2ЭлементаСОдинаковымиКлючами__ДолженВернутьПервоеДобавленноеЗначение()
     {
         var queue = CreateQueue();
-        var first = ( Key: 1, Value: 2 );
-        var second = ( Key: 1, Value: 3 );
+        var first = ( Key: 1, Value: new byte[] {90, 90, 65, 1, 65} );
+        var second = ( Key: 1, Value: new byte[] {11, 34, 78} );
 
         queue.Enqueue(first.Key, first.Value);
         queue.Enqueue(second.Key, second.Value);

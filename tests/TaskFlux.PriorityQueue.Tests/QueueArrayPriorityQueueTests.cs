@@ -4,11 +4,12 @@ using Xunit;
 
 namespace TaskFlux.PriorityQueue.Tests;
 
-public class ArrayListPriorityQueueTests
+[Trait("Category", "BusinessLogic")]
+public class QueueArrayPriorityQueueTests
 {
-    private static QueueArrayPriorityQueue<byte[]> CreateQueue(long min,
-                                                               long max,
-                                                               IEnumerable<(long, byte[])>? payload = null) =>
+    private static QueueArrayPriorityQueue CreateQueue(long min,
+                                                       long max,
+                                                       IEnumerable<(long, byte[])>? payload = null) =>
         payload is null
             ? new(min, max)
             : new(min, max, payload);
@@ -213,7 +214,7 @@ public class ArrayListPriorityQueueTests
     {
         // В проядке убывания ключи расположены
         var elements = Enumerable.Range(0, 20)
-                                 .Select(i => ( Key: 10L - i, Data: new byte[] {( byte ) i, ( byte ) ( i + 1 )} ))
+                                 .Select(i => ( Key: 10L - i, Data: new[] {( byte ) i, ( byte ) ( i + 1 )} ))
                                  .ToArray();
 
         // Ожидаем их чтение в обратном порядке, т.е. по возрастанию

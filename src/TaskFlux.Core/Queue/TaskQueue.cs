@@ -22,7 +22,7 @@ internal class TaskQueue : ITaskQueue
         return metadata;
     }
 
-    public TaskQueue(QueueName name, IPriorityQueue<long, byte[]> queue, QueuePolicy[] policies)
+    public TaskQueue(QueueName name, IPriorityQueue queue, QueuePolicy[] policies)
     {
         _policies = policies;
         _queue = queue;
@@ -30,7 +30,7 @@ internal class TaskQueue : ITaskQueue
     }
 
     private readonly QueuePolicy[] _policies;
-    private readonly IPriorityQueue<long, byte[]> _queue;
+    private readonly IPriorityQueue _queue;
 
     public IReadOnlyCollection<(long Priority, byte[] Payload)> ReadAllData()
     {

@@ -1,6 +1,10 @@
 namespace TaskFlux.PriorityQueue;
 
-public interface IPriorityQueue<TKey, TValue>
+/// <summary>
+/// Интерфейс структуры приоритетной очереди.
+/// Является бэкэндом для логики хранения записей очереди в памяти
+/// </summary>
+public interface IPriorityQueue
 {
     /// <summary>
     /// Получить текущее количество элементов в очереди
@@ -12,23 +16,23 @@ public interface IPriorityQueue<TKey, TValue>
     /// </summary>
     /// <param name="key">Ключ записи, приоритет</param>
     /// <param name="value">Значение, которое нужно сохранить</param>
-    public void Enqueue(TKey key, TValue value);
+    public void Enqueue(long key, byte[] value);
 
     /// <summary>
-    /// Попытаться прочитать запись <paramref name="value"/> с ключом <paramref name="key"/> из очереди 
+    /// Попытаться прочитать запись <paramref name="payload"/> с ключом <paramref name="key"/> из очереди 
     /// </summary>
     /// <param name="key">Полученный ключ записи, приоритет</param>
-    /// <param name="value">Полученное значение этой записи</param>
+    /// <param name="payload">Полученное значение этой записи</param>
     /// <returns>
     /// <c>true</c> - запись была прочитана,
     /// <c>false</c> - очередь была пуста и прочитать ее не удалось
     /// </returns>
-    public bool TryDequeue(out TKey key, out TValue value);
+    public bool TryDequeue(out long key, out byte[] payload);
 
     /// <summary>
     /// Прочитать все записи, хранящиеся в очереди
     /// </summary>
     /// <returns>Набор из пар (ключ, значение), которое хранилось в очереди</returns>
     /// <remarks>Полученная коллекция не обязательно будет сортирована в порядке приоритета</remarks>
-    IReadOnlyCollection<(TKey Priority, TValue Payload)> ReadAllData();
+    IReadOnlyCollection<(long Priority, byte[] Payload)> ReadAllData();
 }

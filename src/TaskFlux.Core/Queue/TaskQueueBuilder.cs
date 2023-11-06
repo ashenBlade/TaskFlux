@@ -75,9 +75,9 @@ public class TaskQueueBuilder
         return _name ?? throw new InvalidOperationException("Название очереди не проставлено");
     }
 
-    private StandardLibraryPriorityQueue<long, byte[]> BuildPriorityQueue()
+    private StandardLibraryPriorityQueue BuildPriorityQueue()
     {
-        var priorityQueue = new StandardLibraryPriorityQueue<long, byte[]>();
+        var priorityQueue = new StandardLibraryPriorityQueue();
 
         if (_payload is {Count: > 0} payload)
         {
