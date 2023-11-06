@@ -1,4 +1,4 @@
-namespace TaskFlux.PriorityQueue;
+namespace TaskFlux.Abstractions;
 
 public interface IPriorityQueue<TKey, TValue>
 {

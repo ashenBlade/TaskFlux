@@ -7,9 +7,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\JobQueue\JobQueue.PriorityQueue\TaskFlux.PriorityQueue.StandardLibrary\TaskFlux.PriorityQueue.StandardLibrary.csproj"/>
-        <ProjectReference Include="..\JobQueue\JobQueue.PriorityQueue\TaskFlux.PriorityQueue\TaskFlux.PriorityQueue.csproj"/>
         <ProjectReference Include="..\TaskFlux.Models\TaskFlux.Models.csproj"/>
+        <ProjectReference Include="..\TaskFlux.PriorityQueue\TaskFlux.PriorityQueue.csproj"/>
         <ProjectReference Include="..\Utils.Serialization\Utils.Serialization.csproj"/>
     </ItemGroup>
 

@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace TaskFlux.PriorityQueue.StandardLibrary.Tests;
+namespace TaskFlux.PriorityQueue.Tests;
 
 [Trait("Category", "BusinessLogic")]
 public class StandardLibraryPriorityQueueTests

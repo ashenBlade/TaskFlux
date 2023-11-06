@@ -1,8 +1,9 @@
 using System.Runtime.CompilerServices;
+using TaskFlux.Abstractions;
 
-[assembly: InternalsVisibleTo("TaskFlux.PriorityQueue.StandardLibrary.Tests")]
+[assembly: InternalsVisibleTo("TaskFlux.PriorityQueue.Tests")]
 
-namespace TaskFlux.PriorityQueue.StandardLibrary;
+namespace TaskFlux.PriorityQueue;
 
 public class StandardLibraryPriorityQueue<TKey, TValue> : IPriorityQueue<TKey, TValue>
 {

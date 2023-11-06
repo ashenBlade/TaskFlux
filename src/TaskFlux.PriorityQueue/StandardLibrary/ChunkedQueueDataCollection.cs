@@ -1,6 +1,6 @@
 using System.Collections;
 
-namespace TaskFlux.PriorityQueue.StandardLibrary;
+namespace TaskFlux.PriorityQueue;
 
 public class ChunkedQueueDataCollection<TKey, TValue> : IReadOnlyCollection<(TKey, TValue)>
 {

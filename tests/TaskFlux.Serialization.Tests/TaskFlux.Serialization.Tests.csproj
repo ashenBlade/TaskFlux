@@ -22,7 +22,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\JobQueue\TaskFlux.Serialization\TaskFlux.Serialization.csproj"/>
+        <ProjectReference Include="..\..\src\TaskFlux.Core\TaskFlux.Core.csproj"/>
+        <ProjectReference Include="..\..\src\TaskFlux.Serialization\TaskFlux.Serialization.csproj"/>
         <ProjectReference Include="..\TaskFlux.Models.TestHelpers\TaskFlux.Models.TestHelpers.csproj"/>
     </ItemGroup>
 
