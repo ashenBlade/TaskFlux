@@ -15,8 +15,8 @@ public interface IPriorityQueue
     /// Добавить новый элемент в очередь
     /// </summary>
     /// <param name="key">Ключ записи, приоритет</param>
-    /// <param name="value">Значение, которое нужно сохранить</param>
-    public void Enqueue(long key, byte[] value);
+    /// <param name="payload">Значение, которое нужно сохранить</param>
+    public void Enqueue(long key, byte[] payload);
 
     /// <summary>
     /// Попытаться прочитать запись <paramref name="payload"/> с ключом <paramref name="key"/> из очереди 

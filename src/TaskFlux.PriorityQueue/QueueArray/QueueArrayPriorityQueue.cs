@@ -102,11 +102,11 @@ public class QueueArrayPriorityQueue : IPriorityQueue
         return key;
     }
 
-    public void Enqueue(long key, byte[] value)
+    public void Enqueue(long key, byte[] payload)
     {
         var index = KeyToIndex(key);
         var queue = GetQueues()[index] ??= new Queue<byte[]>(1);
-        queue.Enqueue(value);
+        queue.Enqueue(payload);
     }
 
     public bool TryDequeue(out long key, out byte[] value)

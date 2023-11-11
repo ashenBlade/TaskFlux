@@ -9,9 +9,9 @@ public class StandardLibraryPriorityQueue : IPriorityQueue
     private readonly PriorityQueue<byte[], long> _queue = new();
     public int Count => _queue.Count;
 
-    public void Enqueue(long key, byte[] value)
+    public void Enqueue(long key, byte[] payload)
     {
-        _queue.Enqueue(value, key);
+        _queue.Enqueue(payload, key);
     }
 
     public bool TryDequeue(out long key, out byte[] value)
