@@ -27,7 +27,7 @@ public class HeapPriorityQueue : IPriorityQueue
     /// </summary>
     private readonly Dictionary<long, ChunkedQueue> _keyToQueue = new();
 
-    public int Count => _records.Sum(hr => hr.Queue.Count);
+    public int Count { get; private set; }
 
     public void Enqueue(long key, byte[] payload)
     {
@@ -35,6 +35,7 @@ public class HeapPriorityQueue : IPriorityQueue
         {
             // Запись с нужным ключом уже существует - просто вставляем в существующую очередь
             queue.Enqueue(payload);
+            Count++;
             return;
         }
 
@@ -46,6 +47,8 @@ public class HeapPriorityQueue : IPriorityQueue
 
         // И в кэш отображений
         _keyToQueue[key] = record.Queue;
+
+        Count++;
     }
 
     /// <summary>
@@ -171,6 +174,8 @@ public class HeapPriorityQueue : IPriorityQueue
                 // И из самой кучи
                 RemoveTop();
             }
+
+            Count--;
 
             return true;
         }

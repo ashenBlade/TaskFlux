@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FluentAssertions;
 using TaskFlux.PriorityQueue.Heap;
 using Xunit;
@@ -467,5 +468,229 @@ public class HeapPriorityQueueTests
     {
         return actualTuple.Key == expectedTuple.Key
             && actualTuple.Payload.SequenceEqual(expectedTuple.Payload);
+    }
+
+    [Fact]
+    public void ReadAllData__КогдаОчередьПуста__ДолженВернутьПустойМассив()
+    {
+        var queue = new HeapPriorityQueue();
+
+        var stored = queue.ReadAllData();
+
+        stored
+           .Should()
+           .BeEmpty("в очереди нет записей");
+    }
+
+    [Fact]
+    public void RealAllData__КогдаВОчередиЕстьЗапись__ДолженВернутьЭтуЗапись()
+    {
+        var queue = new HeapPriorityQueue();
+        var (key, data) = ( 1L, new byte[] {23, 2, 11, 80, 200} );
+        queue.Enqueue(key, data);
+
+        var actual = queue.ReadAllData();
+
+        actual
+           .Should()
+           .ContainSingle(tuple => tuple.Priority == key && tuple.Payload.SequenceEqual(data));
+    }
+
+    [Fact]
+    public void ReadAllData__КогдаВОчередиНесколькоЗаписей__ДолженВернутьВсеЗаписи()
+    {
+        var queue = new HeapPriorityQueue();
+        var data = new (long, byte[])[]
+        {
+            ( 100L, "hello, world"u8.ToArray() ), ( -1023232412352L, "no way"u8.ToArray() ),
+            ( 0L, "xxxxxxxxxxxx"u8.ToArray() ), ( 228L, "qaw4gqwg345634yq3h3qgv"u8.ToArray() ),
+            ( 124141251L, "asdf65a4v6s5r1va35rb4*^%&*"u8.ToArray() ), ( -1L, new byte[] {1, 1, 2, 43, 3, 1} ),
+            ( 0L, "f124534tg*^&!)(*$__"u8.ToArray() )
+        };
+        foreach (var (key, payload) in data)
+        {
+            queue.Enqueue(key, payload);
+        }
+
+        var actual = queue.ReadAllData();
+
+        actual
+           .Should()
+           .Contain(data);
+    }
+
+    [Fact]
+    public void Count__КогдаВОчередиОдинЭлемент__ДолженВернуть1()
+    {
+        var queue = new HeapPriorityQueue();
+        queue.Enqueue(1, "hello, world"u8.ToArray());
+
+        var actual = queue.Count;
+
+        actual
+           .Should()
+           .Be(1, "в очереди 1 элемент");
+    }
+
+    [Fact]
+    public void Count__КогдаВОчереди2ЭлементаСРазнымиКлючами__ДолженВернуть2()
+    {
+        var queue = new HeapPriorityQueue();
+        queue.Enqueue(1L, "no data"u8.ToArray());
+        queue.Enqueue(0L, "another data"u8.ToArray());
+
+        var actual = queue.Count;
+
+        actual
+           .Should()
+           .Be(2, "в очереди 2 элемента");
+    }
+
+    [Fact]
+    public void Count__КогдаВОчереди2ЭлементаСОдинаковымиКлючами__ДолженВернуть2()
+    {
+        var queue = new HeapPriorityQueue();
+        queue.Enqueue(1L, "no data"u8.ToArray());
+        queue.Enqueue(1L, "another data"u8.ToArray());
+
+        var actual = queue.Count;
+
+        actual
+           .Should()
+           .Be(2, "в очереди 2 элемента");
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(10)]
+    [InlineData(256)]
+    [InlineData(257)]
+    [InlineData(512)]
+    public void Count__КогдаВОчередиНесколькоЭлементов__ДолженВернутьЭтоКоличество(int elementsCount)
+    {
+        var queue = new HeapPriorityQueue();
+        foreach (var (key, payload) in Enumerable.Range(0, elementsCount)
+                                                 .Select(_ =>
+                                                      ( Key: Random.Shared.NextInt64(),
+                                                        Payload: "sample data"u8.ToArray() )))
+        {
+            queue.Enqueue(key, payload);
+        }
+
+        var actual = queue.Count;
+
+        actual
+           .Should()
+           .Be(elementsCount, "было добавлено {0} элеметнов", elementsCount);
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 1)]
+    [InlineData(10, 1)]
+    [InlineData(16, 12)]
+    [InlineData(100, 1)]
+    [InlineData(100, 50)]
+    public void Count__КогдаИзОчередиБылиУдаленыЭлементы__ДолженОбновитьCount(int toEnqueue, int toDequeue)
+    {
+        var expected = toEnqueue - toDequeue;
+        Debug.Assert(expected >= 0);
+
+        var queue = new HeapPriorityQueue();
+        foreach (var (key, payload) in Enumerable.Range(0, toEnqueue)
+                                                 .Select(_ =>
+                                                      ( Key: Random.Shared.NextInt64(), Payload: CreateRandomBytes() )))
+        {
+            queue.Enqueue(key, payload);
+        }
+
+        for (int i = 0; i < toDequeue; i++)
+        {
+            queue.TryDequeue(out _, out _);
+        }
+
+        var actual = queue.Count;
+
+        actual
+           .Should()
+           .Be(expected, "после удаления записей размер должен обновиться");
+    }
+
+    [Theory]
+    [InlineData(10)]
+    [InlineData(128)]
+    [InlineData(255)]
+    [InlineData(256)]
+    [InlineData(257)]
+    [InlineData(511)]
+    [InlineData(512)]
+    [InlineData(513)]
+    [InlineData(514)]
+    public void TryDequeue__КогдаМногоЭлементовСОдинаковымКлючом__ДолженПолучитьВсеЭлементы(int count)
+    {
+        var key = 10L;
+        var queue = new HeapPriorityQueue();
+        var data = Enumerable.Range(0, count)
+                             .Select(_ => ( Key: key, Payload: CreateRandomBytes() ))
+                             .ToArray();
+        foreach (var (k, payload) in data)
+        {
+            queue.Enqueue(k, payload);
+        }
+
+        var result = new List<(long, byte[])>(count);
+        while (queue.TryDequeue(out var k, out var payload))
+        {
+            result.Add(( k, payload ));
+        }
+
+        Assert.Equal(result, data, new KeyPayloadComparer());
+    }
+
+    [Theory]
+    [InlineData(10)]
+    [InlineData(50)]
+    [InlineData(100)]
+    [InlineData(255)]
+    [InlineData(256)]
+    [InlineData(257)]
+    public void TryDequeue__КогдаОчередьСталаПуста__ДолженВернутьFalse(int count)
+    {
+        var queue = new HeapPriorityQueue();
+
+        foreach (var (key, payload) in Enumerable.Range(0, count)
+                                                 .Select(_ => ( Key: CreateRandomKey(), Payload: CreateRandomBytes() )))
+        {
+            queue.Enqueue(key, payload);
+        }
+
+        var enqueuedCount = 0;
+        while (queue.TryDequeue(out _, out _))
+        {
+            enqueuedCount++;
+        }
+
+        var actual = queue.TryDequeue(out _, out _);
+
+        enqueuedCount
+           .Should()
+           .Be(count, "количество полученных записей должно быть равно записанному");
+        actual
+           .Should()
+           .BeFalse("очередь пуста - из нее взяли все элементы");
+    }
+
+    private class KeyPayloadComparer : IEqualityComparer<(long, byte[])>
+    {
+        public bool Equals((long, byte[]) x, (long, byte[]) y)
+        {
+            return x.Item1 == y.Item1 && x.Item2.SequenceEqual(y.Item2);
+        }
+
+        public int GetHashCode((long, byte[]) obj)
+        {
+            return obj.GetHashCode();
+        }
     }
 }
