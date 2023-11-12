@@ -1,43 +1,32 @@
 namespace TaskFlux.PriorityQueue.Heap;
 
 /// <summary>
-/// Очередь, реализованная в виде связного списка массивов.
-/// Каждый чанк является 
+/// Очередь, реализованная в виде связного списка подчанков.
+/// Каждый подчанк является условным массивом
 /// </summary>
 internal class ChunkedQueue
 {
     /// <summary>
-    /// Максимальный размер чанка, который можно достигнуть без создания нового чанка
+    /// Максимальный размер чанка, который можно достигнуть без создания следующего подчанка
     /// </summary>
     private const int MaxChunkSize = 256;
 
     /// <summary>
-    /// Сама очередь в виде пары из головы и хвоста.
+    /// Сама очередь в виде пары из головы и хвоста подчанков.
+    /// <c>null</c> - очередь пуста.
+    /// Голова и Хвост могут указывать на один и тот же объект - это значит очередь состоит из 1 чанка.
     /// </summary>
-    /// <remarks>
-    /// Выделен отдельно чтобы явно 
-    /// </remarks>
     private (QueueChunk Head, QueueChunk Tail)? _queue;
 
-    public int Count
-    {
-        get
-        {
-            if (_queue is not var (head, _))
-            {
-                return 0;
-            }
-
-            var sum = 0;
-            while (head is not null)
-            {
-                sum += head.Chunk.Count;
-                head = head.Next;
-            }
-
-            return sum;
-        }
-    }
+    /// <summary>
+    /// Пуста ли очередь 
+    /// </summary>
+    /// <remarks>
+    /// <c>true</c> - очередь пуста (элементов в ней нет), <c>false</c> - не пуста
+    /// </remarks>
+    public bool IsEmpty =>
+        // _queue = null, только когда очередь пуста
+        !_queue.HasValue;
 
     public void Enqueue(byte[] record)
     {

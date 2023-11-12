@@ -1,6 +1,10 @@
 namespace TaskFlux.PriorityQueue.Heap;
 
-internal class HeapRecord
+/// <summary>
+/// Структура записи в очереди.
+/// Состоит из самого ключа, и очереди с полученными значениями
+/// </summary>
+internal readonly struct HeapRecord
 {
     public HeapRecord(long key, byte[] initialRecord)
     {
@@ -9,7 +13,15 @@ internal class HeapRecord
         Queue.Enqueue(initialRecord);
     }
 
+    /// <summary>
+    /// Ключ записи
+    /// </summary>
     public long Key { get; }
+
+    /// <summary>
+    /// Очередь с хранимыми значениями.
+    /// Необходима для получения записей в порядке добавления.
+    /// </summary>
     public ChunkedQueue Queue { get; }
 
     public void Deconstruct(out long key, out ChunkedQueue queue)

@@ -15,7 +15,7 @@ public class HeapPriorityQueue : IPriorityQueue
     /// 512 взял из головы.
     /// В будущем может сделаю бенчмарки, чтобы определить оптимальное значение, а пока я здесь хозяин-барин
     /// </remarks>
-    public const int HeapSizeCheckThreshold = 512;
+    private const int HeapSizeCheckThreshold = 512;
 
     /// <summary>
     /// Превышен ли порог размера кучи, после которого необходимо уменьшать ее размер
@@ -50,6 +50,8 @@ public class HeapPriorityQueue : IPriorityQueue
         {
             // Запись с нужным ключом уже существует - просто вставляем в существующую очередь
             queue.Enqueue(payload);
+
+            // Обновляем количество элементов в очереди
             Count++;
             return;
         }
@@ -63,6 +65,7 @@ public class HeapPriorityQueue : IPriorityQueue
         // И в кэш отображений
         _keyToQueue[key] = record.Queue;
 
+        // Обновляем количество элементов в очереди
         Count++;
     }
 
@@ -106,11 +109,21 @@ public class HeapPriorityQueue : IPriorityQueue
         }
     }
 
-    private void SwapNodes(int index, int parentIndex)
+    /// <summary>
+    /// Поменять местами 2 узла
+    /// </summary>
+    /// <param name="first">Индекс одного узла</param>
+    /// <param name="second">Индекс другого узла</param>
+    private void SwapNodes(int first, int second)
     {
-        ( _heap[index], _heap[parentIndex] ) = ( _heap[parentIndex], _heap[index] );
+        ( _heap[first], _heap[second] ) = ( _heap[second], _heap[first] );
     }
 
+    /// <summary>
+    /// Рассчитать индекс родительского узла для переданного индекса потомка
+    /// </summary>
+    /// <param name="childIndex">Индекс потомка</param>
+    /// <returns>Индекс родителя</returns>
     private int GetParentIndex(int childIndex)
     {
         /*
@@ -179,7 +192,7 @@ public class HeapPriorityQueue : IPriorityQueue
             payload = stored;
 
             // Если это была последняя запись
-            if (queue.Count == 0)
+            if (queue.IsEmpty)
             {
                 // Удаляем запись для ключа из кучи: из кэша по ключу 
                 _keyToQueue.Remove(key);
