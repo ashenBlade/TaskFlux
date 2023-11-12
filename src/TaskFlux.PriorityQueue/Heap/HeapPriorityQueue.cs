@@ -8,6 +8,21 @@ namespace TaskFlux.PriorityQueue.Heap;
 public class HeapPriorityQueue : IPriorityQueue
 {
     /// <summary>
+    /// Пороговое значение размера кучи, после которого мы будем проверять размер <see cref="_heap"/> для ее уменьшения при необходимости.
+    /// Без такой оптимизации мы будем постоянно дергать GC, что уменьшит производительность.
+    /// </summary>
+    /// <remarks>
+    /// 512 взял из головы.
+    /// В будущем может сделаю бенчмарки, чтобы определить оптимальное значение, а пока я здесь хозяин-барин
+    /// </remarks>
+    public const int HeapSizeCheckThreshold = 512;
+
+    /// <summary>
+    /// Превышен ли порог размера кучи, после которого необходимо уменьшать ее размер
+    /// </summary>
+    private bool IsHeapSizeThresholdExceeded => _heap.Length < HeapSizeCheckThreshold;
+
+    /// <summary>
     /// Приоритетная очередь, хранящаяся в виде массива кучи.
     /// Содержит только уникальные ключи.
     /// Для поддержки нескольких значений для одного и того же ключа, используется очередь значений.
@@ -145,8 +160,6 @@ public class HeapPriorityQueue : IPriorityQueue
 
     public bool TryDequeue(out long key, out byte[] payload)
     {
-        // TODO: очищение места после удаления
-
         // Если куча пуста
         if (_size == 0)
         {
@@ -292,7 +305,9 @@ public class HeapPriorityQueue : IPriorityQueue
     private void AdjustCapacity()
     {
         // Если занимаемое место меньше половины
-        if (_size < _heap.Length / 2)
+        if (IsHeapSizeThresholdExceeded
+         && // Если первышено пороговое значение размера очереди  
+            _size < _heap.Length / 2)
         {
             // То уменьшаем размер массива в 2 раза
             Array.Resize(ref _heap, _heap.Length / 2);
