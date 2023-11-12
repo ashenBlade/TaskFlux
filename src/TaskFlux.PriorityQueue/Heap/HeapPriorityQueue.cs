@@ -12,7 +12,7 @@ public class HeapPriorityQueue : IPriorityQueue
     /// Содержит только уникальные ключи.
     /// Для поддержки нескольких значений для одного и того же ключа, используется очередь значений.
     /// </summary>
-    private HeapRecord[] _records = Array.Empty<HeapRecord>();
+    private HeapRecord[] _heap = Array.Empty<HeapRecord>();
 
     /// <summary>
     /// Размер занимаемой длины в массиве.
@@ -63,14 +63,14 @@ public class HeapPriorityQueue : IPriorityQueue
          * 3. Если достигли конца (корень) - конец
          */
 
-        if (_size == _records.Length)
+        if (_size == _heap.Length)
         {
             HeapGrow();
         }
 
         // Вставляем запись в конец кучи (последний лист)
         var index = _size++;
-        _records[index] = record;
+        _heap[index] = record;
 
         // Пока не достигнем корня
         while (0 < index)
@@ -79,7 +79,7 @@ public class HeapPriorityQueue : IPriorityQueue
             var parentIndex = GetParentIndex(index);
 
             // Если у родителя меньший ключ
-            if (_records[parentIndex].Key < record.Key)
+            if (_heap[parentIndex].Key < record.Key)
             {
                 // Прекращаем добавление, т.к. в куче родитель должен иметь меньший ключ
                 break;
@@ -93,7 +93,7 @@ public class HeapPriorityQueue : IPriorityQueue
 
     private void SwapNodes(int index, int parentIndex)
     {
-        ( _records[index], _records[parentIndex] ) = ( _records[parentIndex], _records[index] );
+        ( _heap[index], _heap[parentIndex] ) = ( _heap[parentIndex], _heap[index] );
     }
 
     private int GetParentIndex(int childIndex)
@@ -126,13 +126,13 @@ public class HeapPriorityQueue : IPriorityQueue
     /// </summary>
     private void HeapGrow()
     {
-        Debug.Assert(_size == _records.Length, "_size == _records.Length",
+        Debug.Assert(_size == _heap.Length, "_size == _records.Length",
             "Растить размер очереди нужно только, когда массив полностью заполнен. _size = {0}. _records.Length = {1}",
-            _size, _records.Length);
+            _size, _heap.Length);
 
         if (_size == 0)
         {
-            _records = new HeapRecord[1];
+            _heap = new HeapRecord[1];
             return;
         }
 
@@ -140,7 +140,7 @@ public class HeapPriorityQueue : IPriorityQueue
         // Можно растить массив в 4 раза, чтобы поддерживать Capacity для полного 4-арного дерева,
         // но это будет неоптимально и однажды можем вырасти слишком сильно.
         // Рост в 2 раза каждый раз звучит логично.
-        Array.Resize(ref _records, _records.Length * 2);
+        Array.Resize(ref _heap, _heap.Length * 2);
     }
 
     public bool TryDequeue(out long key, out byte[] payload)
@@ -157,7 +157,7 @@ public class HeapPriorityQueue : IPriorityQueue
         }
 
         // Иначе, единственная возможная запись хранится в голове
-        ( key, var queue ) = _records[0];
+        ( key, var queue ) = _heap[0];
 
         // Если в голове есть значения
         if (queue.TryDequeue(out var stored))
@@ -173,6 +173,9 @@ public class HeapPriorityQueue : IPriorityQueue
 
                 // И из самой кучи
                 RemoveTop();
+
+                // Позаботимся о занимаемом месте
+                AdjustCapacity();
             }
 
             Count--;
@@ -182,7 +185,7 @@ public class HeapPriorityQueue : IPriorityQueue
 
         // Иначе, эта очередь была пуста и нужно очистить данные
         payload = Array.Empty<byte>();
-        _records = Array.Empty<HeapRecord>();
+        _heap = Array.Empty<HeapRecord>();
         return false;
     }
 
@@ -214,7 +217,7 @@ public class HeapPriorityQueue : IPriorityQueue
         // Если в куче был только 1 элемент, то куча может только стать пустой
         if (_size == 1)
         {
-            _records = Array.Empty<HeapRecord>();
+            _heap = Array.Empty<HeapRecord>();
             _size = 0;
             return;
         }
@@ -222,7 +225,7 @@ public class HeapPriorityQueue : IPriorityQueue
         // Если в куче 2 элемента, то исход предрешен
         if (_size == 2)
         {
-            _records[0] = _records[1];
+            _heap[0] = _heap[1];
             _size = 1;
             return;
         }
@@ -240,12 +243,11 @@ public class HeapPriorityQueue : IPriorityQueue
 
         // Ставим последний узел в корень всего дерева
         SwapNodes(0, lastNodeIndex);
-        _records[lastNodeIndex] = default!;
+        _heap[lastNodeIndex] = default!;
 
         var currentNodeIndex = 0;
-        var currentKey = _records[0].Key;
+        var currentKey = _heap[0].Key;
 
-        // TODO: проблема здесь при удалении
         int childIndex;
         while (( childIndex = GetFirstChildIndex(currentNodeIndex) ) < lastNodeIndex)
         {
@@ -253,13 +255,13 @@ public class HeapPriorityQueue : IPriorityQueue
             var lastChildIndex = Math.Min(childIndex + 4, lastNodeIndex);
 
             // Находим узел с минимальным ключом (первый по умолчанию имеет минимальный ключ)
-            var minKey = _records[childIndex].Key;
+            var minKey = _heap[childIndex].Key;
             var minKeyChildIndex = childIndex;
 
             // Итерируемся по всем дочерним узлам
             while (++childIndex < lastChildIndex)
             {
-                var currentChildKey = _records[childIndex].Key;
+                var currentChildKey = _heap[childIndex].Key;
 
                 // Если ключ очередного узла меньше минимального
                 if (currentChildKey < minKey)
@@ -280,6 +282,20 @@ public class HeapPriorityQueue : IPriorityQueue
             // Иначе обмениваем узлы и идем дальше вниз
             SwapNodes(currentNodeIndex, minKeyChildIndex);
             currentNodeIndex = minKeyChildIndex;
+        }
+    }
+
+
+    /// <summary>
+    /// Проверить наполненность массива с данными и уменьшить, если занимаемый размер меньше половины аллоцированного места
+    /// </summary>
+    private void AdjustCapacity()
+    {
+        // Если занимаемое место меньше половины
+        if (_size < _heap.Length / 2)
+        {
+            // То уменьшаем размер массива в 2 раза
+            Array.Resize(ref _heap, _heap.Length / 2);
         }
     }
 
@@ -304,7 +320,7 @@ public class HeapPriorityQueue : IPriorityQueue
 
         for (var i = 0; i < _size; i++)
         {
-            var (key, queue) = _records[i];
+            var (key, queue) = _heap[i];
             queue.CopyTo(key, result);
         }
 
@@ -313,9 +329,9 @@ public class HeapPriorityQueue : IPriorityQueue
 
     public IEnumerable<(long, byte[])> ReadAllDataTest()
     {
-        return _records.SelectMany(x => x.Queue
-                                         .GetAllRecordsTest()
-                                         .Select(y => ( x.Key, y )));
+        return _heap.SelectMany(x => x.Queue
+                                      .GetAllRecordsTest()
+                                      .Select(y => ( x.Key, y )));
     }
 
     public List<(long, byte[])> DequeueAllTest()

@@ -148,7 +148,6 @@ public class HeapPriorityQueueTests
             new byte[] {2, 42, 33, 123, 22}, new byte[] {87, 87, 87, 33, 100, 210},
             new byte[] {11, 2, 43, 78, 22, 90}, new byte[] {54, 21, 11, 76, 23}
         };
-
         var queue = new HeapPriorityQueue();
 
         foreach (var payload in payloads)
@@ -156,17 +155,17 @@ public class HeapPriorityQueueTests
             queue.Enqueue(key, payload);
         }
 
-        var poped = new List<byte[]>();
+        var actual = new List<byte[]>();
         while (queue.TryDequeue(out var actualKey, out var actualPayload))
         {
             actualKey
                .Should()
                .Be(key);
 
-            poped.Add(actualPayload);
+            actual.Add(actualPayload);
         }
 
-        poped
+        actual
            .Should()
            .Equal(payloads, "значения должны быть получены в порядке добавления");
     }
@@ -567,6 +566,8 @@ public class HeapPriorityQueueTests
     [InlineData(256)]
     [InlineData(257)]
     [InlineData(512)]
+    [InlineData(1000)]
+    [InlineData(2000)]
     public void Count__КогдаВОчередиНесколькоЭлементов__ДолженВернутьЭтоКоличество(int elementsCount)
     {
         var queue = new HeapPriorityQueue();
@@ -592,6 +593,8 @@ public class HeapPriorityQueueTests
     [InlineData(16, 12)]
     [InlineData(100, 1)]
     [InlineData(100, 50)]
+    [InlineData(1000, 100)]
+    [InlineData(10000, 7234)]
     public void Count__КогдаИзОчередиБылиУдаленыЭлементы__ДолженОбновитьCount(int toEnqueue, int toDequeue)
     {
         var expected = toEnqueue - toDequeue;
@@ -627,6 +630,8 @@ public class HeapPriorityQueueTests
     [InlineData(512)]
     [InlineData(513)]
     [InlineData(514)]
+    [InlineData(1000)]
+    [InlineData(2000)]
     public void TryDequeue__КогдаМногоЭлементовСОдинаковымКлючом__ДолженПолучитьВсеЭлементы(int count)
     {
         var key = 10L;
@@ -655,6 +660,9 @@ public class HeapPriorityQueueTests
     [InlineData(255)]
     [InlineData(256)]
     [InlineData(257)]
+    [InlineData(1000)]
+    [InlineData(2000)]
+    [InlineData(3000)]
     public void TryDequeue__КогдаОчередьСталаПуста__ДолженВернутьFalse(int count)
     {
         var queue = new HeapPriorityQueue();
@@ -692,5 +700,59 @@ public class HeapPriorityQueueTests
         {
             return obj.GetHashCode();
         }
+    }
+
+    [Fact]
+    public void TryDequeue__КогдаВОчереди2ЗаписиСОдинаковымКлючом__ДолженВернутьПервоеДобавленноеЗначение()
+    {
+        var key = 10L;
+        var firstData = "hello, world"u8.ToArray();
+        var secondData = "no data lies here"u8.ToArray();
+        var queue = new HeapPriorityQueue();
+
+        queue.Enqueue(key, firstData);
+        queue.Enqueue(key, secondData);
+        queue.TryDequeue(out var actualKey, out var actualData)
+             .Should()
+             .BeTrue();
+
+        actualKey
+           .Should()
+           .Be(key, "других ключей нет");
+
+        actualData
+           .Should()
+           .NotEqual(secondData, "получение должно быть в порядке добавления")
+           .And
+           .Equal(firstData, "данные не должны быть изменены");
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(10)]
+    [InlineData(50)]
+    [InlineData(100)]
+    [InlineData(1000)]
+    [InlineData(2000)]
+    [InlineData(5000)]
+    public void TryDequeue__КогдаВОчередиНесколькоЭлементов__ДолженВернутьСНаименьшимКлючом(int count)
+    {
+        var data = Enumerable.Range(0, count)
+                             .Select(_ => ( Key: CreateRandomKey(), Payload: CreateRandomBytes() ))
+                             .ToArray();
+        var expectedKey = data.MinBy(x => x.Key).Key;
+        var queue = new HeapPriorityQueue();
+        foreach (var (key, payload) in data)
+        {
+            queue.Enqueue(key, payload);
+        }
+
+        queue.TryDequeue(out var actualKey, out _)
+             .Should()
+             .BeTrue();
+
+        actualKey
+           .Should()
+           .Be(expectedKey, "должен быть получен ключ с наименьшим значением");
     }
 }
