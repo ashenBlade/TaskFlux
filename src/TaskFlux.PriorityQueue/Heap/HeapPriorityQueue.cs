@@ -20,7 +20,7 @@ public class HeapPriorityQueue : IPriorityQueue
     /// <remarks>
     /// Текущее значение будет равняться индексом нового вставляемого элемента
     /// </remarks>
-    private int _size = 0;
+    private int _size;
 
     /// <summary>
     /// Отображение ключа (приоритета) на очередь, которая хранит записи
@@ -59,30 +59,31 @@ public class HeapPriorityQueue : IPriorityQueue
          * 2. Пока ключ родителя меньше - обмениваем
          * 3. Если достигли конца (корень) - конец
          */
+
         if (_size == _records.Length)
         {
             HeapGrow();
         }
 
+        // Вставляем запись в конец кучи (последний лист)
         var index = _size++;
         _records[index] = record;
 
-        while (index != 0) // Пока не достигнем корня
+        // Пока не достигнем корня
+        while (0 < index)
         {
             // Вычисляем индекс родителя
             var parentIndex = GetParentIndex(index);
 
-            if (record.Key > _records[parentIndex].Key)
+            // Если у родителя меньший ключ
+            if (_records[parentIndex].Key < record.Key)
             {
-                // Родитель имеет меньший ключ (более приоритетный),
-                // То дошли до конца
+                // Прекращаем добавление, т.к. в куче родитель должен иметь меньший ключ
                 break;
             }
 
-            // Обмениваем значения
+            // Обновляем узлы и заходим на следующий круг
             SwapNodes(index, parentIndex);
-
-            // Обновляем текущий индекс
             index = parentIndex;
         }
     }
@@ -141,6 +142,8 @@ public class HeapPriorityQueue : IPriorityQueue
 
     public bool TryDequeue(out long key, out byte[] payload)
     {
+        // TODO: очищение места после удаления
+
         // Если куча пуста
         if (_size == 0)
         {
@@ -224,27 +227,31 @@ public class HeapPriorityQueue : IPriorityQueue
          * 1. Меняем местами первый и последний элементы
          * 2. Поочердено сдвигаем верхушку вниз, пока:
          *    - Есть потомки
-         *    - И у их ключи меньше
+         *    - И их ключи меньше
          */
 
-        var lastNodeIndex = _size - 1;
+        // Получаем последний индекс из кучи и сразу уменьшаем размер
+        var lastNodeIndex = --_size;
+
+        // Ставим последний узел в корень всего дерева
         SwapNodes(0, lastNodeIndex);
+        _records[lastNodeIndex] = default!;
 
         var currentNodeIndex = 0;
         var currentKey = _records[0].Key;
-        do
-        {
-            // Получаем диапазон индексов допустимых потомков
-            var childIndex = GetFirstChildIndex(currentNodeIndex);
 
+        // TODO: проблема здесь при удалении
+        int childIndex;
+        while (( childIndex = GetFirstChildIndex(currentNodeIndex) ) < lastNodeIndex)
+        {
             // Узел может быть не полностью заполнен
-            var lastChildIndex = Math.Min(childIndex + 4, _size - 1);
+            var lastChildIndex = Math.Min(childIndex + 4, lastNodeIndex);
 
             // Находим узел с минимальным ключом (первый по умолчанию имеет минимальный ключ)
             var minKey = _records[childIndex].Key;
             var minKeyChildIndex = childIndex;
 
-            // Итерируемся по всем узлам
+            // Итерируемся по всем дочерним узлам
             while (++childIndex < lastChildIndex)
             {
                 var currentChildKey = _records[childIndex].Key;
@@ -267,12 +274,8 @@ public class HeapPriorityQueue : IPriorityQueue
 
             // Иначе обмениваем узлы и идем дальше вниз
             SwapNodes(currentNodeIndex, minKeyChildIndex);
-            currentKey = minKey;
             currentNodeIndex = minKeyChildIndex;
-        } while (currentNodeIndex < _size);
-
-        // После всего уменьшаем размер кучи (тот что вставили - это и есть последний, так что норм)
-        _size--;
+        }
     }
 
     /// <summary>
@@ -282,7 +285,7 @@ public class HeapPriorityQueue : IPriorityQueue
     /// <returns>Индекс потомка</returns>
     private static int GetFirstChildIndex(int parentIndex)
     {
-        return ( parentIndex >> 2 ) + 1;
+        return ( parentIndex << 2 ) + 1;
     }
 
     public IReadOnlyCollection<(long Priority, byte[] Payload)> ReadAllData()
