@@ -7,7 +7,18 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\JobQueue\JobQueue.Core\JobQueue.Core.csproj" />
+        <ProjectReference Include="..\TaskFlux.Models\TaskFlux.Models.csproj"/>
+        <ProjectReference Include="..\TaskFlux.PriorityQueue\TaskFlux.PriorityQueue.csproj"/>
+        <ProjectReference Include="..\Utils.Serialization\Utils.Serialization.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+            <_Parameter1>$(MSBuildProjectName).Tests</_Parameter1>
+        </AssemblyAttribute>
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+            <_Parameter1>DynamicProxyGenAssembly2</_Parameter1>
+        </AssemblyAttribute>
     </ItemGroup>
 
 </Project>

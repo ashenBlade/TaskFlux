@@ -1,9 +1,9 @@
 ﻿using System.Diagnostics;
 using System.Net;
-using JobQueue.Core;
 using Serilog;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
+using TaskFlux.Models;
 using TaskFlux.Network.Client;
 
 // ReSharper disable once AccessToDisposedClosure

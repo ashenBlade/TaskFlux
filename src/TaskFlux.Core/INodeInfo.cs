@@ -1,3 +1,5 @@
+using TaskFlux.Models;
+
 namespace TaskFlux.Core;
 
 public interface INodeInfo

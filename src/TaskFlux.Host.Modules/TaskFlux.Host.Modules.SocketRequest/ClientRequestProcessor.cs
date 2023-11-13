@@ -2,7 +2,6 @@ using System.Buffers;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
-using JobQueue.Core.Exceptions;
 using Microsoft.Extensions.Options;
 using Serilog;
 using TaskFlux.Commands;
@@ -10,6 +9,8 @@ using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Serialization;
 using TaskFlux.Core;
 using TaskFlux.Host.Modules.SocketRequest.Exceptions;
+using TaskFlux.Models;
+using TaskFlux.Models.Exceptions;
 using TaskFlux.Network.Packets;
 using TaskFlux.Network.Packets.Authorization;
 using TaskFlux.Network.Packets.Packets;
@@ -29,8 +30,8 @@ internal class ClientRequestProcessor
     private static CommandSerializer CommandSerializer =>
         CommandSerializer.Instance;
 
-    private static ResultSerializer ResultSerializer =>
-        ResultSerializer.Instance;
+    private static ResponseSerializer ResponseSerializer =>
+        ResponseSerializer.Instance;
 
     public ClientRequestProcessor(TcpClient client,
                                   IRequestAcceptor requestAcceptor,
@@ -378,7 +379,7 @@ internal class ClientRequestProcessor
                 _processor.Logger.Debug(invalidName,
                     "Ошибка при десериализации команды, включающей название очереди, полученной от клиента");
                 await _client.SendAsync(
-                    new CommandResponsePacket(ResultSerializer.Serialize(DefaultErrors.InvalidQueueName)),
+                    new CommandResponsePacket(ResponseSerializer.Serialize(DefaultErrors.InvalidQueueName)),
                     token);
                 return;
             }
@@ -394,7 +395,7 @@ internal class ClientRequestProcessor
             Packet responsePacket;
             if (result.TryGetResponse(out var response))
             {
-                responsePacket = new CommandResponsePacket(ResultSerializer.Serialize(response));
+                responsePacket = new CommandResponsePacket(ResponseSerializer.Serialize(response));
             }
             else if (result.WasLeader)
             {

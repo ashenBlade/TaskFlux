@@ -1,4 +1,5 @@
 using TaskFlux.Commands.Count;
+using TaskFlux.Commands.CreateQueue;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 
@@ -20,6 +21,12 @@ public class CommandEqualityComparer : IEqualityComparer<Command>
         left.Key == right.Key && left.Payload.SequenceEqual(right.Payload);
 
     private bool Check(DequeueCommand left, DequeueCommand right) => true;
+
+    private bool Check(CreateQueueCommand left, CreateQueueCommand right) =>
+        left.Name == right.Name
+     && left.MaxQueueSize == right.MaxQueueSize
+     && left.MaxPayloadSize == right.MaxPayloadSize
+     && left.PriorityRange == right.PriorityRange;
 
     public int GetHashCode(Command obj)
     {

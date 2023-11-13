@@ -8,7 +8,7 @@ using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
 using FluentAssertions;
 using Serilog.Core;
-using TaskFlux.Core;
+using TaskFlux.Models;
 using Constants = Consensus.Raft.Persistence.Constants;
 
 // ReSharper disable UseUtf8StringLiteral
@@ -781,9 +781,6 @@ public class StoragePersistenceFacadeTests
            .Should()
            .Equal(expectedBuffer, LogEntryComparisonFunc, "команды в буфере должны удалиться до нужного количества");
     }
-
-    // TODO: тесты на применение оставшихся команд
-    // TODO: тесты на обновление состояния после установки снапшота
 
     private static byte[] RandomBytes(int size)
     {

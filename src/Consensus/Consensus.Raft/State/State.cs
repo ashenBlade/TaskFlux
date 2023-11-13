@@ -3,7 +3,7 @@ using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.Raft.State;
 

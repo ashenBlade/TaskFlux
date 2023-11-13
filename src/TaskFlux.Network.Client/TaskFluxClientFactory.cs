@@ -17,7 +17,7 @@ public class TaskFluxClientFactory : ITaskFluxClientFactory
     private const int DefaultPort = 2602;
 
     internal readonly CommandSerializer CommandSerializer = CommandSerializer.Instance;
-    internal readonly ResultSerializer ResultSerializer = ResultSerializer.Instance;
+    internal readonly ResponseSerializer ResponseSerializer = ResponseSerializer.Instance;
 
     /// <summary>
     /// Конечные точки узлов кластера.

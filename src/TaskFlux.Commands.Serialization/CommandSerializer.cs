@@ -1,6 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
-using JobQueue.Core.Exceptions;
 using TaskFlux.Commands.Count;
 using TaskFlux.Commands.CreateQueue;
 using TaskFlux.Commands.DeleteQueue;
@@ -8,7 +7,10 @@ using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Visitors;
-using TaskFlux.Serialization.Helpers;
+using TaskFlux.Core.Queue;
+using TaskFlux.Models.Exceptions;
+using TaskFlux.PriorityQueue;
+using Utils.Serialization;
 
 namespace TaskFlux.Commands.Serialization;
 
@@ -75,15 +77,46 @@ public class CommandSerializer
         public void Visit(CreateQueueCommand command)
         {
             var queueNameSize = MemoryBinaryWriter.EstimateResultSize(command.Name);
-            var estimatedSize = sizeof(CommandType) // Маркер
-                              + queueNameSize       // Название очереди
-                              + sizeof(uint);       // Максимальный размер очереди
+            var estimatedSize = sizeof(CommandType)       // Маркер
+                              + sizeof(PriorityQueueCode) // Реализация
+                              + queueNameSize             // Название очереди
+                              + sizeof(int)               // Максимальный размер очереди
+                              + sizeof(int)               // Максимальный размер сообщения
+                              + sizeof(byte);             // Имеется ли ограничение на диапазон ключей
+            if (command.PriorityRange.HasValue)
+            {
+                estimatedSize += sizeof(long)  // Минимальное значение
+                               + sizeof(long); // Максимальное значение
+            }
 
             var buffer = new byte[estimatedSize];
             var writer = new MemoryBinaryWriter(buffer);
             writer.Write(( byte ) CommandType.CreateQueue);
+
+            // Название очереди
             writer.Write(command.Name);
-            writer.Write(command.Size);
+
+            // Реализация
+            writer.Write(( int ) command.Code);
+
+            // Максимальный размер очереди
+            writer.Write(command.MaxQueueSize ?? -1);
+
+            // Максимальный размер сообщения
+            writer.Write(command.MaxPayloadSize ?? -1);
+
+            // Диапазон значений ключей
+            if (command.PriorityRange is var (min, max))
+            {
+                writer.Write(true);
+                writer.Write(min);
+                writer.Write(max);
+            }
+            else
+            {
+                writer.Write(false);
+            }
+
             _result = buffer;
         }
 
@@ -162,9 +195,43 @@ public class CommandSerializer
 
     private static CreateQueueCommand DeserializeCreateQueueCommand(ArrayBinaryReader reader)
     {
+        // Название очереди
         var queueName = reader.ReadQueueName();
-        var limit = reader.ReadUInt32();
-        return new CreateQueueCommand(queueName, limit);
+
+        // Структура для хранения
+        var queueCode = reader.ReadInt32() switch
+                        {
+                            0        => TaskQueueBuilder.DefaultCode,
+                            var code => ( PriorityQueueCode ) code
+                        };
+
+
+        // Максимальный размер очереди
+        int? maxQueueSize = reader.ReadInt32();
+        if (maxQueueSize == -1)
+        {
+            maxQueueSize = null;
+        }
+
+        // Максимальный размер сообщения
+        int? maxPayloadSize = reader.ReadInt32();
+        if (maxPayloadSize == -1)
+        {
+            maxPayloadSize = null;
+        }
+
+        // Диапазон значений ключей
+        (long, long)? priorityRange = null;
+        if (reader.ReadBoolean())
+        {
+            priorityRange = ( reader.ReadInt64(), reader.ReadInt64() );
+        }
+
+        return new CreateQueueCommand(name: queueName,
+            code: queueCode,
+            maxQueueSize: maxQueueSize,
+            maxPayloadSize: maxPayloadSize,
+            priorityRange: priorityRange);
     }
 
     private static DequeueCommand DeserializeDequeueCommand(ArrayBinaryReader reader)

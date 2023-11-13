@@ -34,7 +34,7 @@ Log.Logger.Debug($"Создаю клиента");
 using var client = await CreateClientAsync(clientFactory, cts.Token);
 Log.Logger.Debug("Клиент создан");
 
-var resultPrinterVisitor = new OperationResultPrinterVisitor();
+var resultPrinterVisitor = new OperationResponsePrinterVisitor();
 
 while (!cts.IsCancellationRequested)
 {
@@ -62,12 +62,13 @@ while (!cts.IsCancellationRequested)
         continue;
     }
 
-    if (StringCommandParser.TryParseCommand(commandString, out var command))
+    try
     {
-        Result result;
+        var command = StringCommandParser.ParseCommand(commandString);
+        Response response;
         try
         {
-            result = await client.SendAsync(command, cts.Token);
+            response = await client.SendAsync(command, cts.Token);
         }
         catch (TaskFluxException tfe)
         {
@@ -79,11 +80,11 @@ while (!cts.IsCancellationRequested)
             break;
         }
 
-        result.Accept(resultPrinterVisitor);
+        response.Accept(resultPrinterVisitor);
     }
-    else
+    catch (Exception e)
     {
-        Console.WriteLine($"Ошибка парсинга команды");
+        Console.WriteLine($"Ошибка выполнения команды: {e.Message}");
     }
 }
 
@@ -126,8 +127,12 @@ static IEnumerable<string> GetCommandDescriptions()
                  QUEUE_NAME - название очереди. Пропустить, если использовать стандартную
                  """;
     yield return """
-                  - create QUEUE_NAME - создать новую очередь с указанным названием
+                  - create QUEUE_NAME [WITHMAXSIZE max_size] [WITHMAXPAYLOAD max_payload] [WITHPRIORITYRANGE min max] [TYPE code] - создать новую очередь с указанным названием
                  QUEUE_NAME - название очереди
+                 WITHMAXSIZE max_size - выставить ограничение на максимальный размер очереди в max_size
+                 WITHMAXPAYLOAD max_payload - выставить ограничение на максимальный размер сообщения в max_payload байтов
+                 WITHPRIORITYRANGE min max - ограничить допустимый диапазон выставляемых ключей с min до max включительно
+                 TYPE code - использовать указанную реализацию структуры для хранения. code - код структуры
                  """;
     yield return """
                   - delete QUEUE_NAME - удалить очередь с указанным названием

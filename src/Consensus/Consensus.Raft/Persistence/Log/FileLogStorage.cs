@@ -1,6 +1,6 @@
 ﻿using System.Buffers;
 using System.IO.Abstractions;
-using TaskFlux.Serialization.Helpers;
+using Utils.Serialization;
 
 namespace Consensus.Raft.Persistence.Log;
 

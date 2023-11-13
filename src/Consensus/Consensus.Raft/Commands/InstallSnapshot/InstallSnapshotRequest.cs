@@ -1,5 +1,5 @@
 using Consensus.Raft.Persistence;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.Raft.Commands.InstallSnapshot;
 

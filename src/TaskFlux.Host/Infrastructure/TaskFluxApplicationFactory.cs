@@ -2,25 +2,23 @@ using Consensus.Application.TaskFlux;
 using Consensus.Application.TaskFlux.Serialization;
 using Consensus.Raft;
 using Consensus.Raft.Persistence;
-using JobQueue.Core;
-using JobQueue.InMemory;
-using JobQueue.PriorityQueue.StandardLibrary;
-using JobQueue.Serialization;
 using TaskFlux.Commands;
 using TaskFlux.Core;
+using TaskFlux.Core.Queue;
 using TaskFlux.Host.Helpers;
-using TaskFlux.Node;
+using TaskFlux.Models;
+using TaskFlux.Serialization;
 
 namespace TaskFlux.Host.Infrastructure;
 
-public class TaskFluxApplicationFactory : IApplicationFactory<Command, Result>
+public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
 {
     private readonly INodeInfo _nodeInfo;
     private readonly IApplicationInfo _appInfo;
     private readonly IClusterInfo _clusterInfo;
 
-    private readonly IJobQueueSnapshotSerializer _fileJobQueueSnapshotSerializer =
-        new FileJobQueueSnapshotSerializer(PrioritizedJobQueueFactory.Instance);
+    private readonly ITaskQueueSnapshotSerializer _fileTaskQueueSnapshotSerializer =
+        new FileTaskQueueSnapshotSerializer(BuilderTaskQueueFactory.Instance);
 
     public TaskFluxApplicationFactory(INodeInfo nodeInfo, IApplicationInfo appInfo, IClusterInfo clusterInfo)
     {
@@ -29,29 +27,36 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Result>
         _clusterInfo = clusterInfo;
     }
 
-    public IApplication<Command, Result> CreateEmpty()
+    public IApplication<Command, Response> CreateEmpty()
     {
-        var node = new TaskFluxNode(new SimpleJobQueueManager(new PrioritizedJobQueue(QueueName.Default, 0,
-            new StandardLibraryPriorityQueue<long, byte[]>())));
-        var commandContext = new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo);
-        var serializer = _fileJobQueueSnapshotSerializer;
-        return new TaskFluxApplication(commandContext, serializer);
+        var queue = new TaskQueueBuilder(QueueName.Default)
+           .Build();
+        var queueManager = new TaskQueueManager(queue);
+        var application = new ProxyTaskFluxApplication(
+            new TaskFluxApplication(_nodeInfo, _clusterInfo, _appInfo, queueManager), _fileTaskQueueSnapshotSerializer);
+        return application;
     }
 
-    public IApplication<Command, Result> Restore(ISnapshot snapshot)
+    public IApplication<Command, Response> Restore(ISnapshot snapshot)
     {
+        // Читаем снапшот (потом надо сделать свой поток-обертку)
         var memoryStream = new MemoryStream();
         foreach (var chunk in snapshot.GetAllChunks())
         {
             memoryStream.Write(chunk.Span);
         }
 
+        // Откатываемся в начало снапшота
         memoryStream.Position = 0;
-        var queues = _fileJobQueueSnapshotSerializer.Deserialize(memoryStream)
-                                                    .ToList();
 
-        var node = new TaskFluxNode(new SimpleJobQueueManager(queues));
-        return new TaskFluxApplication(new CommandContext(node, _nodeInfo, _appInfo, _clusterInfo),
-            _fileJobQueueSnapshotSerializer);
+        // Десериализуем
+        var queues = _fileTaskQueueSnapshotSerializer
+                    .Deserialize(memoryStream)
+                    .ToList();
+
+        // Создаем основные объекты
+        var node = new TaskQueueManager(queues);
+        return new ProxyTaskFluxApplication(new TaskFluxApplication(_nodeInfo, _clusterInfo, _appInfo, node),
+            _fileTaskQueueSnapshotSerializer);
     }
 }

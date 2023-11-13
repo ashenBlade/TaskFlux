@@ -1,9 +1,9 @@
-using JobQueue.Core;
 using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace TaskFlux.Node;
 
-public class ApplicationInfo: IApplicationInfo
+public class ApplicationInfo : IApplicationInfo
 {
     public ApplicationInfo(QueueName defaultQueueName)
     {

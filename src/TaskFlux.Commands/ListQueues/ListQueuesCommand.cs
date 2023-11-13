@@ -1,4 +1,5 @@
 using TaskFlux.Commands.Visitors;
+using TaskFlux.Core;
 
 namespace TaskFlux.Commands.ListQueues;
 
@@ -7,14 +8,13 @@ public class ListQueuesCommand : ReadOnlyCommand
     public override CommandType Type => CommandType.ListQueues;
     public static readonly ListQueuesCommand Instance = new();
 
-    protected override Result Apply(IReadOnlyCommandContext context)
+    protected override Response Apply(IReadOnlyApplication context)
     {
-        var manager = context.Node.GetJobQueueManager();
-        var result = manager.GetAllQueuesMetadata();
-        return new ListQueuesResult(result);
+        var result = context.TaskQueueManager.GetAllQueuesMetadata();
+        return new ListQueuesResponse(result);
     }
 
-    protected override void ApplyNoResult(IReadOnlyCommandContext context)
+    protected override void ApplyNoResult(IReadOnlyApplication context)
     {
     }
 

@@ -4,7 +4,7 @@ using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.LogFileCheckStrategy;
 using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 [assembly: InternalsVisibleTo("Consensus.Storage.Tests")]
 

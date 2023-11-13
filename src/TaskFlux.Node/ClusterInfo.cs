@@ -1,5 +1,6 @@
 using System.Net;
 using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace TaskFlux.Node;
 

@@ -1,7 +1,8 @@
-using JobQueue.Core;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
+using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace TaskFlux.Commands.DeleteQueue;
 
@@ -15,9 +16,9 @@ public class DeleteQueueCommand : UpdateCommand
         QueueName = queueName;
     }
 
-    public override Result Apply(ICommandContext context)
+    public override Response Apply(IApplication context)
     {
-        var manager = context.Node.GetJobQueueManager();
+        var manager = context.TaskQueueManager;
         if (!manager.HasQueue(QueueName))
         {
             return DefaultErrors.QueueDoesNotExist;
@@ -25,15 +26,15 @@ public class DeleteQueueCommand : UpdateCommand
 
         if (manager.TryDeleteQueue(QueueName, out _))
         {
-            return OkResult.Instance;
+            return OkResponse.Instance;
         }
 
-        return new ErrorResult(ErrorType.Unknown, "Неизвестная ошибка при удалении очереди. Очередь не была удалена");
+        return new ErrorResponse(ErrorType.Unknown, "Неизвестная ошибка при удалении очереди. Очередь не была удалена");
     }
 
-    public override void ApplyNoResult(ICommandContext context)
+    public override void ApplyNoResult(IApplication context)
     {
-        var manager = context.Node.GetJobQueueManager();
+        var manager = context.TaskQueueManager;
         if (!manager.HasQueue(QueueName))
         {
             return;

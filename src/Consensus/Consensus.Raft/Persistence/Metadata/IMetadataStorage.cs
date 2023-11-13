@@ -1,4 +1,4 @@
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.Raft.Persistence.Metadata;
 

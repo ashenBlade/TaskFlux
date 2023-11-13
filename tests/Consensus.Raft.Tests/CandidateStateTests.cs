@@ -11,15 +11,13 @@ using Consensus.Raft.Tests.Stubs;
 using FluentAssertions;
 using Moq;
 using Serilog.Core;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.Raft.Tests;
 
 [Trait("Category", "Raft")]
 public class CandidateStateTests
 {
-    // TODO: тесты когда голос уже отдан
-    // TODO: кворум собран, но один из ответов - больший терм
     private static readonly NodeId NodeId = new(1);
     private static readonly PeerGroup EmptyPeerGroup = new(Array.Empty<IPeer>());
     private static readonly IApplication NullApplication = Mock.Of<IApplication>();

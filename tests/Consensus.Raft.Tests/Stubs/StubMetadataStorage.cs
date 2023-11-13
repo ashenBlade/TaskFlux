@@ -1,5 +1,5 @@
 using Consensus.Raft.Persistence.Metadata;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.Raft.Tests.Stubs;
 

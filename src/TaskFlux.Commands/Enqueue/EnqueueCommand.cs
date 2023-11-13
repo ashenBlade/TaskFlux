@@ -1,6 +1,9 @@
-using JobQueue.Core;
 using TaskFlux.Commands.Error;
+using TaskFlux.Commands.Ok;
+using TaskFlux.Commands.PolicyViolation;
 using TaskFlux.Commands.Visitors;
+using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Enqueue;
 
@@ -20,33 +23,31 @@ public class EnqueueCommand : UpdateCommand
 
     public override CommandType Type => CommandType.Enqueue;
 
-    public override Result Apply(ICommandContext context)
+    public override Response Apply(IApplication application)
     {
-        var manager = context.Node.GetJobQueueManager();
-
-        if (!manager.TryGetQueue(Queue, out var queue))
+        if (!application.TaskQueueManager.TryGetQueue(Queue, out var queue))
         {
             return DefaultErrors.QueueDoesNotExist;
         }
 
-        if (queue.TryEnqueue(Key, Payload))
+        var result = queue.Enqueue(Key, Payload);
+
+        if (result.TryGetViolatedPolicy(out var policy))
         {
-            return EnqueueResult.Ok;
+            return new PolicyViolationResponse(policy);
         }
 
-        return EnqueueResult.Full;
+        return OkResponse.Instance;
     }
 
-    public override void ApplyNoResult(ICommandContext context)
+    public override void ApplyNoResult(IApplication context)
     {
-        var manager = context.Node.GetJobQueueManager();
-
-        if (!manager.TryGetQueue(Queue, out var queue))
+        if (!context.TaskQueueManager.TryGetQueue(Queue, out var queue))
         {
             return;
         }
 
-        queue.TryEnqueue(Key, Payload);
+        queue.Enqueue(Key, Payload);
     }
 
     public override void Accept(ICommandVisitor visitor)

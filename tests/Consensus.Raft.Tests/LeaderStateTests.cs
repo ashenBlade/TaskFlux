@@ -12,7 +12,7 @@ using Consensus.Raft.Tests.Stubs;
 using FluentAssertions;
 using Moq;
 using Serilog.Core;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.Raft.Tests;
 

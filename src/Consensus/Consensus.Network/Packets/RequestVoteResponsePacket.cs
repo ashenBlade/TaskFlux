@@ -1,17 +1,19 @@
 using Consensus.Raft.Commands.RequestVote;
-using TaskFlux.Serialization.Helpers;
+using Utils.Serialization;
 
 namespace Consensus.Network.Packets;
 
-public class RequestVoteResponsePacket: RaftPacket
+public class RequestVoteResponsePacket : RaftPacket
 {
     public RequestVoteResponse Response { get; }
+
     public RequestVoteResponsePacket(RequestVoteResponse response)
     {
         Response = response;
     }
 
     public override RaftPacketType PacketType => RaftPacketType.RequestVoteResponse;
+
     protected override int EstimatePacketSize()
     {
         return 1  // Маркер
@@ -22,7 +24,7 @@ public class RequestVoteResponsePacket: RaftPacket
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write((byte)RaftPacketType.RequestVoteResponse);
+        writer.Write(( byte ) RaftPacketType.RequestVoteResponse);
         writer.Write(Response.VoteGranted);
         writer.Write(Response.CurrentTerm.Value);
     }

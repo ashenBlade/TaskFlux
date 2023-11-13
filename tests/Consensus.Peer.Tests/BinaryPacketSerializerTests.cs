@@ -7,7 +7,7 @@ using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Persistence;
 using FluentAssertions;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.Peer.Tests;
 

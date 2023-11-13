@@ -1,6 +1,6 @@
 using Consensus.Raft.Persistence;
 using Serilog;
-using TaskFlux.Core;
+using TaskFlux.Models;
 
 namespace Consensus.Raft.Tests.Infrastructure;
 
