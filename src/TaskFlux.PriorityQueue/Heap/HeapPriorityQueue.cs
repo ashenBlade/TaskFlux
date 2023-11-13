@@ -42,6 +42,7 @@ public class HeapPriorityQueue : IPriorityQueue
     /// </summary>
     private readonly Dictionary<long, ChunkedQueue> _keyToQueue = new();
 
+    public PriorityQueueCode Code => PriorityQueueCode.Heap4Arity;
     public int Count { get; private set; }
 
     public void Enqueue(long key, byte[] payload)

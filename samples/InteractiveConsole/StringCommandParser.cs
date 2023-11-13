@@ -6,6 +6,7 @@ using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Models;
+using TaskFlux.PriorityQueue;
 
 namespace InteractiveConsole;
 
@@ -76,6 +77,7 @@ public static class StringCommandParser
         }
 
         return new CreateQueueCommand(queueName,
+            code: PriorityQueueCode.Heap4Arity,
             maxQueueSize: maxQueueSize,
             maxPayloadSize: maxPayloadSize,
             priorityRange: priorityRange);

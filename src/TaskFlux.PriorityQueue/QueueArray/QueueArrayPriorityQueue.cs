@@ -34,6 +34,7 @@ public class QueueArrayPriorityQueue : IPriorityQueue
         return new Queue<byte[]>[Max - Min + 1];
     }
 
+    public PriorityQueueCode Code => PriorityQueueCode.QueueArray;
     public int Count => _queues?.Sum(x => x?.Count ?? 0) ?? 0;
 
     public QueueArrayPriorityQueue(long min, long max)

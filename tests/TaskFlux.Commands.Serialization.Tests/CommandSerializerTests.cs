@@ -3,6 +3,7 @@ using TaskFlux.Commands.CreateQueue;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Models;
+using TaskFlux.PriorityQueue;
 using Xunit;
 
 namespace TaskFlux.Commands.Serialization.Tests;
@@ -78,25 +79,43 @@ public class CommandSerializerTests
     }
 
     public record struct CreateQueueCommandArgument(string QueueName,
+                                                    PriorityQueueCode Code,
                                                     int? MaxQueueSize,
                                                     int? MaxPayloadSize,
                                                     (long, long)? PriorityRange);
 
     public static IEnumerable<object[]> CreateQueueCommandData => new[]
     {
-        new object[] {new CreateQueueCommandArgument("", null, null, null)},
-        new object[] {new CreateQueueCommandArgument("hello", 100, 1024, ( long.MinValue, long.MaxValue ))},
-        new object[] {new CreateQueueCommandArgument("task:queue:1", int.MaxValue, null, ( -1L, 10L ))},
-        new object[] {new CreateQueueCommandArgument("queue-name", null, 1024 * 1024 * 2, null)},
-        new object[] {new CreateQueueCommandArgument("orders:2023-11-04", 200, 1024 * 1024, ( -10L, 10L ))}
+        new object[] {new CreateQueueCommandArgument("", PriorityQueueCode.Heap4Arity, null, null, null)},
+        new object[]
+        {
+            new CreateQueueCommandArgument("hello", PriorityQueueCode.QueueArray, null, 1024,
+                ( long.MinValue, long.MaxValue ))
+        },
+        new object[]
+        {
+            new CreateQueueCommandArgument("task:queue:1", PriorityQueueCode.Heap4Arity, int.MaxValue, null,
+                ( -1L, 10L ))
+        },
+        new object[]
+        {
+            new CreateQueueCommandArgument("queue-name", PriorityQueueCode.Heap4Arity, null, 1024 * 1024 * 2,
+                null)
+        },
+        new object[]
+        {
+            new CreateQueueCommandArgument("orders:2023-11-04", PriorityQueueCode.QueueArray, null, 1024 * 1024,
+                ( -10L, 10L ))
+        }
     };
 
     [Theory]
     [MemberData(nameof(CreateQueueCommandData))]
     public void CreateQueueCommand__Serialization(CreateQueueCommandArgument argument)
     {
-        var (queueName, maxQueueSize, maxPayloadSize, priorityRange) = argument;
+        var (queueName, code, maxQueueSize, maxPayloadSize, priorityRange) = argument;
         AssertBase(new CreateQueueCommand(name: QueueNameParser.Parse(queueName),
+            code: code,
             maxQueueSize: maxQueueSize,
             maxPayloadSize: maxPayloadSize,
             priorityRange: priorityRange));

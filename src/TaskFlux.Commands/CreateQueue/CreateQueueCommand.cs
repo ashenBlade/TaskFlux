@@ -4,6 +4,7 @@ using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
 using TaskFlux.Models;
+using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Commands.CreateQueue;
 
@@ -11,13 +12,14 @@ public class CreateQueueCommand : UpdateCommand
 {
     public override CommandType Type => CommandType.CreateQueue;
     public QueueName Name { get; }
+    public PriorityQueueCode Code { get; }
     public int? MaxQueueSize { get; }
     public int? MaxPayloadSize { get; }
     public (long, long)? PriorityRange { get; }
 
     private ITaskQueue CreateTaskQueue()
     {
-        var builder = new TaskQueueBuilder(Name);
+        var builder = new TaskQueueBuilder(Name, Code);
 
         if (MaxQueueSize is { } maxQueueSize)
         {
@@ -38,6 +40,7 @@ public class CreateQueueCommand : UpdateCommand
     }
 
     public CreateQueueCommand(QueueName name,
+                              PriorityQueueCode code,
                               int? maxQueueSize,
                               int? maxPayloadSize,
                               (long, long)? priorityRange)
@@ -59,7 +62,13 @@ public class CreateQueueCommand : UpdateCommand
                 "Максимальный размер очереди не может быть отрицательным значением");
         }
 
+        if (code is PriorityQueueCode.QueueArray && priorityRange is null)
+        {
+            throw new ArgumentException("Необходимо указать диапазон ключей для списка очередей");
+        }
+
         Name = name;
+        Code = code;
         MaxQueueSize = maxQueueSize;
         MaxPayloadSize = maxPayloadSize;
         PriorityRange = priorityRange;
@@ -73,7 +82,16 @@ public class CreateQueueCommand : UpdateCommand
             return DefaultErrors.QueueAlreadyExists;
         }
 
-        var queue = CreateTaskQueue();
+        ITaskQueue queue;
+        try
+        {
+            queue = CreateTaskQueue();
+        }
+        catch (InvalidOperationException ioe)
+        {
+            return new ErrorResponse(ErrorType.InvalidQueueParameters, ioe.Message);
+        }
+
         if (manager.TryAddQueue(Name, queue))
         {
             return OkResponse.Instance;

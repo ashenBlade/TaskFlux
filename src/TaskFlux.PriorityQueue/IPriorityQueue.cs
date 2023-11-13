@@ -7,6 +7,11 @@ namespace TaskFlux.PriorityQueue;
 public interface IPriorityQueue
 {
     /// <summary>
+    /// Код, используемый очередью
+    /// </summary>
+    public PriorityQueueCode Code { get; }
+
+    /// <summary>
     /// Получить текущее количество элементов в очереди
     /// </summary>
     public int Count { get; }

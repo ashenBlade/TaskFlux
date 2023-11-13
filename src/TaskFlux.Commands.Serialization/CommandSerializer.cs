@@ -7,6 +7,9 @@ using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Commands.Visitors;
+using TaskFlux.Core.Queue;
+using TaskFlux.Models.Exceptions;
+using TaskFlux.PriorityQueue;
 using Utils.Serialization;
 
 namespace TaskFlux.Commands.Serialization;
@@ -74,12 +77,12 @@ public class CommandSerializer
         public void Visit(CreateQueueCommand command)
         {
             var queueNameSize = MemoryBinaryWriter.EstimateResultSize(command.Name);
-            var estimatedSize = sizeof(CommandType) // Маркер
-                              + queueNameSize       // Название очереди
-                              + sizeof(int)         // Максимальный размер очереди
-                              + sizeof(int)         // Максимальный размер сообщения
-                              + sizeof(byte);       // Имеется ли ограничение на диапазон ключей
-
+            var estimatedSize = sizeof(CommandType)       // Маркер
+                              + sizeof(PriorityQueueCode) // Реализация
+                              + queueNameSize             // Название очереди
+                              + sizeof(int)               // Максимальный размер очереди
+                              + sizeof(int)               // Максимальный размер сообщения
+                              + sizeof(byte);             // Имеется ли ограничение на диапазон ключей
             if (command.PriorityRange.HasValue)
             {
                 estimatedSize += sizeof(long)  // Минимальное значение
@@ -92,6 +95,9 @@ public class CommandSerializer
 
             // Название очереди
             writer.Write(command.Name);
+
+            // Реализация
+            writer.Write(( int ) command.Code);
 
             // Максимальный размер очереди
             writer.Write(command.MaxQueueSize ?? -1);
@@ -192,6 +198,14 @@ public class CommandSerializer
         // Название очереди
         var queueName = reader.ReadQueueName();
 
+        // Структура для хранения
+        var queueCode = reader.ReadInt32() switch
+                        {
+                            0        => TaskQueueBuilder.DefaultCode,
+                            var code => ( PriorityQueueCode ) code
+                        };
+
+
         // Максимальный размер очереди
         int? maxQueueSize = reader.ReadInt32();
         if (maxQueueSize == -1)
@@ -214,6 +228,7 @@ public class CommandSerializer
         }
 
         return new CreateQueueCommand(name: queueName,
+            code: queueCode,
             maxQueueSize: maxQueueSize,
             maxPayloadSize: maxPayloadSize,
             priorityRange: priorityRange);
