@@ -5,6 +5,7 @@ using TaskFlux.Commands.DeleteQueue;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.ListQueues;
+using TaskFlux.Core.Queue;
 using TaskFlux.Models;
 using TaskFlux.PriorityQueue;
 
@@ -24,27 +25,22 @@ public static class StringCommandParser
         {"list", GetListQueuesCommand},
     };
 
-    public static bool TryParseCommand(string input, out Command command)
+    public static Command ParseCommand(string input)
     {
         var args = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (args.Length == 0)
         {
-            command = null!;
-            return false;
+            throw new ArgumentException("Команда пуста");
         }
 
         try
         {
-            command = CommandToFactory[args[0].ToLower()](args);
-            return true;
+            return CommandToFactory[args[0].ToLower()](args);
         }
-        catch (Exception)
+        catch (KeyNotFoundException)
         {
-            /* */
+            throw new KeyNotFoundException($"Неизвестная команда: {args[0]}");
         }
-
-        command = null!;
-        return false;
     }
 
     private static CreateQueueCommand GetCreateQueueCommand(string[] args)
@@ -54,6 +50,7 @@ public static class StringCommandParser
         int? maxQueueSize = null;
         int? maxPayloadSize = null;
         (long, long)? priorityRange = null;
+        var queueCode = TaskQueueBuilder.DefaultCode;
 
         for (var i = 2; i < args.Length; i++)
         {
@@ -68,8 +65,23 @@ public static class StringCommandParser
                     i++;
                     break;
                 case "WITHPRIORITYRANGE":
-                    priorityRange = ( long.Parse(args[i + 1]), long.Parse(args[i + 1]) );
+                    priorityRange = ( long.Parse(args[i + 1]), long.Parse(args[i + 2]) );
                     i += 2;
+                    break;
+                case "TYPE":
+                    switch (args[i + 1].ToLower())
+                    {
+                        case "h4":
+                            queueCode = PriorityQueueCode.Heap4Arity;
+                            break;
+                        case "qa":
+                            queueCode = PriorityQueueCode.QueueArray;
+                            break;
+                        default:
+                            throw new Exception($"Неизвестный код структуры очереди: {args[i + 1]}");
+                    }
+
+                    i++;
                     break;
                 default:
                     throw new Exception($"Неизвестный аргумент: {args[i]}");
@@ -77,7 +89,7 @@ public static class StringCommandParser
         }
 
         return new CreateQueueCommand(queueName,
-            code: PriorityQueueCode.Heap4Arity,
+            code: queueCode,
             maxQueueSize: maxQueueSize,
             maxPayloadSize: maxPayloadSize,
             priorityRange: priorityRange);
