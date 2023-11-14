@@ -40,7 +40,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 
         public CommandDescriptor<Command> GetDescriptor()
         {
-            return new CommandDescriptor<Command>(Command, Command.IsReadOnly);
+            return new CommandDescriptor<Command>(Command, !Command.IsReadOnly);
         }
     }
 

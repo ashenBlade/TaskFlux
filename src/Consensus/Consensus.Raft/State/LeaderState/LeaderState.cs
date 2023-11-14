@@ -206,7 +206,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
     {
-        if (request.Descriptor.IsReadonly)
+        if (!request.Descriptor.ShouldReplicate)
         {
             // Короткий путь для readonly команд
             return SubmitResponse<TResponse>.Success(Application.Apply(request.Descriptor.Command), true);

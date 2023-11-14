@@ -3,11 +3,11 @@ namespace Consensus.Raft.Commands;
 public struct CommandDescriptor<TCommand>
 {
     public TCommand Command { get; }
-    public bool IsReadonly { get; }
+    public bool ShouldReplicate { get; }
 
-    public CommandDescriptor(TCommand command, bool isReadonly)
+    public CommandDescriptor(TCommand command, bool shouldReplicate)
     {
         Command = command;
-        IsReadonly = isReadonly;
+        ShouldReplicate = shouldReplicate;
     }
 }

@@ -396,7 +396,7 @@ public class LeaderStateTests
     }
 
     private static SubmitRequest<int> CreateSubmitRequest(int value = 0) =>
-        new(new CommandDescriptor<int>(value, false));
+        new(new CommandDescriptor<int>(value, true));
 
     [Fact]
     public void SubmitRequest__КогдаДругихУзловНет__ДолженОбработатьЗапрос()
@@ -484,7 +484,7 @@ public class LeaderStateTests
                               .ToArray(peersCount);
 
         using var node = CreateLeaderNode(term, null, peers: peers.Select(x => x.Object));
-        var request = new SubmitRequest<int>(new CommandDescriptor<int>(123, false));
+        var request = new SubmitRequest<int>(new CommandDescriptor<int>(123, true));
         var response = node.Handle(request);
 
         response.WasLeader
@@ -503,7 +503,7 @@ public class LeaderStateTests
         peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
             .Returns(new AppendEntriesResponse(greaterTerm, false));
         using var node = CreateLeaderNode(term, null, peers: new[] {peer.Object});
-        var request = new SubmitRequest<int>(new CommandDescriptor<int>(123, false));
+        var request = new SubmitRequest<int>(new CommandDescriptor<int>(123, true));
         var response = node.Handle(request);
 
         response.WasLeader
