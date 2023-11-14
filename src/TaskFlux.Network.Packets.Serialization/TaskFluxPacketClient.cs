@@ -56,6 +56,7 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
                        PacketType.BootstrapResponse       => await DeserializeBootstrapResponse(token),
                        PacketType.ClusterMetadataRequest  => new ClusterMetadataRequestPacket(),
                        PacketType.ClusterMetadataResponse => await DeserializeClusterMetadataResponse(token),
+                       PacketType.AcknowledgeRequest      => AcknowledgeRequestPacket.Instance,
                    };
         }
         catch (SwitchExpressionException)
@@ -726,6 +727,21 @@ public class TaskFluxPacketClient : IAsyncPacketVisitor
             var writer = new MemoryBinaryWriter(memory);
             writer.Write(( byte ) PacketType.ClusterMetadataRequest);
             await Stream.WriteAsync(memory, token);
+        }
+        finally
+        {
+            Pool.Return(array);
+        }
+    }
+
+    public async ValueTask VisitAsync(AcknowledgeRequestPacket packet, CancellationToken token = default)
+    {
+        const int size = sizeof(PacketType);
+        var array = Pool.Rent(size);
+        try
+        {
+            array[0] = ( byte ) PacketType.AcknowledgeRequest;
+            await Stream.WriteAsync(array.AsMemory(0, 1), token);
         }
         finally
         {

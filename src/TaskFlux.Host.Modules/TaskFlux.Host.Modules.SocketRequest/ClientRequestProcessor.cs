@@ -245,6 +245,11 @@ internal class ClientRequestProcessor
             return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataRequest);
         }
 
+        public ValueTask VisitAsync(AcknowledgeRequestPacket packet, CancellationToken token = default)
+        {
+            return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataRequest);
+        }
+
         private bool IsCompatibleWith(Version clientVersion)
         {
             var serverVersion = _applicationInfo.Version;
@@ -323,6 +328,11 @@ internal class ClientRequestProcessor
         }
 
         public ValueTask VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token = default)
+        {
+            return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataRequest);
+        }
+
+        public ValueTask VisitAsync(AcknowledgeRequestPacket packet, CancellationToken token = default)
         {
             return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataRequest);
         }
@@ -467,6 +477,12 @@ internal class ClientRequestProcessor
             var data = new ClusterMetadataResponsePacket(_processor.ClusterInfo.Nodes,
                 GetId(_processor.ClusterInfo.LeaderId), _processor.ClusterInfo.CurrentNodeId.Id);
             await _client.SendAsync(data, token);
+        }
+
+        public ValueTask VisitAsync(AcknowledgeRequestPacket packet, CancellationToken token = default)
+        {
+            ShouldClose = true;
+            return ValueTask.CompletedTask;
         }
     }
 

@@ -14,4 +14,5 @@ public interface IAsyncPacketVisitor
     public ValueTask VisitAsync(BootstrapRequestPacket packet, CancellationToken token = default);
     public ValueTask VisitAsync(ClusterMetadataResponsePacket packet, CancellationToken token = default);
     public ValueTask VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token = default);
+    public ValueTask VisitAsync(AcknowledgeRequestPacket packet, CancellationToken token = default);
 }

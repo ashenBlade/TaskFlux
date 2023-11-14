@@ -5,6 +5,8 @@ public enum PacketType : byte
     CommandRequest = ( byte ) 'C',
     CommandResponse = ( byte ) 'c',
 
+    AcknowledgeRequest = ( byte ) 'K',
+
     ErrorResponse = ( byte ) 'e',
     NotLeader = ( byte ) 'l',
 
