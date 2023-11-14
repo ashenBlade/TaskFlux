@@ -219,4 +219,10 @@ public class TaskFluxPacketClientTests
     {
         await AssertBase(new ClusterMetadataRequestPacket());
     }
+
+    [Fact(DisplayName = nameof(AcknowledgeRequestPacket))]
+    public async Task AcknowledgeRequest__Serialization()
+    {
+        await AssertBase(new AcknowledgeRequestPacket());
+    }
 }

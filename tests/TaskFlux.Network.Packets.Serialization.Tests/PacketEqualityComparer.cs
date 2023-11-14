@@ -44,6 +44,8 @@ public class PacketEqualityComparer : IEqualityComparer<Packet>
                _              => false
            };
 
+    private bool Check(AcknowledgeRequestPacket first, AcknowledgeRequestPacket second) => true;
+
     private bool Check(ClusterMetadataRequestPacket first, ClusterMetadataRequestPacket second)
     {
         return true;
