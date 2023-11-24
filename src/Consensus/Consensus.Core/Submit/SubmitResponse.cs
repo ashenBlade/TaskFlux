@@ -1,4 +1,4 @@
-namespace Consensus.Raft.Commands.Submit;
+namespace Consensus.Core.Submit;
 
 /// <summary>
 /// Передать узлу команду на применение команды

@@ -1,7 +1,7 @@
+using Consensus.Core.Submit;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using Serilog;
 using TaskFlux.Models;
@@ -205,20 +205,13 @@ public class LeaderState<TCommand, TResponse>
         return RaftConsensusModule.Handle(request, token);
     }
 
-    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
+    public override SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default)
     {
-        // TODO: заменить сразу на TryGetDelta
-        if (!request.Descriptor.ShouldReplicate)
-        {
-            // Короткий путь для readonly команд
-            return SubmitResponse<TResponse>.Success(Application.Apply(request.Descriptor.Command), true);
-        }
-
         // Если команда не изменяет состояние приложения, 
         // то применяем сразу и возвращаем результат
-        if (!_commandSerializer.TryGetDelta(request.Descriptor.Command, out var delta))
+        if (!_commandSerializer.TryGetDelta(command, out var delta))
         {
-            return SubmitResponse<TResponse>.Success(Application.Apply(request.Descriptor.Command), true);
+            return SubmitResponse<TResponse>.Success(Application.Apply(command), true);
         }
 
         // Добавляем команду в буфер
@@ -235,7 +228,7 @@ public class LeaderState<TCommand, TResponse>
             if (Role != NodeRole.Leader)
             {
                 // Пока выполняли запрос перестали быть лидером
-                return RaftConsensusModule.Handle(request, token);
+                return RaftConsensusModule.Handle(command, token);
             }
 
             if (RaftConsensusModule.TryUpdateState(RaftConsensusModule.CreateFollowerState(), this))
@@ -245,7 +238,7 @@ public class LeaderState<TCommand, TResponse>
                 return SubmitResponse<TResponse>.NotLeader;
             }
 
-            return RaftConsensusModule.Handle(request, token);
+            return RaftConsensusModule.Handle(command, token);
         }
 
         /*
@@ -262,7 +255,7 @@ public class LeaderState<TCommand, TResponse>
         // Применяем команду к приложению.
         // Лучше сначала применить и, если что не так, упасть,
         // чем закоммитить, а потом каждый раз валиться при восстановлении
-        var response = Application.Apply(request.Descriptor.Command);
+        var response = Application.Apply(command);
 
         // Коммитим запись и применяем 
         _logger.Verbose("Коммичу команду с индексом {Index}", appended.Index);

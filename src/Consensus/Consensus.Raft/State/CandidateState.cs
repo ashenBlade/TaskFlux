@@ -1,7 +1,7 @@
+using Consensus.Core.Submit;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Serilog;
 using TaskFlux.Models;
 
@@ -206,7 +206,7 @@ public class CandidateState<TCommand, TResponse>
         return RaftConsensusModule.Handle(request);
     }
 
-    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
+    public override SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default)
     {
         return SubmitResponse<TResponse>.NotLeader;
     }

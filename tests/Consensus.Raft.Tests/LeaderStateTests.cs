@@ -1,8 +1,6 @@
 using System.Buffers.Binary;
-using Consensus.Core;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.Metadata;
@@ -390,9 +388,6 @@ public class LeaderStateTests
         Assert.Equal(expectedBuffer, actualBuffer, LogEntryComparer);
     }
 
-    private static SubmitRequest<int> CreateSubmitRequest(int value = 0) =>
-        new(new CommandDescriptor<int>(value, true));
-
     [Fact]
     public void SubmitRequest__КогдаДругихУзловНет__ДолженОбработатьЗапрос()
     {
@@ -400,7 +395,7 @@ public class LeaderStateTests
         var mock = new Mock<IApplication>();
         var command = 1;
         var expectedResponse = 123;
-        var request = CreateSubmitRequest(command);
+        var request = command;
         mock.Setup(x => x.Apply(It.Is<int>(y => y == command)))
             .Returns(expectedResponse)
             .Verifiable();
@@ -434,7 +429,7 @@ public class LeaderStateTests
         peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
             .Returns(new AppendEntriesResponse(term, true))
             .Verifiable();
-        var request = CreateSubmitRequest(command);
+        var request = command;
         machine.Setup(x => x.Apply(It.Is<int>(y => y == command)))
                .Returns(expectedResponse)
                .Verifiable();
@@ -480,7 +475,7 @@ public class LeaderStateTests
                               .ToArray(peersCount);
 
         using var node = CreateLeaderNode(term, null, peers: peers.Select(x => x.Object));
-        var request = new SubmitRequest<int>(new CommandDescriptor<int>(123, true));
+        var request = 123;
         var response = node.Handle(request);
 
         response.WasLeader
@@ -499,7 +494,7 @@ public class LeaderStateTests
         peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
             .Returns(new AppendEntriesResponse(greaterTerm, false));
         using var node = CreateLeaderNode(term, null, peers: new[] {peer.Object});
-        var request = new SubmitRequest<int>(new CommandDescriptor<int>(123, true));
+        var request = 123;
         var response = node.Handle(request);
 
         response.WasLeader

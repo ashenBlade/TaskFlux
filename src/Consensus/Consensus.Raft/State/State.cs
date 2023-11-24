@@ -1,7 +1,7 @@
+using Consensus.Core.Submit;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using TaskFlux.Models;
 
@@ -64,10 +64,10 @@ public abstract class State<TCommand, TResponse>
     /// <summary>
     /// Применить команду к приложению
     /// </summary>
-    /// <param name="request">Объект запроса</param>
+    /// <param name="command">Объект запроса</param>
     /// <param name="token">Токен отмены</param>
     /// <returns>Результат операции</returns>
-    public abstract SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default);
+    public abstract SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default);
 
     /// <summary>
     /// Вызывается, когда состояние узла меняется, для очищения предыдущего (т.е. состояния, которому этот Dispose принадлежит) состояния

@@ -1,6 +1,5 @@
-﻿using Consensus.Core;
+﻿using Consensus.Core.Submit;
 using Consensus.Raft;
-using Consensus.Raft.Commands.Submit;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Host.Modules;
@@ -36,11 +35,6 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
         public void Cancel()
         {
             _tcs.TrySetCanceled();
-        }
-
-        public CommandDescriptor<Command> GetDescriptor()
-        {
-            return new CommandDescriptor<Command>(Command, !Command.IsReadOnly);
         }
     }
 
@@ -94,7 +88,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 
                 try
                 {
-                    var response = _module.Handle(new SubmitRequest<Command>(request.GetDescriptor()), request.Token);
+                    var response = _module.Handle(request.Command, request.Token);
                     request.SetResult(response);
                 }
                 catch (OperationCanceledException o)

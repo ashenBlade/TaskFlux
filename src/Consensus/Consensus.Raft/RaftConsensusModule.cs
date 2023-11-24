@@ -1,8 +1,8 @@
 using System.Diagnostics;
+using Consensus.Core.Submit;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.State;
 using Consensus.Raft.State.LeaderState;
@@ -108,9 +108,9 @@ public class RaftConsensusModule<TCommand, TResponse>
         return _currentState.Apply(request, token);
     }
 
-    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request, CancellationToken token = default)
+    public SubmitResponse<TResponse> Handle(TCommand command, CancellationToken token = default)
     {
-        return _currentState.Apply(request, token);
+        return _currentState.Apply(command, token);
     }
 
     public event RoleChangedEventHandler? RoleChanged;

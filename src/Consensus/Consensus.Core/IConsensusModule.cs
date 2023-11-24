@@ -1,4 +1,4 @@
-using Consensus.Raft.Commands.Submit;
+using Consensus.Core.Submit;
 
 namespace Consensus.Core;
 
@@ -7,13 +7,13 @@ namespace Consensus.Core;
 /// </summary>
 /// <typeparam name="TCommand">Класс команды</typeparam>
 /// <typeparam name="TResponse">Класс результата выполнения команды</typeparam>
-public interface IConsensusModule<TCommand, TResponse>
+public interface IConsensusModule<in TCommand, TResponse>
 {
     /// <summary>
     /// Принять запрос на применение команды к приложению
     /// </summary>
-    /// <param name="request">Объект самого запроса</param>
+    /// <param name="command">Команда, которую нужно выполнить</param>
     /// <param name="token">Токен отмены</param>
     /// <returns>Результат выполнения работы</returns>
-    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request, CancellationToken token = default);
+    public SubmitResponse<TResponse> Handle(TCommand command, CancellationToken token = default);
 }

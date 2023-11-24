@@ -3,7 +3,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Consensus.Raft.Commands.Submit;
+using Consensus.Core.Submit;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Count;

@@ -1,8 +1,8 @@
+using Consensus.Core.Submit;
 using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.State;
 using TaskFlux.Models;
@@ -90,9 +90,9 @@ public class InfoUpdaterRaftConsensusModuleDecorator<TCommand, TResult> : IRaftC
         return _module.Handle(request, token);
     }
 
-    public SubmitResponse<TResult> Handle(SubmitRequest<TCommand> request)
+    public SubmitResponse<TResult> Handle(TCommand command)
     {
-        return _module.Handle(request);
+        return _module.Handle(command);
     }
 
     public event RoleChangedEventHandler? RoleChanged
@@ -116,8 +116,8 @@ public class InfoUpdaterRaftConsensusModuleDecorator<TCommand, TResult> : IRaftC
         return _module.CreateCandidateState();
     }
 
-    public SubmitResponse<TResult> Handle(SubmitRequest<TCommand> request, CancellationToken token)
+    public SubmitResponse<TResult> Handle(TCommand command, CancellationToken token)
     {
-        return _module.Handle(request, token);
+        return _module.Handle(command, token);
     }
 }

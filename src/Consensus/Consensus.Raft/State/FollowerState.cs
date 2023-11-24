@@ -1,7 +1,7 @@
+using Consensus.Core.Submit;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Serilog;
 using TaskFlux.Models;
 
@@ -11,8 +11,6 @@ public class FollowerState<TCommand, TResponse>
     : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Follower;
-    private readonly IApplicationFactory<TCommand, TResponse> _applicationFactory;
-    private readonly ICommandSerializer<TCommand> _commandCommandSerializer;
     private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
 
@@ -23,8 +21,6 @@ public class FollowerState<TCommand, TResponse>
                            ILogger logger)
         : base(raftConsensusModule)
     {
-        _applicationFactory = applicationFactory;
-        _commandCommandSerializer = commandCommandSerializer;
         _electionTimer = electionTimer;
         _logger = logger;
     }
@@ -156,7 +152,7 @@ public class FollowerState<TCommand, TResponse>
         }
     }
 
-    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
+    public override SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default)
     {
         return SubmitResponse<TResponse>.NotLeader;
     }
