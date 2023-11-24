@@ -12,7 +12,8 @@ namespace Consensus.Raft.State.LeaderState;
 /// В первой версии использовался пул потоков и все было на async/await.
 /// Потом отказался для большей управляемости и возможности аварийно завершиться при ошибках.
 /// </summary>
-internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
+internal class ThreadPeerProcessor<TCommand, TResponse>
+    : IDisposable
 {
     private volatile bool _disposed;
     private IRaftConsensusModule<TCommand, TResponse> RaftConsensusModule => _caller.RaftConsensusModule;

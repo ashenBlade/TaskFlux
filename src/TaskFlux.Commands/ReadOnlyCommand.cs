@@ -19,6 +19,12 @@ public abstract class ReadOnlyCommand : Command
         ApplyNoResult(context);
     }
 
+    public override bool TryGetDelta(out Delta.Delta delta)
+    {
+        delta = default!;
+        return false;
+    }
+
     protected abstract Response Apply(IReadOnlyApplication context);
     protected abstract void ApplyNoResult(IReadOnlyApplication context);
 }

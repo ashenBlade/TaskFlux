@@ -1,3 +1,4 @@
+using System.Buffers;
 using TaskFlux.Models;
 using Utils.Serialization;
 
@@ -13,10 +14,22 @@ public class DeleteQueueDelta : Delta
         QueueName = queueName;
     }
 
-    public override void Serialize(Stream stream)
+    public override byte[] Serialize()
     {
-        var writer = new StreamBinaryWriter(stream);
-        writer.Write(DeltaType.DeleteQueue);
-        writer.Write(QueueName);
+        var size = sizeof(DeltaType)
+                 + MemoryBinaryWriter.EstimateResultSize(QueueName);
+        var buffer = ArrayPool<byte>.Shared.Rent(size);
+        try
+        {
+            var memory = buffer.AsMemory(0, size);
+            var writer = new MemoryBinaryWriter(memory);
+            writer.Write(DeltaType.DeleteQueue);
+            writer.Write(QueueName);
+            return memory.ToArray();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 }

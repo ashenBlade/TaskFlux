@@ -17,4 +17,10 @@ public class StubCommandSerializer<T> : ICommandSerializer<T>
     {
         return Deserialized ?? throw new Exception("Десериализованное значение не выставлено");
     }
+
+    public bool TryGetDelta(T command, out byte[] delta)
+    {
+        delta = Serialize(command);
+        return true;
+    }
 }

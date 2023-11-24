@@ -7,7 +7,8 @@ using TaskFlux.Models;
 
 namespace Consensus.Raft.State;
 
-public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
+public class FollowerState<TCommand, TResponse>
+    : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Follower;
     private readonly IApplicationFactory<TCommand, TResponse> _applicationFactory;
@@ -125,17 +126,6 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         // Коммитим записи по индексу лидера
         PersistenceFacade.Commit(request.LeaderCommit);
 
-        // Закоммиченные записи можно уже применять к приложению 
-        var notApplied = PersistenceFacade.GetNotApplied();
-        if (notApplied.Count > 0)
-        {
-            foreach (var entry in notApplied)
-            {
-                var command = _commandCommandSerializer.Deserialize(entry.Data);
-                Application.ApplyNoResponse(command);
-            }
-        }
-
         // После применения команды, обновляем индекс последней примененной записи.
         // Этот индекс обновляем сразу, т.к. 
         // 1. Если возникнет исключение в работе, то это означает неправильную работу самого приложения, а не бизнес-логики
@@ -232,26 +222,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             }
         }
 
-        _logger.Information("Снапшот установлен. Начинаю восстановление состояния");
-
-        if (!PersistenceFacade.TryGetSnapshot(out var snapshot))
-        {
-            throw new ApplicationException(
-                "Снапшот сохранен через InstallSnapshot, но его не удалось получить для восстановления состояния");
-        }
-
-        var application = _applicationFactory.Restore(snapshot);
-
-        var notApplied = PersistenceFacade.GetNotApplied();
-        foreach (var (_, data) in notApplied)
-        {
-            var command = _commandCommandSerializer.Deserialize(data);
-            application.ApplyNoResponse(command);
-        }
-
-        Application = application;
         PersistenceFacade.SetLastApplied(PersistenceFacade.CommitIndex);
-        _logger.Information("Состояние восстановлено");
 
         yield return new InstallSnapshotResponse(CurrentTerm);
     }

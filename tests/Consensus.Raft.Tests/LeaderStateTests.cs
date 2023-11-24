@@ -24,16 +24,11 @@ public class LeaderStateTests
 
     private class IntCommandSerializer : ICommandSerializer<int>
     {
-        public byte[] Serialize(int value)
+        public bool TryGetDelta(int command, out byte[] delta)
         {
-            var result = new byte[4];
-            BinaryPrimitives.WriteInt32BigEndian(result, value);
-            return result;
-        }
-
-        public int Deserialize(byte[] payload)
-        {
-            return BinaryPrimitives.ReadInt32BigEndian(payload);
+            delta = new byte[4];
+            BinaryPrimitives.WriteInt32BigEndian(delta, command);
+            return true;
         }
     }
 
@@ -421,7 +416,8 @@ public class LeaderStateTests
 
     private static void AssertCommandEqual(LogEntry entry, int expected)
     {
-        Assert.Equal(expected, CommandSerializer.Deserialize(entry.Data));
+        var actual = BinaryPrimitives.ReadInt32BigEndian(entry.Data);
+        Assert.Equal(expected, actual);
     }
 
     [Fact(Timeout = 1000)]

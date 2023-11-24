@@ -8,7 +8,8 @@ using TaskFlux.Models;
 
 namespace Consensus.Raft.State.LeaderState;
 
-public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
+public class LeaderState<TCommand, TResponse>
+    : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
@@ -206,15 +207,23 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
     {
+        // TODO: заменить сразу на TryGetDelta
         if (!request.Descriptor.ShouldReplicate)
         {
             // Короткий путь для readonly команд
             return SubmitResponse<TResponse>.Success(Application.Apply(request.Descriptor.Command), true);
         }
 
+        // Если команда не изменяет состояние приложения, 
+        // то применяем сразу и возвращаем результат
+        if (!_commandSerializer.TryGetDelta(request.Descriptor.Command, out var delta))
+        {
+            return SubmitResponse<TResponse>.Success(Application.Apply(request.Descriptor.Command), true);
+        }
+
         // Добавляем команду в буфер
-        _logger.Verbose("Записываю команду в буфер");
-        var newEntry = new LogEntry(CurrentTerm, _commandSerializer.Serialize(request.Descriptor.Command));
+        _logger.Verbose("Записываю дельту в буфер");
+        var newEntry = new LogEntry(CurrentTerm, delta);
         var appended = PersistenceFacade.AppendBuffer(newEntry);
 
         // Сигнализируем узлам, чтобы принялись реплицировать

@@ -362,7 +362,7 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
     var logger = Log.Logger.ForContext("SourceContext", "Raft");
-    var commandSerializer = new ProxyCommandCommandSerializer();
+    var commandSerializer = new DeltaTaskFluxCommandSerializer();
     var peerGroup = new PeerGroup(peers);
     var timerFactory =
         new ThreadingTimerFactory(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300),

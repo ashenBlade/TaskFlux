@@ -8,9 +8,8 @@ public class DeltaSerializationTests
 {
     private static void AssertBase(Delta expected)
     {
-        var stream = new MemoryStream();
-        expected.Serialize(stream);
-        stream.Position = 0;
+        var data = expected.Serialize();
+        var stream = new MemoryStream(data);
         var actual = Delta.DeserializeFrom(stream);
         Assert.Equal(expected, actual, DeltaEqualityComparer.Instance);
     }

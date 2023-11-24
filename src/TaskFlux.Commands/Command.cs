@@ -19,6 +19,9 @@ public abstract class Command
     public abstract Response Apply(IApplication application);
     public abstract void ApplyNoResult(IApplication context);
 
+    public abstract bool TryGetDelta(out Delta.Delta delta);
+
+
     public abstract void Accept(ICommandVisitor visitor);
     public abstract T Accept<T>(IReturningCommandVisitor<T> visitor);
     public abstract ValueTask AcceptAsync(IAsyncCommandVisitor visitor, CancellationToken token = default);

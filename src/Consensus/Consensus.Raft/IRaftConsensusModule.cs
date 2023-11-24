@@ -15,7 +15,8 @@ namespace Consensus.Raft;
 /// </summary>
 /// <typeparam name="TCommand">Класс команды</typeparam>
 /// <typeparam name="TResponse">Класс результата выполнения команды</typeparam>
-public interface IRaftConsensusModule<TCommand, TResponse> : IConsensusModule<TCommand, TResponse>
+public interface IRaftConsensusModule<TCommand, TResponse>
+    : IConsensusModule<TCommand, TResponse>
 {
     /// <summary>
     /// ID текущего узла

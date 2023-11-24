@@ -1,22 +1,12 @@
-using System.Runtime.Serialization;
-
 namespace Consensus.Raft;
 
-public interface ICommandSerializer<TCommand>
+public interface ICommandSerializer<in TCommand>
 {
     /// <summary>
-    /// Сериализовать переденный объект команды в массив байт
+    /// Получить дельту изменений, представленную в виде массива байт
     /// </summary>
-    /// <param name="command">Команда для сериализации</param>
-    /// <returns>Сериализованное представление команды</returns>
-    /// <exception cref="SerializationException">Во время сериализации возникли ошибки</exception>
-    public byte[] Serialize(TCommand command);
-    
-    /// <summary>
-    /// Десериализовать переданный массив байт в объект команды
-    /// </summary>
-    /// <param name="payload">Массив байт, представляющий сериализованную команду</param>
-    /// <returns>Десериализованная команда</returns>
-    /// <exception cref="SerializationException">Во время десериализации возникли ошибки</exception>
-    public TCommand Deserialize(byte[] payload);
+    /// <param name="command">Команда, из которой нужно получить дельту</param>
+    /// <param name="delta">Массив байт дельты изменений</param>
+    /// <returns><c>true</c> - дельта была получена, <c>false</c> - дельты нет</returns>
+    public bool TryGetDelta(TCommand command, out byte[] delta);
 }

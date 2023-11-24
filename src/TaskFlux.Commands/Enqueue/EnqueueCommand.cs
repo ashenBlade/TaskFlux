@@ -3,6 +3,7 @@ using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.PolicyViolation;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
+using TaskFlux.Delta;
 using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Enqueue;
@@ -48,6 +49,12 @@ public class EnqueueCommand : UpdateCommand
         }
 
         queue.Enqueue(Key, Payload);
+    }
+
+    public override bool TryGetDelta(out Delta.Delta delta)
+    {
+        delta = new AddRecordDelta(Queue, Key, Payload);
+        return true;
     }
 
     public override void Accept(ICommandVisitor visitor)

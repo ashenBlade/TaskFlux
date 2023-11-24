@@ -1,3 +1,4 @@
+using System.Buffers;
 using TaskFlux.Models;
 using Utils.Serialization;
 
@@ -28,23 +29,45 @@ public class CreateQueueDelta : Delta
         PriorityRange = priorityRange;
     }
 
-    public override void Serialize(Stream stream)
+    public override byte[] Serialize()
     {
-        var writer = new StreamBinaryWriter(stream);
-        writer.Write(DeltaType.CreateQueue);
-        writer.Write(QueueName);
-        writer.Write(ImplementationType);
-        writer.Write(MaxQueueSize);
-        writer.Write(MaxMessageSize);
-        if (PriorityRange is var (min, max))
+        var size = sizeof(DeltaType)                                // Маркер
+                 + MemoryBinaryWriter.EstimateResultSize(QueueName) // Название очереди
+                 + sizeof(int)                                      // Тип реализации очереди
+                 + sizeof(int)                                      // Максимальный размер очереди
+                 + sizeof(int)                                      // Максимальный размер сообщения
+                 + sizeof(bool);                                    // Есть ли ограничение на диапазон ключей
+        if (PriorityRange.HasValue)
         {
-            writer.Write(true);
-            writer.Write(min);
-            writer.Write(max);
+            size += sizeof(long) + sizeof(long); // Ограничение на диапазон ключей 
         }
-        else
+
+        var buffer = ArrayPool<byte>.Shared.Rent(size);
+        try
         {
-            writer.Write(false);
+            var memory = buffer.AsMemory(0, size);
+            var writer = new MemoryBinaryWriter(memory);
+            writer.Write(DeltaType.CreateQueue);
+            writer.Write(QueueName);
+            writer.Write(ImplementationType);
+            writer.Write(MaxQueueSize);
+            writer.Write(MaxMessageSize);
+            if (PriorityRange is var (min, max))
+            {
+                writer.Write(true);
+                writer.Write(min);
+                writer.Write(max);
+            }
+            else
+            {
+                writer.Write(false);
+            }
+
+            return memory.ToArray();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 }

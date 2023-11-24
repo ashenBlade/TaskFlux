@@ -1,3 +1,4 @@
+using System.Buffers;
 using TaskFlux.Models;
 using Utils.Serialization;
 
@@ -17,12 +18,28 @@ public class AddRecordDelta : Delta
     public long Key { get; }
     public byte[] Message { get; }
 
-    public override void Serialize(Stream stream)
+    public override byte[] Serialize()
     {
-        var writer = new StreamBinaryWriter(stream);
-        writer.Write(DeltaType.AddRecord);
-        writer.Write(QueueName);
-        writer.Write(Key);
-        writer.WriteBuffer(Message);
+        var bufferSize = sizeof(DeltaType)
+                       + MemoryBinaryWriter.EstimateResultSize(QueueName)
+                       + sizeof(long)
+                       + sizeof(int)
+                       + Message.Length;
+
+        var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+        try
+        {
+            var memory = buffer.AsMemory(0, bufferSize);
+            var writer = new MemoryBinaryWriter(memory);
+            writer.Write(DeltaType.AddRecord);
+            writer.Write(QueueName);
+            writer.Write(Key);
+            writer.WriteBuffer(Message);
+            return memory.ToArray();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 }

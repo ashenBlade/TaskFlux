@@ -13,10 +13,9 @@ public abstract class Delta
     public abstract DeltaType Type { get; }
 
     /// <summary>
-    /// Сериализовать дельту в указанный поток
+    /// Сериализовать дельту в массив байт
     /// </summary>
-    /// <param name="stream">Поток, куда нужно сериализовать дельту</param>
-    public abstract void Serialize(Stream stream);
+    public abstract byte[] Serialize();
 
     internal Delta()
     {

@@ -3,6 +3,7 @@ using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
+using TaskFlux.Delta;
 using TaskFlux.Models;
 using TaskFlux.PriorityQueue;
 
@@ -110,6 +111,15 @@ public class CreateQueueCommand : UpdateCommand
 
         var queue = CreateTaskQueue();
         manager.TryAddQueue(Name, queue);
+    }
+
+    public override bool TryGetDelta(out Delta.Delta delta)
+    {
+        var implementation = ( int ) Code;
+        var maxQueueSize = MaxQueueSize ?? -1;
+        var maxMessageSize = MaxPayloadSize ?? -1;
+        delta = new CreateQueueDelta(Name, implementation, maxQueueSize, maxMessageSize, PriorityRange);
+        return true;
     }
 
     public override void Accept(ICommandVisitor visitor)

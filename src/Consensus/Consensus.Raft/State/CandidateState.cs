@@ -7,7 +7,8 @@ using TaskFlux.Models;
 
 namespace Consensus.Raft.State;
 
-public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
+public class CandidateState<TCommand, TResponse>
+    : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Candidate;
     private readonly ITimer _electionTimer;

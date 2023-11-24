@@ -24,12 +24,14 @@ public class CandidateStateTests
     private static readonly IApplicationFactory NullApplicationFactory = Mock.Of<IApplicationFactory>();
 
     private static readonly ICommandSerializer<int> NullCommandSerializer =
-        new Mock<ICommandSerializer<int>>().Apply(m =>
-                                            {
-                                                m.Setup(x => x.Serialize(It.IsAny<int>())).Returns(Array.Empty<byte>());
-                                                m.Setup(x => x.Deserialize(It.IsAny<byte[]>())).Returns(1);
-                                            })
-                                           .Object;
+        new Mock<ICommandSerializer<int>>()
+           .Apply(m =>
+            {
+                var delta = new byte[] {1};
+                m.Setup(x => x.TryGetDelta(It.IsAny<int>(), out delta))
+                 .Returns(true);
+            })
+           .Object;
 
     private static RaftConsensusModule CreateCandidateNode(Term term,
                                                            ITimer? electionTimer = null,
