@@ -15,26 +15,26 @@ namespace Consensus.Raft.State;
 /// </remarks>
 public abstract class State<TCommand, TResponse>
 {
-    internal IConsensusModule<TCommand, TResponse> ConsensusModule { get; }
-    protected StoragePersistenceFacade PersistenceFacade => ConsensusModule.PersistenceFacade;
-    protected Term CurrentTerm => ConsensusModule.CurrentTerm;
-    protected NodeId? VotedFor => ConsensusModule.VotedFor;
+    internal IRaftConsensusModule<TCommand, TResponse> RaftConsensusModule { get; }
+    protected StoragePersistenceFacade PersistenceFacade => RaftConsensusModule.PersistenceFacade;
+    protected Term CurrentTerm => RaftConsensusModule.CurrentTerm;
+    protected NodeId? VotedFor => RaftConsensusModule.VotedFor;
 
     protected IApplication<TCommand, TResponse> Application
     {
-        get => ConsensusModule.Application;
-        set => ConsensusModule.Application = value
-                                          ?? throw new ArgumentNullException(nameof(Application),
-                                                 "Попытка установить новое состояние в null");
+        get => RaftConsensusModule.Application;
+        set => RaftConsensusModule.Application = value
+                                              ?? throw new ArgumentNullException(nameof(Application),
+                                                     "Попытка установить новое состояние в null");
     }
 
-    protected NodeId Id => ConsensusModule.Id;
-    protected IBackgroundJobQueue BackgroundJobQueue => ConsensusModule.BackgroundJobQueue;
-    protected PeerGroup PeerGroup => ConsensusModule.PeerGroup;
+    protected NodeId Id => RaftConsensusModule.Id;
+    protected IBackgroundJobQueue BackgroundJobQueue => RaftConsensusModule.BackgroundJobQueue;
+    protected PeerGroup PeerGroup => RaftConsensusModule.PeerGroup;
 
-    internal State(IConsensusModule<TCommand, TResponse> consensusModule)
+    internal State(IRaftConsensusModule<TCommand, TResponse> raftConsensusModule)
     {
-        ConsensusModule = consensusModule;
+        RaftConsensusModule = raftConsensusModule;
     }
 
     /// <summary>

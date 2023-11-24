@@ -1,5 +1,5 @@
-﻿using Consensus.Raft;
-using Consensus.Raft.Commands;
+﻿using Consensus.Core;
+using Consensus.Raft;
 using Consensus.Raft.Commands.Submit;
 using Serilog;
 using TaskFlux.Commands;
@@ -9,14 +9,14 @@ namespace TaskFlux.Host.RequestAcceptor;
 
 public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 {
-    private readonly IConsensusModule<Command, Response> _module;
+    private readonly IRaftConsensusModule<Command, Response> _module;
     private readonly ILogger _logger;
     private readonly BlockingChannel<UserRequest> _channel = new();
     private readonly CancellationTokenSource _cts = new();
     private CancellationTokenRegistration? _tokenRegistration = null;
     private Thread? _thread;
 
-    public ExclusiveRequestAcceptor(IConsensusModule<Command, Response> module, ILogger logger)
+    public ExclusiveRequestAcceptor(IRaftConsensusModule<Command, Response> module, ILogger logger)
     {
         _module = module;
         _logger = logger;

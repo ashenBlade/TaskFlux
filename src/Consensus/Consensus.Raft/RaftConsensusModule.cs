@@ -13,18 +13,17 @@ namespace Consensus.Raft;
 
 [DebuggerDisplay("Роль: {CurrentRole}; Терм: {CurrentTerm}; Id: {Id}")]
 public class RaftConsensusModule<TCommand, TResponse>
-    : IConsensusModule<TCommand, TResponse>,
+    : IRaftConsensusModule<TCommand, TResponse>,
       IDisposable
 {
     private readonly ITimerFactory _timerFactory;
     private readonly ICommandSerializer<TCommand> _commandSerializer;
 
     public NodeRole CurrentRole =>
-        ( ( IConsensusModule<TCommand, TResponse> ) this ).CurrentState.Role;
+        ( ( IRaftConsensusModule<TCommand, TResponse> ) this ).CurrentState.Role;
 
     private readonly ILogger _logger;
     public NodeId Id { get; }
-
     public Term CurrentTerm => PersistenceFacade.CurrentTerm;
     public NodeId? VotedFor => PersistenceFacade.VotedFor;
     public PeerGroup PeerGroup { get; }
@@ -34,7 +33,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     // Инициализируем либо в .Create (прод), либо через internal метод SetStateTest
     private State<TCommand, TResponse> _currentState = null!;
 
-    State<TCommand, TResponse> IConsensusModule<TCommand, TResponse>.CurrentState => GetCurrentStateCheck();
+    State<TCommand, TResponse> IRaftConsensusModule<TCommand, TResponse>.CurrentState => GetCurrentStateCheck();
 
     private State<TCommand, TResponse> GetCurrentStateCheck()
     {

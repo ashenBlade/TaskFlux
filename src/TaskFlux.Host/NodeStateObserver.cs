@@ -8,12 +8,12 @@ namespace TaskFlux.Host;
 
 public class NodeStateObserver
 {
-    private readonly IConsensusModule<Command, Response> _consensusModule;
+    private readonly IRaftConsensusModule<Command, Response> _raftConsensusModule;
     private readonly ILogger _logger;
 
-    public NodeStateObserver(IConsensusModule<Command, Response> consensusModule, ILogger logger)
+    public NodeStateObserver(IRaftConsensusModule<Command, Response> raftConsensusModule, ILogger logger)
     {
-        _consensusModule = consensusModule;
+        _raftConsensusModule = raftConsensusModule;
         _logger = logger;
     }
 
@@ -25,8 +25,8 @@ public class NodeStateObserver
             {
                 _logger.Information(
                     "Состояние: {State}; Терм {Term}; Последняя запись лога: {@LastEntry}; Голос За: {VotedFor}",
-                    _consensusModule.CurrentRole, _consensusModule.CurrentTerm,
-                    _consensusModule.PersistenceFacade.LastEntry, _consensusModule.VotedFor);
+                    _raftConsensusModule.CurrentRole, _raftConsensusModule.CurrentTerm,
+                    _raftConsensusModule.PersistenceFacade.LastEntry, _raftConsensusModule.VotedFor);
                 await Task.Delay(TimeSpan.FromSeconds(2.5), token);
             }
         }

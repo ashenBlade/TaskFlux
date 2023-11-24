@@ -1,4 +1,4 @@
-namespace Consensus.Raft.Commands;
+namespace Consensus.Core;
 
 public struct CommandDescriptor<TCommand>
 {

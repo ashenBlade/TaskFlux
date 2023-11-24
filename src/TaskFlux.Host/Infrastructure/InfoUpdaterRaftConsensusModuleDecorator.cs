@@ -1,5 +1,6 @@
 using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
+using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
@@ -9,15 +10,15 @@ using TaskFlux.Node;
 
 namespace TaskFlux.Host.Infrastructure;
 
-public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensusModule<TCommand, TResult>
+public class InfoUpdaterRaftConsensusModuleDecorator<TCommand, TResult> : IRaftConsensusModule<TCommand, TResult>
 {
-    private readonly IConsensusModule<TCommand, TResult> _module;
+    private readonly IRaftConsensusModule<TCommand, TResult> _module;
     private readonly ClusterInfo _clusterInfo;
     private readonly NodeInfo _nodeInfo;
 
-    public InfoUpdaterConsensusModuleDecorator(IConsensusModule<TCommand, TResult> module,
-                                               ClusterInfo clusterInfo,
-                                               NodeInfo nodeInfo)
+    public InfoUpdaterRaftConsensusModuleDecorator(IRaftConsensusModule<TCommand, TResult> module,
+                                                   ClusterInfo clusterInfo,
+                                                   NodeInfo nodeInfo)
     {
         _module = module;
         _clusterInfo = clusterInfo;
@@ -83,6 +84,11 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
         return response;
     }
 
+    public IEnumerable<InstallSnapshotResponse> Handle(InstallSnapshotRequest request, CancellationToken token)
+    {
+        return _module.Handle(request, token);
+    }
+
     public SubmitResponse<TResult> Handle(SubmitRequest<TCommand> request)
     {
         return _module.Handle(request);
@@ -107,5 +113,10 @@ public class InfoUpdaterConsensusModuleDecorator<TCommand, TResult> : IConsensus
     public State<TCommand, TResult> CreateCandidateState()
     {
         return _module.CreateCandidateState();
+    }
+
+    public SubmitResponse<TResult> Handle(SubmitRequest<TCommand> request, CancellationToken token)
+    {
+        return _module.Handle(request, token);
     }
 }

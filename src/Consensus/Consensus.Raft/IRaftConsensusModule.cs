@@ -1,14 +1,19 @@
+using Consensus.Core;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.State;
 using TaskFlux.Models;
 
 namespace Consensus.Raft;
 
-public interface IConsensusModule<TCommand, TResponse>
+/// <summary>
+/// Объект, занимающийся принятием запросов от внешних клиентов
+/// </summary>
+/// <typeparam name="TCommand">Класс команды</typeparam>
+/// <typeparam name="TResponse">Класс результата выполнения команды</typeparam>
+public interface IRaftConsensusModule<TCommand, TResponse> : IConsensusModule<TCommand, TResponse>
 {
     /// <summary>
     /// ID текущего узла
@@ -65,15 +70,10 @@ public interface IConsensusModule<TCommand, TResponse>
     /// </summary>
     public IApplication<TCommand, TResponse> Application { get; set; }
 
-    public RequestVoteResponse Handle(RequestVoteRequest request) => CurrentState.Apply(request);
-    public AppendEntriesResponse Handle(AppendEntriesRequest request) => CurrentState.Apply(request);
+    public RequestVoteResponse Handle(RequestVoteRequest request);
+    public AppendEntriesResponse Handle(AppendEntriesRequest request);
 
-    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request, CancellationToken token = default) =>
-        CurrentState.Apply(request, token);
-
-    public IEnumerable<InstallSnapshotResponse> Handle(InstallSnapshotRequest request,
-                                                       CancellationToken token = default) =>
-        CurrentState.Apply(request, token);
+    public IEnumerable<InstallSnapshotResponse> Handle(InstallSnapshotRequest request, CancellationToken token);
 
     /// <summary>
     /// Событие, вызывающееся при обновлении роли узла.

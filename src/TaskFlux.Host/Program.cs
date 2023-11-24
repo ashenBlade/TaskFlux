@@ -66,7 +66,7 @@ try
     using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, taskFluxApplication, factory);
 
     var consensusModule =
-        new InfoUpdaterConsensusModuleDecorator<Command, Response>(raftConsensusModule, clusterInfo, nodeInfo);
+        new InfoUpdaterRaftConsensusModuleDecorator<Command, Response>(raftConsensusModule, clusterInfo, nodeInfo);
 
     var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, consensusModule,
         networkOptions.RequestTimeout,

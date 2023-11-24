@@ -39,7 +39,7 @@ public class SubmitResponse<TResponse>
     public bool HasValue { get; init; }
 
     public static SubmitResponse<TResponse> Success(TResponse response, bool wasLeader) =>
-        new SubmitResponse<TResponse>(response, wasLeader, true);
+        new(response, wasLeader, true);
 
     public static readonly SubmitResponse<TResponse> NotLeader = new(default, false, false);
 }

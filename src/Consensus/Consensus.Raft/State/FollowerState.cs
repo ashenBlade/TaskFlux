@@ -15,12 +15,12 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
     private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
 
-    internal FollowerState(IConsensusModule<TCommand, TResponse> consensusModule,
+    internal FollowerState(IRaftConsensusModule<TCommand, TResponse> raftConsensusModule,
                            IApplicationFactory<TCommand, TResponse> applicationFactory,
                            ICommandSerializer<TCommand> commandCommandSerializer,
                            ITimer electionTimer,
                            ILogger logger)
-        : base(consensusModule)
+        : base(raftConsensusModule)
     {
         _applicationFactory = applicationFactory;
         _commandCommandSerializer = commandCommandSerializer;
@@ -60,7 +60,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
                 "Получен RequestVote от узла за которого можем проголосовать. Id узла {NodeId}, Терм узла {Term}. Обновляю состояние",
                 request.CandidateId.Id, request.CandidateTerm.Value);
 
-            ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
+            RaftConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -100,7 +100,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             _logger.Information("Получен AppendEntries с большим термом {GreaterTerm}. Старый терм: {CurrentTerm}",
                 request.Term, CurrentTerm);
             // Мы отстали от общего состояния (старый терм)
-            ConsensusModule.PersistenceFacade.UpdateState(request.Term, null);
+            RaftConsensusModule.PersistenceFacade.UpdateState(request.Term, null);
         }
 
         if (!PersistenceFacade.PrefixMatch(request.PrevLogEntryInfo))
@@ -174,11 +174,12 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
     private void OnElectionTimerTimeout()
     {
         _logger.Debug("Сработал Election Timeout. Перехожу в состояние Candidate");
-        var candidateState = ConsensusModule.CreateCandidateState();
-        if (ConsensusModule.TryUpdateState(candidateState, this))
+        var candidateState = RaftConsensusModule.CreateCandidateState();
+        if (RaftConsensusModule.TryUpdateState(candidateState, this))
         {
             // Голосуем за себя и переходим в следующий терм
-            ConsensusModule.PersistenceFacade.UpdateState(ConsensusModule.CurrentTerm.Increment(), ConsensusModule.Id);
+            RaftConsensusModule.PersistenceFacade.UpdateState(RaftConsensusModule.CurrentTerm.Increment(),
+                RaftConsensusModule.Id);
         }
     }
 
