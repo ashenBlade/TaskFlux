@@ -41,15 +41,27 @@ public struct StreamBinaryWriter
         Stream.Write(buffer);
     }
 
-    public void WriteBuffer(byte[] value)
+    public void Write(byte value)
+    {
+        Span<byte> buffer = stackalloc byte[1];
+        buffer[0] = value;
+        Stream.Write(buffer);
+    }
+
+    /// <summary>
+    /// Записать буфер байтов в поток с указанием длины впереди.
+    /// Длина указывается в формате Int32
+    /// </summary>
+    /// <param name="buffer">Буфер, который нужно записать</param>
+    public void WriteBuffer(byte[] buffer)
     {
         // Длина
-        Span<byte> buffer = stackalloc byte[sizeof(int)];
-        BinaryPrimitives.WriteInt32BigEndian(buffer, value.Length);
-        Stream.Write(buffer);
+        Span<byte> span = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32BigEndian(span, buffer.Length);
+        Stream.Write(span);
 
         // Данные
-        Stream.Write(value);
+        Stream.Write(buffer);
     }
 
     public void Flush()
