@@ -19,8 +19,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     private readonly ITimerFactory _timerFactory;
     private readonly ICommandSerializer<TCommand> _commandSerializer;
 
-    public NodeRole CurrentRole =>
-        ( ( IRaftConsensusModule<TCommand, TResponse> ) this ).CurrentState.Role;
+    public NodeRole CurrentRole => CurrentState.Role;
 
     private readonly ILogger _logger;
     public NodeId Id { get; }
@@ -33,7 +32,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     // Инициализируем либо в .Create (прод), либо через internal метод SetStateTest
     private State<TCommand, TResponse> _currentState = null!;
 
-    State<TCommand, TResponse> IRaftConsensusModule<TCommand, TResponse>.CurrentState => GetCurrentStateCheck();
+    private State<TCommand, TResponse> CurrentState => GetCurrentStateCheck();
 
     private State<TCommand, TResponse> GetCurrentStateCheck()
     {
@@ -43,7 +42,6 @@ public class RaftConsensusModule<TCommand, TResponse>
 
     internal void SetStateTest(State<TCommand, TResponse> state)
     {
-        // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
         if (_currentState is not null)
         {
             throw new InvalidOperationException($"Состояние узла уже выставлено в {_currentState.Role}");

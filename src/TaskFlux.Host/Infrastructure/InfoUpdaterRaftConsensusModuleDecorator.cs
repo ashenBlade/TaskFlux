@@ -39,13 +39,14 @@ public class InfoUpdaterRaftConsensusModuleDecorator<TCommand, TResult> : IRaftC
     public NodeId Id =>
         _module.Id;
 
+    public NodeRole CurrentRole =>
+        _module.CurrentRole;
+
     public Term CurrentTerm =>
         _module.CurrentTerm;
 
     public NodeId? VotedFor =>
         _module.VotedFor;
-
-    public State<TCommand, TResult> CurrentState => _module.CurrentState;
 
     public bool TryUpdateState(State<TCommand, TResult> newState,
                                State<TCommand, TResult> oldState)

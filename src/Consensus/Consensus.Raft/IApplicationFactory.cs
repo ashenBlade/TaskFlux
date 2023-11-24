@@ -2,6 +2,7 @@ using Consensus.Raft.Persistence;
 
 namespace Consensus.Raft;
 
+// TODO: перенести в IApplication
 public interface IApplicationFactory<in TCommand, out TResponse>
 {
     /// <summary>

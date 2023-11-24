@@ -9,7 +9,9 @@ using TaskFlux.Models;
 namespace Consensus.Raft;
 
 /// <summary>
-/// Объект, занимающийся принятием запросов от внешних клиентов
+/// Модуль консенсуса, отвечающий за принятие запросов и решение как их обрабатывать.
+/// Логика зависит от роли текущего узла.
+/// Используется, когда приложение запускается в кластере.
 /// </summary>
 /// <typeparam name="TCommand">Класс команды</typeparam>
 /// <typeparam name="TResponse">Класс результата выполнения команды</typeparam>
@@ -23,7 +25,8 @@ public interface IRaftConsensusModule<TCommand, TResponse> : IConsensusModule<TC
     /// <summary>
     /// Текущая роль узла
     /// </summary>
-    public NodeRole CurrentRole => CurrentState.Role;
+    // public NodeRole CurrentRole => CurrentState.Role;
+    public NodeRole CurrentRole { get; }
 
     /// <summary>
     /// Номер текущего терма
@@ -34,11 +37,6 @@ public interface IRaftConsensusModule<TCommand, TResponse> : IConsensusModule<TC
     /// Id кандидата, за которого проголосовала текущая нода
     /// </summary>
     public NodeId? VotedFor { get; }
-
-    /// <summary>
-    /// Текущее состояние узла в зависимости от роли: Follower, Candidate, Leader
-    /// </summary>
-    public State<TCommand, TResponse> CurrentState { get; }
 
     /// <summary>
     /// Заменить роль с <paramref name="oldState"/> на <paramref name="newState"/> с проверкой.
