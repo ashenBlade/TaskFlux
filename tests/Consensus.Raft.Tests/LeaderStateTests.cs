@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Consensus.Core;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.RequestVote;
 using Consensus.Raft.Persistence;
@@ -48,16 +49,20 @@ public class LeaderStateTests
         var timerFactory = heartbeatTimer is null
                                ? Helpers.NullTimerFactory
                                : new ConstantTimerFactory(heartbeatTimer);
-        application ??= Helpers.NullApplication;
         var facade = CreateFacade();
         if (logEntries is {Length: > 0})
         {
             facade.LogStorage.SetFileTest(logEntries);
         }
 
+        var factory = new Mock<IApplicationFactory<int, int>>().Apply(m =>
+        {
+            m.Setup(x => x.Restore(It.IsAny<ISnapshot?>(), It.IsAny<IEnumerable<byte[]>>()))
+             .Returns(application ?? Helpers.NullApplication);
+        });
+
         var node = new RaftConsensusModule(NodeId, peerGroup, Logger.None, timerFactory,
-            Helpers.NullBackgroundJobQueue, facade, application,
-            CommandSerializer, Helpers.NullApplicationFactory);
+            Helpers.NullBackgroundJobQueue, facade, CommandSerializer, factory.Object);
         node.SetStateTest(node.CreateLeaderState());
         return node;
 

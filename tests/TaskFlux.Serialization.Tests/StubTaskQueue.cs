@@ -1,6 +1,7 @@
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
 using TaskFlux.Models;
+using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Serialization.Tests;
 
@@ -10,11 +11,13 @@ public class StubTaskQueue : ITaskQueue
     private readonly (long, long)? _priority;
     private readonly int? _maxPayloadSize;
     private readonly (long, byte[])[] _data;
+    public PriorityQueueCode Code { get; }
     public QueueName Name { get; }
     public int Count => _data.Length;
     public ITaskQueueMetadata Metadata { get; }
 
     public StubTaskQueue(QueueName name,
+                         PriorityQueueCode code,
                          int? maxSize = null,
                          (long, long)? priority = null,
                          int? maxPayloadSize = null,
@@ -27,6 +30,7 @@ public class StubTaskQueue : ITaskQueue
              ?? Array.Empty<(long, byte[])>();
 
         Name = name;
+        Code = code;
         Metadata = new StubMetadata(this);
     }
 
@@ -60,6 +64,7 @@ public class StubTaskQueue : ITaskQueue
         }
 
         public QueueName QueueName => _parent.Name;
+        public PriorityQueueCode Code => _parent.Code;
         public int Count => _parent.Count;
         public int? MaxSize => _parent._maxSize;
         public int? MaxPayloadSize => _parent._maxPayloadSize;

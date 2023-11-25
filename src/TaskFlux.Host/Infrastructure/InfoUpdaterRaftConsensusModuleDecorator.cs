@@ -63,11 +63,8 @@ public class InfoUpdaterRaftConsensusModuleDecorator<TCommand, TResult> : IRaftC
     public PeerGroup PeerGroup =>
         _module.PeerGroup;
 
-    public IApplication<TCommand, TResult> Application
-    {
-        get => _module.Application;
-        set => _module.Application = value;
-    }
+    public IApplicationFactory<TCommand, TResult> ApplicationFactory =>
+        _module.ApplicationFactory;
 
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {

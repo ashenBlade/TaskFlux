@@ -1,4 +1,4 @@
-namespace Consensus.Raft.Persistence;
+namespace Consensus.Core;
 
 public interface ISnapshot
 {

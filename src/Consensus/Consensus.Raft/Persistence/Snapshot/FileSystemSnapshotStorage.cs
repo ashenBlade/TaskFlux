@@ -2,6 +2,7 @@ using System.Buffers;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Abstractions;
+using Consensus.Core;
 using Serilog;
 using Utils.Serialization;
 

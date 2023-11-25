@@ -152,7 +152,7 @@ public struct ArrayBinaryReader
     /// <remarks>0 - это <c>false</c>, остальное - <c>true</c></remarks>
     /// <returns>Десериализованный <see cref="bool"/></returns>
     /// <exception cref="SerializationException">В буфере не осталось места для десериализации</exception>
-    public bool ReadBoolean()
+    public bool ReadBool()
     {
         const byte falseByte = 0;
 

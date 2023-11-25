@@ -1,4 +1,4 @@
-﻿using Consensus.Raft.Persistence;
+﻿using Consensus.Core;
 
 namespace Consensus.Raft;
 

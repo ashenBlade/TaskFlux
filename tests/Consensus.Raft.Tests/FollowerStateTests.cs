@@ -1,4 +1,5 @@
 using System.IO.Abstractions;
+using Consensus.Core;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
@@ -43,7 +44,6 @@ public class FollowerStateTests
             timerFactory,
             backgroundJobQueue,
             persistence,
-            Helpers.NullApplication,
             Helpers.NullCommandSerializer,
             Helpers.NullApplicationFactory);
 
@@ -323,7 +323,7 @@ public class FollowerStateTests
                                     StoragePersistenceFacade Persistence,
                                     ConsensusFileSystem FileSystem);
 
-    private static NodeCreateResult CreateFollowerNodeNew(IApplicationFactory? factory = null)
+    private static NodeCreateResult CreateFollowerNodeNew()
     {
         // Follower никому ничего не отправляет, только принимает
         var peers = new PeerGroup(Array.Empty<IPeer>());
@@ -335,15 +335,13 @@ public class FollowerStateTests
             Mock.Of<ICommandSerializer<int>>(x => x.TryGetDelta(It.IsAny<int>(), out deltaBytes) == true);
 
         var (persistenceFacade, fileSystem) = CreateStorage();
-        factory ??= Helpers.NullApplicationFactory;
         var node = new RaftConsensusModule(NodeId,
             peers, Logger.None,
             Helpers.NullTimerFactory,
             backgroundJobQueue,
             persistenceFacade,
-            Helpers.NullApplication,
             commandSerializer,
-            factory);
+            Helpers.NullApplicationFactory);
 
         node.SetStateTest(node.CreateFollowerState());
 
@@ -680,7 +678,7 @@ public class FollowerStateTests
     {
         // Такое может случиться, когда на лидера большая нагрузка идет и отправляется тот же самый снапшот
 
-        var (follower, storage, _) = CreateFollowerNodeNew(Helpers.NullApplicationFactory);
+        var (follower, storage, _) = CreateFollowerNodeNew();
         var snapshot = new StubSnapshot(new byte[] {1, 2, 3});
         var term = new Term(2);
         var logEntryInfo = new LogEntryInfo(new Term(2), 1000);

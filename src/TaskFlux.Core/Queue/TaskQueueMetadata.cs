@@ -1,4 +1,5 @@
 using TaskFlux.Models;
+using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
 
@@ -12,6 +13,7 @@ public class TaskQueueMetadata : ITaskQueueMetadata
     }
 
     public QueueName QueueName => _parent.Name;
+    public PriorityQueueCode Code => _parent.Code;
     public int Count => _parent.Count;
 
     public (long Min, long Max)? PriorityRange { get; internal set; } = null;

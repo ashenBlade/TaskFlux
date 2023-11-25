@@ -2,7 +2,7 @@ using System.Buffers;
 using TaskFlux.Models;
 using Utils.Serialization;
 
-namespace TaskFlux.Delta;
+namespace TaskFlux.Serialization;
 
 public class RemoveRecordDelta : Delta
 {
@@ -40,5 +40,10 @@ public class RemoveRecordDelta : Delta
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    public override void Apply(QueueCollection queues)
+    {
+        queues.RemoveRecord(QueueName, Key, Message);
     }
 }

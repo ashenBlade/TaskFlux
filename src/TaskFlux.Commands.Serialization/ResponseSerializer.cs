@@ -218,7 +218,7 @@ public class ResponseSerializer
 
     private DequeueResponse DeserializeDequeueResponse(ref ArrayBinaryReader reader)
     {
-        var hasValue = reader.ReadBoolean();
+        var hasValue = reader.ReadBool();
         if (!hasValue)
         {
             return DequeueResponse.Empty;

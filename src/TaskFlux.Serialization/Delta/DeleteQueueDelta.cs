@@ -2,7 +2,7 @@ using System.Buffers;
 using TaskFlux.Models;
 using Utils.Serialization;
 
-namespace TaskFlux.Delta;
+namespace TaskFlux.Serialization;
 
 public class DeleteQueueDelta : Delta
 {
@@ -31,5 +31,10 @@ public class DeleteQueueDelta : Delta
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    public override void Apply(QueueCollection queues)
+    {
+        queues.DeleteQueue(QueueName);
     }
 }

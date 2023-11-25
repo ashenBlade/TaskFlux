@@ -1,6 +1,7 @@
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Text;
+using Consensus.Core;
 using Consensus.Raft;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.Persistence.Log;

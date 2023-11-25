@@ -57,7 +57,7 @@ public class TaskQueueBuilder
         return this;
     }
 
-    public TaskQueueBuilder WithMaxQueueSize(int maxSize)
+    public TaskQueueBuilder WithMaxQueueSize(int? maxSize)
     {
         if (maxSize < 0)
         {
@@ -68,6 +68,7 @@ public class TaskQueueBuilder
         _maxSize = maxSize;
         return this;
     }
+
 
     public TaskQueueBuilder WithPriorityRange(long min, long max)
     {
@@ -83,12 +84,24 @@ public class TaskQueueBuilder
 
     public TaskQueueBuilder WithQueueImplementation(PriorityQueueCode implementation)
     {
+        if (!Enum.IsDefined(implementation))
+        {
+            throw new InvalidEnumArgumentException(nameof(implementation), ( int ) implementation,
+                typeof(PriorityQueueCode));
+        }
+
         _queueCode = implementation;
         return this;
     }
 
-    public TaskQueueBuilder WithMaxPayloadSize(int maxPayloadSize)
+    public TaskQueueBuilder WithMaxPayloadSize(int? maxPayloadSize)
     {
+        if (maxPayloadSize is < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxPayloadSize), maxPayloadSize,
+                "Максимальный размер сообщения не может быть отрицательным");
+        }
+
         _maxPayloadSize = maxPayloadSize;
         return this;
     }

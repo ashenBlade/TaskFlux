@@ -26,8 +26,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     public Term CurrentTerm => PersistenceFacade.CurrentTerm;
     public NodeId? VotedFor => PersistenceFacade.VotedFor;
     public PeerGroup PeerGroup { get; }
-    public IApplication<TCommand, TResponse> Application { get; set; }
-    private IApplicationFactory<TCommand, TResponse> ApplicationFactory { get; }
+    public IApplicationFactory<TCommand, TResponse> ApplicationFactory { get; }
 
     // Инициализируем либо в .Create (прод), либо через internal метод SetStateTest
     private State<TCommand, TResponse> _currentState = null!;
@@ -76,19 +75,17 @@ public class RaftConsensusModule<TCommand, TResponse>
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         StoragePersistenceFacade persistenceFacade,
-        IApplication<TCommand, TResponse> application,
         ICommandSerializer<TCommand> commandSerializer,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         _timerFactory = timerFactory;
         _commandSerializer = commandSerializer;
-        ApplicationFactory = applicationFactory;
         Id = id;
         _logger = logger;
         PeerGroup = peerGroup;
         BackgroundJobQueue = backgroundJobQueue;
         PersistenceFacade = persistenceFacade;
-        Application = application;
+        ApplicationFactory = applicationFactory;
     }
 
 
@@ -117,7 +114,7 @@ public class RaftConsensusModule<TCommand, TResponse>
 
     public State<TCommand, TResponse> CreateFollowerState()
     {
-        return new FollowerState<TCommand, TResponse>(this, ApplicationFactory, _commandSerializer,
+        return new FollowerState<TCommand, TResponse>(this,
             _timerFactory.CreateElectionTimer(),
             _logger.ForContext("SourceContext", "Raft(Follower)"));
     }
@@ -157,12 +154,11 @@ public class RaftConsensusModule<TCommand, TResponse>
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         StoragePersistenceFacade persistenceFacade,
-        IApplication<TCommand, TResponse> application,
-        IApplicationFactory<TCommand, TResponse> applicationFactory,
-        ICommandSerializer<TCommand> commandSerializer)
+        ICommandSerializer<TCommand> commandSerializer,
+        IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         var module = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, timerFactory,
-            backgroundJobQueue, persistenceFacade, application, commandSerializer, applicationFactory);
+            backgroundJobQueue, persistenceFacade, commandSerializer, applicationFactory);
         var followerState = module.CreateFollowerState();
         module._currentState = followerState;
 

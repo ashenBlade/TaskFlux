@@ -1,3 +1,4 @@
+using Consensus.Core;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
@@ -20,8 +21,6 @@ public class CandidateStateTests
 {
     private static readonly NodeId NodeId = new(1);
     private static readonly PeerGroup EmptyPeerGroup = new(Array.Empty<IPeer>());
-    private static readonly IApplication NullApplication = Mock.Of<IApplication>();
-    private static readonly IApplicationFactory NullApplicationFactory = Mock.Of<IApplicationFactory>();
 
     private static readonly ICommandSerializer<int> NullCommandSerializer =
         new Mock<ICommandSerializer<int>>()
@@ -35,20 +34,20 @@ public class CandidateStateTests
 
     private static RaftConsensusModule CreateCandidateNode(Term term,
                                                            ITimer? electionTimer = null,
-                                                           IApplication? application = null,
                                                            IBackgroundJobQueue? jobQueue = null,
                                                            IEnumerable<IPeer>? peers = null,
-                                                           ILogFileSizeChecker? fileSizeChecker = null)
+                                                           ILogFileSizeChecker? fileSizeChecker = null,
+                                                           IApplicationFactory? applicationFactory = null)
     {
-        return CreateCandidateNode(term.Value, electionTimer, application, jobQueue, peers, fileSizeChecker);
+        return CreateCandidateNode(term.Value, electionTimer, jobQueue, peers, fileSizeChecker, applicationFactory);
     }
 
     private static RaftConsensusModule CreateCandidateNode(int term,
                                                            ITimer? electionTimer = null,
-                                                           IApplication? application = null,
                                                            IBackgroundJobQueue? jobQueue = null,
                                                            IEnumerable<IPeer>? peers = null,
-                                                           ILogFileSizeChecker? fileSizeChecker = null)
+                                                           ILogFileSizeChecker? fileSizeChecker = null,
+                                                           IApplicationFactory? applicationFactory = null)
     {
         var facade = CreateStoragePersistenceFacade();
         electionTimer ??= Mock.Of<ITimer>();
@@ -59,11 +58,9 @@ public class CandidateStateTests
         var peerGroup = peers != null
                             ? new PeerGroup(peers.ToArray())
                             : EmptyPeerGroup;
-        application ??= NullApplication;
         var node = new RaftConsensusModule(NodeId, peerGroup,
             Logger.None, timerFactory, jobQueue,
-            facade,
-            application, NullCommandSerializer, NullApplicationFactory);
+            facade, NullCommandSerializer, applicationFactory ?? Helpers.NullApplicationFactory);
         node.SetStateTest(node.CreateCandidateState());
         return node;
 
@@ -551,17 +548,18 @@ public class CandidateStateTests
             RandomDataEntry(5), // 4
         };
 
-        var snapshotData = new byte[100].Apply(arr => Random.Shared.NextBytes(arr));
-        var application = new Mock<IApplication>();
-        application.Setup(x => x.GetSnapshot())
-                   .Returns(new StubSnapshot(snapshotData));
+        var newSnapshot = new byte[100].Apply(arr => Random.Shared.NextBytes(arr));
+        var applicationFactory = new Mock<IApplicationFactory>(MockBehavior.Strict).Apply(m =>
+        {
+            // Для последователя мы должны создать новый снапшот из предыдущего, а не целого приложения
+            m.Setup(f => f.CreateSnapshot(It.IsAny<ISnapshot?>(), It.IsAny<IEnumerable<byte[]>>()))
+             .Returns(new StubSnapshot(newSnapshot));
+        });
         using var node = CreateCandidateNode(term,
-            fileSizeChecker: StubFileSizeChecker.Exceeded,
-            application: application.Object);
+            fileSizeChecker: StubFileSizeChecker.Exceeded, applicationFactory: applicationFactory.Object);
         node.PersistenceFacade.SetupBufferTest(existingEntries);
         var expectedLastIndex = 4;
         var expectedLastTerm = 5;
-
         // Этим запросом закоммитим сразу все записи
         var request = new AppendEntriesRequest(term, 4, AnotherNodeId, node.PersistenceFacade.LastEntry,
             Array.Empty<LogEntry>());
@@ -572,7 +570,7 @@ public class CandidateStateTests
                 .Should()
                 .BeTrue("Команда полностью допустима - она должна быть применена");
 
-        var (actualIndex, actualTerm, storedData) = node.PersistenceFacade.SnapshotStorage.ReadAllDataTest();
+        var (actualIndex, actualTerm, actualSnapshot) = node.PersistenceFacade.SnapshotStorage.ReadAllDataTest();
 
         actualIndex.Should()
                    .Be(expectedLastIndex,
@@ -581,14 +579,16 @@ public class CandidateStateTests
                   .Should()
                   .Be(expectedLastTerm,
                        "Последний терм команды снапшота должен равняться последнему терму примененной команды");
+
         node.PersistenceFacade
             .ReadLogFullTest()
             .Should()
             .BeEmpty("После создания снапшота лог должен быть пуст");
 
-        storedData.Should()
-                  .BeEquivalentTo(snapshotData,
-                       "Данные из файла снапшота должны быть идентичны тем, что передает снапшот");
+        // TODO: скорее всего я не правильно создаю снапшот (IApplicationFactory неправильно работает)
+        actualSnapshot.Should()
+                      .BeEquivalentTo(newSnapshot,
+                           "Данные из файла снапшота должны быть идентичны тем, что передает снапшот");
     }
 
     private LogEntry RandomDataEntry(int term) => RandomDataEntry(new Term(term));

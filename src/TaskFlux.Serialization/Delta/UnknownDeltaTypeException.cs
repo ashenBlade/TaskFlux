@@ -1,4 +1,4 @@
-namespace TaskFlux.Delta;
+namespace TaskFlux.Serialization;
 
 /// <summary>
 /// Исключение, полученное при десериализации неизвестного типа дельты

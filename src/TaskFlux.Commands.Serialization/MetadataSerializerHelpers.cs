@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Diagnostics;
 using TaskFlux.Commands.ListQueues;
 using TaskFlux.Core.Queue;
+using TaskFlux.PriorityQueue;
 using Utils.Serialization;
 
 namespace TaskFlux.Commands.Serialization;
@@ -75,10 +76,13 @@ internal static class MetadataSerializerHelpers
             // 1. Название очереди
             builder.WithQueueName(reader.ReadQueueName());
 
-            // 2. Количество элементов в ней
+            // 2. Реализация 
+            builder.WithPriorityQueueCode(( PriorityQueueCode ) reader.ReadInt32());
+
+            // 3. Количество элементов в ней
             builder.WithCount(reader.ReadInt32());
 
-            // 3. Сколько там заголовков
+            // 4. Сколько там заголовков
             var headersCount = reader.ReadInt32();
 
             if (headersCount < 0)
@@ -93,7 +97,7 @@ internal static class MetadataSerializerHelpers
                 continue;
             }
 
-            // 4. Парсим каждый заголовок
+            // 5. Парсим каждый заголовок
             for (var j = 0; j < headersCount; j++)
             {
                 switch (reader.ReadString())

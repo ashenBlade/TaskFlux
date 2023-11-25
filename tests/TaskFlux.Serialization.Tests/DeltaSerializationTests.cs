@@ -1,7 +1,7 @@
 using TaskFlux.Models;
-using Xunit;
+using TaskFlux.PriorityQueue;
 
-namespace TaskFlux.Delta.Tests;
+namespace TaskFlux.Serialization.Tests;
 
 [Trait("Category", "Serialization")]
 public class DeltaSerializationTests
@@ -9,8 +9,7 @@ public class DeltaSerializationTests
     private static void AssertBase(Delta expected)
     {
         var data = expected.Serialize();
-        var stream = new MemoryStream(data);
-        var actual = Delta.DeserializeFrom(stream);
+        var actual = Delta.DeserializeFrom(data);
         Assert.Equal(expected, actual, DeltaEqualityComparer.Instance);
     }
 
@@ -29,7 +28,8 @@ public class DeltaSerializationTests
                                                 int maxMessageSize,
                                                 (long, long)? priorityRange)
     {
-        AssertBase(new CreateQueueDelta(QueueNameParser.Parse(queueName), implementation, maxQueueSize, maxMessageSize,
+        AssertBase(new CreateQueueDelta(QueueNameParser.Parse(queueName), ( PriorityQueueCode ) implementation,
+            maxQueueSize, maxMessageSize,
             priorityRange));
     }
 

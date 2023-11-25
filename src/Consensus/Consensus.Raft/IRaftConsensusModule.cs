@@ -65,9 +65,9 @@ public interface IRaftConsensusModule<TCommand, TResponse>
     public PeerGroup PeerGroup { get; }
 
     /// <summary>
-    /// Объект, представляющий текущий узел
+    /// Фабрика для создания новых приложений
     /// </summary>
-    public IApplication<TCommand, TResponse> Application { get; set; }
+    public IApplicationFactory<TCommand, TResponse> ApplicationFactory { get; }
 
     public RequestVoteResponse Handle(RequestVoteRequest request);
     public AppendEntriesResponse Handle(AppendEntriesRequest request);

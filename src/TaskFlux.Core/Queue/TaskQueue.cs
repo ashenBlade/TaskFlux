@@ -6,6 +6,8 @@ namespace TaskFlux.Core.Queue;
 internal class TaskQueue : ITaskQueue
 {
     public QueueName Name { get; }
+
+    public PriorityQueueCode Code => _queue.Code;
     public int Count => _queue.Count;
 
     private TaskQueueMetadata? _metadata;

@@ -1,4 +1,4 @@
-namespace TaskFlux.Delta;
+namespace TaskFlux.Serialization;
 
 /// <summary>
 /// Тип дельты из файла лога

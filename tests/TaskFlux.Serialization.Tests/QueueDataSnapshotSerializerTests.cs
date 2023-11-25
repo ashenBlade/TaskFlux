@@ -1,29 +1,51 @@
 using TaskFlux.Models;
 using TaskFlux.Models.TestHelpers;
+using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Serialization.Tests;
 
 [Trait("Category", "Serialization")]
-public class FileTaskQueueSnapshotSerializerTests
+public class QueueDataSnapshotSerializerTests
 {
-    public static readonly FileTaskQueueSnapshotSerializer Serializer = new(new StubTaskQueueFactory());
-
-    private static void AssertBase(StubTaskQueue queue)
+    private static void AssertBase(StubTaskQueue expected)
     {
+        var serialized = QueuesSnapshotSerializer.Serialize(new[] {expected});
         var stream = new MemoryStream();
-        Serializer.Serialize(stream, new[] {queue});
+        foreach (var memory in serialized)
+        {
+            stream.Write(memory.Span);
+        }
+
         stream.Position = 0;
-        var actual = Serializer.Deserialize(stream).Single();
-        Assert.Equal(queue, actual, TaskQueueEqualityComparer.Instance);
+        var collection = QueuesSnapshotSerializer.Deserialize(stream);
+        var queues = collection.GetQueues().ToArray();
+        Assert.Single(queues);
+        var (name, code, maxQueueSize, maxPayloadSize, priorityRange, data) = queues.First();
+        var actual = new StubTaskQueue(name, code, maxQueueSize, priorityRange, maxPayloadSize, data);
+        Assert.Equal(expected, actual, TaskQueueEqualityComparer.Instance);
     }
 
     private static void AssertBase(IEnumerable<StubTaskQueue> queues)
     {
-        var stream = new MemoryStream();
         var expected = queues.ToHashSet();
-        Serializer.Serialize(stream, expected);
+        var serialized = QueuesSnapshotSerializer.Serialize(expected);
+        var stream = new MemoryStream();
+        foreach (var memory in serialized)
+        {
+            stream.Write(memory.Span);
+        }
+
         stream.Position = 0;
-        var actual = Serializer.Deserialize(stream).ToHashSet();
+
+        var collection = QueuesSnapshotSerializer.Deserialize(stream);
+        var actual = collection.GetQueues()
+                               .Select(tuple =>
+                                {
+                                    var (name, code, maxQueueSize, maxPayloadSize, priorityRange, data) = tuple;
+                                    return new StubTaskQueue(name, code, maxQueueSize, priorityRange, maxPayloadSize,
+                                        data);
+                                })
+                               .ToHashSet();
         Assert.Equal(expected, actual, TaskQueueEqualityComparer.Instance);
     }
 
@@ -34,7 +56,7 @@ public class FileTaskQueueSnapshotSerializerTests
     [Fact]
     public void Serialize__КогдаПереданаПустаяОчередьБезПредела()
     {
-        AssertBase(new StubTaskQueue(DefaultName, 0, null, null, EmptyQueueData));
+        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.Heap4Arity, 0, null, null, EmptyQueueData));
     }
 
     [Theory]
@@ -47,7 +69,7 @@ public class FileTaskQueueSnapshotSerializerTests
     [InlineData(98765423)]
     public void Serialize__КогдаПереданаПустаяОчередьСПределом(int limit)
     {
-        AssertBase(new StubTaskQueue(DefaultName, limit, null, null, EmptyQueueData));
+        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.Heap4Arity, limit, null, null, EmptyQueueData));
     }
 
     [Theory]
@@ -59,7 +81,8 @@ public class FileTaskQueueSnapshotSerializerTests
     [InlineData(123123, new byte[] {byte.MaxValue, 1, 2, 3, 4, 5, 6, byte.MinValue})]
     public void Serialize__КогдаПереданаОчередьС1ЭлементомБезПредела(long priority, byte[] data)
     {
-        AssertBase(new StubTaskQueue(DefaultName, null, null, null, new[] {( priority, data )}));
+        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.Heap4Arity, null, null, null,
+            new[] {( priority, data )}));
     }
 
     private static readonly Random Random = new Random(87);
@@ -83,7 +106,8 @@ public class FileTaskQueueSnapshotSerializerTests
     [InlineData(128)]
     public void Serialize__КогдаЭлементовНесколько(int count)
     {
-        AssertBase(new StubTaskQueue(DefaultName, 0, null, null, CreateRandomQueueElements(count)));
+        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.QueueArray, 0, null, null,
+            CreateRandomQueueElements(count)));
     }
 
     [Theory]
@@ -97,7 +121,9 @@ public class FileTaskQueueSnapshotSerializerTests
     {
         var queues = Enumerable.Range(0, count)
                                .Select(_ =>
-                                    new StubTaskQueue(QueueNameHelpers.CreateRandomQueueName(), 0,
+                                    new StubTaskQueue(QueueNameHelpers.CreateRandomQueueName(),
+                                        PriorityQueueCode.Heap4Arity,
+                                        0,
                                         null, null,
                                         Array.Empty<(long, byte[])>()));
         AssertBase(queues);
@@ -112,7 +138,8 @@ public class FileTaskQueueSnapshotSerializerTests
     public void Serialize__КогдаПереданоНесколькоНеПустыхОчередей__ДолженПравильноДесериализовать(int count)
     {
         var queues = Enumerable.Range(0, count)
-                               .Select(_ => new StubTaskQueue(QueueNameHelpers.CreateRandomQueueName(), 0,
+                               .Select(_ => new StubTaskQueue(QueueNameHelpers.CreateRandomQueueName(),
+                                    PriorityQueueCode.QueueArray, 0,
                                     null, null,
                                     CreateRandomQueueElements(Random.Next(0, 255))));
         AssertBase(queues);
@@ -132,7 +159,8 @@ public class FileTaskQueueSnapshotSerializerTests
                                 {
                                     var limit = Random.Next(0, 255);
                                     var data = CreateRandomQueueElements(Random.Next(0, limit));
-                                    return new StubTaskQueue(QueueNameHelpers.CreateRandomQueueName(), limit, null,
+                                    return new StubTaskQueue(QueueNameHelpers.CreateRandomQueueName(),
+                                        PriorityQueueCode.Heap4Arity, limit, null,
                                         null,
                                         data);
                                 });
@@ -149,6 +177,7 @@ public class FileTaskQueueSnapshotSerializerTests
     public void Serialize__КогдаПереданУказанныйДиапазонПриоритетов__ДолженПравильноДесерилазовать(long min, long max)
     {
         AssertBase(new StubTaskQueue(QueueName.Default,
+            PriorityQueueCode.Heap4Arity,
             maxSize: null,
             priority: ( min, max ),
             maxPayloadSize: null,
@@ -165,6 +194,7 @@ public class FileTaskQueueSnapshotSerializerTests
     public void Serialize__КогдаПереданМаксимальныйРазмерСообщения__ДолженПравильноДесериализовать(int maxPayloadSize)
     {
         AssertBase(new StubTaskQueue(QueueName.Default,
+            PriorityQueueCode.QueueArray,
             maxSize: null,
             priority: null,
             maxPayloadSize: maxPayloadSize,

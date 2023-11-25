@@ -8,7 +8,7 @@ public class TaskQueueManager : ITaskQueueManager
     // Если решим добавить одну очередь, но под разными именами, то такое нужно обрабатывать правильно
     public int QueuesCount => _queues.Count;
 
-    IEnumerable<IReadOnlyTaskQueue> IReadOnlyTaskQueueManager.GetAllQueues()
+    IReadOnlyCollection<IReadOnlyTaskQueue> IReadOnlyTaskQueueManager.GetAllQueues()
     {
         return GetAllQueues();
     }
@@ -30,7 +30,7 @@ public class TaskQueueManager : ITaskQueueManager
         return false;
     }
 
-    public IEnumerable<ITaskQueue> GetAllQueues()
+    public IReadOnlyCollection<ITaskQueue> GetAllQueues()
     {
         return _queues.Values;
     }

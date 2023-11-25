@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Consensus.Core.Submit;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
@@ -19,6 +20,7 @@ public class LeaderState<TCommand, TResponse>
 
     private readonly ICommandSerializer<TCommand> _commandSerializer;
     private readonly ITimerFactory _timerFactory;
+    private IApplication<TCommand, TResponse>? _application;
 
     /// <summary>
     /// Токен отмены отменяющийся при смене роли с лидера на последователя (другого быть не может)
@@ -41,6 +43,12 @@ public class LeaderState<TCommand, TResponse>
         _logger.Verbose("Инициализируются потоки обработчиков узлов");
         _peerProcessors = CreatePeerProcessors();
         _logger.Verbose("Потоки обработчиков запускаются");
+
+        var oldSnapshot = PersistenceFacade.TryGetSnapshot(out var s)
+                              ? s
+                              : null;
+        var deltas = PersistenceFacade.LogStorage.ReadAll().Select(x => x.Data);
+        _application = ApplicationFactory.Restore(oldSnapshot, deltas);
 
         Array.ForEach(_peerProcessors, p =>
         {
@@ -207,11 +215,13 @@ public class LeaderState<TCommand, TResponse>
 
     public override SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default)
     {
+        Debug.Assert(_application is not null, "_application is not null",
+            "Приложение не было инициализировано на момент обработки запроса");
         // Если команда не изменяет состояние приложения, 
         // то применяем сразу и возвращаем результат
         if (!_commandSerializer.TryGetDelta(command, out var delta))
         {
-            return SubmitResponse<TResponse>.Success(Application.Apply(command), true);
+            return SubmitResponse<TResponse>.Success(_application.Apply(command), true);
         }
 
         // Добавляем команду в буфер
@@ -255,7 +265,7 @@ public class LeaderState<TCommand, TResponse>
         // Применяем команду к приложению.
         // Лучше сначала применить и, если что не так, упасть,
         // чем закоммитить, а потом каждый раз валиться при восстановлении
-        var response = Application.Apply(command);
+        var response = _application.Apply(command);
 
         // Коммитим запись и применяем 
         _logger.Verbose("Коммичу команду с индексом {Index}", appended.Index);
@@ -271,7 +281,7 @@ public class LeaderState<TCommand, TResponse>
         {
             _logger.Debug("Размер файла лога превышен. Создаю снапшот");
             // Асинхронно это наверно делать не стоит (пока)
-            var snapshot = Application.GetSnapshot();
+            var snapshot = _application.GetSnapshot();
             PersistenceFacade.SaveSnapshot(snapshot, token);
         }
         else

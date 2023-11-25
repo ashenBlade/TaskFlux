@@ -1,6 +1,6 @@
 using Utils.Serialization;
 
-namespace TaskFlux.Delta;
+namespace TaskFlux.Serialization;
 
 internal static class MemoryBinaryWriterExtensions
 {

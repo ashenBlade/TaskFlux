@@ -2,8 +2,8 @@ using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
-using TaskFlux.Delta;
 using TaskFlux.Models;
+using TaskFlux.Serialization;
 
 namespace TaskFlux.Commands.DeleteQueue;
 
@@ -44,7 +44,7 @@ public class DeleteQueueCommand : UpdateCommand
         manager.TryDeleteQueue(QueueName, out _);
     }
 
-    public override bool TryGetDelta(out Delta.Delta delta)
+    public override bool TryGetDelta(out Delta delta)
     {
         delta = new DeleteQueueDelta(QueueName);
         return true;

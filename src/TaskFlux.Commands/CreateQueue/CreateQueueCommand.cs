@@ -3,9 +3,9 @@ using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
-using TaskFlux.Delta;
 using TaskFlux.Models;
 using TaskFlux.PriorityQueue;
+using TaskFlux.Serialization;
 
 namespace TaskFlux.Commands.CreateQueue;
 
@@ -113,12 +113,9 @@ public class CreateQueueCommand : UpdateCommand
         manager.TryAddQueue(Name, queue);
     }
 
-    public override bool TryGetDelta(out Delta.Delta delta)
+    public override bool TryGetDelta(out Delta delta)
     {
-        var implementation = ( int ) Code;
-        var maxQueueSize = MaxQueueSize ?? -1;
-        var maxMessageSize = MaxPayloadSize ?? -1;
-        delta = new CreateQueueDelta(Name, implementation, maxQueueSize, maxMessageSize, PriorityRange);
+        delta = new CreateQueueDelta(Name, Code, MaxQueueSize, MaxPayloadSize, PriorityRange);
         return true;
     }
 

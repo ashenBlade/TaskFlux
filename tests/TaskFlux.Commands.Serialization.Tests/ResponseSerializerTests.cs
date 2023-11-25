@@ -7,6 +7,7 @@ using TaskFlux.Commands.PolicyViolation;
 using TaskFlux.Core.Policies;
 using TaskFlux.Core.Queue;
 using TaskFlux.Models;
+using TaskFlux.PriorityQueue;
 using Xunit;
 
 namespace TaskFlux.Commands.Serialization.Tests;
@@ -91,16 +92,19 @@ public class ResponseSerializerTests
                             int? maxSize,
                             int count,
                             int? maxPayloadSize,
-                            (long, long)? priorityRange)
+                            (long, long)? priorityRange,
+                            PriorityQueueCode code)
         {
             QueueName = queueName;
             MaxSize = maxSize;
             Count = count;
             MaxPayloadSize = maxPayloadSize;
             PriorityRange = priorityRange;
+            Code = code;
         }
 
         public QueueName QueueName { get; }
+        public PriorityQueueCode Code { get; }
         public int Count { get; }
         public int? MaxSize { get; }
         public int? MaxPayloadSize { get; }
@@ -125,7 +129,8 @@ public class ResponseSerializerTests
                                                              long min,
                                                              long max)
     {
-        var metadata = new StubMetadata(QueueNameParser.Parse(queueName), maxSize, count, maxPayloadSize, ( min, max ));
+        var metadata = new StubMetadata(QueueNameParser.Parse(queueName), maxSize, count, maxPayloadSize, ( min, max ),
+            PriorityQueueCode.Heap4Arity);
         AssertBase(new ListQueuesResponse(new[] {metadata}));
     }
 
@@ -188,7 +193,7 @@ public class ResponseSerializerTests
     {
         var metadata = values
                       .Select(v => new StubMetadata(QueueNameParser.Parse(v.Name), v.MaxSize, v.Count, v.MaxPayloadSize,
-                           v.PriorityRange))
+                           v.PriorityRange, PriorityQueueCode.QueueArray))
                       .ToList();
         AssertBase(new ListQueuesResponse(metadata));
     }

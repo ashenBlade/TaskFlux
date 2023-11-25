@@ -1,4 +1,5 @@
 using TaskFlux.Models;
+using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
 
@@ -8,6 +9,11 @@ public interface ITaskQueueMetadata
     /// Название очереди
     /// </summary>
     public QueueName QueueName { get; }
+
+    /// <summary>
+    /// Код реализации очереди
+    /// </summary>
+    public PriorityQueueCode Code { get; }
 
     /// <summary>
     /// Текущий размер очереди (количество элементов в ней)

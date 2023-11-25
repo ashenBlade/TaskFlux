@@ -19,17 +19,9 @@ public abstract class State<TCommand, TResponse>
     protected StoragePersistenceFacade PersistenceFacade => RaftConsensusModule.PersistenceFacade;
     protected Term CurrentTerm => RaftConsensusModule.CurrentTerm;
     protected NodeId? VotedFor => RaftConsensusModule.VotedFor;
-
-    protected IApplication<TCommand, TResponse> Application
-    {
-        get => RaftConsensusModule.Application;
-        set => RaftConsensusModule.Application = value
-                                              ?? throw new ArgumentNullException(nameof(Application),
-                                                     "Попытка установить новое состояние в null");
-    }
-
     protected NodeId Id => RaftConsensusModule.Id;
     protected IBackgroundJobQueue BackgroundJobQueue => RaftConsensusModule.BackgroundJobQueue;
+    protected IApplicationFactory<TCommand, TResponse> ApplicationFactory => RaftConsensusModule.ApplicationFactory;
     protected PeerGroup PeerGroup => RaftConsensusModule.PeerGroup;
 
     internal State(IRaftConsensusModule<TCommand, TResponse> raftConsensusModule)

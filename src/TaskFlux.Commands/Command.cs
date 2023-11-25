@@ -1,5 +1,6 @@
 ﻿using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
+using TaskFlux.Serialization;
 
 namespace TaskFlux.Commands;
 
@@ -19,7 +20,7 @@ public abstract class Command
     public abstract Response Apply(IApplication application);
     public abstract void ApplyNoResult(IApplication context);
 
-    public abstract bool TryGetDelta(out Delta.Delta delta);
+    public abstract bool TryGetDelta(out Delta delta);
 
 
     public abstract void Accept(ICommandVisitor visitor);

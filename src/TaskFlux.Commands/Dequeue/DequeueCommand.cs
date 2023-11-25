@@ -1,8 +1,8 @@
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
-using TaskFlux.Delta;
 using TaskFlux.Models;
+using TaskFlux.Serialization;
 
 namespace TaskFlux.Commands.Dequeue;
 
@@ -47,7 +47,7 @@ public class DequeueCommand : UpdateCommand
         queue.TryDequeue(out _, out _);
     }
 
-    public override bool TryGetDelta(out Delta.Delta delta)
+    public override bool TryGetDelta(out Delta delta)
     {
         if (_response is {Key: var key, Payload: var payload})
         {

@@ -8,7 +8,9 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Consensus\Consensus.Application\Consensus.Application.TaskFlux.Serialization\Consensus.Application.TaskFlux.Serialization.csproj"/>
+        <ProjectReference Include="..\Consensus\Consensus.Core\Consensus.Core.csproj"/>
         <ProjectReference Include="..\TaskFlux.Core\TaskFlux.Core.csproj"/>
+        <ProjectReference Include="..\Utils.CheckSum\Utils.CheckSum.csproj"/>
         <ProjectReference Include="..\Utils.Serialization\Utils.Serialization.csproj"/>
     </ItemGroup>
 

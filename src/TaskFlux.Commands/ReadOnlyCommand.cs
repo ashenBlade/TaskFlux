@@ -1,4 +1,5 @@
 using TaskFlux.Core;
+using TaskFlux.Serialization;
 
 namespace TaskFlux.Commands;
 
@@ -19,7 +20,7 @@ public abstract class ReadOnlyCommand : Command
         ApplyNoResult(context);
     }
 
-    public override bool TryGetDelta(out Delta.Delta delta)
+    public override bool TryGetDelta(out Delta delta)
     {
         delta = default!;
         return false;

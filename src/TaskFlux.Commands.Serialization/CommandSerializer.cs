@@ -222,7 +222,7 @@ public class CommandSerializer
 
         // Диапазон значений ключей
         (long, long)? priorityRange = null;
-        if (reader.ReadBoolean())
+        if (reader.ReadBool())
         {
             priorityRange = ( reader.ReadInt64(), reader.ReadInt64() );
         }

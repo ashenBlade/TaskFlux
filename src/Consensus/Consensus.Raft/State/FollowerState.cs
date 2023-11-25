@@ -15,8 +15,6 @@ public class FollowerState<TCommand, TResponse>
     private readonly ILogger _logger;
 
     internal FollowerState(IRaftConsensusModule<TCommand, TResponse> raftConsensusModule,
-                           IApplicationFactory<TCommand, TResponse> applicationFactory,
-                           ICommandSerializer<TCommand> commandCommandSerializer,
                            ITimer electionTimer,
                            ILogger logger)
         : base(raftConsensusModule)
@@ -131,8 +129,12 @@ public class FollowerState<TCommand, TResponse>
         if (PersistenceFacade.IsLogFileSizeExceeded())
         {
             _logger.Information("Размер файла лога превышен. Создаю снапшот");
-            var snapshot = Application.GetSnapshot();
-            PersistenceFacade.SaveSnapshot(snapshot);
+            var oldSnapshot = PersistenceFacade.TryGetSnapshot(out var s)
+                                  ? s
+                                  : null;
+            var deltas = PersistenceFacade.LogStorage.ReadAll().Select(x => x.Data);
+            var newSnapshot = ApplicationFactory.CreateSnapshot(oldSnapshot, deltas);
+            PersistenceFacade.SaveSnapshot(newSnapshot);
         }
 
         return AppendEntriesResponse.Ok(CurrentTerm);

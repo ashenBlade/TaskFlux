@@ -1,8 +1,9 @@
 using System.Buffers;
 using TaskFlux.Models;
+using TaskFlux.PriorityQueue;
 using Utils.Serialization;
 
-namespace TaskFlux.Delta;
+namespace TaskFlux.Serialization;
 
 /// <summary>
 /// Создать новую очередь с указанными параметрами
@@ -11,19 +12,19 @@ public class CreateQueueDelta : Delta
 {
     public override DeltaType Type => DeltaType.CreateQueue;
     public QueueName QueueName { get; }
-    public int ImplementationType { get; }
-    public int MaxQueueSize { get; }
-    public int MaxMessageSize { get; }
+    public PriorityQueueCode Code { get; }
+    public int? MaxQueueSize { get; }
+    public int? MaxMessageSize { get; }
     public (long, long)? PriorityRange { get; }
 
     public CreateQueueDelta(QueueName queueName,
-                            int implementationType,
-                            int maxQueueSize,
-                            int maxMessageSize,
+                            PriorityQueueCode code,
+                            int? maxQueueSize,
+                            int? maxMessageSize,
                             (long, long)? priorityRange)
     {
         QueueName = queueName;
-        ImplementationType = implementationType;
+        Code = code;
         MaxQueueSize = maxQueueSize;
         MaxMessageSize = maxMessageSize;
         PriorityRange = priorityRange;
@@ -49,9 +50,9 @@ public class CreateQueueDelta : Delta
             var writer = new MemoryBinaryWriter(memory);
             writer.Write(DeltaType.CreateQueue);
             writer.Write(QueueName);
-            writer.Write(ImplementationType);
-            writer.Write(MaxQueueSize);
-            writer.Write(MaxMessageSize);
+            writer.Write(( int ) Code);
+            writer.Write(MaxQueueSize ?? -1);
+            writer.Write(MaxMessageSize ?? -1);
             if (PriorityRange is var (min, max))
             {
                 writer.Write(true);
@@ -69,5 +70,10 @@ public class CreateQueueDelta : Delta
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    public override void Apply(QueueCollection queues)
+    {
+        queues.CreateQueue(QueueName, Code, MaxQueueSize, MaxMessageSize, PriorityRange);
     }
 }

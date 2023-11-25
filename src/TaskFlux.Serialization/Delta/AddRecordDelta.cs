@@ -2,7 +2,7 @@ using System.Buffers;
 using TaskFlux.Models;
 using Utils.Serialization;
 
-namespace TaskFlux.Delta;
+namespace TaskFlux.Serialization;
 
 public class AddRecordDelta : Delta
 {
@@ -41,5 +41,10 @@ public class AddRecordDelta : Delta
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    public override void Apply(QueueCollection queues)
+    {
+        queues.AddRecord(QueueName, Key, Message);
     }
 }

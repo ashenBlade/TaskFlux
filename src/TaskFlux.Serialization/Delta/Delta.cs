@@ -1,6 +1,7 @@
+using TaskFlux.PriorityQueue;
 using Utils.Serialization;
 
-namespace TaskFlux.Delta;
+namespace TaskFlux.Serialization;
 
 /// <summary>
 /// Абстрактный класс, представляющий дельту - изменение в состоянии приложения
@@ -22,61 +23,64 @@ public abstract class Delta
     }
 
     /// <summary>
+    /// Применить дельту к указанному множеству очередей
+    /// </summary>
+    /// <param name="queues">Множество очередей, над которым нужно применить операцию</param>
+    public abstract void Apply(QueueCollection queues);
+
+    /// <summary>
     /// Десериализовать объект дельты из переданного потока
     /// </summary>
-    /// <param name="stream">Поток, из которого нужно десериализовать дельту</param>
+    /// <param name="buffer">Поток, из которого нужно десериализовать дельту</param>
     /// <returns>Прочитанная дельта</returns>
-    /// <exception cref="EndOfStreamException"><paramref name="stream"/> был пуст, либо в нем оказалось недостаточно данных для десерилазации</exception>
     /// <exception cref="UnknownDeltaTypeException">Прочитанный байт-маркер дельты неизвестен</exception>
-    public static Delta DeserializeFrom(Stream stream)
+    public static Delta DeserializeFrom(byte[] buffer)
     {
-        Span<byte> buffer = stackalloc byte[1];
-        stream.ReadExactly(buffer);
         var marker = buffer[0];
         switch (( DeltaType ) marker)
         {
             case DeltaType.CreateQueue:
-                return DeserializeCreateQueue(stream);
+                return DeserializeCreateQueue(buffer);
             case DeltaType.DeleteQueue:
-                return DeserializeDeleteQueue(stream);
+                return DeserializeDeleteQueue(buffer);
             case DeltaType.AddRecord:
-                return DeserializeAddRecord(stream);
+                return DeserializeAddRecord(buffer);
             case DeltaType.RemoveRecord:
-                return DeserializeRemoveRecord(stream);
+                return DeserializeRemoveRecord(buffer);
         }
 
         throw new UnknownDeltaTypeException(marker);
     }
 
-    private static RemoveRecordDelta DeserializeRemoveRecord(Stream stream)
+    private static RemoveRecordDelta DeserializeRemoveRecord(byte[] buffer)
     {
-        var reader = new StreamBinaryReader(stream);
+        var reader = new SpanBinaryReader(buffer.AsSpan(1));
         var queueName = reader.ReadQueueName();
         var key = reader.ReadInt64();
         var message = reader.ReadBuffer();
         return new RemoveRecordDelta(queueName, key, message);
     }
 
-    private static AddRecordDelta DeserializeAddRecord(Stream stream)
+    private static AddRecordDelta DeserializeAddRecord(byte[] buffer)
     {
-        var reader = new StreamBinaryReader(stream);
+        var reader = new SpanBinaryReader(buffer.AsSpan(1));
         var queueName = reader.ReadQueueName();
         var key = reader.ReadInt64();
         var message = reader.ReadBuffer();
         return new AddRecordDelta(queueName, key, message);
     }
 
-    private static DeleteQueueDelta DeserializeDeleteQueue(Stream stream)
+    private static DeleteQueueDelta DeserializeDeleteQueue(byte[] buffer)
     {
-        var reader = new StreamBinaryReader(stream);
+        var reader = new SpanBinaryReader(buffer.AsSpan(1));
         return new DeleteQueueDelta(reader.ReadQueueName());
     }
 
-    private static CreateQueueDelta DeserializeCreateQueue(Stream stream)
+    private static CreateQueueDelta DeserializeCreateQueue(byte[] buffer)
     {
-        var reader = new StreamBinaryReader(stream);
+        var reader = new SpanBinaryReader(buffer.AsSpan(1));
         var queueName = reader.ReadQueueName();
-        var implementation = reader.ReadInt32();
+        var implementation = ( PriorityQueueCode ) reader.ReadInt32();
         var maxQueueSize = reader.ReadInt32();
         var maxMessageSize = reader.ReadInt32();
         (long, long)? priorityRange = null;
