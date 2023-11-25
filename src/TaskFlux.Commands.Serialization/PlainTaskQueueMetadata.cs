@@ -17,7 +17,7 @@ internal class PlainTaskQueueMetadata : ITaskQueueMetadata
         QueueName = queueName;
         Code = code;
         Count = count;
-        MaxSize = maxSize;
+        MaxQueueSize = maxSize;
         MaxPayloadSize = maxPayloadSize;
         PriorityRange = priorityRange;
     }
@@ -25,7 +25,7 @@ internal class PlainTaskQueueMetadata : ITaskQueueMetadata
     public QueueName QueueName { get; }
     public PriorityQueueCode Code { get; }
     public int Count { get; }
-    public int? MaxSize { get; }
+    public int? MaxQueueSize { get; }
     public int? MaxPayloadSize { get; }
     public (long Min, long Max)? PriorityRange { get; }
 

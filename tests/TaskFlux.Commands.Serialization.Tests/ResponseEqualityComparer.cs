@@ -66,12 +66,12 @@ public class ResponseEqualityComparer : IEqualityComparer<Response>
                 return y is null && x is null;
             }
 
-            return x.Count == y.Count && x.QueueName == y.QueueName && x.MaxSize == y.MaxSize;
+            return x.Count == y.Count && x.QueueName == y.QueueName && x.MaxQueueSize == y.MaxQueueSize;
         }
 
         public int GetHashCode(ITaskQueueMetadata obj)
         {
-            return HashCode.Combine(obj.QueueName, obj.Count, obj.MaxSize);
+            return HashCode.Combine(obj.QueueName, obj.Count, obj.MaxQueueSize);
         }
     }
 

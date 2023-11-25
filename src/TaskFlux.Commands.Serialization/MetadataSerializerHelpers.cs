@@ -250,11 +250,12 @@ internal static class MetadataSerializerHelpers
 
             // Обязательные параметры
             size += MemoryBinaryWriter.EstimateResultSize(Metadata.QueueName) // Название очереди
+                  + sizeof(int)                                               // Код реализации
                   + sizeof(int)                                               // Размер очереди
                   + sizeof(int);                                              // Количество заголовков 
 
             // Опциональные параметры - максимальный размер, диапазон ключей и т.д.
-            if (Metadata.MaxSize is { } maxSize)
+            if (Metadata.MaxQueueSize is { } maxSize)
             {
                 size += MaxSizeHeaderSize
                       + MemoryBinaryWriter.EstimateResultSize(_maxSize = maxSize.ToString());
@@ -288,10 +289,13 @@ internal static class MetadataSerializerHelpers
             // 1. Название очереди
             writer.Write(Metadata.QueueName);
 
-            // 2. Размер очереди
+            // 2. Реализация очереди
+            writer.Write(( int ) Metadata.Code);
+
+            // 3. Размер очереди
             writer.Write(Metadata.Count);
 
-            // 3. Количество параметров
+            // 4. Количество параметров
             writer.Write(_headersCount);
 
             if (_headersCount == 0)
@@ -300,7 +304,7 @@ internal static class MetadataSerializerHelpers
                 return;
             }
 
-            // 4. Записываем сами параметры очереди
+            // 5. Записываем сами параметры очереди
             if (_maxSize is { } maxSize)
             {
                 writer.Write(MaxSizeHeader);

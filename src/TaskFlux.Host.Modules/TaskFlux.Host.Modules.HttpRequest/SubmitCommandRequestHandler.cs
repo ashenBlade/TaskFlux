@@ -200,7 +200,7 @@ public class SubmitCommandRequestHandler : IRequestHandler
                 {"count", m.Count},
                 {
                     "limit", m.HasMaxSize
-                                 ? m.MaxSize
+                                 ? m.MaxQueueSize
                                  : null
                 }
             });

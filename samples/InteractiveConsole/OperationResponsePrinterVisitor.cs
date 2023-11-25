@@ -60,7 +60,7 @@ public class OperationResponsePrinterVisitor : IResponseVisitor
             Console.WriteLine($" - Название: {metadata.QueueName.Name}");
             Console.WriteLine($"   Размер: {metadata.Count}");
             Console.WriteLine(metadata.HasMaxSize
-                                  ? $"   Максимальный размер: {metadata.MaxSize}"
+                                  ? $"   Максимальный размер: {metadata.MaxQueueSize}"
                                   : $"   Максимальный размер: -");
             Console.WriteLine();
         }

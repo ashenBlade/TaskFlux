@@ -89,14 +89,14 @@ public class ResponseSerializerTests
     private class StubMetadata : ITaskQueueMetadata
     {
         public StubMetadata(QueueName queueName,
-                            int? maxSize,
+                            PriorityQueueCode code,
                             int count,
+                            int? maxSize,
                             int? maxPayloadSize,
-                            (long, long)? priorityRange,
-                            PriorityQueueCode code)
+                            (long, long)? priorityRange)
         {
             QueueName = queueName;
-            MaxSize = maxSize;
+            MaxQueueSize = maxSize;
             Count = count;
             MaxPayloadSize = maxPayloadSize;
             PriorityRange = priorityRange;
@@ -106,7 +106,7 @@ public class ResponseSerializerTests
         public QueueName QueueName { get; }
         public PriorityQueueCode Code { get; }
         public int Count { get; }
-        public int? MaxSize { get; }
+        public int? MaxQueueSize { get; }
         public int? MaxPayloadSize { get; }
         public (long Min, long Max)? PriorityRange { get; }
     }
@@ -129,8 +129,8 @@ public class ResponseSerializerTests
                                                              long min,
                                                              long max)
     {
-        var metadata = new StubMetadata(QueueNameParser.Parse(queueName), maxSize, count, maxPayloadSize, ( min, max ),
-            PriorityQueueCode.Heap4Arity);
+        var metadata = new StubMetadata(QueueNameParser.Parse(queueName), PriorityQueueCode.Heap4Arity, count, maxSize,
+            maxPayloadSize, ( min, max ));
         AssertBase(new ListQueuesResponse(new[] {metadata}));
     }
 
@@ -189,11 +189,11 @@ public class ResponseSerializerTests
     [Theory(DisplayName = $"{nameof(ListQueuesResponse)}-MultipleItems")]
     [MemberData(nameof(ListQueuesArguments))]
     public void ListQueuesResult__MultipleQueues__Serialization(
-        (string Name, int Count, int? MaxSize, int? MaxPayloadSize, (long, long)? PriorityRange)[] values)
+        (string Name, int Count, int? MaxQueueSize, int? MaxPayloadSize, (long, long)? PriorityRange)[] values)
     {
         var metadata = values
-                      .Select(v => new StubMetadata(QueueNameParser.Parse(v.Name), v.MaxSize, v.Count, v.MaxPayloadSize,
-                           v.PriorityRange, PriorityQueueCode.QueueArray))
+                      .Select(v => new StubMetadata(QueueNameParser.Parse(v.Name), PriorityQueueCode.QueueArray,
+                           v.Count, v.MaxQueueSize, v.MaxPayloadSize, v.PriorityRange))
                       .ToList();
         AssertBase(new ListQueuesResponse(metadata));
     }

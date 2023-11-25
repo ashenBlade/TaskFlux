@@ -23,7 +23,7 @@ public class TaskQueueEqualityComparer : IEqualityComparer<ITaskQueue>
     private static bool MetadataEquals(ITaskQueueMetadata first, ITaskQueueMetadata second)
     {
         return first.QueueName.Equals(second.QueueName)
-            && first.MaxSize == second.MaxSize
+            && first.MaxQueueSize == second.MaxQueueSize
             && first.Count == second.Count
             && first.HasMaxSize == second.HasMaxSize
             && first.MaxPayloadSize == second.MaxPayloadSize

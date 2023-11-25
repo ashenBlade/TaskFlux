@@ -23,12 +23,12 @@ public interface ITaskQueueMetadata
     /// <summary>
     /// Максимальный размер очереди
     /// </summary>
-    public int? MaxSize { get; }
+    public int? MaxQueueSize { get; }
 
     /// <summary>
     /// Имеет ли очередь предел количества элементов
     /// </summary>
-    public bool HasMaxSize => MaxSize is not null;
+    public bool HasMaxSize => MaxQueueSize is not null;
 
     public int? MaxPayloadSize { get; }
 

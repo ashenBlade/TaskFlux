@@ -66,7 +66,7 @@ public class StubTaskQueue : ITaskQueue
         public QueueName QueueName => _parent.Name;
         public PriorityQueueCode Code => _parent.Code;
         public int Count => _parent.Count;
-        public int? MaxSize => _parent._maxSize;
+        public int? MaxQueueSize => _parent._maxSize;
         public int? MaxPayloadSize => _parent._maxPayloadSize;
         public (long Min, long Max)? PriorityRange => _parent._priority;
     }

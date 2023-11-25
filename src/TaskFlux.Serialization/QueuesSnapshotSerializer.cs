@@ -22,7 +22,7 @@ public static class QueuesSnapshotSerializer
         return new SerializedQueuesSnapshotCollection(queues.Select(q =>
         {
             var metadata = q.Metadata;
-            return ( q.Name, q.Code, metadata.MaxSize, metadata.MaxPayloadSize, metadata.PriorityRange,
+            return ( q.Name, q.Code, MaxSize: metadata.MaxQueueSize, metadata.MaxPayloadSize, metadata.PriorityRange,
                      q.ReadAllData() );
         }), queues.Count);
     }
@@ -188,7 +188,8 @@ public static class QueuesSnapshotSerializer
 
         // 1. Метаданные
         var metadata = queue.Metadata;
-        Serialize(metadata.QueueName, metadata.Code, metadata.MaxSize, metadata.MaxPayloadSize, metadata.PriorityRange,
+        Serialize(metadata.QueueName, metadata.Code, metadata.MaxQueueSize, metadata.MaxPayloadSize,
+            metadata.PriorityRange,
             queue.ReadAllData(), ref writer);
     }
 
@@ -225,10 +226,10 @@ public static class QueuesSnapshotSerializer
             }
 
             // Максимальный размер сообщения
-            int? maxPayloadSize = null;
-            if (reader.ReadBool())
+            int? maxPayloadSize = reader.ReadInt32();
+            if (maxPayloadSize == -1)
             {
-                maxPayloadSize = reader.ReadInt32();
+                maxPayloadSize = null;
             }
 
             // Диапазон значений приоритетов/ключей
