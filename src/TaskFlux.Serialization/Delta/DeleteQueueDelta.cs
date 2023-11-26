@@ -33,6 +33,12 @@ public class DeleteQueueDelta : Delta
         }
     }
 
+    internal static DeleteQueueDelta Deserialize(byte[] buffer)
+    {
+        var reader = new SpanBinaryReader(buffer.AsSpan(1));
+        return new DeleteQueueDelta(reader.ReadQueueName());
+    }
+
     public override void Apply(QueueCollection queues)
     {
         queues.DeleteQueue(QueueName);

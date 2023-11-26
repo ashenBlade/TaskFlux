@@ -1,6 +1,3 @@
-using TaskFlux.PriorityQueue;
-using Utils.Serialization;
-
 namespace TaskFlux.Serialization;
 
 /// <summary>
@@ -40,55 +37,15 @@ public abstract class Delta
         switch (( DeltaType ) marker)
         {
             case DeltaType.CreateQueue:
-                return DeserializeCreateQueue(buffer);
+                return CreateQueueDelta.Deserialize(buffer);
             case DeltaType.DeleteQueue:
-                return DeserializeDeleteQueue(buffer);
+                return DeleteQueueDelta.Deserialize(buffer);
             case DeltaType.AddRecord:
-                return DeserializeAddRecord(buffer);
+                return AddRecordDelta.Deserialize(buffer);
             case DeltaType.RemoveRecord:
-                return DeserializeRemoveRecord(buffer);
+                return RemoveRecordDelta.Deserialize(buffer);
         }
 
         throw new UnknownDeltaTypeException(marker);
-    }
-
-    private static RemoveRecordDelta DeserializeRemoveRecord(byte[] buffer)
-    {
-        var reader = new SpanBinaryReader(buffer.AsSpan(1));
-        var queueName = reader.ReadQueueName();
-        var key = reader.ReadInt64();
-        var message = reader.ReadBuffer();
-        return new RemoveRecordDelta(queueName, key, message);
-    }
-
-    private static AddRecordDelta DeserializeAddRecord(byte[] buffer)
-    {
-        var reader = new SpanBinaryReader(buffer.AsSpan(1));
-        var queueName = reader.ReadQueueName();
-        var key = reader.ReadInt64();
-        var message = reader.ReadBuffer();
-        return new AddRecordDelta(queueName, key, message);
-    }
-
-    private static DeleteQueueDelta DeserializeDeleteQueue(byte[] buffer)
-    {
-        var reader = new SpanBinaryReader(buffer.AsSpan(1));
-        return new DeleteQueueDelta(reader.ReadQueueName());
-    }
-
-    private static CreateQueueDelta DeserializeCreateQueue(byte[] buffer)
-    {
-        var reader = new SpanBinaryReader(buffer.AsSpan(1));
-        var queueName = reader.ReadQueueName();
-        var implementation = ( PriorityQueueCode ) reader.ReadInt32();
-        var maxQueueSize = reader.ReadInt32();
-        var maxMessageSize = reader.ReadInt32();
-        (long, long)? priorityRange = null;
-        if (reader.ReadBool())
-        {
-            priorityRange = ( reader.ReadInt64(), reader.ReadInt64() );
-        }
-
-        return new CreateQueueDelta(queueName, implementation, maxQueueSize, maxMessageSize, priorityRange);
     }
 }

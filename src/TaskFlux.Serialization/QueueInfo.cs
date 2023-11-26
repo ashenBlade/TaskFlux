@@ -1,4 +1,5 @@
 using System.Collections;
+using TaskFlux.Core.Queue;
 using TaskFlux.Models;
 using TaskFlux.PriorityQueue;
 using Utils.CheckSum;
@@ -32,9 +33,14 @@ internal class QueueInfo
     /// </summary>
     private readonly Dictionary<long, HashSet<ByteArrayCounter>> _records = new();
 
-    public int CalculateTotalRecordsCount()
+    public ITaskQueue Build()
     {
-        return _records.Sum(pair => pair.Value.Sum(bac => bac.Count));
+        return new TaskQueueBuilder(QueueName, Code)
+              .WithPriorityRange(PriorityRange)
+              .WithMaxQueueSize(MaxQueueSize)
+              .WithMaxPayloadSize(MaxPayloadSize)
+              .WithData(new QueueRecordsValuesCollection(this))
+              .Build();
     }
 
     public void Add(long key, byte[] payload)

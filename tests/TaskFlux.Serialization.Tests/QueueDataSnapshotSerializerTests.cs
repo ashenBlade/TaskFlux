@@ -18,7 +18,7 @@ public class QueueDataSnapshotSerializerTests
 
         stream.Position = 0;
         var collection = QueuesSnapshotSerializer.Deserialize(stream);
-        var queues = collection.GetQueues().ToArray();
+        var queues = collection.GetQueuesRaw().ToArray();
         Assert.Single(queues);
         var (name, code, maxQueueSize, maxPayloadSize, priorityRange, data) = queues.First();
         var actual = new StubTaskQueue(name, code, maxQueueSize, priorityRange, maxPayloadSize, data);
@@ -38,7 +38,7 @@ public class QueueDataSnapshotSerializerTests
         stream.Position = 0;
 
         var collection = QueuesSnapshotSerializer.Deserialize(stream);
-        var actual = collection.GetQueues()
+        var actual = collection.GetQueuesRaw()
                                .Select(tuple =>
                                 {
                                     var (name, code, maxQueueSize, maxPayloadSize, priorityRange, data) = tuple;

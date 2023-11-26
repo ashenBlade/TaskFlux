@@ -42,7 +42,7 @@ public static class QueuesSnapshotSerializer
             return CreateEmptySnapshot();
         }
 
-        return new SerializedQueuesSnapshotCollection(collection.GetQueues(), collection.Count);
+        return new SerializedQueuesSnapshotCollection(collection.GetQueuesRaw(), collection.Count);
     }
 
     private class SerializedQueuesSnapshotCollection : IReadOnlyCollection<ReadOnlyMemory<byte>>
@@ -210,7 +210,7 @@ public static class QueuesSnapshotSerializer
 
         var reader = new StreamBinaryReader(file);
         var left = reader.ReadInt32();
-        while (0 < left)
+        for (var i = 0; i < left; i++)
         {
             // Название
             var name = reader.ReadQueueName();
@@ -248,13 +248,12 @@ public static class QueuesSnapshotSerializer
             {
                 collection.AddExistingQueue(name, implementation, maxQueueSize, maxPayloadSize, priorityRange,
                     Array.Empty<QueueRecord>());
-                left--;
                 continue;
             }
 
             var records = new List<QueueRecord>(count);
 
-            for (int i = 0; i < count; i++)
+            for (int j = 0; j < count; j++)
             {
                 var key = reader.ReadInt64();
                 var payload = reader.ReadBuffer();
@@ -262,7 +261,6 @@ public static class QueuesSnapshotSerializer
             }
 
             collection.AddExistingQueue(name, implementation, maxQueueSize, maxPayloadSize, priorityRange, records);
-            left--;
         }
 
         return collection;

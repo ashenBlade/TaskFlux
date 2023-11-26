@@ -64,7 +64,7 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
     private static TaskQueueManager CreateManager(QueueCollection collection)
     {
         var queues = new List<ITaskQueue>();
-        foreach (var (name, code, maxQueueSize, maxPayloadSize, priorityRange, data) in collection.GetQueues())
+        foreach (var (name, code, maxQueueSize, maxPayloadSize, priorityRange, data) in collection.GetQueuesRaw())
         {
             var builder = new TaskQueueBuilder(name, code)
                          .WithMaxQueueSize(maxQueueSize)
@@ -79,36 +79,7 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
 
     public ISnapshot CreateSnapshot(ISnapshot? previousState, IEnumerable<byte[]> deltas)
     {
-        // Сначала восстанавливаем предыдущее состояние
-        QueueCollection collection;
-        if (previousState is not null)
-        {
-            var stream = new MemoryStream();
-            foreach (var memory in previousState.GetAllChunks())
-            {
-                stream.Write(memory.Span);
-            }
-
-            stream.Position = 0;
-
-            collection = QueuesSnapshotSerializer.Deserialize(stream);
-        }
-        else
-        {
-            // Совершенно пустое начальное состояние
-            collection = new QueueCollection();
-
-            // Всегда должна быть очередь по умолчанию
-            collection.CreateQueue(QueueName.Default, PriorityQueueCode.Heap4Arity, null, null, null);
-        }
-
-        // После применяем все изменения последовательно
-        foreach (var deltaBytes in deltas)
-        {
-            var delta = Delta.DeserializeFrom(deltaBytes);
-            delta.Apply(collection);
-        }
-
+        var collection = StateRestorer.RestoreState(previousState, deltas);
         return new QueueCollectionSnapshot(collection);
     }
 }

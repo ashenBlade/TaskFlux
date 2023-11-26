@@ -1,4 +1,5 @@
 using System.Collections;
+using TaskFlux.Core.Queue;
 using TaskFlux.Models;
 using TaskFlux.PriorityQueue;
 
@@ -88,9 +89,16 @@ public class QueueCollection
     }
 
     public IReadOnlyCollection<(QueueName Name, PriorityQueueCode Code, int? MaxQueueSize, int? MaxPayloadSize, (long,
-        long)? PriorityRange, IReadOnlyCollection<(long Key, byte[] Payload)> Data)> GetQueues()
+        long)? PriorityRange, IReadOnlyCollection<(long Key, byte[] Payload)> Data)> GetQueuesRaw()
     {
         return new RawQueuesCollection(this);
+    }
+
+    public IReadOnlyCollection<ITaskQueue> BuildQueues()
+    {
+        var result = new List<ITaskQueue>(_queues.Count);
+        result.AddRange(_queues.Select(q => q.Value.Build()));
+        return result;
     }
 
     private class RawQueuesCollection : IReadOnlyCollection<(QueueName Name, PriorityQueueCode Code, int? MaxQueueSize,

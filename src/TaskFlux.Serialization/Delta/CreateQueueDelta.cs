@@ -72,6 +72,32 @@ public class CreateQueueDelta : Delta
         }
     }
 
+    internal static CreateQueueDelta Deserialize(byte[] buffer)
+    {
+        var reader = new SpanBinaryReader(buffer.AsSpan(1));
+        var queueName = reader.ReadQueueName();
+        var implementation = ( PriorityQueueCode ) reader.ReadInt32();
+        int? maxQueueSize = reader.ReadInt32();
+        if (maxQueueSize == -1)
+        {
+            maxQueueSize = null;
+        }
+
+        int? maxMessageSize = reader.ReadInt32();
+        if (maxMessageSize == -1)
+        {
+            maxMessageSize = null;
+        }
+
+        (long, long)? priorityRange = null;
+        if (reader.ReadBool())
+        {
+            priorityRange = ( reader.ReadInt64(), reader.ReadInt64() );
+        }
+
+        return new CreateQueueDelta(queueName, implementation, maxQueueSize, maxMessageSize, priorityRange);
+    }
+
     public override void Apply(QueueCollection queues)
     {
         queues.CreateQueue(QueueName, Code, MaxQueueSize, MaxMessageSize, PriorityRange);

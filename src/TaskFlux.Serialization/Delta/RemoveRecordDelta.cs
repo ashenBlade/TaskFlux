@@ -42,6 +42,15 @@ public class RemoveRecordDelta : Delta
         }
     }
 
+    internal static RemoveRecordDelta Deserialize(byte[] buffer)
+    {
+        var reader = new SpanBinaryReader(buffer.AsSpan(1));
+        var queueName = reader.ReadQueueName();
+        var key = reader.ReadInt64();
+        var message = reader.ReadBuffer();
+        return new RemoveRecordDelta(queueName, key, message);
+    }
+
     public override void Apply(QueueCollection queues)
     {
         queues.RemoveRecord(QueueName, Key, Message);

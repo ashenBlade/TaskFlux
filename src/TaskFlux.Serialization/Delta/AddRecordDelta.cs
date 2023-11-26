@@ -43,6 +43,15 @@ public class AddRecordDelta : Delta
         }
     }
 
+    internal static AddRecordDelta Deserialize(byte[] buffer)
+    {
+        var reader = new SpanBinaryReader(buffer.AsSpan(1));
+        var queueName = reader.ReadQueueName();
+        var key = reader.ReadInt64();
+        var message = reader.ReadBuffer();
+        return new AddRecordDelta(queueName, key, message);
+    }
+
     public override void Apply(QueueCollection queues)
     {
         queues.AddRecord(QueueName, Key, Message);
