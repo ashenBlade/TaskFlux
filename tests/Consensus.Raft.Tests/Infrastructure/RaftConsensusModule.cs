@@ -12,10 +12,10 @@ public class RaftConsensusModule : RaftConsensusModule<int, int>
                                  ITimerFactory timerFactory,
                                  IBackgroundJobQueue backgroundJobQueue,
                                  StoragePersistenceFacade persistenceFacade,
-                                 ICommandSerializer<int> commandSerializer,
+                                 IDeltaExtractor<int> deltaExtractor,
                                  IApplicationFactory<int, int> applicationFactory)
         : base(id, peerGroup, logger, timerFactory, backgroundJobQueue, persistenceFacade,
-            commandSerializer, applicationFactory)
+            deltaExtractor, applicationFactory)
     {
     }
 }

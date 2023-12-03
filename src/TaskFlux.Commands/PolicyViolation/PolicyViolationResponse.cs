@@ -24,8 +24,8 @@ public class PolicyViolationResponse : Response
         visitor.Visit(this);
     }
 
-    public override ValueTask AcceptAsync(IAsyncResponseVisitor visitor, CancellationToken token = default)
+    public override T Accept<T>(IResponseVisitor<T> visitor)
     {
-        return visitor.VisitAsync(this, token);
+        return visitor.Visit(this);
     }
 }

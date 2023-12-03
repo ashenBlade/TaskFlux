@@ -6,6 +6,7 @@ using TaskFlux.Serialization;
 
 namespace TaskFlux.Commands.Dequeue;
 
+// TODO: логика работы Dequeue Command
 public class DequeueCommand : UpdateCommand
 {
     public QueueName Queue { get; }
@@ -20,6 +21,11 @@ public class DequeueCommand : UpdateCommand
 
     public override Response Apply(IApplication context)
     {
+        if (_response is { } r)
+        {
+            return r;
+        }
+
         var manager = context.TaskQueueManager;
 
         if (!manager.TryGetQueue(Queue, out var queue))
@@ -29,10 +35,10 @@ public class DequeueCommand : UpdateCommand
 
         if (queue.TryDequeue(out var key, out var payload))
         {
-            return _response = DequeueResponse.Create(key, payload);
+            return _response = DequeueResponse.Create(Queue, key, payload);
         }
 
-        return DequeueResponse.Empty;
+        return _response = DequeueResponse.Empty;
     }
 
     public override void ApplyNoResult(IApplication context)
@@ -49,7 +55,7 @@ public class DequeueCommand : UpdateCommand
 
     public override bool TryGetDelta(out Delta delta)
     {
-        if (_response is {Key: var key, Payload: var payload})
+        if (_response is {Key: var key, Message: var payload})
         {
             delta = new RemoveRecordDelta(Queue, key, payload);
             return true;
@@ -64,12 +70,7 @@ public class DequeueCommand : UpdateCommand
         visitor.Visit(this);
     }
 
-    public override ValueTask AcceptAsync(IAsyncCommandVisitor visitor, CancellationToken token = default)
-    {
-        return visitor.VisitAsync(this, token);
-    }
-
-    public override T Accept<T>(IReturningCommandVisitor<T> visitor)
+    public override T Accept<T>(ICommandVisitor<T> visitor)
     {
         return visitor.Visit(this);
     }

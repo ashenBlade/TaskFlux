@@ -16,3 +16,13 @@ public interface ICommandVisitor
     public void Visit(DeleteQueueCommand command);
     public void Visit(ListQueuesCommand command);
 }
+
+public interface ICommandVisitor<out T>
+{
+    public T Visit(EnqueueCommand command);
+    public T Visit(DequeueCommand command);
+    public T Visit(CountCommand command);
+    public T Visit(CreateQueueCommand command);
+    public T Visit(DeleteQueueCommand command);
+    public T Visit(ListQueuesCommand command);
+}

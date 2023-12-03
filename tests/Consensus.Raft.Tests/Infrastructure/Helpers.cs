@@ -12,7 +12,7 @@ public static class Helpers
     public static readonly IBackgroundJobQueue NullBackgroundJobQueue = CreateNullJobQueue();
     public static readonly ITimer NullTimer = CreateNullTimer();
     public static readonly IApplication NullApplication = CreateNullApplication();
-    public static readonly ICommandSerializer<int> NullCommandSerializer = new StubCommandSerializer<int>();
+    public static readonly IDeltaExtractor<int> NullDeltaExtractor = new StubDeltaExtractor<int>();
     public static readonly ITimerFactory NullTimerFactory = CreateNullTimerFactory();
     public static readonly IApplicationFactory<int, int> NullApplicationFactory = CreateNullApplicationFactory();
 

@@ -1,4 +1,6 @@
+using System.Buffers;
 using System.Buffers.Binary;
+using System.Text;
 using TaskFlux.Models;
 
 namespace Utils.Serialization;
@@ -105,5 +107,88 @@ public struct StreamBinaryWriter
                                  : 0 );
 
         Stream.Write(span);
+    }
+
+    public async Task WriteAsync(int value, CancellationToken token)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(sizeof(int));
+        try
+        {
+            var memory = buffer.AsMemory(0, sizeof(int));
+            BinaryPrimitives.WriteInt32BigEndian(memory.Span, value);
+            await Stream.WriteAsync(memory, token);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task WriteAsync(QueueName queueName, CancellationToken token)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(QueueNameParser.MaxNameLength + 1);
+        buffer[0] = ( byte ) queueName.Name.Length;
+        var temp = buffer.AsMemory(1, QueueNameParser.MaxNameLength);
+        var length = QueueNameParser.Encoding.GetBytes(queueName.Name, temp.Span);
+        await Stream.WriteAsync(buffer.AsMemory(0, length + 1), token);
+    }
+
+    public async Task WriteAsync(string value, CancellationToken token)
+    {
+        var stringLength = Encoding.UTF8.GetByteCount(value);
+        var totalLength = stringLength + sizeof(int);
+        var buffer = ArrayPool<byte>.Shared.Rent(totalLength);
+        try
+        {
+            BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(), stringLength);
+            Encoding.UTF8.GetBytes(value, buffer.AsSpan(sizeof(int)));
+            await Stream.WriteAsync(buffer.AsMemory(0, totalLength), token);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task WriteAsync(byte value, CancellationToken token)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(1);
+        try
+        {
+            buffer[0] = value;
+            await Stream.WriteAsync(buffer.AsMemory(0, 1), token);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task WriteAsync(bool value, CancellationToken token)
+    {
+        await WriteAsync(( byte ) ( value
+                                        ? 1
+                                        : 0 ), token);
+    }
+
+    public async Task WriteAsync(long value, CancellationToken token)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(sizeof(long));
+        try
+        {
+            var memory = buffer.AsMemory(0, sizeof(long));
+            BinaryPrimitives.WriteInt64BigEndian(memory.Span, value);
+            await Stream.WriteAsync(memory, token);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task WriteBufferAsync(byte[] data, CancellationToken token)
+    {
+        await WriteAsync(data.Length, token);
+        await Stream.WriteAsync(data, token);
     }
 }

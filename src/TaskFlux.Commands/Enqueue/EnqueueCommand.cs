@@ -12,13 +12,13 @@ public class EnqueueCommand : UpdateCommand
 {
     public QueueName Queue { get; }
     public long Key { get; }
-    public byte[] Payload { get; }
+    public byte[] Message { get; }
 
-    public EnqueueCommand(long key, byte[] payload, QueueName queue)
+    public EnqueueCommand(long key, byte[] message, QueueName queue)
     {
-        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(message);
         Key = key;
-        Payload = payload;
+        Message = message;
         Queue = queue;
     }
 
@@ -31,7 +31,7 @@ public class EnqueueCommand : UpdateCommand
             return DefaultErrors.QueueDoesNotExist;
         }
 
-        var result = queue.Enqueue(Key, Payload);
+        var result = queue.Enqueue(Key, Message);
 
         if (result.TryGetViolatedPolicy(out var policy))
         {
@@ -48,12 +48,12 @@ public class EnqueueCommand : UpdateCommand
             return;
         }
 
-        queue.Enqueue(Key, Payload);
+        queue.Enqueue(Key, Message);
     }
 
     public override bool TryGetDelta(out Delta delta)
     {
-        delta = new AddRecordDelta(Queue, Key, Payload);
+        delta = new AddRecordDelta(Queue, Key, Message);
         return true;
     }
 
@@ -62,12 +62,7 @@ public class EnqueueCommand : UpdateCommand
         visitor.Visit(this);
     }
 
-    public override ValueTask AcceptAsync(IAsyncCommandVisitor visitor, CancellationToken token = default)
-    {
-        return visitor.VisitAsync(this, token);
-    }
-
-    public override T Accept<T>(IReturningCommandVisitor<T> visitor)
+    public override T Accept<T>(ICommandVisitor<T> visitor)
     {
         return visitor.Visit(this);
     }

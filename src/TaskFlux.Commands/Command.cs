@@ -24,6 +24,5 @@ public abstract class Command
 
 
     public abstract void Accept(ICommandVisitor visitor);
-    public abstract T Accept<T>(IReturningCommandVisitor<T> visitor);
-    public abstract ValueTask AcceptAsync(IAsyncCommandVisitor visitor, CancellationToken token = default);
+    public abstract T Accept<T>(ICommandVisitor<T> visitor);
 }

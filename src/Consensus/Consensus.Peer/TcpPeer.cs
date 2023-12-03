@@ -319,6 +319,7 @@ public class TcpPeer : IPeer
     {
         while (true)
         {
+            // TODO: SocketException TimedOut
             packet.Serialize(NetworkStream);
 
             try

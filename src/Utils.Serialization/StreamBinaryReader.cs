@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
+using System.Text;
 using TaskFlux.Models;
 using TaskFlux.Models.Exceptions;
 
@@ -112,5 +113,106 @@ public struct StreamBinaryReader
         }
 
         return ( byte ) data == 1;
+    }
+
+    public async Task<QueueName> ReadQueueNameAsync(CancellationToken token)
+    {
+        var length = await ReadByteAsync(token);
+        var buffer = ArrayPool<byte>.Shared.Rent(length);
+        try
+        {
+            var memory = buffer.AsMemory(0, length);
+            await Stream.ReadExactlyAsync(memory, token);
+            return QueueNameParser.Parse(memory.Span);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task<byte> ReadByteAsync(CancellationToken token)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(1);
+        try
+        {
+            await Stream.ReadExactlyAsync(buffer.AsMemory(0, 1), token);
+            return buffer[0];
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task<int> ReadInt32Async(CancellationToken token)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(4);
+        try
+        {
+            await Stream.ReadExactlyAsync(buffer.AsMemory(0, 4), token);
+            return BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(0, 4));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task<bool> ReadBoolAsync(CancellationToken token)
+    {
+        var b = await ReadByteAsync(token);
+        return b != 0;
+    }
+
+    public async Task<long> ReadInt64Async(CancellationToken token)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(8);
+        try
+        {
+            await Stream.ReadExactlyAsync(buffer.AsMemory(0, 8), token);
+            return BinaryPrimitives.ReadInt64BigEndian(buffer.AsSpan(0, 8));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task<byte[]> ReadBufferAsync(CancellationToken token)
+    {
+        var length = await ReadInt32Async(token);
+        var buffer = ArrayPool<byte>.Shared.Rent(length);
+        try
+        {
+            var memory = buffer.AsMemory(0, length);
+            await Stream.ReadExactlyAsync(memory, token);
+            return memory.ToArray();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task<string> ReadStringAsync(CancellationToken token)
+    {
+        var stringByteLength = await ReadInt32Async(token);
+        if (stringByteLength == 0)
+        {
+            return string.Empty;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(stringByteLength);
+        try
+        {
+            var memory = buffer.AsMemory(0, stringByteLength);
+            await Stream.ReadExactlyAsync(memory, token);
+            return Encoding.UTF8.GetString(memory.Span);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 }

@@ -21,7 +21,7 @@ public class LeaderStateTests
     private static readonly NodeId NodeId = new(1);
     private static readonly NodeId AnotherNodeId = new(NodeId.Id + 1);
 
-    private class IntCommandSerializer : ICommandSerializer<int>
+    private class IntDeltaExtractor : IDeltaExtractor<int>
     {
         public bool TryGetDelta(int command, out byte[] delta)
         {
@@ -31,7 +31,7 @@ public class LeaderStateTests
         }
     }
 
-    private static readonly ICommandSerializer<int> CommandSerializer = new IntCommandSerializer();
+    private static readonly IDeltaExtractor<int> DeltaExtractor = new IntDeltaExtractor();
 
     private RaftConsensusModule CreateLeaderNode(Term term,
                                                  NodeId? votedFor,
@@ -62,7 +62,7 @@ public class LeaderStateTests
         });
 
         var node = new RaftConsensusModule(NodeId, peerGroup, Logger.None, timerFactory,
-            Helpers.NullBackgroundJobQueue, facade, CommandSerializer, factory.Object);
+            Helpers.NullBackgroundJobQueue, facade, DeltaExtractor, factory.Object);
         node.SetStateTest(node.CreateLeaderState());
         return node;
 

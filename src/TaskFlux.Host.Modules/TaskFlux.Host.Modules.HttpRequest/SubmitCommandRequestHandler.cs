@@ -7,6 +7,8 @@ using Consensus.Core.Submit;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Count;
+using TaskFlux.Commands.CreateQueue;
+using TaskFlux.Commands.DeleteQueue;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
@@ -167,12 +169,30 @@ public class SubmitCommandRequestHandler : IRequestHandler
             {
                 Payload["ok"] = true;
                 Payload["key"] = response.Key;
-                Payload["data"] = Convert.ToBase64String(response.Payload);
+                Payload["data"] = Convert.ToBase64String(response.Message);
             }
             else
             {
                 Payload["ok"] = false;
             }
+        }
+
+        public void Visit(EnqueueResponse response)
+        {
+            Payload["type"] = "enqueue";
+            Payload["ok"] = true;
+        }
+
+        public void Visit(CreateQueueResponse response)
+        {
+            Payload["type"] = "create-queue";
+            Payload["ok"] = true;
+        }
+
+        public void Visit(DeleteQueueResponse response)
+        {
+            Payload["type"] = "delete-queue";
+            Payload["ok"] = true;
         }
 
         public void Visit(CountResponse response)

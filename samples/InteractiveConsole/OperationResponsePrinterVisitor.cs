@@ -19,7 +19,7 @@ public class OperationResponsePrinterVisitor : IResponseVisitor
         {
             try
             {
-                var str = Encoding.UTF8.GetString(response.Payload);
+                var str = Encoding.UTF8.GetString(response.Message);
                 Console.WriteLine($"Получена запись: Ключ = {response.Key}; Данные = {str}");
                 return;
             }
@@ -29,7 +29,7 @@ public class OperationResponsePrinterVisitor : IResponseVisitor
 
             Log.Warning("Ошибка при декодированни нагрузки в строку");
             Console.WriteLine(
-                $"Получена запись: Ключ = {response.Key}; Данные = {BitConverter.ToString(response.Payload).Replace("-", "")}");
+                $"Получена запись: Ключ = {response.Key}; Данные = {BitConverter.ToString(response.Message).Replace("-", "")}");
         }
         else
         {

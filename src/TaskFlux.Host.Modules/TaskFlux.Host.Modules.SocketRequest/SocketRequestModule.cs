@@ -45,7 +45,6 @@ public class SocketRequestModule
                 var processor = new ClientRequestProcessor(client, _requestAcceptor, _options, _applicationInfo,
                     _clusterInfo, Log.ForContext<ClientRequestProcessor>());
 
-                // TODO: закрытие обработчика запроса при закрытии приложения
                 _ = processor.ProcessAsync(token);
             }
         }

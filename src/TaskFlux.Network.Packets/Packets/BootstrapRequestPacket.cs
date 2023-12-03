@@ -1,3 +1,6 @@
+using System.Buffers;
+using Utils.Serialization;
+
 namespace TaskFlux.Network.Packets.Packets;
 
 /// <summary>
@@ -23,9 +26,36 @@ public class BootstrapRequestPacket : Packet
 
     public override PacketType Type => PacketType.BootstrapRequest;
 
-    public override void Accept(IPacketVisitor visitor)
+    public override async ValueTask SerializeAsync(Stream stream, CancellationToken token)
     {
-        visitor.Visit(this);
+        const int length = sizeof(PacketType)
+                         + sizeof(int)
+                         + sizeof(int)
+                         + sizeof(int);
+        var buffer = ArrayPool<byte>.Shared.Rent(length);
+        try
+        {
+            var memory = buffer.AsMemory(0, length);
+            var writer = new MemoryBinaryWriter(memory);
+            writer.Write(( byte ) PacketType.BootstrapRequest);
+            writer.Write(Major);
+            writer.Write(Minor);
+            writer.Write(Patch);
+            await stream.WriteAsync(memory, token);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public new static async ValueTask<BootstrapRequestPacket> DeserializeAsync(Stream stream, CancellationToken token)
+    {
+        var reader = new StreamBinaryReader(stream);
+        var major = await reader.ReadInt32Async(token);
+        var minor = await reader.ReadInt32Async(token);
+        var patch = await reader.ReadInt32Async(token);
+        return new BootstrapRequestPacket(major, minor, patch);
     }
 
     public override ValueTask AcceptAsync(IAsyncPacketVisitor visitor, CancellationToken token = default)

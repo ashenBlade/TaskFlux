@@ -59,7 +59,6 @@ try
     var appInfo = CreateApplicationInfo();
     var clusterInfo = CreateClusterInfo(serverOptions);
     var nodeInfo = CreateNodeInfo(serverOptions);
-    Log.Information("Восстанавливаю состояние приложения");
 
     using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, nodeInfo, appInfo, clusterInfo);
 
@@ -361,11 +360,11 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
     var logger = Log.Logger.ForContext("SourceContext", "Raft");
-    var commandSerializer = new DeltaTaskFluxCommandSerializer();
+    var commandSerializer = new TaskFluxDeltaExtractor();
     var peerGroup = new PeerGroup(peers);
     var timerFactory =
-        new ThreadingTimerFactory(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300),
-            heartbeatTimeout: TimeSpan.FromMilliseconds(100));
+        new ThreadingTimerFactory(TimeSpan.FromMilliseconds(1500), TimeSpan.FromMilliseconds(2500),
+            heartbeatTimeout: TimeSpan.FromMilliseconds(1000));
 
     return RaftConsensusModule<Command, Response>.Create(nodeId, peerGroup, logger, timerFactory,
         jobQueue, storage,

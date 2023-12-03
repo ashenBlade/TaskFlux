@@ -44,7 +44,7 @@ public class FollowerStateTests
             timerFactory,
             backgroundJobQueue,
             persistence,
-            Helpers.NullCommandSerializer,
+            Helpers.NullDeltaExtractor,
             Helpers.NullApplicationFactory);
 
         node.SetStateTest(node.CreateFollowerState());
@@ -332,7 +332,7 @@ public class FollowerStateTests
         var backgroundJobQueue = Mock.Of<IBackgroundJobQueue>();
         var deltaBytes = new byte[] {1,};
         var commandSerializer =
-            Mock.Of<ICommandSerializer<int>>(x => x.TryGetDelta(It.IsAny<int>(), out deltaBytes) == true);
+            Mock.Of<IDeltaExtractor<int>>(x => x.TryGetDelta(It.IsAny<int>(), out deltaBytes) == true);
 
         var (persistenceFacade, fileSystem) = CreateStorage();
         var node = new RaftConsensusModule(NodeId,

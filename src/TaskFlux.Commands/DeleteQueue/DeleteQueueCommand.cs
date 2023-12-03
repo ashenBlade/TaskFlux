@@ -55,13 +55,8 @@ public class DeleteQueueCommand : UpdateCommand
         visitor.Visit(this);
     }
 
-    public override T Accept<T>(IReturningCommandVisitor<T> visitor)
+    public override T Accept<T>(ICommandVisitor<T> visitor)
     {
         return visitor.Visit(this);
-    }
-
-    public override ValueTask AcceptAsync(IAsyncCommandVisitor visitor, CancellationToken token = default)
-    {
-        return visitor.VisitAsync(this, token);
     }
 }

@@ -18,7 +18,7 @@ public class LeaderState<TCommand, TResponse>
     private (ThreadPeerProcessor<TCommand, TResponse> Processor, ITimer Timer)[] _peerProcessors =
         Array.Empty<(ThreadPeerProcessor<TCommand, TResponse>, ITimer)>();
 
-    private readonly ICommandSerializer<TCommand> _commandSerializer;
+    private readonly IDeltaExtractor<TResponse> _deltaExtractor;
     private readonly ITimerFactory _timerFactory;
     private IApplication<TCommand, TResponse>? _application;
 
@@ -29,12 +29,12 @@ public class LeaderState<TCommand, TResponse>
 
     internal LeaderState(IRaftConsensusModule<TCommand, TResponse> raftConsensusModule,
                          ILogger logger,
-                         ICommandSerializer<TCommand> commandSerializer,
+                         IDeltaExtractor<TResponse> deltaExtractor,
                          ITimerFactory timerFactory)
         : base(raftConsensusModule)
     {
         _logger = logger;
-        _commandSerializer = commandSerializer;
+        _deltaExtractor = deltaExtractor;
         _timerFactory = timerFactory;
     }
 
@@ -217,11 +217,11 @@ public class LeaderState<TCommand, TResponse>
     {
         Debug.Assert(_application is not null, "_application is not null",
             "Приложение не было инициализировано на момент обработки запроса");
-        // Если команда не изменяет состояние приложения, 
-        // то применяем сразу и возвращаем результат
-        if (!_commandSerializer.TryGetDelta(command, out var delta))
+
+        var response = _application.Apply(command);
+        if (!_deltaExtractor.TryGetDelta(response, out var delta))
         {
-            return SubmitResponse<TResponse>.Success(_application.Apply(command), true);
+            return SubmitResponse<TResponse>.Success(response, true);
         }
 
         // Добавляем команду в буфер
@@ -265,7 +265,6 @@ public class LeaderState<TCommand, TResponse>
         // Применяем команду к приложению.
         // Лучше сначала применить и, если что не так, упасть,
         // чем закоммитить, а потом каждый раз валиться при восстановлении
-        var response = _application.Apply(command);
 
         // Коммитим запись и применяем 
         _logger.Verbose("Коммичу команду с индексом {Index}", appended.Index);

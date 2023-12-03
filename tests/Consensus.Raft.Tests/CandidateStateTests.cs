@@ -22,8 +22,8 @@ public class CandidateStateTests
     private static readonly NodeId NodeId = new(1);
     private static readonly PeerGroup EmptyPeerGroup = new(Array.Empty<IPeer>());
 
-    private static readonly ICommandSerializer<int> NullCommandSerializer =
-        new Mock<ICommandSerializer<int>>()
+    private static readonly IDeltaExtractor<int> NullDeltaExtractor =
+        new Mock<IDeltaExtractor<int>>()
            .Apply(m =>
             {
                 var delta = new byte[] {1};
@@ -60,7 +60,7 @@ public class CandidateStateTests
                             : EmptyPeerGroup;
         var node = new RaftConsensusModule(NodeId, peerGroup,
             Logger.None, timerFactory, jobQueue,
-            facade, NullCommandSerializer, applicationFactory ?? Helpers.NullApplicationFactory);
+            facade, NullDeltaExtractor, applicationFactory ?? Helpers.NullApplicationFactory);
         node.SetStateTest(node.CreateCandidateState());
         return node;
 

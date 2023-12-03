@@ -17,7 +17,7 @@ public class RaftConsensusModule<TCommand, TResponse>
       IDisposable
 {
     private readonly ITimerFactory _timerFactory;
-    private readonly ICommandSerializer<TCommand> _commandSerializer;
+    private readonly IDeltaExtractor<TResponse> _deltaExtractor;
 
     public NodeRole CurrentRole => CurrentState.Role;
 
@@ -75,11 +75,11 @@ public class RaftConsensusModule<TCommand, TResponse>
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         StoragePersistenceFacade persistenceFacade,
-        ICommandSerializer<TCommand> commandSerializer,
+        IDeltaExtractor<TResponse> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         _timerFactory = timerFactory;
-        _commandSerializer = commandSerializer;
+        _deltaExtractor = deltaExtractor;
         Id = id;
         _logger = logger;
         PeerGroup = peerGroup;
@@ -122,7 +122,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     public State<TCommand, TResponse> CreateLeaderState()
     {
         return new LeaderState<TCommand, TResponse>(this, _logger.ForContext("SourceContext", "Raft(Leader)"),
-            _commandSerializer, _timerFactory);
+            _deltaExtractor, _timerFactory);
     }
 
     public State<TCommand, TResponse> CreateCandidateState()
@@ -154,11 +154,11 @@ public class RaftConsensusModule<TCommand, TResponse>
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         StoragePersistenceFacade persistenceFacade,
-        ICommandSerializer<TCommand> commandSerializer,
+        IDeltaExtractor<TResponse> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         var module = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, timerFactory,
-            backgroundJobQueue, persistenceFacade, commandSerializer, applicationFactory);
+            backgroundJobQueue, persistenceFacade, deltaExtractor, applicationFactory);
         var followerState = module.CreateFollowerState();
         module._currentState = followerState;
 

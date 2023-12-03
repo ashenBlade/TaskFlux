@@ -1,18 +1,32 @@
-﻿using TaskFlux.Commands;
-using TaskFlux.Network.Client.Exceptions;
+﻿using TaskFlux.Network.Packets;
+using TaskFlux.Network.Packets.Exceptions;
 
 namespace TaskFlux.Network.Client;
 
-public interface ITaskFluxClient : IDisposable
+/// <summary>
+/// Удобный интерфейс для отправки пакетов клиентам
+/// </summary>
+public interface ITaskFluxClient
 {
     /// <summary>
-    /// Отправить команду на узел для выполения
+    /// Отправить указанный пакет
     /// </summary>
-    /// <param name="command">Команда, которую нужно выполнить</param>
+    /// <param name="packet">Пакет, который нужно отправить</param>
     /// <param name="token">Токен отмены</param>
-    /// <returns>Результат операции</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="command"/> - null</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="token"/> отменен</exception>
+    /// <exception cref="EndOfStreamException">Соединение было закрыто</exception>
+    public Task SendAsync(Packet packet, CancellationToken token);
+
+    /// <summary>
+    /// Получить от клиента пакет
+    /// </summary>
+    /// <param name="token">Токен отмены</param>
+    /// <returns>Полученный пакет</returns>
+    /// <exception cref="EndOfStreamException">Во время чтения клиент закрыл соединение</exception>
     /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
-    /// <exception cref="TaskFluxException">Базовый тип исключений</exception>
-    public Task<Response> SendAsync(Command command, CancellationToken token = default);
+    /// <exception cref="UnknownPacketException">Клиент отправил неизвестный тип пакета (маркер неизвестен)</exception>
+    /// <exception cref="UnknownCommandTypeException">Клиент отправил неизвестную команду</exception>
+    /// <exception cref="UnknownResponseTypeException">Клиент отправил неизвестный ответ</exception>
+    /// <exception cref="UnknownAuthorizationMethodException">Клиент отправил неизвестный метод авторизации</exception>
+    public Task<Packet> ReceiveAsync(CancellationToken token);
 }
