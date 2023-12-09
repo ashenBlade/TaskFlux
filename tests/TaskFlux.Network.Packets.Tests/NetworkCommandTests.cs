@@ -3,6 +3,7 @@ using TaskFlux.Network.Packets.Commands;
 
 namespace TaskFlux.Network.Packets.Tests;
 
+[Trait("Category", "Serialization")]
 public class NetworkCommandTests
 {
     private static void AssertBase(NetworkCommand command)
@@ -20,7 +21,7 @@ public class NetworkCommandTests
     [InlineData("queue-name:22")]
     public void Count__Serialization(string queue)
     {
-        AssertBase(new CountNetworkCommand(QueueName.Parse(queue)));
+        AssertBase(new CountNetworkCommand(queue));
     }
 
     [Theory]

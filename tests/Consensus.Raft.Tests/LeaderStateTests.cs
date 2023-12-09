@@ -410,7 +410,7 @@ public class LeaderStateTests
 
         Assert.Equal(expectedResponse, response.Response);
         var committedEntry = node.PersistenceFacade.ReadLogFileTest().Single();
-        AssertCommandEqual(committedEntry, command);
+        AssertCommandEqual(committedEntry, expectedResponse);
         mock.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }
 
@@ -447,7 +447,7 @@ public class LeaderStateTests
 
         Assert.Equal(expectedResponse, response.Response);
         var committedEntry = node.PersistenceFacade.ReadLogFileTest().Single();
-        AssertCommandEqual(committedEntry, command);
+        AssertCommandEqual(committedEntry, expectedResponse);
         machine.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }
 

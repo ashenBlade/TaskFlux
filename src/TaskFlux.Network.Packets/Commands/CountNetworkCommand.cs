@@ -16,14 +16,14 @@ public sealed class CountNetworkCommand : NetworkCommand
     public override async ValueTask SerializeAsync(Stream stream, CancellationToken token)
     {
         var size = sizeof(NetworkCommandType)
-                 + MemoryBinaryWriter.EstimateResultSize(QueueName);
+                 + MemoryBinaryWriter.EstimateResultSizeAsQueueName(QueueName);
         var buffer = ArrayPool<byte>.Shared.Rent(size);
         try
         {
             var memory = buffer.AsMemory(0, size);
             var writer = new MemoryBinaryWriter(memory);
             writer.Write(NetworkCommandType.Count);
-            writer.Write(QueueName);
+            writer.WriteAsQueueName(QueueName);
             await stream.WriteAsync(memory, token);
         }
         finally
