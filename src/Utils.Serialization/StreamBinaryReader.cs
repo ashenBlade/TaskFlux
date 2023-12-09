@@ -131,6 +131,27 @@ public struct StreamBinaryReader
         }
     }
 
+    /// <summary>
+    /// Прочитать из потока сырую строку названия очереди - без проверки корректности
+    /// </summary>
+    /// <param name="token"></param>
+    /// <returns></returns>
+    public async Task<string> ReadRawQueueNameAsync(CancellationToken token)
+    {
+        var length = await ReadByteAsync(token);
+        var buffer = ArrayPool<byte>.Shared.Rent(length);
+        try
+        {
+            var memory = buffer.AsMemory(0, length);
+            await Stream.ReadExactlyAsync(memory, token);
+            return Encoding.ASCII.GetString(memory.Span);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
     public async Task<byte> ReadByteAsync(CancellationToken token)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(1);

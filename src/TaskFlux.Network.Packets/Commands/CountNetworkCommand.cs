@@ -1,5 +1,4 @@
 using System.Buffers;
-using TaskFlux.Models;
 using Utils.Serialization;
 
 namespace TaskFlux.Network.Packets.Commands;
@@ -7,9 +6,9 @@ namespace TaskFlux.Network.Packets.Commands;
 public sealed class CountNetworkCommand : NetworkCommand
 {
     public override NetworkCommandType Type => NetworkCommandType.Count;
-    public QueueName QueueName { get; }
+    public string QueueName { get; }
 
-    public CountNetworkCommand(QueueName queueName)
+    public CountNetworkCommand(string queueName)
     {
         QueueName = queueName;
     }

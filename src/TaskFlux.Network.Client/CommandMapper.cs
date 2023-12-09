@@ -5,6 +5,7 @@ using TaskFlux.Commands.DeleteQueue;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.ListQueues;
+using TaskFlux.Models;
 using TaskFlux.Network.Packets.Commands;
 using TaskFlux.PriorityQueue;
 
@@ -25,7 +26,7 @@ public static class CommandMapper
 
         public Command Visit(CountNetworkCommand command)
         {
-            return new CountCommand(command.QueueName);
+            return new CountCommand(QueueName.Parse(command.QueueName));
         }
 
         public Command Visit(CreateQueueNetworkCommand command)
@@ -38,13 +39,14 @@ public static class CommandMapper
                            _ => throw new ArgumentOutOfRangeException(nameof(command.Code), command.Code,
                                     "Неизвестный код очереди")
                        };
-            return new CreateQueueCommand(command.QueueName, code, command.MaxQueueSize, command.MaxMessageSize,
+            return new CreateQueueCommand(QueueName.Parse(command.QueueName), code, command.MaxQueueSize,
+                command.MaxMessageSize,
                 command.PriorityRange);
         }
 
         public Command Visit(DeleteQueueNetworkCommand command)
         {
-            return new DeleteQueueCommand(command.QueueName);
+            return new DeleteQueueCommand(QueueName.Parse(command.QueueName));
         }
 
         public Command Visit(ListQueuesNetworkCommand command)
@@ -54,12 +56,12 @@ public static class CommandMapper
 
         public Command Visit(EnqueueNetworkCommand command)
         {
-            return new EnqueueCommand(command.Key, command.Message, command.QueueName);
+            return new EnqueueCommand(command.Key, command.Message, QueueName.Parse(command.QueueName));
         }
 
         public Command Visit(DequeueNetworkCommand command)
         {
-            return new DequeueCommand(command.QueueName);
+            return new DequeueCommand(QueueName.Parse(command.QueueName));
         }
 
         #endregion

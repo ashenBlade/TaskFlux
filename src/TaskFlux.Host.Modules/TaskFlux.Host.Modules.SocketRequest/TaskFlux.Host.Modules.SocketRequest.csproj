@@ -14,8 +14,4 @@
         <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.csproj"/>
     </ItemGroup>
 
-    <ItemGroup>
-        <Folder Include="Exceptions\"/>
-    </ItemGroup>
-
 </Project>

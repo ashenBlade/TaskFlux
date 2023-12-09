@@ -1,18 +1,17 @@
 using System.Buffers;
-using TaskFlux.Models;
 using Utils.Serialization;
 
 namespace TaskFlux.Network.Packets.Commands;
 
 public sealed class CreateQueueNetworkCommand : NetworkCommand
 {
-    public QueueName QueueName { get; }
+    public string QueueName { get; }
     public int Code { get; }
     public int? MaxQueueSize { get; }
     public int? MaxMessageSize { get; }
     public (long, long)? PriorityRange { get; }
 
-    public CreateQueueNetworkCommand(QueueName queueName,
+    public CreateQueueNetworkCommand(string queueName,
                                      int code,
                                      int? maxQueueSize,
                                      int? maxMessageSize,
@@ -29,12 +28,12 @@ public sealed class CreateQueueNetworkCommand : NetworkCommand
 
     public override async ValueTask SerializeAsync(Stream stream, CancellationToken token)
     {
-        var size = sizeof(NetworkCommandType)                       // Маркер
-                 + MemoryBinaryWriter.EstimateResultSize(QueueName) // Название очереди
-                 + sizeof(int)                                      // Тип реализации
-                 + sizeof(int)                                      // Максимальный размер очереди
-                 + sizeof(int)                                      // Максимальный размер сообщения
-                 + sizeof(bool);                                    // Есть ли диапазон приоритетов
+        var size = sizeof(NetworkCommandType)                                  // Маркер
+                 + MemoryBinaryWriter.EstimateResultSizeAsQueueName(QueueName) // Название очереди
+                 + sizeof(int)                                                 // Тип реализации
+                 + sizeof(int)                                                 // Максимальный размер очереди
+                 + sizeof(int)                                                 // Максимальный размер сообщения
+                 + sizeof(bool);                                               // Есть ли диапазон приоритетов
         if (PriorityRange.HasValue)
         {
             size += sizeof(long)  // Минимальный ключ
@@ -47,7 +46,7 @@ public sealed class CreateQueueNetworkCommand : NetworkCommand
             var memory = buffer.AsMemory(0, size);
             var writer = new MemoryBinaryWriter(memory);
             writer.Write(NetworkCommandType.CreateQueue);
-            writer.Write(QueueName);
+            writer.WriteAsQueueName(QueueName);
             writer.Write(Code);
             writer.Write(MaxQueueSize ?? -1);
             writer.Write(MaxMessageSize ?? -1);
@@ -75,7 +74,7 @@ public sealed class CreateQueueNetworkCommand : NetworkCommand
         CancellationToken token)
     {
         var reader = new StreamBinaryReader(stream);
-        var queueName = await reader.ReadQueueNameAsync(token);
+        var queueName = await reader.ReadRawQueueNameAsync(token);
         var code = await reader.ReadInt32Async(token);
         int? maxQueueSize = await reader.ReadInt32Async(token);
         if (maxQueueSize == -1)

@@ -6,13 +6,14 @@ namespace TaskFlux.Network.Packets.Packets;
 
 public class ErrorResponsePacket : Packet
 {
-    public static readonly ErrorResponsePacket EmptyErrorMessagePacket = new(string.Empty);
+    public int ErrorType { get; }
     public string Message { get; }
     public override PacketType Type => PacketType.ErrorResponse;
 
-    public ErrorResponsePacket(string message)
+    public ErrorResponsePacket(int errorType, string message)
     {
         ArgumentNullException.ThrowIfNull(message);
+        ErrorType = errorType;
         Message = message;
     }
 
@@ -27,6 +28,7 @@ public class ErrorResponsePacket : Packet
             var buffer = array.AsMemory(0, estimatedSize);
             var writer = new MemoryBinaryWriter(buffer);
             writer.Write(( byte ) PacketType.ErrorResponse);
+            writer.Write(ErrorType);
             writer.Write(Message);
             await stream.WriteAsync(buffer, token);
         }
@@ -39,8 +41,9 @@ public class ErrorResponsePacket : Packet
     public new static async Task<ErrorResponsePacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
         var reader = new StreamBinaryReader(stream);
+        var type = await reader.ReadInt32Async(token);
         var message = await reader.ReadStringAsync(token);
-        return new ErrorResponsePacket(message);
+        return new ErrorResponsePacket(type, message);
     }
 
     public override ValueTask AcceptAsync(IAsyncPacketVisitor visitor, CancellationToken token = default)
