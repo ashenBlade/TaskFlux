@@ -22,9 +22,8 @@ public class NoneAuthorizationMethod : AuthorizationMethod
         methodVisitor.Visit(this);
     }
 
-    public override ValueTask AcceptAsync(IAsyncAuthorizationMethodVisitor methodVisitor,
-                                          CancellationToken token = default)
+    public override T Accept<T>(IAuthorizationMethodVisitor<T> methodVisitor)
     {
-        return methodVisitor.VisitAsync(this, token);
+        return methodVisitor.Visit(this);
     }
 }

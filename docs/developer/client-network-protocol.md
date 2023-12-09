@@ -36,6 +36,17 @@ title: Клиент серверный протокол
 
 > На данный момент, аутентификация не поддерживается. В пакетах Authorization* указывается пустой тип аутентификации.
 
+```mermaid
+sequenceDiagram
+   actor Клиент
+   participant Сервер
+   Клиент -> Сервер: Установка TCP соединения
+   Клиент ->> Сервер: Authorization Request
+   Сервер ->> Клиент: Authorization Response
+   Клиент ->> Сервер: Bootstrap Request
+   Сервер ->> Клиент: Bootstrap Response
+```
+
 ## Выполнение команд
 
 Каждая команда бизнес-логики отправляется в отдельном пакете - [CommandRequest](#command-request).

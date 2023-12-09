@@ -14,9 +14,7 @@ public abstract class AuthorizationMethod
     public abstract int EstimatePayloadSize();
     public abstract void Serialize(ref MemoryBinaryWriter writer);
     public abstract void Accept(IAuthorizationMethodVisitor methodVisitor);
-
-    public abstract ValueTask AcceptAsync(IAsyncAuthorizationMethodVisitor methodVisitor,
-                                          CancellationToken token = default);
+    public abstract T Accept<T>(IAuthorizationMethodVisitor<T> methodVisitor);
 
     public static async Task<AuthorizationMethod> DeserializeAsync(Stream stream, CancellationToken token)
     {
