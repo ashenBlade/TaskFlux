@@ -41,12 +41,12 @@ public class NetworkResponseEqualityComparer : IEqualityComparer<NetworkResponse
     }
 
     private static readonly IEqualityComparer<ITaskQueueInfo> TaskQueueInfoEqualityComparer =
-        new LambdaEqualityComparer<ITaskQueueInfo>(
-            equals: (x, y) => x is not null
-                           && y is not null
-                           && x.QueueName == y.QueueName
-                           && x.Count == y.Count
-                           && x.Policies.ToHashSet(StringPairEqualityComparer).SetEquals(y.Policies),
+        new LambdaEqualityComparer<ITaskQueueInfo>(equals: (x, y) => x is not null
+                                                                  && y is not null
+                                                                  && x.QueueName == y.QueueName
+                                                                  && x.Count == y.Count
+                                                                  && x.Policies.ToHashSet(StringPairEqualityComparer)
+                                                                      .SetEquals(y.Policies),
             hashCode: obj => HashCode.Combine(obj.QueueName, obj.Count, obj.Policies));
 
     private static readonly IEqualityComparer<KeyValuePair<string, string>> StringPairEqualityComparer =
@@ -61,7 +61,8 @@ public class NetworkResponseEqualityComparer : IEqualityComparer<NetworkResponse
 
     private static bool Check(ErrorNetworkResponse first, ErrorNetworkResponse second)
     {
-        return first.ErrorType == second.ErrorType && first.Message == second.Message;
+        return first.ErrorType == second.ErrorType
+            && first.Message == second.Message;
     }
 
     [SuppressMessage("ReSharper", "UnusedParameter.Local")]

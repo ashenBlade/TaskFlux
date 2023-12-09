@@ -19,9 +19,10 @@ public class ErrorResponsePacket : Packet
 
     public override async ValueTask SerializeAsync(Stream stream, CancellationToken token)
     {
-        var estimatedSize = sizeof(PacketType)
-                          + sizeof(int)
-                          + Encoding.UTF8.GetByteCount(Message);
+        var estimatedSize = sizeof(PacketType)                   // Маркер
+                          + sizeof(int)                          // Код ошибки
+                          + sizeof(int)                          // Длина строки
+                          + Encoding.UTF8.GetByteCount(Message); // Сама строка
         var array = ArrayPool<byte>.Shared.Rent(estimatedSize);
         try
         {

@@ -4,11 +4,11 @@ namespace TaskFlux.Network.Packets.Responses;
 
 public class ErrorNetworkResponse : NetworkResponse
 {
-    public byte ErrorType { get; }
+    public int ErrorType { get; }
     public string Message { get; }
     public override NetworkResponseType Type => NetworkResponseType.Error;
 
-    public ErrorNetworkResponse(byte errorType, string message)
+    public ErrorNetworkResponse(int errorType, string message)
     {
         ErrorType = errorType;
         Message = message;
@@ -25,7 +25,7 @@ public class ErrorNetworkResponse : NetworkResponse
     public new static async ValueTask<ErrorNetworkResponse> DeserializeAsync(Stream stream, CancellationToken token)
     {
         var reader = new StreamBinaryReader(stream);
-        var type = await reader.ReadByteAsync(token);
+        var type = await reader.ReadInt32Async(token);
         var message = await reader.ReadStringAsync(token);
         return new ErrorNetworkResponse(type, message);
     }

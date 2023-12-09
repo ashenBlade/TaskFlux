@@ -34,7 +34,7 @@ public class PacketTests
         new NetworkCommand[] {new ListQueuesNetworkCommand()}
     };
 
-    [Theory(DisplayName = nameof(CommandRequestPacket), Skip = "Различные типы команд нужно тестировать")]
+    [Theory(DisplayName = nameof(CommandRequestPacket))]
     [MemberData(nameof(NetworkCommands))]
     public async Task CommandRequest__Serialization(NetworkCommand command)
     {
@@ -51,7 +51,7 @@ public class PacketTests
         new NetworkResponse[] {new ListQueuesNetworkResponse(Array.Empty<ITaskQueueInfo>())},
     };
 
-    [Theory(DisplayName = nameof(CommandResponsePacket), Skip = "Надо ответы задавать")]
+    [Theory(DisplayName = nameof(CommandResponsePacket))]
     [MemberData(nameof(NetworkResponses))]
     public async Task CommandResponse__Serialization(NetworkResponse response)
     {
@@ -73,9 +73,20 @@ public class PacketTests
     [InlineData("\\asdfasdfasdfasdf")]
     [InlineData("what? ")]
     [InlineData("Ошибка на строне сервера. Код: 123")]
-    public async Task ErrorResponse__Serialization(string message)
+    public async Task ErrorResponse__Message__Serialization(string message)
     {
-        await AssertBase(new ErrorResponsePacket(message));
+        await AssertBase(new ErrorResponsePacket(1, message));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(-1)]
+    [InlineData(int.MaxValue)]
+    [InlineData(int.MinValue)]
+    public async Task ErrorResponse__ErrorCode__Serialization(int code)
+    {
+        await AssertBase(new ErrorResponsePacket(code, string.Empty));
     }
 
     [Theory(DisplayName = nameof(NotLeaderPacket))]
