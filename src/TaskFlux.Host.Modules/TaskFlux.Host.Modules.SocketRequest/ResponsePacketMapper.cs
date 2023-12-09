@@ -34,7 +34,7 @@ public static class ResponsePacketMapper
 
         public Packet Visit(DequeueResponse response)
         {
-            if (response.TryGetResult(out var key, out var data))
+            if (response.TryGetResult(out _, out var key, out var data))
             {
                 return new CommandResponsePacket(new DequeueNetworkResponse(( key, data )));
             }

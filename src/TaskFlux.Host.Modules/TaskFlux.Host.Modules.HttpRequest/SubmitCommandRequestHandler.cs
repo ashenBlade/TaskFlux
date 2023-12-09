@@ -106,7 +106,8 @@ public class SubmitCommandRequestHandler : IRequestHandler
         if (commandString.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase)
          && tokens.Length == 1)
         {
-            command = new DequeueCommand(_applicationInfo.DefaultQueueName);
+            command = new DequeueRecordCommand(_applicationInfo.DefaultQueueName,
+                permanent: true); // Коммитим команду сразу, т.к. в HTTP не будет времени думать
             return true;
         }
 
@@ -165,10 +166,11 @@ public class SubmitCommandRequestHandler : IRequestHandler
         public void Visit(DequeueResponse response)
         {
             Payload["type"] = "dequeue";
-            if (response.TryGetResult(out var key, out var message))
+            if (response.TryGetResult(out var queueName, out var key, out var message))
             {
                 Payload["ok"] = true;
                 Payload["key"] = key;
+                Payload["queue"] = queueName.Name;
                 Payload["data"] = Convert.ToBase64String(message);
             }
             else

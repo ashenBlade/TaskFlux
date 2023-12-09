@@ -68,7 +68,11 @@ sequenceDiagram
 
 1. Клиент отправляет [Command Request](#command-request) пакет с нужной командой
 2. Сервер принимает команду и выполняет ее
-3. Сервер отправляет [Command Response](#command-response) клиенту с результатом работы
+3. Сервер отправляет клиенту:
+   - Либо [Command Response](#command-response) клиенту с данными результатов работы
+   - Либо [Ok](#ok) сигнализирующий об успешном выполнении команды
+
+> Что должна возвращать команда после успешного выполнения (CommandResponse/Ok) прописано для каждой отдельно.
 
 ```mermaid
 sequenceDiagram
@@ -76,7 +80,7 @@ sequenceDiagram
     participant Сервер
         
     Клиент->>Сервер: CommandRequest
-    Сервер->>Клиент: CommandResponse
+   Сервер ->> Клиент: CommandResponse/Ok
 ```
 
 ### Вставка

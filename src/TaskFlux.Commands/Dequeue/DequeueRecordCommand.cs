@@ -5,15 +5,23 @@ using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Dequeue;
 
-public class DequeueCommand : ModificationCommand
+public class DequeueRecordCommand : ModificationCommand
 {
+    /// <summary>
+    /// Флаг перманентности операции.
+    /// Если равен <c>true</c>, то сразу произойдет коммит операции удаления,
+    /// иначе необходимо вручную удалять запись (<see cref="CommitDequeueCommand"/>),
+    /// либо потом вернуть обратно (<see cref="ReturnRecordCommand"/>)
+    /// </summary>
+    private readonly bool _permanent;
+
     // Конкретно для этой команды мы используем быстрый путь выполнения - без фиксации результата.
     // Это нужно для использования Ack/Nack команд (at-least-once семантики) - изменения будут зафиксированы другими командами
-    public override bool UseFastPath => true;
     public QueueName Queue { get; }
 
-    public DequeueCommand(QueueName queue)
+    public DequeueRecordCommand(QueueName queue, bool permanent)
     {
+        _permanent = permanent;
         Queue = queue;
     }
 
@@ -28,7 +36,7 @@ public class DequeueCommand : ModificationCommand
 
         if (queue.TryDequeue(out var key, out var payload))
         {
-            return DequeueResponse.Create(Queue, key, payload);
+            return DequeueResponse.Create(Queue, key, payload, _permanent);
         }
 
         return DequeueResponse.Empty;

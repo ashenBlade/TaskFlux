@@ -7,8 +7,6 @@ namespace TaskFlux.Commands;
 /// </summary>
 public abstract class ReadOnlyCommand : Command
 {
-    public sealed override bool UseFastPath => true;
-
     public sealed override Response Apply(IApplication application)
     {
         return Apply(application);

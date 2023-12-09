@@ -15,7 +15,6 @@ public class ReturnRecordCommand : Command
     public DequeueResponse Response { get; }
 
     // Просто возвращаем значение обратно - коммитить ничего не надо
-    public override bool UseFastPath => true;
 
     public ReturnRecordCommand(DequeueResponse response)
     {
@@ -24,8 +23,8 @@ public class ReturnRecordCommand : Command
 
     public override Response Apply(IApplication application)
     {
-        if (Response.TryGetResult(out var key, out var message)
-         && application.TaskQueueManager.TryGetQueue(Response.QueueName, out var queue))
+        if (Response.TryGetResult(out var queueName, out var key, out var message)
+         && application.TaskQueueManager.TryGetQueue(queueName, out var queue))
         {
             queue.Enqueue(key, message);
         }

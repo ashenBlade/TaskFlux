@@ -364,7 +364,7 @@ internal class ClientRequestProcessor
          * <- Ok
          * ... Если таймаут или соединение разорвалось - возвращаем
          */
-        var command = ( DequeueCommand ) CommandMapper.Map(packet.Command);
+        var command = ( DequeueRecordCommand ) CommandMapper.Map(packet.Command);
         var submitResult = await _requestAcceptor.AcceptAsync(command, token);
 
         if (submitResult.TryGetResponse(out var response) is false)
@@ -406,13 +406,17 @@ internal class ClientRequestProcessor
             SubmitResponse<Response> submitResponse;
             switch (request.Type)
             {
+                // Если команду все же нужно выполнить - коммитим выполнение и возвращаем ответ
                 case PacketType.AcknowledgeRequest:
-                    // Если команду все же нужно выполнить - коммитим выполнение и возвращаем ответ
+                    // Явно указываем, что нужно коммитить
+                    dequeueResponse = dequeueResponse.WithDeltaProducing();
                     submitResponse =
                         await _requestAcceptor.AcceptAsync(new CommitDequeueCommand(dequeueResponse), token);
                     break;
+                // Иначе возвращаем ее обратно
                 case PacketType.NegativeAcknowledgementRequest:
-                    // Иначе возвращаем ее обратно
+                    // Коммитить результат не нужно
+                    dequeueResponse = dequeueResponse.WithoutDeltaProducing();
                     submitResponse =
                         await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(dequeueResponse), token);
                     break;

@@ -13,16 +13,6 @@ public abstract class Command
     {
     }
 
-    /// <summary>
-    /// Должен ли быть выполнен быстрый путь выполнения - без репликации
-    /// </summary>
-    /// <remarks>
-    /// Этот параметр влияет на порядок выполнения команды внутри пайплайна.
-    /// Если эта команда должна выполнять модификации, но при этом выставлен этот флаг,
-    /// то состояние будет изменено, но это не будет зафиксировано.
-    /// </remarks>
-    public abstract bool UseFastPath { get; }
-
     public abstract Response Apply(IApplication application);
 
     public abstract void Accept(ICommandVisitor visitor);
