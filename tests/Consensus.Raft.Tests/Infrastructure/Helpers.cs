@@ -45,7 +45,6 @@ public static class Helpers
         return new Mock<IApplication>().Apply(m =>
                                         {
                                             m.Setup(x => x.Apply(It.IsAny<int>())).Returns(1);
-                                            m.Setup(x => x.ApplyNoResponse(It.IsAny<int>()));
                                         })
                                        .Object;
     }

@@ -23,7 +23,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\TaskFlux.Network.Packets\TaskFlux.Network.Packets.csproj"/>
+        <ProjectReference Include="..\..\src\TaskFlux.Network\TaskFlux.Network.csproj"/>
         <ProjectReference Include="..\TestHelpers\TestHelpers.csproj"/>
     </ItemGroup>
 

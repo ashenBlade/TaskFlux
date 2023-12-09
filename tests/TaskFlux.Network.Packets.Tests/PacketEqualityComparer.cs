@@ -1,5 +1,4 @@
-using TaskFlux.Network.Packets.Authorization;
-using TaskFlux.Network.Packets.Packets;
+using TaskFlux.Network.Authorization;
 
 namespace TaskFlux.Network.Packets.Tests;
 
@@ -47,6 +46,7 @@ public class PacketEqualityComparer : IEqualityComparer<Packet>
            };
 
     private bool Check(AcknowledgeRequestPacket first, AcknowledgeRequestPacket second) => true;
+    private bool Check(NegativeAcknowledgeRequestPacket first, NegativeAcknowledgeRequestPacket second) => true;
 
     private bool Check(ClusterMetadataRequestPacket first, ClusterMetadataRequestPacket second)
     {
@@ -64,6 +64,7 @@ public class PacketEqualityComparer : IEqualityComparer<Packet>
     }
 
     private bool CheckAuth(NoneAuthorizationMethod first, NoneAuthorizationMethod second) => true;
+    private bool Check(OkPacket first, OkPacket second) => true;
 
     public int GetHashCode(Packet obj)
     {

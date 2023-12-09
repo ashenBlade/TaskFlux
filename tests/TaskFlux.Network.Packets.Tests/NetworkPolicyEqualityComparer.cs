@@ -1,4 +1,4 @@
-using TaskFlux.Network.Packets.Responses.Policies;
+using TaskFlux.Network.Responses.Policies;
 
 namespace TaskFlux.Network.Packets.Tests;
 

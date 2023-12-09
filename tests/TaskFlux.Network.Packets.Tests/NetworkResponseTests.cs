@@ -1,6 +1,6 @@
 using TaskFlux.Models;
-using TaskFlux.Network.Packets.Responses;
-using TaskFlux.Network.Packets.Responses.Policies;
+using TaskFlux.Network.Responses;
+using TaskFlux.Network.Responses.Policies;
 
 namespace TaskFlux.Network.Packets.Tests;
 
@@ -99,11 +99,7 @@ public class NetworkResponseTests
             Enumerable.Range(0, 10)
                       .Select(i => new StubTaskQueueInfo(i.ToString(), i)
                        {
-                           Policies =
-                           {
-                               [i.ToString()] = i.ToString(),
-                               [( i * 100 ).ToString()] = ( -i ).ToString()
-                           }
+                           Policies = {[i.ToString()] = i.ToString(), [( i * 100 ).ToString()] = ( -i ).ToString()}
                        })
                       .ToArray()
         }
@@ -127,12 +123,6 @@ public class NetworkResponseTests
         public QueueName QueueName { get; }
         public int Count { get; }
         public Dictionary<string, string> Policies { get; } = new();
-    }
-
-    [Fact]
-    public void Ok__Serialization()
-    {
-        AssertBase(new OkNetworkResponse());
     }
 
     public static IEnumerable<object[]> NetworkPolicies => new[]

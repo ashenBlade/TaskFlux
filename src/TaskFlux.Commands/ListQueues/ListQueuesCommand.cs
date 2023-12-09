@@ -5,7 +5,6 @@ namespace TaskFlux.Commands.ListQueues;
 
 public class ListQueuesCommand : ReadOnlyCommand
 {
-    public override CommandType Type => CommandType.ListQueues;
     public static readonly ListQueuesCommand Instance = new();
 
     protected override Response Apply(IReadOnlyApplication context)

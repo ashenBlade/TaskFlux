@@ -1,6 +1,5 @@
 ﻿using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
-using TaskFlux.Serialization;
 
 namespace TaskFlux.Commands;
 
@@ -14,14 +13,17 @@ public abstract class Command
     {
     }
 
-    public abstract bool IsReadOnly { get; }
-    public abstract CommandType Type { get; }
+    /// <summary>
+    /// Должен ли быть выполнен быстрый путь выполнения - без репликации
+    /// </summary>
+    /// <remarks>
+    /// Этот параметр влияет на порядок выполнения команды внутри пайплайна.
+    /// Если эта команда должна выполнять модификации, но при этом выставлен этот флаг,
+    /// то состояние будет изменено, но это не будет зафиксировано.
+    /// </remarks>
+    public abstract bool UseFastPath { get; }
 
     public abstract Response Apply(IApplication application);
-    public abstract void ApplyNoResult(IApplication context);
-
-    public abstract bool TryGetDelta(out Delta delta);
-
 
     public abstract void Accept(ICommandVisitor visitor);
     public abstract T Accept<T>(ICommandVisitor<T> visitor);

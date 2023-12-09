@@ -8,10 +8,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\TaskFlux.Network.Client\TaskFlux.Network.Client.csproj"/>
-    </ItemGroup>
-
-    <ItemGroup>
         <PackageReference Include="Serilog" Version="3.0.1"/>
         <PackageReference Include="Serilog.Sinks.Console" Version="4.1.0"/>
     </ItemGroup>

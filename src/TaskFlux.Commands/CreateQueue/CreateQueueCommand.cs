@@ -5,13 +5,11 @@ using TaskFlux.Core;
 using TaskFlux.Core.Queue;
 using TaskFlux.Models;
 using TaskFlux.PriorityQueue;
-using TaskFlux.Serialization;
 
 namespace TaskFlux.Commands.CreateQueue;
 
-public class CreateQueueCommand : UpdateCommand
+public class CreateQueueCommand : ModificationCommand
 {
-    public override CommandType Type => CommandType.CreateQueue;
     public QueueName Queue { get; }
     public PriorityQueueCode Code { get; }
     public int? MaxQueueSize { get; }
@@ -99,24 +97,6 @@ public class CreateQueueCommand : UpdateCommand
         }
 
         return new ErrorResponse(ErrorType.Unknown, "Не удалось создать указанную очередь. Неизвестная ошибка");
-    }
-
-    public override void ApplyNoResult(IApplication context)
-    {
-        var manager = context.TaskQueueManager;
-        if (!manager.HasQueue(Queue))
-        {
-            return;
-        }
-
-        var queue = CreateTaskQueue();
-        manager.TryAddQueue(Queue, queue);
-    }
-
-    public override bool TryGetDelta(out Delta delta)
-    {
-        delta = new CreateQueueDelta(Queue, Code, MaxQueueSize, MaxPayloadSize, PriorityRange);
-        return true;
     }
 
     public override void Accept(ICommandVisitor visitor)

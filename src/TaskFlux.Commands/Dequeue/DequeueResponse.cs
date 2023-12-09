@@ -4,6 +4,9 @@ using TaskFlux.Serialization;
 
 namespace TaskFlux.Commands.Dequeue;
 
+/// <summary>
+/// Исходная команда для чтения записи из очереди
+/// </summary>
 public class DequeueResponse : Response
 {
     public static readonly DequeueResponse Empty = new(false, QueueName.Default, 0, null);
@@ -15,23 +18,24 @@ public class DequeueResponse : Response
 
     public bool Success { get; }
     public QueueName QueueName { get; }
-    public long Key { get; }
-    public byte[] Message { get; }
 
-    internal DequeueResponse(bool success, QueueName queueName, long key, byte[]? payload)
+    private readonly long _key;
+    private readonly byte[] _message;
+
+    private DequeueResponse(bool success, QueueName queueName, long key, byte[]? payload)
     {
         Success = success;
         QueueName = queueName;
-        Key = key;
-        Message = payload ?? Array.Empty<byte>();
+        _key = key;
+        _message = payload ?? Array.Empty<byte>();
     }
 
     public bool TryGetResult(out long key, out byte[] payload)
     {
         if (Success)
         {
-            key = Key;
-            payload = Message;
+            key = _key;
+            payload = _message;
             return true;
         }
 
@@ -54,7 +58,7 @@ public class DequeueResponse : Response
         }
 
 
-        delta = new RemoveRecordDelta(QueueName, Key, Message);
+        delta = new RemoveRecordDelta(QueueName, _key, _message);
         return true;
     }
 

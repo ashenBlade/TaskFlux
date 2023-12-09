@@ -9,8 +9,7 @@
     <ItemGroup>
       <ProjectReference Include="..\..\Consensus\Consensus.Raft\Consensus.Raft.csproj"/>
       <ProjectReference Include="..\..\TaskFlux.Commands\TaskFlux.Commands.csproj" />
-        <ProjectReference Include="..\..\TaskFlux.Network.Client\TaskFlux.Network.Client.csproj"/>
-        <ProjectReference Include="..\..\TaskFlux.Network.Packets\TaskFlux.Network.Packets.csproj"/>
+        <ProjectReference Include="..\..\TaskFlux.Network\TaskFlux.Network.csproj"/>
         <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.csproj"/>
     </ItemGroup>
 

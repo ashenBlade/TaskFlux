@@ -165,11 +165,11 @@ public class SubmitCommandRequestHandler : IRequestHandler
         public void Visit(DequeueResponse response)
         {
             Payload["type"] = "dequeue";
-            if (response.Success)
+            if (response.TryGetResult(out var key, out var message))
             {
                 Payload["ok"] = true;
-                Payload["key"] = response.Key;
-                Payload["data"] = Convert.ToBase64String(response.Message);
+                Payload["key"] = key;
+                Payload["data"] = Convert.ToBase64String(message);
             }
             else
             {

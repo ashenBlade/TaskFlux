@@ -1,5 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
-using TaskFlux.Network.Packets.Responses;
+using TaskFlux.Network.Responses;
 using TestHelpers;
 
 namespace TaskFlux.Network.Packets.Tests;
@@ -64,9 +63,6 @@ public class NetworkResponseEqualityComparer : IEqualityComparer<NetworkResponse
         return first.ErrorType == second.ErrorType
             && first.Message == second.Message;
     }
-
-    [SuppressMessage("ReSharper", "UnusedParameter.Local")]
-    private static bool Check(OkNetworkResponse _, OkNetworkResponse __) => true;
 
     public int GetHashCode(NetworkResponse obj)
     {

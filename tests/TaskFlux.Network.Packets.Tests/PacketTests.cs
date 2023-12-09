@@ -1,10 +1,9 @@
 using System.Net;
 using TaskFlux.Models;
-using TaskFlux.Network.Packets.Authorization;
-using TaskFlux.Network.Packets.Commands;
-using TaskFlux.Network.Packets.Packets;
-using TaskFlux.Network.Packets.Responses;
-using TaskFlux.Network.Packets.Responses.Policies;
+using TaskFlux.Network.Authorization;
+using TaskFlux.Network.Commands;
+using TaskFlux.Network.Responses;
+using TaskFlux.Network.Responses.Policies;
 
 namespace TaskFlux.Network.Packets.Tests;
 
@@ -46,7 +45,6 @@ public class PacketTests
         new NetworkResponse[] {new CountNetworkResponse(123)},
         new NetworkResponse[] {new DequeueNetworkResponse(( 123, "asdfasdf"u8.ToArray() ))},
         new NetworkResponse[] {new ErrorNetworkResponse(2, "какая-то ошибка")},
-        new NetworkResponse[] {new OkNetworkResponse()},
         new NetworkResponse[] {new PolicyViolationNetworkResponse(new GenericNetworkQueuePolicy("sample"))},
         new NetworkResponse[] {new ListQueuesNetworkResponse(Array.Empty<ITaskQueueInfo>())},
     };
@@ -223,5 +221,17 @@ public class PacketTests
     public async Task AcknowledgeRequest__Serialization()
     {
         await AssertBase(new AcknowledgeRequestPacket());
+    }
+
+    [Fact(DisplayName = nameof(NegativeAcknowledgeRequestPacket))]
+    public async Task NegativeAcknowledgeRequest__Serialization()
+    {
+        await AssertBase(new NegativeAcknowledgeRequestPacket());
+    }
+
+    [Fact(DisplayName = nameof(OkPacket))]
+    public async Task OkPacket__Serialization()
+    {
+        await AssertBase(new OkPacket());
     }
 }

@@ -1,20 +1,19 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Net.Sockets;
+using Consensus.Core.Submit;
 using Microsoft.Extensions.Options;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Dequeue;
-using TaskFlux.Commands.Enqueue;
 using TaskFlux.Core;
 using TaskFlux.Host.Modules.SocketRequest.Exceptions;
 using TaskFlux.Models.Exceptions;
-using TaskFlux.Network.Client;
+using TaskFlux.Network;
+using TaskFlux.Network.Authorization;
+using TaskFlux.Network.Commands;
+using TaskFlux.Network.Exceptions;
 using TaskFlux.Network.Packets;
-using TaskFlux.Network.Packets.Authorization;
-using TaskFlux.Network.Packets.Exceptions;
-using TaskFlux.Network.Packets.Packets;
-using TaskFlux.Network.Packets.Responses;
 
 namespace TaskFlux.Host.Modules.SocketRequest;
 
@@ -210,7 +209,7 @@ internal class ClientRequestProcessor
                     await ProcessCommandRequestAsync(client, ( CommandRequestPacket ) request, token);
                     break;
                 case PacketType.ClusterMetadataRequest:
-                    await ProcessClusterMetadataRequestAsync(client, ( ClusterMetadataRequestPacket ) request, token);
+                    await ProcessClusterMetadataRequestAsync(client, token);
                     break;
                 case PacketType.AcknowledgeRequest:
                 case PacketType.CommandResponse:
@@ -231,7 +230,6 @@ internal class ClientRequestProcessor
     }
 
     private async Task ProcessClusterMetadataRequestAsync(TaskFluxClient client,
-                                                          ClusterMetadataRequestPacket request,
                                                           CancellationToken token)
     {
         var response = new ClusterMetadataResponsePacket(_clusterInfo.Nodes, _clusterInfo.LeaderId?.Id,
@@ -249,6 +247,23 @@ internal class ClientRequestProcessor
             return;
         }
 
+        switch (request.Command.Type)
+        {
+            case NetworkCommandType.Enqueue:
+                await ProcessEnqueueCommandAsync(client, request, token);
+                return;
+            case NetworkCommandType.Dequeue:
+                await ProcessDequeueCommandAsync(client, request, token);
+                return;
+            case NetworkCommandType.Count:
+            case NetworkCommandType.CreateQueue:
+            case NetworkCommandType.DeleteQueue:
+            case NetworkCommandType.ListQueues:
+                break;
+            default:
+                throw new ArgumentOutOfRangeException();
+        }
+
         Command command;
         try
         {
@@ -261,27 +276,11 @@ internal class ClientRequestProcessor
             return;
         }
 
-        switch (command.Type)
-        {
-            // Для Enqueue и Dequeue отдельные пути обработки (с подтверждениями)
-            case CommandType.Enqueue:
-                await ProcessEnqueueCommandAsync(client, ( EnqueueCommand ) command, token);
-                return;
-            case CommandType.Dequeue:
-                await ProcessDequeueCommandAsync(client, ( DequeueCommand ) command, token);
-                return;
-            case CommandType.Count:
-            case CommandType.CreateQueue:
-            case CommandType.DeleteQueue:
-            case CommandType.ListQueues:
-                break;
-        }
-
         // Обычный путь команды - Запрос -> Ответ
         var submitResponse = await _requestAcceptor.AcceptAsync(command, token);
         if (submitResponse.TryGetResponse(out var response))
         {
-            await client.SendAsync(new CommandResponsePacket(ResponseMapper.Map(response)), token);
+            await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
         }
         else
         {
@@ -291,7 +290,7 @@ internal class ClientRequestProcessor
     }
 
     private async Task ProcessEnqueueCommandAsync(TaskFluxClient client,
-                                                  EnqueueCommand command,
+                                                  CommandRequestPacket request,
                                                   CancellationToken token)
     {
         /*
@@ -302,14 +301,31 @@ internal class ClientRequestProcessor
          * <- CommandResponse(Enqueue)
          */
 
-        await client.SendAsync(new CommandResponsePacket(OkNetworkResponse.Instance), token);
+        Command command;
+        try
+        {
+            command = CommandMapper.Map(request.Command);
+        }
+        catch (InvalidQueueNameException)
+        {
+            // Указанное пользователем название очереди невалидное
+            await client.SendAsync(new ErrorResponsePacket(( int ) ErrorCodes.InvalidQueueName, string.Empty), token);
+            return;
+        }
+
+        await client.SendAsync(OkPacket.Instance, token);
         var ackPacket = await client.ReceiveAsync(token);
         Debug.Assert(Enum.IsDefined(ackPacket.Type), "Enum.IsDefined(ackPacket.Type)", "Неизвестный тип пакета: {0}",
             ackPacket.Type);
+
         switch (ackPacket.Type)
         {
             case PacketType.AcknowledgeRequest:
                 break;
+            case PacketType.NegativeAcknowledgementRequest:
+                // Клиент отказался вставлять новую запись 
+                await client.SendAsync(OkPacket.Instance, token);
+                return;
             case PacketType.CommandRequest:
             case PacketType.CommandResponse:
             case PacketType.ErrorResponse:
@@ -320,15 +336,14 @@ internal class ClientRequestProcessor
             case PacketType.BootstrapResponse:
             case PacketType.ClusterMetadataRequest:
             case PacketType.ClusterMetadataResponse:
+            case PacketType.Ok:
                 throw new UnexpectedPacketException(ackPacket, PacketType.AcknowledgeRequest);
-            default:
-                throw new ArgumentOutOfRangeException(nameof(ackPacket.Type), ackPacket.Type, "Неизвестный тип пакета");
         }
 
         var submitResponse = await _requestAcceptor.AcceptAsync(command, token);
         if (submitResponse.TryGetResponse(out var response))
         {
-            await client.SendAsync(new CommandResponsePacket(ResponseMapper.Map(response)), token);
+            await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
         }
         else
         {
@@ -337,9 +352,98 @@ internal class ClientRequestProcessor
     }
 
     private async Task ProcessDequeueCommandAsync(TaskFluxClient client,
-                                                  DequeueCommand command,
+                                                  CommandRequestPacket packet,
                                                   CancellationToken token)
     {
-        throw new NotImplementedException();
+        /*
+         * -> CommandRequest(Dequeue)
+         * ... Чтение
+         * <- CommandResponse(Dequeue)
+         * -> Acknowledge
+         * ... Коммит
+         * <- Ok
+         * ... Если таймаут или соединение разорвалось - возвращаем
+         */
+        var command = ( DequeueCommand ) CommandMapper.Map(packet.Command);
+        var submitResult = await _requestAcceptor.AcceptAsync(command, token);
+
+        if (submitResult.TryGetResponse(out var response) is false)
+        {
+            // Перестали быть лидером пока запрос обрабатывался
+            await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id), token);
+            return;
+        }
+
+        if (response.Type != ResponseType.Dequeue)
+        {
+            // Если в ответе получили не Dequeue, то
+            // единственный вариант - ошибка бизнес-логики (нарушение политики, очередь не существует и т.д.)
+            await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
+            return;
+        }
+
+        var dequeueResponse = ( DequeueResponse ) response;
+        if (!dequeueResponse.Success)
+        {
+            // Если очередь была пуста - приступаем к обработке следующих команд
+            return;
+        }
+
+        /*
+         * На этом моменте мы знаем, что из какой-то очереди была прочитана запись,
+         * но ее прочтение еще не закоммичено.
+         * Теперь ждем:
+         * - Ack - коммитим чтение
+         * - Nack - возвращаем запись обратно
+         */
+        try
+        {
+            // Ожидаем либо Ack, либо Nack
+            var request = await client.ReceiveAsync(token);
+            Debug.Assert(Enum.IsDefined(request.Type), "Enum.IsDefined(request.Type)", "Неизвестный тип пакета {0}",
+                request.Type);
+
+            SubmitResponse<Response> submitResponse;
+            switch (request.Type)
+            {
+                case PacketType.AcknowledgeRequest:
+                    // Если команду все же нужно выполнить - коммитим выполнение и возвращаем ответ
+                    submitResponse =
+                        await _requestAcceptor.AcceptAsync(new CommitDequeueCommand(dequeueResponse), token);
+                    break;
+                case PacketType.NegativeAcknowledgementRequest:
+                    // Иначе возвращаем ее обратно
+                    submitResponse =
+                        await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(dequeueResponse), token);
+                    break;
+                case PacketType.CommandRequest:
+                case PacketType.CommandResponse:
+                case PacketType.ErrorResponse:
+                case PacketType.NotLeader:
+                case PacketType.AuthorizationRequest:
+                case PacketType.AuthorizationResponse:
+                case PacketType.BootstrapRequest:
+                case PacketType.BootstrapResponse:
+                case PacketType.ClusterMetadataRequest:
+                case PacketType.ClusterMetadataResponse:
+                    throw new UnexpectedPacketException(request, PacketType.AcknowledgeRequest);
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(request.Type), request.Type, "Неизвестный тип пакета");
+            }
+
+            if (submitResponse.TryGetResponse(out response))
+            {
+                await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
+            }
+            else
+            {
+                await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id), token);
+            }
+        }
+        catch (Exception)
+        {
+            await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(dequeueResponse), token);
+            throw;
+        }
     }
 }

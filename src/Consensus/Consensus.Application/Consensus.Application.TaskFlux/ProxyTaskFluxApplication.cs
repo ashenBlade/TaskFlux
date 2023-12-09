@@ -22,11 +22,6 @@ public class ProxyTaskFluxApplication : IApplication<Command, Response>
         return command.Apply(_application);
     }
 
-    public void ApplyNoResponse(Command command)
-    {
-        command.ApplyNoResult(_application);
-    }
-
     public ISnapshot GetSnapshot()
     {
         return new ApplicationSnapshot(_application);

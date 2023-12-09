@@ -15,6 +15,8 @@ public interface ICommandVisitor
     public void Visit(CreateQueueCommand command);
     public void Visit(DeleteQueueCommand command);
     public void Visit(ListQueuesCommand command);
+    public void Visit(ReturnRecordCommand command);
+    public void Visit(CommitDequeueCommand command);
 }
 
 public interface ICommandVisitor<out T>
@@ -25,4 +27,6 @@ public interface ICommandVisitor<out T>
     public T Visit(CreateQueueCommand command);
     public T Visit(DeleteQueueCommand command);
     public T Visit(ListQueuesCommand command);
+    public T Visit(ReturnRecordCommand command);
+    public T Visit(CommitDequeueCommand command);
 }

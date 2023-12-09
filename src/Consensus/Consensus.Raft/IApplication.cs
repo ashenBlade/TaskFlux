@@ -12,15 +12,6 @@ public interface IApplication<in TCommand, out TResponse>
     public TResponse Apply(TCommand command);
 
     /// <summary>
-    /// Применить команду к приложению без получения результата
-    /// </summary>
-    /// <param name="command">Команда, которую нужно выполнить</param>
-    /// <remarks>
-    /// Используется, когда ответ не отправляется клиенту. Например, репликация или восстановление
-    /// </remarks>
-    public void ApplyNoResponse(TCommand command);
-
-    /// <summary>
     /// Получить слепок приложения на текущий момент
     /// </summary>
     /// <returns>Слепок приложения</returns>

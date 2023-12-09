@@ -8,7 +8,6 @@ namespace TaskFlux.Commands.Count;
 public class CountCommand : ReadOnlyCommand
 {
     public QueueName Queue { get; }
-    public override CommandType Type => CommandType.Count;
 
     public CountCommand(QueueName queue)
     {

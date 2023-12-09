@@ -1,4 +1,4 @@
-using TaskFlux.Network.Packets.Commands;
+using TaskFlux.Network.Commands;
 
 namespace TaskFlux.Network.Packets.Tests;
 

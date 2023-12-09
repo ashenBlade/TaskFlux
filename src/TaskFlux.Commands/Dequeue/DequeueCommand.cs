@@ -2,30 +2,23 @@ using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 using TaskFlux.Models;
-using TaskFlux.Serialization;
 
 namespace TaskFlux.Commands.Dequeue;
 
-// TODO: логика работы Dequeue Command
-public class DequeueCommand : UpdateCommand
+public class DequeueCommand : ModificationCommand
 {
+    // Конкретно для этой команды мы используем быстрый путь выполнения - без фиксации результата.
+    // Это нужно для использования Ack/Nack команд (at-least-once семантики) - изменения будут зафиксированы другими командами
+    public override bool UseFastPath => true;
     public QueueName Queue { get; }
-    private DequeueResponse? _response;
 
     public DequeueCommand(QueueName queue)
     {
         Queue = queue;
     }
 
-    public override CommandType Type => CommandType.Dequeue;
-
     public override Response Apply(IApplication context)
     {
-        if (_response is { } r)
-        {
-            return r;
-        }
-
         var manager = context.TaskQueueManager;
 
         if (!manager.TryGetQueue(Queue, out var queue))
@@ -35,34 +28,10 @@ public class DequeueCommand : UpdateCommand
 
         if (queue.TryDequeue(out var key, out var payload))
         {
-            return _response = DequeueResponse.Create(Queue, key, payload);
+            return DequeueResponse.Create(Queue, key, payload);
         }
 
-        return _response = DequeueResponse.Empty;
-    }
-
-    public override void ApplyNoResult(IApplication context)
-    {
-        var manager = context.TaskQueueManager;
-
-        if (!manager.TryGetQueue(Queue, out var queue))
-        {
-            return;
-        }
-
-        queue.TryDequeue(out _, out _);
-    }
-
-    public override bool TryGetDelta(out Delta delta)
-    {
-        if (_response is {Key: var key, Message: var payload})
-        {
-            delta = new RemoveRecordDelta(Queue, key, payload);
-            return true;
-        }
-
-        delta = default!;
-        return false;
+        return DequeueResponse.Empty;
     }
 
     public override void Accept(ICommandVisitor visitor)
