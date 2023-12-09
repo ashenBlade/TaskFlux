@@ -18,7 +18,7 @@ internal class ClientRequestProcessor
     private readonly IOptionsMonitor<SocketRequestModuleOptions> _options;
     private readonly IApplicationInfo _applicationInfo;
     private readonly IRequestAcceptor _requestAcceptor;
-    private IClusterInfo ClusterInfo { get; }
+    private readonly IClusterInfo _clusterInfo;
     private readonly ILogger _logger;
 
     public ClientRequestProcessor(TcpClient client,
@@ -32,7 +32,7 @@ internal class ClientRequestProcessor
         _requestAcceptor = requestAcceptor;
         _options = options;
         _applicationInfo = applicationInfo;
-        ClusterInfo = clusterInfo;
+        _clusterInfo = clusterInfo;
         _logger = logger;
     }
 
@@ -51,10 +51,12 @@ internal class ClientRequestProcessor
                 await ProcessClientForeverAsync(client, token);
             }
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
         catch (EndOfStreamException)
         {
             _logger.Information("Клиент закрыл соединение");
-            // Клиент разорвал соединение
         }
         catch (UnknownAuthorizationMethodException uame)
         {
@@ -172,7 +174,7 @@ internal class ClientRequestProcessor
 
         bool ValidateVersion(BootstrapRequestPacket packet)
         {
-            var serverVersion = Constants.ServerVersion;
+            var serverVersion = _applicationInfo.Version;
             if (serverVersion.Major != packet.Major)
             {
                 return false;
@@ -189,6 +191,51 @@ internal class ClientRequestProcessor
     }
 
     private async Task ProcessClientForeverAsync(TaskFluxClient client, CancellationToken token)
+    {
+        while (token.IsCancellationRequested is false)
+        {
+            var request = await client.ReceiveAsync(token);
+            Debug.Assert(Enum.IsDefined(request.Type), "Получен неизвестный тип пакета", "Тип пакета {0} неизвестен",
+                request.Type);
+
+            switch (request.Type)
+            {
+                case PacketType.CommandRequest:
+                    await ProcessCommandRequestAsync(client, ( CommandRequestPacket ) request, token);
+                    break;
+                case PacketType.ClusterMetadataRequest:
+                    await ProcessClusterMetadataRequestAsync(client, ( ClusterMetadataRequestPacket ) request, token);
+                    break;
+                case PacketType.AcknowledgeRequest:
+                case PacketType.CommandResponse:
+                case PacketType.ErrorResponse:
+                case PacketType.NotLeader:
+                case PacketType.AuthorizationRequest:
+                case PacketType.AuthorizationResponse:
+                case PacketType.BootstrapRequest:
+                case PacketType.BootstrapResponse:
+                case PacketType.ClusterMetadataResponse:
+                    _logger.Warning("От клиента получен неожиданный тип пакета {PacketType}", request.Type);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(request.Type), ( int ) request.Type,
+                        "Получен неизвестный тип пакета");
+            }
+        }
+    }
+
+    private async Task ProcessClusterMetadataRequestAsync(TaskFluxClient client,
+                                                          ClusterMetadataRequestPacket request,
+                                                          CancellationToken token)
+    {
+        var response = new ClusterMetadataResponsePacket(_clusterInfo.Nodes, _clusterInfo.LeaderId?.Id,
+            _clusterInfo.CurrentNodeId.Id);
+        await client.SendAsync(response, token);
+    }
+
+    private async Task ProcessCommandRequestAsync(TaskFluxClient client,
+                                                  CommandRequestPacket request,
+                                                  CancellationToken token)
     {
         throw new NotImplementedException();
     }
