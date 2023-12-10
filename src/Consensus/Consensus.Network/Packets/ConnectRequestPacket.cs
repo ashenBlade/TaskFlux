@@ -3,7 +3,6 @@ using Utils.Serialization;
 
 namespace Consensus.Network.Packets;
 
-// TODO: добавить поле версии
 public class ConnectRequestPacket : RaftPacket
 {
     public override RaftPacketType PacketType => RaftPacketType.ConnectRequest;

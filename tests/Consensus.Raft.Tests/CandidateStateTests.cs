@@ -585,7 +585,6 @@ public class CandidateStateTests
             .Should()
             .BeEmpty("После создания снапшота лог должен быть пуст");
 
-        // TODO: скорее всего я не правильно создаю снапшот (IApplicationFactory неправильно работает)
         actualSnapshot.Should()
                       .BeEquivalentTo(newSnapshot,
                            "Данные из файла снапшота должны быть идентичны тем, что передает снапшот");
