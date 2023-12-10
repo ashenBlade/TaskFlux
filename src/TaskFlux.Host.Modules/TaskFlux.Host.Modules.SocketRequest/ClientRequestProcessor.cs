@@ -374,11 +374,12 @@ internal class ClientRequestProcessor
             return;
         }
 
+        await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
+
         if (response.Type != ResponseType.Dequeue)
         {
             // Если в ответе получили не Dequeue, то
             // единственный вариант - ошибка бизнес-логики (нарушение политики, очередь не существует и т.д.)
-            await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
             return;
         }
 
@@ -435,12 +436,14 @@ internal class ClientRequestProcessor
                     throw new ArgumentOutOfRangeException(nameof(request.Type), request.Type, "Неизвестный тип пакета");
             }
 
-            if (submitResponse.TryGetResponse(out response))
+            if (submitResponse.HasValue)
             {
-                await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
+                // В любом случае (Ack/Nack) отвечаем OK
+                await client.SendAsync(OkPacket.Instance, token);
             }
             else
             {
+                // Если пока отрабатывали лидер кластера сменился
                 await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id), token);
             }
         }
