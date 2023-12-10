@@ -1,10 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Net;
 using Serilog;
-using TaskFlux.Commands.Dequeue;
-using TaskFlux.Commands.Enqueue;
 using TaskFlux.Models;
-using TaskFlux.Network.Client;
+using TaskFlux.Network.Commands;
 
 // ReSharper disable once AccessToDisposedClosure
 
@@ -57,7 +55,7 @@ return;
 
 static async Task<int> RunConsumerAsync(ITaskFluxClient consumer, CancellationToken token)
 {
-    var dequeueCommand = new DequeueCommand(QueueName.Default);
+    var dequeueCommand = new DequeueNetworkCommand(QueueName.Default);
     var operations = 0;
     while (!token.IsCancellationRequested)
     {

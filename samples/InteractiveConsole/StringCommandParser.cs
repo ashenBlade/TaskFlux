@@ -1,11 +1,5 @@
-using TaskFlux.Commands;
-using TaskFlux.Commands.Count;
-using TaskFlux.Commands.CreateQueue;
-using TaskFlux.Commands.DeleteQueue;
-using TaskFlux.Commands.Dequeue;
-using TaskFlux.Commands.Enqueue;
-using TaskFlux.Commands.ListQueues;
-using TaskFlux.Core.Queue;
+using InteractiveConsole.Commands;
+using TaskFlux.Client;
 using TaskFlux.Models;
 using TaskFlux.PriorityQueue;
 
@@ -13,7 +7,7 @@ namespace InteractiveConsole;
 
 public static class StringCommandParser
 {
-    private delegate Command CommandFactory(string[] args);
+    private delegate UserCommand CommandFactory(string[] args);
 
     private static readonly Dictionary<string, CommandFactory> CommandToFactory = new()
     {
@@ -25,7 +19,7 @@ public static class StringCommandParser
         {"list", GetListQueuesCommand},
     };
 
-    public static Command ParseCommand(string input)
+    public static UserCommand ParseCommand(string input)
     {
         var args = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (args.Length == 0)
@@ -35,7 +29,9 @@ public static class StringCommandParser
 
         try
         {
-            return CommandToFactory[args[0].ToLower()](args);
+            var userCommand = CommandToFactory[args[0].ToLower()](args);
+            userCommand = new ErrorPrinterUserCommandDecorator(userCommand);
+            return userCommand;
         }
         catch (KeyNotFoundException)
         {
@@ -43,14 +39,14 @@ public static class StringCommandParser
         }
     }
 
-    private static CreateQueueCommand GetCreateQueueCommand(string[] args)
+    private static UserCommand GetCreateQueueCommand(string[] args)
     {
         var queueName = QueueNameParser.Parse(args[1]);
 
         int? maxQueueSize = null;
         int? maxPayloadSize = null;
         (long, long)? priorityRange = null;
-        var queueCode = TaskQueueBuilder.DefaultCode;
+        PriorityQueueCode? queueCode = null;
 
         for (var i = 2; i < args.Length; i++)
         {
@@ -88,25 +84,57 @@ public static class StringCommandParser
             }
         }
 
-        return new CreateQueueCommand(queueName,
-            code: queueCode,
-            maxQueueSize: maxQueueSize,
-            maxPayloadSize: maxPayloadSize,
-            priorityRange: priorityRange);
+        var options = new CreateQueueOptions();
+        switch (queueCode)
+        {
+            case null:
+                break;
+            case PriorityQueueCode.Heap4Arity:
+                options = options.UseHeap();
+                break;
+            case PriorityQueueCode.QueueArray:
+                if (priorityRange is var (min, max))
+                {
+                    options = options.UseQueueArray(min, max);
+                    priorityRange = null; // Чтобы дальше не использовали
+                }
+                else
+                {
+                    throw new Exception("Для реализации QueueArray необходимо указать диапазон допустимых ключей");
+                }
+
+                break;
+        }
+
+        if (priorityRange is var (minKey, maxKey))
+        {
+            options = options.WithPriorityRange(minKey, maxKey);
+        }
+
+        if (maxQueueSize is { } mqs)
+        {
+            options = options.WithMaxQueueSize(mqs);
+        }
+
+        if (maxPayloadSize is { } mps)
+        {
+            options = options.WithMaxMessageSize(mps);
+        }
+
+        return new CreateQueueUserCommand(queueName, options);
     }
 
-    private static DeleteQueueCommand GetDeleteQueueCommand(string[] args)
+    private static DeleteQueueUserCommand GetDeleteQueueCommand(string[] args)
     {
         var queueName = QueueNameParser.Parse(args[1]);
-        return new DeleteQueueCommand(queueName);
+        return new DeleteQueueUserCommand(queueName);
     }
 
-    private static EnqueueCommand GetEnqueueCommand(string[] args)
+    private static EnqueueUserCommand GetEnqueueCommand(string[] args)
     {
         QueueName queueName;
-        long key;
         string[] data;
-        if (long.TryParse(args[1], out key))
+        if (long.TryParse(args[1], out var key))
         {
             queueName = QueueName.Default;
             data = args[2..];
@@ -119,10 +147,10 @@ public static class StringCommandParser
         }
 
         var payload = PayloadHelpers.Serialize(string.Join(' ', data));
-        return new EnqueueCommand(key, payload, queueName);
+        return new EnqueueUserCommand(queueName, key, payload);
     }
 
-    private static DequeueCommand GetDequeueCommand(string[] args)
+    private static DequeueUserCommand GetDequeueCommand(string[] args)
     {
         QueueName queueName;
         try
@@ -134,10 +162,10 @@ public static class StringCommandParser
             queueName = QueueName.Default;
         }
 
-        return new DequeueCommand(queueName);
+        return new DequeueUserCommand(queueName);
     }
 
-    private static CountCommand GetCountCommand(string[] args)
+    private static GetCountUserCommand GetCountCommand(string[] args)
     {
         QueueName queueName;
         try
@@ -149,11 +177,11 @@ public static class StringCommandParser
             queueName = QueueName.Default;
         }
 
-        return new CountCommand(queueName);
+        return new GetCountUserCommand(queueName);
     }
 
-    private static ListQueuesCommand GetListQueuesCommand(string[] args)
+    private static ListQueuesUserCommand GetListQueuesCommand(string[] args)
     {
-        return new ListQueuesCommand();
+        return new ListQueuesUserCommand();
     }
 }
