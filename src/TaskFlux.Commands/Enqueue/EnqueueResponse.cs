@@ -20,7 +20,7 @@ public class EnqueueResponse : Response
 
     public override void Accept(IResponseVisitor visitor)
     {
-        throw new NotImplementedException();
+        visitor.Visit(this);
     }
 
     public override bool TryGetDelta(out Delta delta)

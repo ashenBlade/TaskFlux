@@ -26,7 +26,10 @@ Console.CancelKeyPress += (_, eventArgs) =>
     eventArgs.Cancel = true;
 };
 
-var clientFactory = new TaskFluxClientFactory(new EndPoint[] {new DnsEndPoint("localhost", 8080),});
+var clientFactory = new TaskFluxClientFactory(new EndPoint[]
+{
+    new DnsEndPoint("localhost", 8080), new DnsEndPoint("localhost", 8081), new DnsEndPoint("localhost", 8082),
+});
 
 Log.Logger.Debug($"Создаю клиента");
 await using var client = await clientFactory.ConnectAsync(cts.Token);

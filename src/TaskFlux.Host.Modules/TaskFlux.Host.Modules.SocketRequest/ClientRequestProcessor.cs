@@ -241,11 +241,11 @@ internal class ClientRequestProcessor
                                                   CommandRequestPacket request,
                                                   CancellationToken token)
     {
-        if (_clusterInfo.LeaderId != _clusterInfo.CurrentNodeId)
-        {
-            await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id), token);
-            return;
-        }
+        // if (_clusterInfo.LeaderId != _clusterInfo.CurrentNodeId)
+        // {
+        //     await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id), token);
+        //     return;
+        // }
 
         switch (request.Command.Type)
         {
@@ -269,7 +269,6 @@ internal class ClientRequestProcessor
         {
             command = CommandMapper.Map(request.Command);
         }
-        // TODO: дополнительные исключения для разных типов ошибок бизнес-логики (маппинг)
         catch (InvalidQueueNameException)
         {
             await client.SendAsync(new ErrorResponsePacket(( int ) ErrorCodes.InvalidQueueName, string.Empty), token);
@@ -280,6 +279,7 @@ internal class ClientRequestProcessor
         var submitResponse = await _requestAcceptor.AcceptAsync(command, token);
         if (submitResponse.TryGetResponse(out var response))
         {
+            _logger.Debug("Результат работы команды: {@Response}", response);
             await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
         }
         else

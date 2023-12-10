@@ -68,7 +68,13 @@ public class InfoUpdaterRaftConsensusModuleDecorator<TCommand, TResult> : IRaftC
 
     public RequestVoteResponse Handle(RequestVoteRequest request)
     {
-        return _module.Handle(request);
+        var result = _module.Handle(request);
+        if (result.VoteGranted)
+        {
+            _clusterInfo.LeaderId = request.CandidateId;
+        }
+
+        return result;
     }
 
     public AppendEntriesResponse Handle(AppendEntriesRequest request)
@@ -85,11 +91,6 @@ public class InfoUpdaterRaftConsensusModuleDecorator<TCommand, TResult> : IRaftC
     public IEnumerable<InstallSnapshotResponse> Handle(InstallSnapshotRequest request, CancellationToken token)
     {
         return _module.Handle(request, token);
-    }
-
-    public SubmitResponse<TResult> Handle(TCommand command)
-    {
-        return _module.Handle(command);
     }
 
     public event RoleChangedEventHandler? RoleChanged

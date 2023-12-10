@@ -36,6 +36,9 @@ internal class ReconnectingTaskFluxClientDecorator : ITaskFluxClient
             catch (EndOfStreamException)
             {
             }
+            catch (IOException)
+            {
+            }
 
             await _client.DisposeAsync();
             _client = await _factory.ConnectCoreAsync(token);
@@ -57,6 +60,9 @@ internal class ReconnectingTaskFluxClientDecorator : ITaskFluxClient
                 _factory.LeaderId = nle.CurrentLeaderId;
             }
             catch (EndOfStreamException)
+            {
+            }
+            catch (IOException)
             {
             }
 
@@ -82,6 +88,9 @@ internal class ReconnectingTaskFluxClientDecorator : ITaskFluxClient
             catch (EndOfStreamException)
             {
             }
+            catch (IOException)
+            {
+            }
 
             await _client.DisposeAsync();
             _client = await _factory.ConnectCoreAsync(token);
@@ -103,6 +112,9 @@ internal class ReconnectingTaskFluxClientDecorator : ITaskFluxClient
                 _factory.LeaderId = nle.CurrentLeaderId;
             }
             catch (EndOfStreamException)
+            {
+            }
+            catch (IOException)
             {
             }
 
@@ -128,6 +140,9 @@ internal class ReconnectingTaskFluxClientDecorator : ITaskFluxClient
             catch (EndOfStreamException)
             {
             }
+            catch (IOException)
+            {
+            }
 
             await _client.DisposeAsync();
             _client = await _factory.ConnectCoreAsync(token);
@@ -149,6 +164,9 @@ internal class ReconnectingTaskFluxClientDecorator : ITaskFluxClient
                 _factory.LeaderId = nle.CurrentLeaderId;
             }
             catch (EndOfStreamException)
+            {
+            }
+            catch (IOException)
             {
             }
 

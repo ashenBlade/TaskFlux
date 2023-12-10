@@ -1,5 +1,4 @@
 using TaskFlux.Commands.Error;
-using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.PolicyViolation;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
@@ -35,7 +34,7 @@ public class EnqueueCommand : ModificationCommand
             return new PolicyViolationResponse(policy);
         }
 
-        return OkResponse.Instance;
+        return new EnqueueResponse(Queue, Key, Message);
     }
 
     public override void Accept(ICommandVisitor visitor)

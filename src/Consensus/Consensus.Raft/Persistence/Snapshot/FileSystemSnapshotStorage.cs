@@ -136,8 +136,6 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
                     logger.Information("Прочитан очередной чанк данных");
                     yield return buffer.AsMemory(0, read);
                 }
-
-                logger.Information("Файл закончился");
             }
             finally
             {

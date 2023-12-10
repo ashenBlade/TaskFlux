@@ -30,7 +30,7 @@ public class NodeStateObserver
                 await Task.Delay(TimeSpan.FromSeconds(2.5), token);
             }
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
         }
     }

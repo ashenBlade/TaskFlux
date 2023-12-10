@@ -48,6 +48,7 @@ public class LeaderState<TCommand, TResponse>
                               ? s
                               : null;
         var deltas = PersistenceFacade.LogStorage.ReadAll().Select(x => x.Data);
+        _logger.Debug("Восстанавливаю предыдущее состояние");
         _application = ApplicationFactory.Restore(oldSnapshot, deltas);
 
         Array.ForEach(_peerProcessors, p =>
@@ -217,10 +218,13 @@ public class LeaderState<TCommand, TResponse>
     {
         Debug.Assert(_application is not null, "_application is not null",
             "Приложение не было инициализировано на момент обработки запроса");
+        _logger.Information("Получил новую команду: {Command}", command);
 
         var response = _application.Apply(command);
         if (!_deltaExtractor.TryGetDelta(response, out var delta))
         {
+            // Если команда не выполнила модификаций (дельты нет),
+            // то сразу возвращаем результат - без необходимости репликации/фиксации
             return SubmitResponse<TResponse>.Success(response, true);
         }
 

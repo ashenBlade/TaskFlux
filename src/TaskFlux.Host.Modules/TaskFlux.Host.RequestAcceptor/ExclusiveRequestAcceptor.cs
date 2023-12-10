@@ -91,7 +91,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
                     var response = _module.Handle(request.Command, request.Token);
                     request.SetResult(response);
                 }
-                catch (OperationCanceledException o)
+                catch (OperationCanceledException)
                 {
                     request.Cancel();
                 }

@@ -27,9 +27,25 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
 
     public IApplication<Command, Response> Restore(ISnapshot? snapshot, IEnumerable<byte[]> deltas)
     {
+        var collection = GetQueueCollection(snapshot);
+
+        foreach (var deltaBytes in deltas)
+        {
+            var delta = Delta.DeserializeFrom(deltaBytes);
+            delta.Apply(collection);
+        }
+
+        var manager = CreateManager(collection);
+        var application = new TaskFluxApplication(_nodeInfo, _clusterInfo, _applicationInfo, manager);
+        return new ProxyTaskFluxApplication(application);
+    }
+
+    private static QueueCollection GetQueueCollection(ISnapshot? snapshot)
+    {
         QueueCollection collection;
         if (snapshot is not null)
         {
+            // Восстанавливаем состояние из снапшота
             var stream = new MemoryStream();
             foreach (var memory in snapshot.GetAllChunks())
             {
@@ -49,21 +65,12 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
             collection.CreateQueue(QueueName.Default, PriorityQueueCode.Heap4Arity, null, null, null);
         }
 
-        foreach (var deltaBytes in deltas)
-        {
-            var delta = Delta.DeserializeFrom(deltaBytes);
-            delta.Apply(collection);
-        }
-
-        var manager = CreateManager(collection);
-        var application =
-            new TaskFluxApplication(_nodeInfo, _clusterInfo, _applicationInfo, manager);
-        return new ProxyTaskFluxApplication(application);
+        return collection;
     }
 
     private static TaskQueueManager CreateManager(QueueCollection collection)
     {
-        var queues = new List<ITaskQueue>();
+        var queues = new List<ITaskQueue>(collection.Count);
         foreach (var (name, code, maxQueueSize, maxPayloadSize, priorityRange, data) in collection.GetQueuesRaw())
         {
             var builder = new TaskQueueBuilder(name, code)
