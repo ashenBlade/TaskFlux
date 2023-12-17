@@ -43,9 +43,6 @@ internal class ClientRequestProcessor
 
     public async Task ProcessAsync(CancellationToken token)
     {
-        // 1. Авторизуем клиента
-        // 2. Настраиваем клиента
-        // 3. Обрабатываем его запросы (Enqueue, Dequeue, Create, ...)
         _logger.Information("Начинаю обработку клиента");
         await using var stream = _client.GetStream();
         var client = new TaskFluxClient(stream);
@@ -58,6 +55,10 @@ internal class ClientRequestProcessor
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.Information("Таймаут ожидания клиента превышен");
         }
         catch (EndOfStreamException)
         {
@@ -100,9 +101,11 @@ internal class ClientRequestProcessor
     private async Task<bool> AcceptSetupClientAsync(TaskFluxClient client, CancellationToken token)
     {
         // 1. Авторизация
-        var request = await client.ReceiveAsync(token);
-        Debug.Assert(Enum.IsDefined(request.Type), "Неизвестный тип пакета",
-            "От клиента получен неизвестный тип пакета {0}: {1}", request.Type, request);
+        Packet request;
+        using (var cts = CreateIdleTimeoutCts(token))
+        {
+            request = await client.ReceiveAsync(cts.Token);
+        }
 
         AuthorizationRequestPacket authorizationRequest;
         switch (request.Type)
@@ -131,7 +134,7 @@ internal class ClientRequestProcessor
         switch (authorizationType)
         {
             case AuthorizationMethodType.None:
-                // Единственный пока метод
+                // Единственный пока метод авторизации
                 break;
             default:
                 throw new InvalidEnumArgumentException(nameof(authorizationType),
@@ -142,7 +145,11 @@ internal class ClientRequestProcessor
         await client.SendAsync(AuthorizationResponsePacket.Ok, token);
 
         // 2. Бутстрап
-        request = await client.ReceiveAsync(token);
+        using (var cts = CreateIdleTimeoutCts(token))
+        {
+            request = await client.ReceiveAsync(cts.Token);
+        }
+
         Debug.Assert(Enum.IsDefined(request.Type), "Неизвестный тип пакета",
             "От клиента получен неизвестный тип пакета {0}: {1}", request.Type, request);
         BootstrapRequestPacket bootstrapRequest;
@@ -199,9 +206,11 @@ internal class ClientRequestProcessor
     {
         while (token.IsCancellationRequested is false)
         {
-            var request = await client.ReceiveAsync(token);
-            Debug.Assert(Enum.IsDefined(request.Type), "Получен неизвестный тип пакета", "Тип пакета {0} неизвестен",
-                request.Type);
+            Packet request;
+            using (var cts = CreateIdleTimeoutCts(token))
+            {
+                request = await client.ReceiveAsync(cts.Token);
+            }
 
             switch (request.Type)
             {
@@ -241,12 +250,6 @@ internal class ClientRequestProcessor
                                                   CommandRequestPacket request,
                                                   CancellationToken token)
     {
-        // if (_clusterInfo.LeaderId != _clusterInfo.CurrentNodeId)
-        // {
-        //     await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id), token);
-        //     return;
-        // }
-
         switch (request.Command.Type)
         {
             case NetworkCommandType.Enqueue:
@@ -294,13 +297,14 @@ internal class ClientRequestProcessor
                                                   CancellationToken token)
     {
         /*
-         * -> CommandRequest(Enqueue)
-         * <- Ok
-         * -> Acknowledge
-         * ... Вставка
-         * <- CommandResponse(Enqueue)
+         * Команда вставки разделена на 2 этапа:
+         * 1. Клиент отправляет пакет с сообщением, который хочет вставить -> Мы его принимаем
+         * 2. Клиент подтверждает вставку (Ack)
+         *
+         * Мы отправляем OK сразу после маппинга, т.к. на этот момент весь пакет отправленный клиентом получили.
+         * Без подобного подтверждения может возникнуть ситуация, когда на момент полного получения пакета с сообщением,
+         * клиент отвалился (например, он послал запись в 1Мб и он раздробился на 1500б по Ethernet).
          */
-
         Command command;
         try
         {
@@ -314,7 +318,13 @@ internal class ClientRequestProcessor
         }
 
         await client.SendAsync(OkPacket.Instance, token);
-        var ackPacket = await client.ReceiveAsync(token);
+
+        Packet ackPacket;
+        using (var cts = CreateIdleTimeoutCts(token))
+        {
+            ackPacket = await client.ReceiveAsync(cts.Token);
+        }
+
         Debug.Assert(Enum.IsDefined(ackPacket.Type), "Enum.IsDefined(ackPacket.Type)", "Неизвестный тип пакета: {0}",
             ackPacket.Type);
 
@@ -356,13 +366,12 @@ internal class ClientRequestProcessor
                                                   CancellationToken token)
     {
         /*
-         * -> CommandRequest(Dequeue)
-         * ... Чтение
-         * <- CommandResponse(Dequeue)
-         * -> Acknowledge
-         * ... Коммит
-         * <- Ok
-         * ... Если таймаут или соединение разорвалось - возвращаем
+         * Процесс чтения записи разбивается на 2 этапа:
+         * 1. Забираем запись из самой очереди -> Отправляем клиенту
+         * 2. Клиент подтверждает ее обработку -> Коммитим удаление
+         *
+         * В противном случае, пока клиент отсылал запрос и получал запись - отвалился.
+         * В этом случае, запись будет потеряна.
          */
         var command = ( DequeueRecordCommand ) CommandMapper.Map(packet.Command);
         var submitResult = await _requestAcceptor.AcceptAsync(command, token);
@@ -400,7 +409,12 @@ internal class ClientRequestProcessor
         try
         {
             // Ожидаем либо Ack, либо Nack
-            var request = await client.ReceiveAsync(token);
+            Packet request;
+            using (var cts = CreateIdleTimeoutCts(token))
+            {
+                request = await client.ReceiveAsync(cts.Token);
+            }
+
             Debug.Assert(Enum.IsDefined(request.Type), "Enum.IsDefined(request.Type)", "Неизвестный тип пакета {0}",
                 request.Type);
 
@@ -452,5 +466,12 @@ internal class ClientRequestProcessor
             await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(dequeueResponse), token);
             throw;
         }
+    }
+
+    private CancellationTokenSource CreateIdleTimeoutCts(CancellationToken token)
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        cts.CancelAfter(_options.CurrentValue.IdleTimeout);
+        return cts;
     }
 }
