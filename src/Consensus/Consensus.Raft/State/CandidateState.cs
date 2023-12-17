@@ -1,21 +1,24 @@
+using Consensus.Core.Submit;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Serilog;
 using TaskFlux.Models;
 
 namespace Consensus.Raft.State;
 
-public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
+public class CandidateState<TCommand, TResponse>
+    : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Candidate;
     private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;
 
-    internal CandidateState(IConsensusModule<TCommand, TResponse> consensusModule, ITimer electionTimer, ILogger logger)
-        : base(consensusModule)
+    internal CandidateState(IRaftConsensusModule<TCommand, TResponse> raftConsensusModule,
+                            ITimer electionTimer,
+                            ILogger logger)
+        : base(raftConsensusModule)
     {
         _electionTimer = electionTimer;
         _logger = logger;
@@ -135,10 +138,10 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
                         leftPeers[i].Id);
                     _cts.Cancel();
 
-                    var followerState = ConsensusModule.CreateFollowerState();
-                    if (ConsensusModule.TryUpdateState(followerState, this))
+                    var followerState = RaftConsensusModule.CreateFollowerState();
+                    if (RaftConsensusModule.TryUpdateState(followerState, this))
                     {
-                        ConsensusModule.PersistenceFacade.UpdateState(response.CurrentTerm, null);
+                        RaftConsensusModule.PersistenceFacade.UpdateState(response.CurrentTerm, null);
                     }
 
                     return;
@@ -169,8 +172,8 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
             return;
         }
 
-        var leaderState = ConsensusModule.CreateLeaderState();
-        ConsensusModule.TryUpdateState(leaderState, this);
+        var leaderState = RaftConsensusModule.CreateLeaderState();
+        RaftConsensusModule.TryUpdateState(leaderState, this);
 
         bool QuorumReached()
         {
@@ -182,11 +185,12 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
     {
         _electionTimer.Timeout -= OnElectionTimerTimeout;
 
-        var candidateState = ConsensusModule.CreateCandidateState();
-        if (ConsensusModule.TryUpdateState(candidateState, this))
+        var candidateState = RaftConsensusModule.CreateCandidateState();
+        if (RaftConsensusModule.TryUpdateState(candidateState, this))
         {
             _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
-            ConsensusModule.PersistenceFacade.UpdateState(ConsensusModule.CurrentTerm.Increment(), ConsensusModule.Id);
+            RaftConsensusModule.PersistenceFacade.UpdateState(RaftConsensusModule.CurrentTerm.Increment(),
+                RaftConsensusModule.Id);
         }
     }
 
@@ -197,12 +201,12 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
-        var followerState = ConsensusModule.CreateFollowerState();
-        ConsensusModule.TryUpdateState(followerState, this);
-        return ConsensusModule.Handle(request);
+        var followerState = RaftConsensusModule.CreateFollowerState();
+        RaftConsensusModule.TryUpdateState(followerState, this);
+        return RaftConsensusModule.Handle(request);
     }
 
-    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
+    public override SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default)
     {
         return SubmitResponse<TResponse>.NotLeader;
     }
@@ -223,10 +227,10 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            var followerState = ConsensusModule.CreateFollowerState();
-            if (ConsensusModule.TryUpdateState(followerState, this))
+            var followerState = RaftConsensusModule.CreateFollowerState();
+            if (RaftConsensusModule.TryUpdateState(followerState, this))
             {
-                ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
+                RaftConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
             }
 
             return new RequestVoteResponse(CurrentTerm, !logConflicts);
@@ -245,14 +249,14 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
             // У которого лог в консистентном с нашим состоянием
             !logConflicts)
         {
-            var followerState = ConsensusModule.CreateFollowerState();
-            if (ConsensusModule.TryUpdateState(followerState, this))
+            var followerState = RaftConsensusModule.CreateFollowerState();
+            if (RaftConsensusModule.TryUpdateState(followerState, this))
             {
-                ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
+                RaftConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
                 return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
             }
 
-            return ConsensusModule.Handle(request);
+            return RaftConsensusModule.Handle(request);
         }
 
         // Кандидат только что проснулся и не знает о текущем состоянии дел. 
@@ -278,8 +282,8 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
             return new[] {new InstallSnapshotResponse(CurrentTerm)};
         }
 
-        var state = ConsensusModule.CreateFollowerState();
-        if (ConsensusModule.TryUpdateState(state, this))
+        var state = RaftConsensusModule.CreateFollowerState();
+        if (RaftConsensusModule.TryUpdateState(state, this))
         {
             _logger.Debug("Получен InstallSnapshotRequest с термом не меньше моего. Перехожу в Follower");
         }
@@ -288,6 +292,6 @@ public class CandidateState<TCommand, TResponse> : State<TCommand, TResponse>
             _logger.Debug("Получен InstallSnapshotRequest с термом не меньше моего, но перейти в Follower не удалось");
         }
 
-        return ConsensusModule.Handle(request, token);
+        return RaftConsensusModule.Handle(request, token);
     }
 }

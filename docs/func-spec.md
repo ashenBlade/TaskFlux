@@ -93,7 +93,11 @@ flowchart TD
 
 ## Чтение записи
 
-Эта операция читает и тут-же удаляет прочитанную запись (забирает).
+Эта операция извлекает из указанной очереди запись с наивысшим приоритетом.
+Операция разделена на 2 части:
+
+1. Извлечение самой записи
+2. Подтверждение получения записи
 
 Для чтения записи нужно указать только название очереди, из которой нужно прочитать элемент.
 
@@ -110,6 +114,10 @@ flowchart TD
     dequeue-element[Получить элемент из очереди]
     got-element{Элемент получен?}
     return-empty([Успех: очередь пуста])
+    receive-acknowledge[Получить от клиента ACK]
+    is-ack-received{ACK получен?}
+    return-element-to-queue([Ошибка: вернуть запись обратно в очередь])
+    commit-dequeue[Зафиксировать операцию]
     return-element([Успех: вернуть элемент])
     
     start ---> check-queue-name
@@ -123,8 +131,14 @@ flowchart TD
     check-queue-exists -- Да --> use-specified-queue --> dequeue-element --> got-element
     
     got-element -- Нет --> return-empty
-    got-element -- Да --> return-element
+    got-element -- Да --> receive-acknowledge --> is-ack-received
+    is-ack-received -- Нет --> return-element-to-queue
+    is-ack-received -- Да --> commit-dequeue --> return-element
 ```
+
+Подтверждение чтения нужно для обработки ситуаций внезапного отключения клиента и других внезапных ситуаций.
+Благодаря этому можно сказать, реализуется семантика at-least-once.
+Пока нет необходимости подтверждения для других команд (удаление, создание, добавление).
 
 ## Создание очереди
 

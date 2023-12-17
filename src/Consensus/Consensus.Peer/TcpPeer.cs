@@ -262,22 +262,17 @@ public class TcpPeer : IPeer
         var chunkNumber = 1;
         foreach (var chunk in request.Snapshot.GetAllChunks(token))
         {
-            while (true)
+            token.ThrowIfCancellationRequested();
+            _logger.Debug("Отправляю {Number} чанк данных", chunkNumber);
+            var chunkResponse = SendPacketReturning(new InstallSnapshotChunkPacket(chunk));
+            if (chunkResponse is null)
             {
-                token.ThrowIfCancellationRequested();
-                _logger.Debug("Отправляю {Number} чанк данных", chunkNumber);
-                var chunkResponse = SendPacketReturning(new InstallSnapshotChunkPacket(chunk));
-                if (chunkResponse is null)
-                {
-                    _logger.Debug("Во время отправки чанка данных соединение было разорвано");
-                    yield return null;
-                    yield break;
-                }
-
-                yield return GetInstallSnapshotResponse(chunkResponse);
-
-                // Делаем повторную попытку отправки - целостность была нарушена
+                _logger.Debug("Во время отправки чанка данных соединение было разорвано");
+                yield return null;
+                yield break;
             }
+
+            yield return GetInstallSnapshotResponse(chunkResponse);
         }
 
         // Отправляем последний пустой пакет - окончание передачи
@@ -292,9 +287,6 @@ public class TcpPeer : IPeer
         }
 
         yield return GetInstallSnapshotResponse(lastChunkResponse);
-
-        // Это для явного разделения конца метода и локальной функции
-        yield break;
 
         static InstallSnapshotResponse GetInstallSnapshotResponse(RaftPacket packet)
         {
@@ -319,10 +311,10 @@ public class TcpPeer : IPeer
     {
         while (true)
         {
-            packet.Serialize(NetworkStream);
-
             try
             {
+                packet.Serialize(NetworkStream);
+
                 var response = Deserializer.Deserialize(NetworkStream);
                 if (response.PacketType is RaftPacketType.RetransmitRequest)
                 {

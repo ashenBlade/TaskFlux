@@ -3,10 +3,12 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Consensus.Raft.Commands.Submit;
+using Consensus.Core.Submit;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Commands.Count;
+using TaskFlux.Commands.CreateQueue;
+using TaskFlux.Commands.DeleteQueue;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Commands.Enqueue;
 using TaskFlux.Commands.Error;
@@ -104,7 +106,8 @@ public class SubmitCommandRequestHandler : IRequestHandler
         if (commandString.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase)
          && tokens.Length == 1)
         {
-            command = new DequeueCommand(_applicationInfo.DefaultQueueName);
+            command = new DequeueRecordCommand(_applicationInfo.DefaultQueueName,
+                permanent: true); // Коммитим команду сразу, т.к. в HTTP не будет времени думать
             return true;
         }
 
@@ -163,16 +166,35 @@ public class SubmitCommandRequestHandler : IRequestHandler
         public void Visit(DequeueResponse response)
         {
             Payload["type"] = "dequeue";
-            if (response.Success)
+            if (response.TryGetResult(out var queueName, out var key, out var message))
             {
                 Payload["ok"] = true;
-                Payload["key"] = response.Key;
-                Payload["data"] = Convert.ToBase64String(response.Payload);
+                Payload["key"] = key;
+                Payload["queue"] = queueName.Name;
+                Payload["data"] = Convert.ToBase64String(message);
             }
             else
             {
                 Payload["ok"] = false;
             }
+        }
+
+        public void Visit(EnqueueResponse response)
+        {
+            Payload["type"] = "enqueue";
+            Payload["ok"] = true;
+        }
+
+        public void Visit(CreateQueueResponse response)
+        {
+            Payload["type"] = "create-queue";
+            Payload["ok"] = true;
+        }
+
+        public void Visit(DeleteQueueResponse response)
+        {
+            Payload["type"] = "delete-queue";
+            Payload["ok"] = true;
         }
 
         public void Visit(CountResponse response)
@@ -200,7 +222,7 @@ public class SubmitCommandRequestHandler : IRequestHandler
                 {"count", m.Count},
                 {
                     "limit", m.HasMaxSize
-                                 ? m.MaxSize
+                                 ? m.MaxQueueSize
                                  : null
                 }
             });

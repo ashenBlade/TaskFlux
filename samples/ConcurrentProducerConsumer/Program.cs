@@ -1,10 +1,9 @@
 ﻿using System.Diagnostics;
 using System.Net;
 using Serilog;
-using TaskFlux.Commands.Dequeue;
-using TaskFlux.Commands.Enqueue;
+using TaskFlux.Client;
+using TaskFlux.Client.Exceptions;
 using TaskFlux.Models;
-using TaskFlux.Network.Client;
 
 // ReSharper disable once AccessToDisposedClosure
 
@@ -27,8 +26,8 @@ var clientFactory = new TaskFluxClientFactory(new EndPoint[]
 });
 
 Log.Debug("Создаю клиентов");
-using var consumer = await clientFactory.CreateClientAsync(totalCts.Token);
-using var producer = await clientFactory.CreateClientAsync(totalCts.Token);
+await using var consumer = await clientFactory.ConnectAsync(totalCts.Token);
+await using var producer = await clientFactory.ConnectAsync(totalCts.Token);
 
 
 using var operationsCts = CancellationTokenSource.CreateLinkedTokenSource(totalCts.Token);
@@ -57,19 +56,22 @@ return;
 
 static async Task<int> RunConsumerAsync(ITaskFluxClient consumer, CancellationToken token)
 {
-    var dequeueCommand = new DequeueCommand(QueueName.Default);
     var operations = 0;
     while (!token.IsCancellationRequested)
     {
         try
         {
-            await consumer.SendAsync(dequeueCommand, token);
-            operations++;
+            await consumer.DequeueAsync(QueueName.Default, token);
+        }
+        catch (QueueEmptyException)
+        {
         }
         catch (OperationCanceledException)
         {
             break;
         }
+
+        operations++;
     }
 
     return operations;
@@ -77,19 +79,22 @@ static async Task<int> RunConsumerAsync(ITaskFluxClient consumer, CancellationTo
 
 static async Task<int> RunProducerAsync(ITaskFluxClient producer, CancellationToken token)
 {
-    var dequeueCommand = new EnqueueCommand(123, "Hello, world! This is sample message"u8.ToArray(), QueueName.Default);
+    var message = "Hello, world! This is sample message"u8.ToArray();
+    var priority = 123L;
+
     var operations = 0;
     while (!token.IsCancellationRequested)
     {
         try
         {
-            await producer.SendAsync(dequeueCommand, token);
-            operations++;
+            await producer.EnqueueAsync(QueueName.Default, priority, message, token);
         }
         catch (OperationCanceledException)
         {
             break;
         }
+
+        operations++;
     }
 
     return operations;

@@ -30,7 +30,7 @@ public interface IReadOnlyTaskQueueManager
     /// Для работы лучше пользоваться другими методами.
     /// </remarks>
     /// <returns>Список из всех очередей</returns>
-    public IEnumerable<IReadOnlyTaskQueue> GetAllQueues();
+    public IReadOnlyCollection<IReadOnlyTaskQueue> GetAllQueues();
 
     /// <summary>
     /// Получить именованную очередь с приоритетом

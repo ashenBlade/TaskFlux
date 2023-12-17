@@ -42,5 +42,5 @@ public interface ITaskQueueManager : IReadOnlyTaskQueueManager
     /// Для работы лучше пользоваться другими методами.
     /// </remarks>
     /// <returns>Список из всех очередей</returns>
-    public new IEnumerable<ITaskQueue> GetAllQueues();
+    public new IReadOnlyCollection<ITaskQueue> GetAllQueues();
 }

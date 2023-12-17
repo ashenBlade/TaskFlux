@@ -1,4 +1,4 @@
-﻿using Consensus.Raft.Persistence;
+﻿using Consensus.Core;
 
 namespace Consensus.Raft;
 
@@ -10,15 +10,6 @@ public interface IApplication<in TCommand, out TResponse>
     /// <param name="command">Команда, которую нужно выполнить</param>
     /// <returns>Результат операции</returns>
     public TResponse Apply(TCommand command);
-
-    /// <summary>
-    /// Применить команду к приложению без получения результата
-    /// </summary>
-    /// <param name="command">Команда, которую нужно выполнить</param>
-    /// <remarks>
-    /// Используется, когда ответ не отправляется клиенту. Например, репликация или восстановление
-    /// </remarks>
-    public void ApplyNoResponse(TCommand command);
 
     /// <summary>
     /// Получить слепок приложения на текущий момент

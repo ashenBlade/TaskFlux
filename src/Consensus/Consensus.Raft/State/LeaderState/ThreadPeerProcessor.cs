@@ -12,12 +12,13 @@ namespace Consensus.Raft.State.LeaderState;
 /// В первой версии использовался пул потоков и все было на async/await.
 /// Потом отказался для большей управляемости и возможности аварийно завершиться при ошибках.
 /// </summary>
-internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
+internal class ThreadPeerProcessor<TCommand, TResponse>
+    : IDisposable
 {
     private volatile bool _disposed;
-    private IConsensusModule<TCommand, TResponse> ConsensusModule => _caller.ConsensusModule;
-    private Term CurrentTerm => ConsensusModule.CurrentTerm;
-    private StoragePersistenceFacade PersistenceFacade => ConsensusModule.PersistenceFacade;
+    private IRaftConsensusModule<TCommand, TResponse> RaftConsensusModule => _caller.RaftConsensusModule;
+    private Term CurrentTerm => RaftConsensusModule.CurrentTerm;
+    private StoragePersistenceFacade PersistenceFacade => RaftConsensusModule.PersistenceFacade;
 
     /// <summary>
     /// Узел, с которым общаемся
@@ -175,7 +176,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                     _logger.Debug("Начинаю отправку файла снапшота на узел");
                     var lastEntry = PersistenceFacade.SnapshotStorage.LastLogEntry;
                     var installSnapshotResponses = _peer.SendInstallSnapshot(new InstallSnapshotRequest(CurrentTerm,
-                        ConsensusModule.Id, lastEntry,
+                        RaftConsensusModule.Id, lastEntry,
                         snapshot), _token);
 
                     var connectionBroken = false;
@@ -224,7 +225,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
             {
                 appendEntriesRequest = new AppendEntriesRequest(Term: CurrentTerm,
                     LeaderCommit: PersistenceFacade.CommitIndex,
-                    LeaderId: ConsensusModule.Id,
+                    LeaderId: RaftConsensusModule.Id,
                     PrevLogEntryInfo: PersistenceFacade.GetPrecedingEntryInfo(info.NextIndex),
                     Entries: entries);
             }
@@ -288,7 +289,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
 
         // Единственный случай попадания сюда - токен отменен == мы больше не лидер
         // Скорее всего терм уже был обновлен
-        return ConsensusModule.CurrentTerm;
+        return RaftConsensusModule.CurrentTerm;
     }
 
     public void Dispose()

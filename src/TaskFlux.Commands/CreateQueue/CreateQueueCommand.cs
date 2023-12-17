@@ -8,10 +8,9 @@ using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Commands.CreateQueue;
 
-public class CreateQueueCommand : UpdateCommand
+public class CreateQueueCommand : ModificationCommand
 {
-    public override CommandType Type => CommandType.CreateQueue;
-    public QueueName Name { get; }
+    public QueueName Queue { get; }
     public PriorityQueueCode Code { get; }
     public int? MaxQueueSize { get; }
     public int? MaxPayloadSize { get; }
@@ -19,7 +18,7 @@ public class CreateQueueCommand : UpdateCommand
 
     private ITaskQueue CreateTaskQueue()
     {
-        var builder = new TaskQueueBuilder(Name, Code);
+        var builder = new TaskQueueBuilder(Queue, Code);
 
         if (MaxQueueSize is { } maxQueueSize)
         {
@@ -39,7 +38,7 @@ public class CreateQueueCommand : UpdateCommand
         return builder.Build();
     }
 
-    public CreateQueueCommand(QueueName name,
+    public CreateQueueCommand(QueueName queue,
                               PriorityQueueCode code,
                               int? maxQueueSize,
                               int? maxPayloadSize,
@@ -67,7 +66,7 @@ public class CreateQueueCommand : UpdateCommand
             throw new ArgumentException("Необходимо указать диапазон ключей для списка очередей");
         }
 
-        Name = name;
+        Queue = queue;
         Code = code;
         MaxQueueSize = maxQueueSize;
         MaxPayloadSize = maxPayloadSize;
@@ -77,7 +76,7 @@ public class CreateQueueCommand : UpdateCommand
     public override Response Apply(IApplication context)
     {
         var manager = context.TaskQueueManager;
-        if (manager.HasQueue(Name))
+        if (manager.HasQueue(Queue))
         {
             return DefaultErrors.QueueAlreadyExists;
         }
@@ -92,7 +91,7 @@ public class CreateQueueCommand : UpdateCommand
             return new ErrorResponse(ErrorType.InvalidQueueParameters, ioe.Message);
         }
 
-        if (manager.TryAddQueue(Name, queue))
+        if (manager.TryAddQueue(Queue, queue))
         {
             return OkResponse.Instance;
         }
@@ -100,30 +99,13 @@ public class CreateQueueCommand : UpdateCommand
         return new ErrorResponse(ErrorType.Unknown, "Не удалось создать указанную очередь. Неизвестная ошибка");
     }
 
-    public override void ApplyNoResult(IApplication context)
-    {
-        var manager = context.TaskQueueManager;
-        if (!manager.HasQueue(Name))
-        {
-            return;
-        }
-
-        var queue = CreateTaskQueue();
-        manager.TryAddQueue(Name, queue);
-    }
-
     public override void Accept(ICommandVisitor visitor)
     {
         visitor.Visit(this);
     }
 
-    public override T Accept<T>(IReturningCommandVisitor<T> visitor)
+    public override T Accept<T>(ICommandVisitor<T> visitor)
     {
         return visitor.Visit(this);
-    }
-
-    public override ValueTask AcceptAsync(IAsyncCommandVisitor visitor, CancellationToken token = default)
-    {
-        return visitor.VisitAsync(this, token);
     }
 }

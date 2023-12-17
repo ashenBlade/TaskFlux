@@ -1,6 +1,5 @@
-﻿using Consensus.Raft;
-using Consensus.Raft.Commands;
-using Consensus.Raft.Commands.Submit;
+﻿using Consensus.Core.Submit;
+using Consensus.Raft;
 using Serilog;
 using TaskFlux.Commands;
 using TaskFlux.Host.Modules;
@@ -9,14 +8,14 @@ namespace TaskFlux.Host.RequestAcceptor;
 
 public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 {
-    private readonly IConsensusModule<Command, Response> _module;
+    private readonly IRaftConsensusModule<Command, Response> _module;
     private readonly ILogger _logger;
     private readonly BlockingChannel<UserRequest> _channel = new();
     private readonly CancellationTokenSource _cts = new();
     private CancellationTokenRegistration? _tokenRegistration = null;
     private Thread? _thread;
 
-    public ExclusiveRequestAcceptor(IConsensusModule<Command, Response> module, ILogger logger)
+    public ExclusiveRequestAcceptor(IRaftConsensusModule<Command, Response> module, ILogger logger)
     {
         _module = module;
         _logger = logger;
@@ -36,11 +35,6 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
         public void Cancel()
         {
             _tcs.TrySetCanceled();
-        }
-
-        public CommandDescriptor<Command> GetDescriptor()
-        {
-            return new CommandDescriptor<Command>(Command, Command.IsReadOnly);
         }
     }
 
@@ -85,21 +79,20 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
             _logger.Information("Начинаю читать запросы от пользователей");
             foreach (var request in _channel.ReadAll(token))
             {
-                _logger.Debug("Получен запрос: {@RequestType}", request.Command);
                 if (request.IsCancelled)
                 {
-                    _logger.Debug("Запрос {RequestType} был отменен пока лежал в очереди", request.Command.Type);
                     continue;
                 }
 
+                _logger.Debug("Получен запрос: {@RequestType}", request.Command);
+
                 try
                 {
-                    var response = _module.Handle(new SubmitRequest<Command>(request.GetDescriptor()), request.Token);
+                    var response = _module.Handle(request.Command, request.Token);
                     request.SetResult(response);
                 }
-                catch (OperationCanceledException o)
+                catch (OperationCanceledException)
                 {
-                    _logger.Debug(o, "Запрос {RequestType} был отменен во время выполнения", request.Command.Type);
                     request.Cancel();
                 }
             }

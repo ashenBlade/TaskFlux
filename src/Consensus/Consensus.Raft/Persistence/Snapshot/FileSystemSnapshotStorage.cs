@@ -2,6 +2,7 @@ using System.Buffers;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Abstractions;
+using Consensus.Core;
 using Serilog;
 using Utils.Serialization;
 
@@ -135,8 +136,6 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
                     logger.Information("Прочитан очередной чанк данных");
                     yield return buffer.AsMemory(0, read);
                 }
-
-                logger.Information("Файл закончился");
             }
             finally
             {

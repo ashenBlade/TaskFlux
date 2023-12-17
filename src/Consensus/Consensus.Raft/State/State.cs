@@ -1,7 +1,7 @@
+using Consensus.Core.Submit;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using TaskFlux.Models;
 
@@ -15,26 +15,18 @@ namespace Consensus.Raft.State;
 /// </remarks>
 public abstract class State<TCommand, TResponse>
 {
-    internal IConsensusModule<TCommand, TResponse> ConsensusModule { get; }
-    protected StoragePersistenceFacade PersistenceFacade => ConsensusModule.PersistenceFacade;
-    protected Term CurrentTerm => ConsensusModule.CurrentTerm;
-    protected NodeId? VotedFor => ConsensusModule.VotedFor;
+    internal IRaftConsensusModule<TCommand, TResponse> RaftConsensusModule { get; }
+    protected StoragePersistenceFacade PersistenceFacade => RaftConsensusModule.PersistenceFacade;
+    protected Term CurrentTerm => RaftConsensusModule.CurrentTerm;
+    protected NodeId? VotedFor => RaftConsensusModule.VotedFor;
+    protected NodeId Id => RaftConsensusModule.Id;
+    protected IBackgroundJobQueue BackgroundJobQueue => RaftConsensusModule.BackgroundJobQueue;
+    protected IApplicationFactory<TCommand, TResponse> ApplicationFactory => RaftConsensusModule.ApplicationFactory;
+    protected PeerGroup PeerGroup => RaftConsensusModule.PeerGroup;
 
-    protected IApplication<TCommand, TResponse> Application
+    internal State(IRaftConsensusModule<TCommand, TResponse> raftConsensusModule)
     {
-        get => ConsensusModule.Application;
-        set => ConsensusModule.Application = value
-                                          ?? throw new ArgumentNullException(nameof(Application),
-                                                 "Попытка установить новое состояние в null");
-    }
-
-    protected NodeId Id => ConsensusModule.Id;
-    protected IBackgroundJobQueue BackgroundJobQueue => ConsensusModule.BackgroundJobQueue;
-    protected PeerGroup PeerGroup => ConsensusModule.PeerGroup;
-
-    internal State(IConsensusModule<TCommand, TResponse> consensusModule)
-    {
-        ConsensusModule = consensusModule;
+        RaftConsensusModule = raftConsensusModule;
     }
 
     /// <summary>
@@ -64,10 +56,10 @@ public abstract class State<TCommand, TResponse>
     /// <summary>
     /// Применить команду к приложению
     /// </summary>
-    /// <param name="request">Объект запроса</param>
+    /// <param name="command">Объект запроса</param>
     /// <param name="token">Токен отмены</param>
     /// <returns>Результат операции</returns>
-    public abstract SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default);
+    public abstract SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default);
 
     /// <summary>
     /// Вызывается, когда состояние узла меняется, для очищения предыдущего (т.е. состояния, которому этот Dispose принадлежит) состояния

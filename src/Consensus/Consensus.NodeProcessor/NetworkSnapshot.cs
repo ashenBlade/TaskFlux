@@ -1,6 +1,6 @@
+using Consensus.Core;
 using Consensus.Network;
 using Consensus.Network.Packets;
-using Consensus.Raft.Persistence;
 
 namespace Consensus.NodeProcessor;
 

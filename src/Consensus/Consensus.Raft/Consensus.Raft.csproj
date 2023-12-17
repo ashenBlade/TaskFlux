@@ -24,6 +24,7 @@
     <ItemGroup>
       <ProjectReference Include="..\..\TaskFlux.Core\TaskFlux.Core.csproj" />
         <ProjectReference Include="..\..\Utils.Serialization\Utils.Serialization.csproj"/>
+        <ProjectReference Include="..\Consensus.Core\Consensus.Core.csproj"/>
     </ItemGroup>
 
 </Project>

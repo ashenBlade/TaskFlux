@@ -1,8 +1,8 @@
 using System.Diagnostics;
+using Consensus.Core.Submit;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.State;
 using Consensus.Raft.State.LeaderState;
@@ -13,28 +13,25 @@ namespace Consensus.Raft;
 
 [DebuggerDisplay("Роль: {CurrentRole}; Терм: {CurrentTerm}; Id: {Id}")]
 public class RaftConsensusModule<TCommand, TResponse>
-    : IConsensusModule<TCommand, TResponse>,
+    : IRaftConsensusModule<TCommand, TResponse>,
       IDisposable
 {
     private readonly ITimerFactory _timerFactory;
-    private readonly ICommandSerializer<TCommand> _commandSerializer;
+    private readonly IDeltaExtractor<TResponse> _deltaExtractor;
 
-    public NodeRole CurrentRole =>
-        ( ( IConsensusModule<TCommand, TResponse> ) this ).CurrentState.Role;
+    public NodeRole CurrentRole => CurrentState.Role;
 
     private readonly ILogger _logger;
     public NodeId Id { get; }
-
     public Term CurrentTerm => PersistenceFacade.CurrentTerm;
     public NodeId? VotedFor => PersistenceFacade.VotedFor;
     public PeerGroup PeerGroup { get; }
-    public IApplication<TCommand, TResponse> Application { get; set; }
-    private IApplicationFactory<TCommand, TResponse> ApplicationFactory { get; }
+    public IApplicationFactory<TCommand, TResponse> ApplicationFactory { get; }
 
     // Инициализируем либо в .Create (прод), либо через internal метод SetStateTest
     private State<TCommand, TResponse> _currentState = null!;
 
-    State<TCommand, TResponse> IConsensusModule<TCommand, TResponse>.CurrentState => GetCurrentStateCheck();
+    private State<TCommand, TResponse> CurrentState => GetCurrentStateCheck();
 
     private State<TCommand, TResponse> GetCurrentStateCheck()
     {
@@ -44,7 +41,6 @@ public class RaftConsensusModule<TCommand, TResponse>
 
     internal void SetStateTest(State<TCommand, TResponse> state)
     {
-        // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
         if (_currentState is not null)
         {
             throw new InvalidOperationException($"Состояние узла уже выставлено в {_currentState.Role}");
@@ -79,19 +75,17 @@ public class RaftConsensusModule<TCommand, TResponse>
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         StoragePersistenceFacade persistenceFacade,
-        IApplication<TCommand, TResponse> application,
-        ICommandSerializer<TCommand> commandSerializer,
+        IDeltaExtractor<TResponse> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         _timerFactory = timerFactory;
-        _commandSerializer = commandSerializer;
-        ApplicationFactory = applicationFactory;
+        _deltaExtractor = deltaExtractor;
         Id = id;
         _logger = logger;
         PeerGroup = peerGroup;
         BackgroundJobQueue = backgroundJobQueue;
         PersistenceFacade = persistenceFacade;
-        Application = application;
+        ApplicationFactory = applicationFactory;
     }
 
 
@@ -111,16 +105,16 @@ public class RaftConsensusModule<TCommand, TResponse>
         return _currentState.Apply(request, token);
     }
 
-    public SubmitResponse<TResponse> Handle(SubmitRequest<TCommand> request, CancellationToken token = default)
+    public SubmitResponse<TResponse> Handle(TCommand command, CancellationToken token = default)
     {
-        return _currentState.Apply(request, token);
+        return _currentState.Apply(command, token);
     }
 
     public event RoleChangedEventHandler? RoleChanged;
 
     public State<TCommand, TResponse> CreateFollowerState()
     {
-        return new FollowerState<TCommand, TResponse>(this, ApplicationFactory, _commandSerializer,
+        return new FollowerState<TCommand, TResponse>(this,
             _timerFactory.CreateElectionTimer(),
             _logger.ForContext("SourceContext", "Raft(Follower)"));
     }
@@ -128,7 +122,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     public State<TCommand, TResponse> CreateLeaderState()
     {
         return new LeaderState<TCommand, TResponse>(this, _logger.ForContext("SourceContext", "Raft(Leader)"),
-            _commandSerializer, _timerFactory);
+            _deltaExtractor, _timerFactory);
     }
 
     public State<TCommand, TResponse> CreateCandidateState()
@@ -160,12 +154,11 @@ public class RaftConsensusModule<TCommand, TResponse>
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         StoragePersistenceFacade persistenceFacade,
-        IApplication<TCommand, TResponse> application,
-        IApplicationFactory<TCommand, TResponse> applicationFactory,
-        ICommandSerializer<TCommand> commandSerializer)
+        IDeltaExtractor<TResponse> deltaExtractor,
+        IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         var module = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, timerFactory,
-            backgroundJobQueue, persistenceFacade, application, commandSerializer, applicationFactory);
+            backgroundJobQueue, persistenceFacade, deltaExtractor, applicationFactory);
         var followerState = module.CreateFollowerState();
         module._currentState = followerState;
 

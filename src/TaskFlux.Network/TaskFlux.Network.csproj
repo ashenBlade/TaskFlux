@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net7.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <WarningsAsErrors>CS8509</WarningsAsErrors>
+        <NoWarn>1701;1702;CS8524</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Consensus\Consensus.Peer\Consensus.Peer.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Models\TaskFlux.Models.csproj"/>
+        <ProjectReference Include="..\Utils.Serialization\Utils.Serialization.csproj"/>
+    </ItemGroup>
+
+</Project>

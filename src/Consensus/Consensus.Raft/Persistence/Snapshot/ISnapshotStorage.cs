@@ -1,3 +1,5 @@
+using Consensus.Core;
+
 namespace Consensus.Raft.Persistence.Snapshot;
 
 /// <summary>

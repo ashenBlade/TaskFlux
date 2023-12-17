@@ -1,3 +1,4 @@
+using Consensus.Core;
 using Consensus.Raft.Persistence;
 using TaskFlux.Models;
 

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Consensus.Core;
 using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.LogFileCheckStrategy;
 using Consensus.Raft.Persistence.Metadata;

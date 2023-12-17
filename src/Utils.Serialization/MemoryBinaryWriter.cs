@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.Serialization;
@@ -80,6 +81,7 @@ public struct MemoryBinaryWriter
         _index += sizeof(int) + stringByteLength;
     }
 
+
     /// <summary>
     /// Сериализовать название очереди в буфер и сдвинуть позицию на нужное количество байт
     /// </summary>
@@ -105,6 +107,41 @@ public struct MemoryBinaryWriter
     }
 
     /// <summary>
+    /// Записать строку, как название очереди (размер 1 байт, ASCII и т.д.)
+    /// </summary>
+    /// <param name="queueName">Сырое название очереди</param>
+    public void WriteAsQueueName(string queueName)
+    {
+        Debug.Assert(queueName.Length < byte.MaxValue, "queueName.Length < byte.MaxValue",
+            "Название очереди не может превышать 1 байта");
+        var stringByteLength = Encoding.ASCII.GetByteCount(queueName);
+        EnsureLength(sizeof(byte) + stringByteLength);
+        if (stringByteLength < 127)
+        {
+            Span<byte> stringBytes = stackalloc byte[stringByteLength + 1];
+            stringBytes[0] = ( byte ) queueName.Length;
+            Encoding.ASCII.GetBytes(queueName, stringBytes[1..]);
+            stringBytes.CopyTo(_buffer.Span[_index..]);
+        }
+        else
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(stringByteLength + 1);
+            try
+            {
+                buffer[0] = ( byte ) queueName.Length;
+                var written = Encoding.ASCII.GetBytes(queueName, buffer.AsSpan(1));
+                buffer.AsSpan(0, 1 + written).CopyTo(_buffer.Span[_index..]);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        _index += 1 + stringByteLength;
+    }
+
+    /// <summary>
     /// Проверить, что в буфере еще имеется <paramref name="shouldHasLength"/> свободных байт места
     /// </summary>
     /// <param name="shouldHasLength">Количество свободных байт для записи</param>
@@ -122,8 +159,8 @@ public struct MemoryBinaryWriter
     public static int EstimateResultSize(string value) => sizeof(int)                        // Размер 
                                                         + Encoding.UTF8.GetByteCount(value); // Строка
 
-    public static int EstimateResultSize(QueueName name) => sizeof(byte)      // Размер
-                                                          + name.Name.Length; // Длина (каждый символ - 1 байт)
+    public static int EstimateResultSize(QueueName name) => sizeof(byte)                            // Размер
+                                                          + Encoding.ASCII.GetByteCount(name.Name); // Длина
 
     public void Write(bool resultSuccess)
     {
@@ -135,4 +172,7 @@ public struct MemoryBinaryWriter
                                    : byteFalse;
         _index++;
     }
+
+    public static int EstimateResultSizeAsQueueName(string name) => sizeof(byte)                       // Размер
+                                                                  + Encoding.ASCII.GetByteCount(name); // Длина 
 }

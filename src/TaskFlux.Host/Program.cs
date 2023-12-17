@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.IO.Abstractions;
+using Consensus.Application.TaskFlux;
 using Consensus.JobQueue;
 using Consensus.NodeProcessor;
 using Consensus.Peer;
@@ -12,7 +13,6 @@ using Consensus.Timers;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 using TaskFlux.Commands;
-using TaskFlux.Commands.Serialization;
 using TaskFlux.Core;
 using TaskFlux.Host;
 using TaskFlux.Host.Infrastructure;
@@ -59,14 +59,11 @@ try
     var appInfo = CreateApplicationInfo();
     var clusterInfo = CreateClusterInfo(serverOptions);
     var nodeInfo = CreateNodeInfo(serverOptions);
-    var factory = new TaskFluxApplicationFactory(nodeInfo, appInfo, clusterInfo);
-    Log.Information("Восстанавливаю состояние приложения");
-    var taskFluxApplication = RestoreApplication(facade, factory);
 
-    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, taskFluxApplication, factory);
+    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, nodeInfo, appInfo, clusterInfo);
 
     var consensusModule =
-        new InfoUpdaterConsensusModuleDecorator<Command, Response>(raftConsensusModule, clusterInfo, nodeInfo);
+        new InfoUpdaterRaftConsensusModuleDecorator<Command, Response>(raftConsensusModule, clusterInfo, nodeInfo);
 
     var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, consensusModule,
         networkOptions.RequestTimeout,
@@ -357,68 +354,21 @@ StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions option
 RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
                                                                  IPeer[] peers,
                                                                  StoragePersistenceFacade storage,
-                                                                 IApplication<Command, Response> application,
-                                                                 TaskFluxApplicationFactory applicationFactory)
+                                                                 INodeInfo nodeInfo,
+                                                                 IApplicationInfo applicationInfo,
+                                                                 IClusterInfo clusterInfo)
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
     var logger = Log.Logger.ForContext("SourceContext", "Raft");
-    var commandSerializer = new ProxyCommandCommandSerializer();
+    var commandSerializer = new TaskFluxDeltaExtractor();
     var peerGroup = new PeerGroup(peers);
     var timerFactory =
-        new ThreadingTimerFactory(TimeSpan.FromMilliseconds(150), TimeSpan.FromMilliseconds(300),
-            heartbeatTimeout: TimeSpan.FromMilliseconds(100));
+        new ThreadingTimerFactory(TimeSpan.FromMilliseconds(1500), TimeSpan.FromMilliseconds(2500),
+            heartbeatTimeout: TimeSpan.FromMilliseconds(1000));
 
     return RaftConsensusModule<Command, Response>.Create(nodeId, peerGroup, logger, timerFactory,
-        jobQueue, storage, application, applicationFactory,
-        commandSerializer);
-}
-
-IApplication<Command, Response> RestoreApplication(StoragePersistenceFacade facade, TaskFluxApplicationFactory factory)
-{
-    // 1. Восстановить данные из снапшота, если есть, иначе инициализировать пустым
-    // 2. Применить команды из лога
-    IApplication<Command, Response> application;
-    if (facade.TryGetSnapshot(out var snapshot))
-    {
-        Log.Information("Обнаружен существующий файл снашпота. Восстанавливаю состояние");
-        try
-        {
-            application = factory.Restore(snapshot);
-        }
-        catch (Exception e)
-        {
-            Log.Fatal(e, "Ошибка во время восстановления состояния из снапшота");
-            throw;
-        }
-    }
-    else
-    {
-        application = factory.CreateEmpty();
-    }
-
-    try
-    {
-        Log.Information("Восстанавливаю предыдущее состояние из лога");
-
-        var notApplied = facade.GetNotApplied();
-        if (notApplied.Count > 0)
-        {
-            foreach (var (_, payload) in notApplied)
-            {
-                var command = CommandSerializer.Instance.Deserialize(payload);
-                application.ApplyNoResponse(command);
-            }
-
-            Log.Debug("Состояние восстановлено. Применено {Count} записей", notApplied.Count);
-        }
-    }
-    catch (Exception e)
-    {
-        Log.Error(e, "Ошибка во время восстановления лога");
-        throw;
-    }
-
-    return application;
+        jobQueue, storage,
+        commandSerializer, new TaskFluxApplicationFactory(nodeInfo, applicationInfo, clusterInfo));
 }
 
 ApplicationInfo CreateApplicationInfo()

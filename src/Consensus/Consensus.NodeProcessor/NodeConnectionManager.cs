@@ -14,14 +14,14 @@ public class NodeConnectionManager
 {
     private readonly string _host;
     private readonly int _port;
-    private readonly IConsensusModule<Command, Response> _raft;
+    private readonly IRaftConsensusModule<Command, Response> _raft;
     private readonly TimeSpan _requestTimeout;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<NodeId, NodeConnectionProcessor> _nodes = new();
 
     public NodeConnectionManager(string host,
                                  int port,
-                                 IConsensusModule<Command, Response> raft,
+                                 IRaftConsensusModule<Command, Response> raft,
                                  TimeSpan requestTimeout,
                                  ILogger logger)
     {

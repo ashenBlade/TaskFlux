@@ -33,6 +33,11 @@ public readonly struct QueueName : IEquatable<QueueName>
         return queueName.Name;
     }
 
+    public static QueueName Parse(string name)
+    {
+        return QueueNameParser.Parse(name);
+    }
+
     public override string ToString()
     {
         return $"QueueName({Name})";

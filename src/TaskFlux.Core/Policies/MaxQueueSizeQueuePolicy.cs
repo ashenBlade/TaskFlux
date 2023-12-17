@@ -28,7 +28,7 @@ public class MaxQueueSizeQueuePolicy : QueuePolicy
 
     internal override void Enrich(TaskQueueMetadata metadata)
     {
-        metadata.MaxSize = MaxQueueSize;
+        metadata.MaxQueueSize = MaxQueueSize;
     }
 
     public override TReturn Accept<TReturn>(IQueuePolicyVisitor<TReturn> visitor)

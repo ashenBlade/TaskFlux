@@ -1,20 +1,20 @@
-using Consensus.Application.TaskFlux.Serialization;
+using Consensus.Core;
 using Consensus.Raft;
-using Consensus.Raft.Persistence;
 using TaskFlux.Commands;
 using TaskFlux.Core;
 
 namespace Consensus.Application.TaskFlux;
 
+/// <summary>
+/// Объект приложения, которое перенаправляет все запросы доменному приложению
+/// </summary>
 public class ProxyTaskFluxApplication : IApplication<Command, Response>
 {
-    private readonly IApplication _application;
-    private readonly ITaskQueueSnapshotSerializer _serializer;
+    private readonly TaskFluxApplication _application;
 
-    public ProxyTaskFluxApplication(TaskFluxApplication application, ITaskQueueSnapshotSerializer serializer)
+    public ProxyTaskFluxApplication(TaskFluxApplication application)
     {
         _application = application;
-        _serializer = serializer;
     }
 
     public Response Apply(Command command)
@@ -22,13 +22,8 @@ public class ProxyTaskFluxApplication : IApplication<Command, Response>
         return command.Apply(_application);
     }
 
-    public void ApplyNoResponse(Command command)
-    {
-        command.ApplyNoResult(_application);
-    }
-
     public ISnapshot GetSnapshot()
     {
-        return new QueuesEnumeratorSnapshot(_application.TaskQueueManager, _serializer);
+        return new ApplicationSnapshot(_application);
     }
 }

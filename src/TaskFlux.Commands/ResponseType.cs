@@ -11,4 +11,7 @@ public enum ResponseType : byte
     Dequeue = ( byte ) 'd',
     Count = ( byte ) 'c',
     ListQueues = ( byte ) 'l',
+    CreateQueue = ( byte ) 'q',
+    DeleteQueue = ( byte ) 'r',
+    Enqueue = ( byte ) 'e',
 }

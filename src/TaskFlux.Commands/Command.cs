@@ -13,13 +13,8 @@ public abstract class Command
     {
     }
 
-    public abstract bool IsReadOnly { get; }
-    public abstract CommandType Type { get; }
-
     public abstract Response Apply(IApplication application);
-    public abstract void ApplyNoResult(IApplication context);
 
     public abstract void Accept(ICommandVisitor visitor);
-    public abstract T Accept<T>(IReturningCommandVisitor<T> visitor);
-    public abstract ValueTask AcceptAsync(IAsyncCommandVisitor visitor, CancellationToken token = default);
+    public abstract T Accept<T>(ICommandVisitor<T> visitor);
 }

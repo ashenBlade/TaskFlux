@@ -17,7 +17,6 @@
         <ProjectReference Include="..\Consensus\Consensus.JobQueue\Consensus.JobQueue.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.Peer\Consensus.Peer.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.Timers\Consensus.Timers.csproj"/>
-        <ProjectReference Include="..\TaskFlux.Commands.Serialization\TaskFlux.Commands.Serialization.csproj"/>
         <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.SocketRequest\TaskFlux.Host.Modules.SocketRequest.csproj"/>
         <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.HttpRequest\TaskFlux.Host.Modules.HttpRequest.csproj"/>
         <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.RequestAcceptor\TaskFlux.Host.RequestAcceptor.csproj"/>

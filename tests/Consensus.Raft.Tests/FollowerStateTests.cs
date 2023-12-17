@@ -1,5 +1,5 @@
 using System.IO.Abstractions;
-using Castle.Core;
+using Consensus.Core;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
@@ -44,8 +44,7 @@ public class FollowerStateTests
             timerFactory,
             backgroundJobQueue,
             persistence,
-            Helpers.NullApplication,
-            Helpers.NullCommandSerializer,
+            Helpers.NullDeltaExtractor,
             Helpers.NullApplicationFactory);
 
         node.SetStateTest(node.CreateFollowerState());
@@ -324,27 +323,25 @@ public class FollowerStateTests
                                     StoragePersistenceFacade Persistence,
                                     ConsensusFileSystem FileSystem);
 
-    private static NodeCreateResult CreateFollowerNodeNew(IApplicationFactory? factory = null)
+    private static NodeCreateResult CreateFollowerNodeNew()
     {
         // Follower никому ничего не отправляет, только принимает
         var peers = new PeerGroup(Array.Empty<IPeer>());
 
         // Follower не использует фоновые задачи - это только для Candidate/Leader
         var backgroundJobQueue = Mock.Of<IBackgroundJobQueue>();
-
+        var deltaBytes = new byte[] {1,};
         var commandSerializer =
-            Mock.Of<ICommandSerializer<int>>(x => x.Serialize(It.IsAny<int>()) == Array.Empty<byte>());
+            Mock.Of<IDeltaExtractor<int>>(x => x.TryGetDelta(It.IsAny<int>(), out deltaBytes) == true);
 
         var (persistenceFacade, fileSystem) = CreateStorage();
-        factory ??= Helpers.NullApplicationFactory;
         var node = new RaftConsensusModule(NodeId,
             peers, Logger.None,
             Helpers.NullTimerFactory,
             backgroundJobQueue,
             persistenceFacade,
-            Helpers.NullApplication,
             commandSerializer,
-            factory);
+            Helpers.NullApplicationFactory);
 
         node.SetStateTest(node.CreateFollowerState());
 
@@ -649,65 +646,6 @@ public class FollowerStateTests
     }
 
     [Fact]
-    public void InstallSnapshot__ДолженВыставитьНовоеСостояние()
-    {
-        var application = new StubApplication(123);
-        var applicationFactory = new Mock<IApplicationFactory>().Apply(f =>
-        {
-            f.Setup(x => x.Restore(It.IsAny<ISnapshot>()))
-             .Returns(application);
-            f.Setup(x => x.CreateEmpty())
-             .Throws(new InvalidOperationException(
-                  "Приложение должно восстановиться из снапшота, а не создаваться заново"));
-        });
-
-        var (node, _, fs) = CreateFollowerNodeNew(factory: applicationFactory.Object);
-        fs.SnapshotFile.Delete();
-
-        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
-        var snapshotData = new byte[] {1, 2, 3};
-        var leaderTerm = new Term(2);
-
-        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
-            new StubSnapshot(snapshotData));
-        foreach (var response in node.Handle(request))
-        {
-            response.CurrentTerm
-                    .Should()
-                    .Be(leaderTerm, "отправленный лидером терм больше текущего");
-        }
-
-        node.Application
-            .Should()
-            .Be(application, comparer: ReferenceEqualityComparer<StubApplication>.Instance,
-                 becauseArgs: "нужно восстановить состояние из снапшота");
-    }
-
-    private class StubApplication : IApplication
-    {
-        public int Value { get; }
-
-        public StubApplication(int value)
-        {
-            Value = value;
-        }
-
-        public int Apply(int command)
-        {
-            return Value;
-        }
-
-        public void ApplyNoResponse(int command)
-        {
-        }
-
-        public ISnapshot GetSnapshot()
-        {
-            return new StubSnapshot(Array.Empty<byte>());
-        }
-    }
-
-    [Fact]
     public void InstallSnapshot__ДолженОчиститьЛогИБуфер()
     {
         var (node, persistence, fs) = CreateFollowerNodeNew();
@@ -740,7 +678,7 @@ public class FollowerStateTests
     {
         // Такое может случиться, когда на лидера большая нагрузка идет и отправляется тот же самый снапшот
 
-        var (follower, storage, _) = CreateFollowerNodeNew(Helpers.NullApplicationFactory);
+        var (follower, storage, _) = CreateFollowerNodeNew();
         var snapshot = new StubSnapshot(new byte[] {1, 2, 3});
         var term = new Term(2);
         var logEntryInfo = new LogEntryInfo(new Term(2), 1000);

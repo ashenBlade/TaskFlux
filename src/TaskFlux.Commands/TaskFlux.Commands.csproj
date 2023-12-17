@@ -8,6 +8,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\TaskFlux.Core\TaskFlux.Core.csproj" />
+        <ProjectReference Include="..\TaskFlux.Serialization\TaskFlux.Serialization.csproj"/>
     </ItemGroup>
 
 </Project>

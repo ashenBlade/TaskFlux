@@ -14,12 +14,12 @@ public class NodeConnectionProcessor : IDisposable
 {
     public NodeConnectionProcessor(NodeId id,
                                    PacketClient client,
-                                   IConsensusModule<Command, Response> consensusModule,
+                                   IRaftConsensusModule<Command, Response> raftConsensusModule,
                                    ILogger logger)
     {
         Id = id;
         Client = client;
-        ConsensusModule = consensusModule;
+        RaftConsensusModule = raftConsensusModule;
         Logger = logger;
     }
 
@@ -27,7 +27,7 @@ public class NodeConnectionProcessor : IDisposable
     private NodeId Id { get; }
     private Socket Socket => Client.Socket;
     private PacketClient Client { get; }
-    private IConsensusModule<Command, Response> ConsensusModule { get; }
+    private IRaftConsensusModule<Command, Response> RaftConsensusModule { get; }
     private ILogger Logger { get; }
 
     public async Task ProcessClientBackground()
@@ -132,7 +132,7 @@ public class NodeConnectionProcessor : IDisposable
     async ValueTask<bool> ProcessAppendEntriesAsync(AppendEntriesRequestPacket packet, CancellationToken token)
     {
         var request = packet.Request;
-        var result = ConsensusModule.Handle(request);
+        var result = RaftConsensusModule.Handle(request);
         try
         {
             await Client.SendAsync(new AppendEntriesResponsePacket(result), token);
@@ -148,7 +148,7 @@ public class NodeConnectionProcessor : IDisposable
     {
         Logger.Information("От узла получен RequestVote пакет");
         var request = packet.Request;
-        var result = ConsensusModule.Handle(request);
+        var result = RaftConsensusModule.Handle(request);
         await Client.SendAsync(new RequestVoteResponsePacket(result), token);
         return true;
     }
@@ -157,7 +157,7 @@ public class NodeConnectionProcessor : IDisposable
     {
         var snapshot = new NetworkSnapshot(Client);
         var request = new InstallSnapshotRequest(packet.Term, packet.LeaderId, packet.LastEntry, snapshot);
-        foreach (var response in ConsensusModule.Handle(request, token))
+        foreach (var response in RaftConsensusModule.Handle(request, token))
         {
             await Client.SendAsync(new InstallSnapshotResponsePacket(response.CurrentTerm), token);
         }

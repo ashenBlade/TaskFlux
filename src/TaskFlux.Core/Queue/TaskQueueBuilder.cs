@@ -22,7 +22,7 @@ public class TaskQueueBuilder
     /// <summary>
     /// Изначальные данные, которые нужно записать в очередь изнчально
     /// </summary>
-    private IReadOnlyCollection<(long Key, byte[] Value)>? _payload;
+    private IEnumerable<(long Key, byte[] Value)>? _payload;
 
     /// <summary>
     /// Реализация приоритетной очереди
@@ -57,7 +57,7 @@ public class TaskQueueBuilder
         return this;
     }
 
-    public TaskQueueBuilder WithMaxQueueSize(int maxSize)
+    public TaskQueueBuilder WithMaxQueueSize(int? maxSize)
     {
         if (maxSize < 0)
         {
@@ -68,6 +68,7 @@ public class TaskQueueBuilder
         _maxSize = maxSize;
         return this;
     }
+
 
     public TaskQueueBuilder WithPriorityRange(long min, long max)
     {
@@ -83,12 +84,24 @@ public class TaskQueueBuilder
 
     public TaskQueueBuilder WithQueueImplementation(PriorityQueueCode implementation)
     {
+        if (!Enum.IsDefined(implementation))
+        {
+            throw new InvalidEnumArgumentException(nameof(implementation), ( int ) implementation,
+                typeof(PriorityQueueCode));
+        }
+
         _queueCode = implementation;
         return this;
     }
 
-    public TaskQueueBuilder WithMaxPayloadSize(int maxPayloadSize)
+    public TaskQueueBuilder WithMaxPayloadSize(int? maxPayloadSize)
     {
+        if (maxPayloadSize is < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxPayloadSize), maxPayloadSize,
+                "Максимальный размер сообщения не может быть отрицательным");
+        }
+
         _maxPayloadSize = maxPayloadSize;
         return this;
     }
@@ -104,7 +117,7 @@ public class TaskQueueBuilder
         var policies = BuildPolicies();
         var queue = BuildPriorityQueue();
 
-        if (_payload is {Count: > 0} payload)
+        if (_payload is { } payload)
         {
             FillPriorityQueue(payload, queue);
         }
@@ -130,7 +143,7 @@ public class TaskQueueBuilder
         throw new InvalidEnumArgumentException(nameof(_queueCode), ( int ) _queueCode, typeof(PriorityQueueCode));
     }
 
-    private void FillPriorityQueue(IReadOnlyCollection<(long, byte[])> payload, IPriorityQueue queue)
+    private void FillPriorityQueue(IEnumerable<(long, byte[])> payload, IPriorityQueue queue)
     {
         foreach (var (key, message) in payload)
         {
@@ -163,5 +176,14 @@ public class TaskQueueBuilder
         }
 
         return result.ToArray();
+    }
+
+    /// <summary>
+    /// Создать очередь по умолчанию с нужными выставленными параметрами
+    /// </summary>
+    /// <returns>Очередь по умолчанию</returns>
+    public static ITaskQueue CreateDefault()
+    {
+        return new TaskQueue(QueueName.Default, new HeapPriorityQueue(), Array.Empty<QueuePolicy>());
     }
 }

@@ -1,8 +1,7 @@
 using System.Buffers.Binary;
-using Consensus.Raft.Commands;
+using Consensus.Core;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.Persistence.Log;
 using Consensus.Raft.Persistence.Metadata;
@@ -22,22 +21,17 @@ public class LeaderStateTests
     private static readonly NodeId NodeId = new(1);
     private static readonly NodeId AnotherNodeId = new(NodeId.Id + 1);
 
-    private class IntCommandSerializer : ICommandSerializer<int>
+    private class IntDeltaExtractor : IDeltaExtractor<int>
     {
-        public byte[] Serialize(int value)
+        public bool TryGetDelta(int command, out byte[] delta)
         {
-            var result = new byte[4];
-            BinaryPrimitives.WriteInt32BigEndian(result, value);
-            return result;
-        }
-
-        public int Deserialize(byte[] payload)
-        {
-            return BinaryPrimitives.ReadInt32BigEndian(payload);
+            delta = new byte[4];
+            BinaryPrimitives.WriteInt32BigEndian(delta, command);
+            return true;
         }
     }
 
-    private static readonly ICommandSerializer<int> CommandSerializer = new IntCommandSerializer();
+    private static readonly IDeltaExtractor<int> DeltaExtractor = new IntDeltaExtractor();
 
     private RaftConsensusModule CreateLeaderNode(Term term,
                                                  NodeId? votedFor,
@@ -55,16 +49,20 @@ public class LeaderStateTests
         var timerFactory = heartbeatTimer is null
                                ? Helpers.NullTimerFactory
                                : new ConstantTimerFactory(heartbeatTimer);
-        application ??= Helpers.NullApplication;
         var facade = CreateFacade();
         if (logEntries is {Length: > 0})
         {
             facade.LogStorage.SetFileTest(logEntries);
         }
 
+        var factory = new Mock<IApplicationFactory<int, int>>().Apply(m =>
+        {
+            m.Setup(x => x.Restore(It.IsAny<ISnapshot?>(), It.IsAny<IEnumerable<byte[]>>()))
+             .Returns(application ?? Helpers.NullApplication);
+        });
+
         var node = new RaftConsensusModule(NodeId, peerGroup, Logger.None, timerFactory,
-            Helpers.NullBackgroundJobQueue, facade, application,
-            CommandSerializer, Helpers.NullApplicationFactory);
+            Helpers.NullBackgroundJobQueue, facade, DeltaExtractor, factory.Object);
         node.SetStateTest(node.CreateLeaderState());
         return node;
 
@@ -395,9 +393,6 @@ public class LeaderStateTests
         Assert.Equal(expectedBuffer, actualBuffer, LogEntryComparer);
     }
 
-    private static SubmitRequest<int> CreateSubmitRequest(int value = 0) =>
-        new(new CommandDescriptor<int>(value, false));
-
     [Fact]
     public void SubmitRequest__КогдаДругихУзловНет__ДолженОбработатьЗапрос()
     {
@@ -405,7 +400,7 @@ public class LeaderStateTests
         var mock = new Mock<IApplication>();
         var command = 1;
         var expectedResponse = 123;
-        var request = CreateSubmitRequest(command);
+        var request = command;
         mock.Setup(x => x.Apply(It.Is<int>(y => y == command)))
             .Returns(expectedResponse)
             .Verifiable();
@@ -415,13 +410,14 @@ public class LeaderStateTests
 
         Assert.Equal(expectedResponse, response.Response);
         var committedEntry = node.PersistenceFacade.ReadLogFileTest().Single();
-        AssertCommandEqual(committedEntry, command);
+        AssertCommandEqual(committedEntry, expectedResponse);
         mock.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }
 
     private static void AssertCommandEqual(LogEntry entry, int expected)
     {
-        Assert.Equal(expected, CommandSerializer.Deserialize(entry.Data));
+        var actual = BinaryPrimitives.ReadInt32BigEndian(entry.Data);
+        Assert.Equal(expected, actual);
     }
 
     [Fact(Timeout = 1000)]
@@ -438,7 +434,7 @@ public class LeaderStateTests
         peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
             .Returns(new AppendEntriesResponse(term, true))
             .Verifiable();
-        var request = CreateSubmitRequest(command);
+        var request = command;
         machine.Setup(x => x.Apply(It.Is<int>(y => y == command)))
                .Returns(expectedResponse)
                .Verifiable();
@@ -451,7 +447,7 @@ public class LeaderStateTests
 
         Assert.Equal(expectedResponse, response.Response);
         var committedEntry = node.PersistenceFacade.ReadLogFileTest().Single();
-        AssertCommandEqual(committedEntry, command);
+        AssertCommandEqual(committedEntry, expectedResponse);
         machine.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }
 
@@ -484,7 +480,7 @@ public class LeaderStateTests
                               .ToArray(peersCount);
 
         using var node = CreateLeaderNode(term, null, peers: peers.Select(x => x.Object));
-        var request = new SubmitRequest<int>(new CommandDescriptor<int>(123, false));
+        var request = 123;
         var response = node.Handle(request);
 
         response.WasLeader
@@ -503,7 +499,7 @@ public class LeaderStateTests
         peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
             .Returns(new AppendEntriesResponse(greaterTerm, false));
         using var node = CreateLeaderNode(term, null, peers: new[] {peer.Object});
-        var request = new SubmitRequest<int>(new CommandDescriptor<int>(123, false));
+        var request = 123;
         var response = node.Handle(request);
 
         response.WasLeader

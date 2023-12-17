@@ -1,9 +1,15 @@
 using TaskFlux.Models;
+using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
 
 public interface IReadOnlyTaskQueue
 {
+    /// <summary>
+    /// Тип реализации приоритетной очереди
+    /// </summary>
+    public PriorityQueueCode Code { get; }
+
     /// <summary>
     /// Название текущей очереди
     /// </summary>

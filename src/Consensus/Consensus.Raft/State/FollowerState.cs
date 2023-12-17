@@ -1,29 +1,24 @@
+using Consensus.Core.Submit;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Serilog;
 using TaskFlux.Models;
 
 namespace Consensus.Raft.State;
 
-public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
+public class FollowerState<TCommand, TResponse>
+    : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Follower;
-    private readonly IApplicationFactory<TCommand, TResponse> _applicationFactory;
-    private readonly ICommandSerializer<TCommand> _commandCommandSerializer;
     private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
 
-    internal FollowerState(IConsensusModule<TCommand, TResponse> consensusModule,
-                           IApplicationFactory<TCommand, TResponse> applicationFactory,
-                           ICommandSerializer<TCommand> commandCommandSerializer,
+    internal FollowerState(IRaftConsensusModule<TCommand, TResponse> raftConsensusModule,
                            ITimer electionTimer,
                            ILogger logger)
-        : base(consensusModule)
+        : base(raftConsensusModule)
     {
-        _applicationFactory = applicationFactory;
-        _commandCommandSerializer = commandCommandSerializer;
         _electionTimer = electionTimer;
         _logger = logger;
     }
@@ -60,7 +55,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
                 "Получен RequestVote от узла за которого можем проголосовать. Id узла {NodeId}, Терм узла {Term}. Обновляю состояние",
                 request.CandidateId.Id, request.CandidateTerm.Value);
 
-            ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
+            RaftConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -100,7 +95,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             _logger.Information("Получен AppendEntries с большим термом {GreaterTerm}. Старый терм: {CurrentTerm}",
                 request.Term, CurrentTerm);
             // Мы отстали от общего состояния (старый терм)
-            ConsensusModule.PersistenceFacade.UpdateState(request.Term, null);
+            RaftConsensusModule.PersistenceFacade.UpdateState(request.Term, null);
         }
 
         if (!PersistenceFacade.PrefixMatch(request.PrevLogEntryInfo))
@@ -125,17 +120,6 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         // Коммитим записи по индексу лидера
         PersistenceFacade.Commit(request.LeaderCommit);
 
-        // Закоммиченные записи можно уже применять к приложению 
-        var notApplied = PersistenceFacade.GetNotApplied();
-        if (notApplied.Count > 0)
-        {
-            foreach (var entry in notApplied)
-            {
-                var command = _commandCommandSerializer.Deserialize(entry.Data);
-                Application.ApplyNoResponse(command);
-            }
-        }
-
         // После применения команды, обновляем индекс последней примененной записи.
         // Этот индекс обновляем сразу, т.к. 
         // 1. Если возникнет исключение в работе, то это означает неправильную работу самого приложения, а не бизнес-логики
@@ -145,8 +129,12 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         if (PersistenceFacade.IsLogFileSizeExceeded())
         {
             _logger.Information("Размер файла лога превышен. Создаю снапшот");
-            var snapshot = Application.GetSnapshot();
-            PersistenceFacade.SaveSnapshot(snapshot);
+            var oldSnapshot = PersistenceFacade.TryGetSnapshot(out var s)
+                                  ? s
+                                  : null;
+            var deltas = PersistenceFacade.LogStorage.ReadAll().Select(x => x.Data);
+            var newSnapshot = ApplicationFactory.CreateSnapshot(oldSnapshot, deltas);
+            PersistenceFacade.SaveSnapshot(newSnapshot);
         }
 
         return AppendEntriesResponse.Ok(CurrentTerm);
@@ -166,7 +154,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
         }
     }
 
-    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
+    public override SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default)
     {
         return SubmitResponse<TResponse>.NotLeader;
     }
@@ -174,11 +162,12 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
     private void OnElectionTimerTimeout()
     {
         _logger.Debug("Сработал Election Timeout. Перехожу в состояние Candidate");
-        var candidateState = ConsensusModule.CreateCandidateState();
-        if (ConsensusModule.TryUpdateState(candidateState, this))
+        var candidateState = RaftConsensusModule.CreateCandidateState();
+        if (RaftConsensusModule.TryUpdateState(candidateState, this))
         {
             // Голосуем за себя и переходим в следующий терм
-            ConsensusModule.PersistenceFacade.UpdateState(ConsensusModule.CurrentTerm.Increment(), ConsensusModule.Id);
+            RaftConsensusModule.PersistenceFacade.UpdateState(RaftConsensusModule.CurrentTerm.Increment(),
+                RaftConsensusModule.Id);
         }
     }
 
@@ -231,26 +220,7 @@ public class FollowerState<TCommand, TResponse> : State<TCommand, TResponse>
             }
         }
 
-        _logger.Information("Снапшот установлен. Начинаю восстановление состояния");
-
-        if (!PersistenceFacade.TryGetSnapshot(out var snapshot))
-        {
-            throw new ApplicationException(
-                "Снапшот сохранен через InstallSnapshot, но его не удалось получить для восстановления состояния");
-        }
-
-        var application = _applicationFactory.Restore(snapshot);
-
-        var notApplied = PersistenceFacade.GetNotApplied();
-        foreach (var (_, data) in notApplied)
-        {
-            var command = _commandCommandSerializer.Deserialize(data);
-            application.ApplyNoResponse(command);
-        }
-
-        Application = application;
         PersistenceFacade.SetLastApplied(PersistenceFacade.CommitIndex);
-        _logger.Information("Состояние восстановлено");
 
         yield return new InstallSnapshotResponse(CurrentTerm);
     }

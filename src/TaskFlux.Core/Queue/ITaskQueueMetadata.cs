@@ -1,4 +1,5 @@
 using TaskFlux.Models;
+using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
 
@@ -10,6 +11,11 @@ public interface ITaskQueueMetadata
     public QueueName QueueName { get; }
 
     /// <summary>
+    /// Код реализации очереди
+    /// </summary>
+    public PriorityQueueCode Code { get; }
+
+    /// <summary>
     /// Текущий размер очереди (количество элементов в ней)
     /// </summary>
     public int Count { get; }
@@ -17,12 +23,12 @@ public interface ITaskQueueMetadata
     /// <summary>
     /// Максимальный размер очереди
     /// </summary>
-    public int? MaxSize { get; }
+    public int? MaxQueueSize { get; }
 
     /// <summary>
     /// Имеет ли очередь предел количества элементов
     /// </summary>
-    public bool HasMaxSize => MaxSize is not null;
+    public bool HasMaxSize => MaxQueueSize is not null;
 
     public int? MaxPayloadSize { get; }
 

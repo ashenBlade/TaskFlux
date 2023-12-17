@@ -1,14 +1,16 @@
+using System.Diagnostics;
+using Consensus.Core.Submit;
 using Consensus.Raft.Commands.AppendEntries;
 using Consensus.Raft.Commands.InstallSnapshot;
 using Consensus.Raft.Commands.RequestVote;
-using Consensus.Raft.Commands.Submit;
 using Consensus.Raft.Persistence;
 using Serilog;
 using TaskFlux.Models;
 
 namespace Consensus.Raft.State.LeaderState;
 
-public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
+public class LeaderState<TCommand, TResponse>
+    : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Leader;
     private readonly ILogger _logger;
@@ -16,22 +18,23 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     private (ThreadPeerProcessor<TCommand, TResponse> Processor, ITimer Timer)[] _peerProcessors =
         Array.Empty<(ThreadPeerProcessor<TCommand, TResponse>, ITimer)>();
 
-    private readonly ICommandSerializer<TCommand> _commandSerializer;
+    private readonly IDeltaExtractor<TResponse> _deltaExtractor;
     private readonly ITimerFactory _timerFactory;
+    private IApplication<TCommand, TResponse>? _application;
 
     /// <summary>
     /// Токен отмены отменяющийся при смене роли с лидера на последователя (другого быть не может)
     /// </summary>
     private readonly CancellationTokenSource _becomeFollowerTokenSource = new();
 
-    internal LeaderState(IConsensusModule<TCommand, TResponse> consensusModule,
+    internal LeaderState(IRaftConsensusModule<TCommand, TResponse> raftConsensusModule,
                          ILogger logger,
-                         ICommandSerializer<TCommand> commandSerializer,
+                         IDeltaExtractor<TResponse> deltaExtractor,
                          ITimerFactory timerFactory)
-        : base(consensusModule)
+        : base(raftConsensusModule)
     {
         _logger = logger;
-        _commandSerializer = commandSerializer;
+        _deltaExtractor = deltaExtractor;
         _timerFactory = timerFactory;
     }
 
@@ -40,6 +43,13 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         _logger.Verbose("Инициализируются потоки обработчиков узлов");
         _peerProcessors = CreatePeerProcessors();
         _logger.Verbose("Потоки обработчиков запускаются");
+
+        var oldSnapshot = PersistenceFacade.TryGetSnapshot(out var s)
+                              ? s
+                              : null;
+        var deltas = PersistenceFacade.LogStorage.ReadAll().Select(x => x.Data);
+        _logger.Debug("Восстанавливаю предыдущее состояние");
+        _application = ApplicationFactory.Restore(oldSnapshot, deltas);
 
         Array.ForEach(_peerProcessors, p =>
         {
@@ -53,10 +63,10 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
                     {
                         if (synchronizer.TryWaitGreaterTerm(out var greaterTerm))
                         {
-                            var follower = ConsensusModule.CreateFollowerState();
-                            if (ConsensusModule.TryUpdateState(follower, this))
+                            var follower = RaftConsensusModule.CreateFollowerState();
+                            if (RaftConsensusModule.TryUpdateState(follower, this))
                             {
-                                ConsensusModule.PersistenceFacade.UpdateState(greaterTerm, null);
+                                RaftConsensusModule.PersistenceFacade.UpdateState(greaterTerm, null);
                             }
 
                             return;
@@ -115,9 +125,9 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         // Прийти может только от другого лидера с большим термом
 
-        var follower = ConsensusModule.CreateFollowerState();
-        ConsensusModule.TryUpdateState(follower, this);
-        return ConsensusModule.Handle(request);
+        var follower = RaftConsensusModule.CreateFollowerState();
+        RaftConsensusModule.TryUpdateState(follower, this);
+        return RaftConsensusModule.Handle(request);
     }
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)
@@ -131,16 +141,16 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            var followerState = ConsensusModule.CreateFollowerState();
+            var followerState = RaftConsensusModule.CreateFollowerState();
 
-            if (ConsensusModule.TryUpdateState(followerState, this))
+            if (RaftConsensusModule.TryUpdateState(followerState, this))
             {
-                ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
+                RaftConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
                 return new RequestVoteResponse(CurrentTerm, !logConflicts);
             }
 
             // Уже есть новое состояние - пусть оно ответит
-            return ConsensusModule.Handle(request);
+            return RaftConsensusModule.Handle(request);
         }
 
         var canVote =
@@ -155,14 +165,14 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
          &&                // За которого можем проголосовать и
             !logConflicts) // У которого лог не хуже нашего
         {
-            var followerState = ConsensusModule.CreateFollowerState();
-            if (ConsensusModule.TryUpdateState(followerState, this))
+            var followerState = RaftConsensusModule.CreateFollowerState();
+            if (RaftConsensusModule.TryUpdateState(followerState, this))
             {
-                ConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
+                RaftConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
                 return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
             }
 
-            return ConsensusModule.Handle(request);
+            return RaftConsensusModule.Handle(request);
         }
 
         // Кандидат только что проснулся и не знает о текущем состоянии дел. 
@@ -199,22 +209,28 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             return new[] {new InstallSnapshotResponse(CurrentTerm)};
         }
 
-        var state = ConsensusModule.CreateFollowerState();
-        ConsensusModule.TryUpdateState(state, this);
-        return ConsensusModule.Handle(request, token);
+        var state = RaftConsensusModule.CreateFollowerState();
+        RaftConsensusModule.TryUpdateState(state, this);
+        return RaftConsensusModule.Handle(request, token);
     }
 
-    public override SubmitResponse<TResponse> Apply(SubmitRequest<TCommand> request, CancellationToken token = default)
+    public override SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default)
     {
-        if (request.Descriptor.IsReadonly)
+        Debug.Assert(_application is not null, "_application is not null",
+            "Приложение не было инициализировано на момент обработки запроса");
+        _logger.Information("Получил новую команду: {Command}", command);
+
+        var response = _application.Apply(command);
+        if (!_deltaExtractor.TryGetDelta(response, out var delta))
         {
-            // Короткий путь для readonly команд
-            return SubmitResponse<TResponse>.Success(Application.Apply(request.Descriptor.Command), true);
+            // Если команда не выполнила модификаций (дельты нет),
+            // то сразу возвращаем результат - без необходимости репликации/фиксации
+            return SubmitResponse<TResponse>.Success(response, true);
         }
 
         // Добавляем команду в буфер
-        _logger.Verbose("Записываю команду в буфер");
-        var newEntry = new LogEntry(CurrentTerm, _commandSerializer.Serialize(request.Descriptor.Command));
+        _logger.Verbose("Записываю дельту в буфер");
+        var newEntry = new LogEntry(CurrentTerm, delta);
         var appended = PersistenceFacade.AppendBuffer(newEntry);
 
         // Сигнализируем узлам, чтобы принялись реплицировать
@@ -226,17 +242,17 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             if (Role != NodeRole.Leader)
             {
                 // Пока выполняли запрос перестали быть лидером
-                return ConsensusModule.Handle(request, token);
+                return RaftConsensusModule.Handle(command, token);
             }
 
-            if (ConsensusModule.TryUpdateState(ConsensusModule.CreateFollowerState(), this))
+            if (RaftConsensusModule.TryUpdateState(RaftConsensusModule.CreateFollowerState(), this))
             {
                 _logger.Verbose("Стал Follower");
                 PersistenceFacade.UpdateState(greaterTerm, null);
                 return SubmitResponse<TResponse>.NotLeader;
             }
 
-            return ConsensusModule.Handle(request, token);
+            return RaftConsensusModule.Handle(command, token);
         }
 
         /*
@@ -253,7 +269,6 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         // Применяем команду к приложению.
         // Лучше сначала применить и, если что не так, упасть,
         // чем закоммитить, а потом каждый раз валиться при восстановлении
-        var response = Application.Apply(request.Descriptor.Command);
 
         // Коммитим запись и применяем 
         _logger.Verbose("Коммичу команду с индексом {Index}", appended.Index);
@@ -269,7 +284,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         {
             _logger.Debug("Размер файла лога превышен. Создаю снапшот");
             // Асинхронно это наверно делать не стоит (пока)
-            var snapshot = Application.GetSnapshot();
+            var snapshot = _application.GetSnapshot();
             PersistenceFacade.SaveSnapshot(snapshot, token);
         }
         else

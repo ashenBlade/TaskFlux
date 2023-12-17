@@ -1,19 +1,15 @@
-using TaskFlux.Network.Packets;
+using TaskFlux.Network;
 
 namespace TaskFlux.Host.Modules.SocketRequest.Exceptions;
 
-public class UnexpectedPacketException : ApplicationException
+public class UnexpectedPacketException : Exception
 {
-    public PacketType PacketType { get; }
+    public Packet Received { get; }
+    public PacketType Expected { get; }
 
-    public UnexpectedPacketException(PacketType packetType) : this(packetType,
-        $"От клиента пришел неожиданный тип пакета: {packetType}")
+    public UnexpectedPacketException(Packet received, PacketType expected)
     {
-    }
-
-    public UnexpectedPacketException(PacketType packetType, string? message, Exception? innerException = null) : base(
-        message, innerException)
-    {
-        PacketType = packetType;
+        Received = received;
+        Expected = expected;
     }
 }

@@ -1,4 +1,4 @@
-using Consensus.Raft.Commands.Submit;
+using Consensus.Core.Submit;
 using TaskFlux.Commands;
 
 namespace TaskFlux.Host.Modules;

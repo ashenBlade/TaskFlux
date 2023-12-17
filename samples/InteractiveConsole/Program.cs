@@ -1,9 +1,7 @@
 ﻿using System.Net;
 using InteractiveConsole;
 using Serilog;
-using TaskFlux.Commands;
-using TaskFlux.Network.Client;
-using TaskFlux.Network.Client.Exceptions;
+using TaskFlux.Client;
 
 // ReSharper disable AccessToDisposedClosure
 
@@ -28,13 +26,14 @@ Console.CancelKeyPress += (_, eventArgs) =>
     eventArgs.Cancel = true;
 };
 
-var clientFactory = new TaskFluxClientFactory(new EndPoint[] {new DnsEndPoint("localhost", 8080),});
+var clientFactory = new TaskFluxClientFactory(new EndPoint[]
+{
+    new DnsEndPoint("localhost", 8080), new DnsEndPoint("localhost", 8081), new DnsEndPoint("localhost", 8082),
+});
 
 Log.Logger.Debug($"Создаю клиента");
-using var client = await CreateClientAsync(clientFactory, cts.Token);
+await using var client = await clientFactory.ConnectAsync(cts.Token);
 Log.Logger.Debug("Клиент создан");
-
-var resultPrinterVisitor = new OperationResponsePrinterVisitor();
 
 while (!cts.IsCancellationRequested)
 {
@@ -65,22 +64,14 @@ while (!cts.IsCancellationRequested)
     try
     {
         var command = StringCommandParser.ParseCommand(commandString);
-        Response response;
         try
         {
-            response = await client.SendAsync(command, cts.Token);
-        }
-        catch (TaskFluxException tfe)
-        {
-            Log.Fatal(tfe, "Необработанное исключение во время обработки команды");
-            break;
+            await command.Execute(client, cts.Token);
         }
         catch (OperationCanceledException)
         {
             break;
         }
-
-        response.Accept(resultPrinterVisitor);
     }
     catch (Exception e)
     {
@@ -90,19 +81,6 @@ while (!cts.IsCancellationRequested)
 
 
 return;
-
-static async Task<ITaskFluxClient> CreateClientAsync(ITaskFluxClientFactory factory, CancellationToken token)
-{
-    try
-    {
-        return await factory.CreateClientAsync(token);
-    }
-    catch (TaskFluxException e)
-    {
-        Log.Logger.Fatal(e, "Ошибка при создани клиента");
-        throw;
-    }
-}
 
 static void PrintHelp()
 {
@@ -118,29 +96,29 @@ static IEnumerable<string> GetCommandDescriptions()
 {
     yield return """
                   - enqueue [QUEUE_NAME] KEY VALUES... - Вставить элемент в очередь
-                 QUEUE_NAME - название очереди. Пропустить, если использовать стандартную
-                 KEY - ключ для вставляемого значения.
-                 VALUES... - разделенные пробелом слова, которые будут добавлены в нагрузку
+                        QUEUE_NAME - название очереди. Пропустить, если использовать стандартную
+                        KEY - ключ для вставляемого значения.
+                        VALUES... - разделенные пробелом слова, которые будут добавлены в нагрузку
                  """;
     yield return """
                  - dequeue [QUEUE_NAME] - получить элемент из очереди
-                 QUEUE_NAME - название очереди. Пропустить, если использовать стандартную
+                        QUEUE_NAME - название очереди. Пропустить, если использовать стандартную
                  """;
     yield return """
                   - create QUEUE_NAME [WITHMAXSIZE max_size] [WITHMAXPAYLOAD max_payload] [WITHPRIORITYRANGE min max] [TYPE code] - создать новую очередь с указанным названием
-                 QUEUE_NAME - название очереди
-                 WITHMAXSIZE max_size - выставить ограничение на максимальный размер очереди в max_size
-                 WITHMAXPAYLOAD max_payload - выставить ограничение на максимальный размер сообщения в max_payload байтов
-                 WITHPRIORITYRANGE min max - ограничить допустимый диапазон выставляемых ключей с min до max включительно
-                 TYPE code - использовать указанную реализацию структуры для хранения. code - код структуры
+                        QUEUE_NAME - название очереди
+                        WITHMAXSIZE max_size - выставить ограничение на максимальный размер очереди в max_size
+                        WITHMAXPAYLOAD max_payload - выставить ограничение на максимальный размер сообщения в max_payload байтов
+                        WITHPRIORITYRANGE min max - ограничить допустимый диапазон выставляемых ключей с min до max включительно
+                        TYPE code - использовать указанную реализацию структуры для хранения. code - код структуры
                  """;
     yield return """
                   - delete QUEUE_NAME - удалить очередь с указанным названием
-                 QUEUE_NAME - название очереди
+                        QUEUE_NAME - название очереди
                  """;
     yield return """
                   - count [QUEUE_NAME] - получить размер очереди
-                 QUEUE_NAME - название очереди. Пропустить, если использовать очередь по умолчанию
+                        QUEUE_NAME - название очереди. Пропустить, если использовать очередь по умолчанию
                  """;
     yield return """
                   - list - получить список всех очередей и их данных

@@ -1,20 +1,19 @@
-using System.Buffers;
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Net.Sockets;
-using System.Runtime.CompilerServices;
-using System.Runtime.Serialization;
+using Consensus.Core.Submit;
 using Microsoft.Extensions.Options;
 using Serilog;
 using TaskFlux.Commands;
-using TaskFlux.Commands.Error;
-using TaskFlux.Commands.Serialization;
+using TaskFlux.Commands.Dequeue;
 using TaskFlux.Core;
 using TaskFlux.Host.Modules.SocketRequest.Exceptions;
-using TaskFlux.Models;
 using TaskFlux.Models.Exceptions;
+using TaskFlux.Network;
+using TaskFlux.Network.Authorization;
+using TaskFlux.Network.Commands;
+using TaskFlux.Network.Exceptions;
 using TaskFlux.Network.Packets;
-using TaskFlux.Network.Packets.Authorization;
-using TaskFlux.Network.Packets.Packets;
-using TaskFlux.Network.Packets.Serialization;
 
 namespace TaskFlux.Host.Modules.SocketRequest;
 
@@ -24,14 +23,8 @@ internal class ClientRequestProcessor
     private readonly IOptionsMonitor<SocketRequestModuleOptions> _options;
     private readonly IApplicationInfo _applicationInfo;
     private readonly IRequestAcceptor _requestAcceptor;
-    private IClusterInfo ClusterInfo { get; }
-    private ILogger Logger { get; }
-
-    private static CommandSerializer CommandSerializer =>
-        CommandSerializer.Instance;
-
-    private static ResponseSerializer ResponseSerializer =>
-        ResponseSerializer.Instance;
+    private readonly IClusterInfo _clusterInfo;
+    private readonly ILogger _logger;
 
     public ClientRequestProcessor(TcpClient client,
                                   IRequestAcceptor requestAcceptor,
@@ -44,436 +37,441 @@ internal class ClientRequestProcessor
         _requestAcceptor = requestAcceptor;
         _options = options;
         _applicationInfo = applicationInfo;
-        ClusterInfo = clusterInfo;
-        Logger = logger;
+        _clusterInfo = clusterInfo;
+        _logger = logger;
     }
 
     public async Task ProcessAsync(CancellationToken token)
     {
-        Logger.Debug("Открываю сетевой поток для коммуницирования к клиентом");
+        _logger.Information("Начинаю обработку клиента");
         await using var stream = _client.GetStream();
-        var serializer = new TaskFluxPacketClient(ArrayPool<byte>.Shared, stream);
+        var client = new TaskFluxClient(stream);
         try
         {
-            var success = await AcceptClientAsync(serializer, token)
-                             .ConfigureAwait(false);
-
-            if (!success)
+            if (await AcceptSetupClientAsync(client, token))
             {
-                return;
+                await ProcessClientForeverAsync(client, token);
             }
-
-            await ProcessClientMain(serializer, token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.Information("Таймаут ожидания клиента превышен");
+        }
+        catch (EndOfStreamException)
+        {
+            _logger.Information("Клиент закрыл соединение");
+        }
+        catch (UnknownAuthorizationMethodException uame)
+        {
+            _logger.Warning(uame, "От клиента получен неизвестный метод авторизации");
+        }
+        catch (UnknownCommandTypeException ucte)
+        {
+            _logger.Warning(ucte, "От клиента получена неизвестная команда");
+        }
+        catch (UnknownResponseTypeException urte)
+        {
+            _logger.Warning(urte, "От клиента получен пакет ответа");
+        }
+        catch (UnknownPacketException upe)
+        {
+            _logger.Warning(upe, "От клиента получен неизвестный пакет");
+        }
+        catch (IOException io)
+        {
+            _logger.Warning(io, "Ошибка во время коммуникации с клиентом");
+        }
+        catch (SocketException se)
+        {
+            _logger.Warning(se, "Ошибка во время коммуникации с клиентом");
         }
         catch (Exception e)
         {
-            Logger.Error(e, "Во время обработки клиента возникло необработанное исключение");
+            _logger.Error(e, "Во время обработки клиента произошла неизвестная ошибка");
         }
-        finally
-        {
-            _client.Close();
-            _client.Dispose();
-        }
-    }
-
-    private async Task ProcessClientMain(TaskFluxPacketClient client, CancellationToken token)
-    {
-        var clientRequestPacketVisitor = new ClientCommandRequestPacketVisitor(this, client);
-        Logger.Debug("Начинаю обрабатывать клиентские запросы");
-        while (token.IsCancellationRequested is false)
-        {
-            Packet packet;
-            try
-            {
-                packet = await ReceiveNextPacketAsync(client, token);
-            }
-            catch (EndOfStreamException)
-            {
-                Logger.Debug("Клиент отключился");
-                return;
-            }
-            catch (OperationCanceledException canceled)
-                when (token.IsCancellationRequested)
-            {
-                Logger.Information(canceled, "Запрошено завершение работы во время обработки клиента");
-                return;
-            }
-            catch (OperationCanceledException canceled)
-            {
-                Logger.Information(canceled, "Превышен таймаут ожидания пакета от клиента. Завершаю обработку");
-                return;
-            }
-
-            await packet.AcceptAsync(clientRequestPacketVisitor, token);
-
-            if (clientRequestPacketVisitor.ShouldClose)
-            {
-                break;
-            }
-        }
-    }
-
-    private async Task<Packet> ReceiveNextPacketAsync(TaskFluxPacketClient client,
-                                                      CancellationToken token)
-    {
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-        linkedCts.CancelAfter(_options.CurrentValue.IdleTimeout);
-        Logger.Debug("Начинаю принятие пакета от клиента");
-        return await client.ReceiveAsync(token);
-    }
-
-    private async Task<bool> AcceptClientAsync(TaskFluxPacketClient client,
-                                               CancellationToken token)
-    {
-        try
-        {
-            await AuthorizeClientAsync(client, token);
-        }
-        catch (UnexpectedPacketException unexpected)
-        {
-            Logger.Warning(unexpected, "От клиента пришел неожиданный пакет");
-            return false;
-        }
-        catch (Exception e)
-        {
-            Logger.Warning(e, "Неизвестная ошибка во время авторизации клиента");
-            return false;
-        }
-
-        try
-        {
-            var success = await BootstrapClientAsync(client, token);
-            if (!success)
-            {
-                return false;
-            }
-        }
-        catch (Exception e)
-        {
-            Logger.Warning(e, "Во время настроки клиента поймано необработанное исключение");
-            return false;
-        }
-
-        return true;
     }
 
     /// <summary>
-    /// Метод для запуска процесса настройки клиента и сервера
+    /// Принять и настроить клиента
     /// </summary>
-    /// <returns><c>true</c> - клиент успешно настроен<br/> <c>false</c> - во время настройки возникла ошибка</returns>
-    private async ValueTask<bool> BootstrapClientAsync(TaskFluxPacketClient client,
-                                                       CancellationToken token)
+    /// <returns><c>true</c> - клиент настроен успешно, <c>false</c> - иначе</returns>
+    private async Task<bool> AcceptSetupClientAsync(TaskFluxClient client, CancellationToken token)
     {
-        Logger.Debug("Начинаю процесс настройки клиента");
-        var packet = await client.ReceiveAsync(token);
-        var bootstrapVisitor = new BootstrapPacketAsyncVisitor(client, _applicationInfo);
-        await packet.AcceptAsync(bootstrapVisitor, token);
-        Logger.Debug("Клиент настроен");
-        return !bootstrapVisitor.ShouldClose;
-    }
-
-    private class BootstrapPacketAsyncVisitor : IAsyncPacketVisitor
-    {
-        private readonly TaskFluxPacketClient _client;
-        private readonly IApplicationInfo _applicationInfo;
-        public bool ShouldClose { get; private set; }
-
-        public BootstrapPacketAsyncVisitor(TaskFluxPacketClient client, IApplicationInfo applicationInfo)
+        // 1. Авторизация
+        Packet request;
+        using (var cts = CreateIdleTimeoutCts(token))
         {
-            _client = client;
-            _applicationInfo = applicationInfo;
+            request = await client.ReceiveAsync(cts.Token);
         }
 
-        public ValueTask VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
+        AuthorizationRequestPacket authorizationRequest;
+        switch (request.Type)
         {
-            return ReturnThrowUnexpectedPacket(PacketType.CommandRequest);
+            case PacketType.AuthorizationRequest:
+                authorizationRequest = ( AuthorizationRequestPacket ) request;
+                break;
+            case PacketType.CommandRequest:
+            case PacketType.CommandResponse:
+            case PacketType.AcknowledgeRequest:
+            case PacketType.ErrorResponse:
+            case PacketType.NotLeader:
+            case PacketType.AuthorizationResponse:
+            case PacketType.BootstrapResponse:
+            case PacketType.ClusterMetadataResponse:
+            case PacketType.ClusterMetadataRequest:
+                _logger.Warning("От клиента получен неожиданный пакет. Ожидался пакет авторизации. Получен: {Packet}",
+                    request.Type);
+                return false;
+            default:
+                throw new InvalidEnumArgumentException(nameof(request.Type), ( int ) ( request.Type ),
+                    typeof(PacketType));
         }
 
-        public ValueTask VisitAsync(CommandResponsePacket packet, CancellationToken token = default)
+        var authorizationType = authorizationRequest.AuthorizationMethod.AuthorizationMethodType;
+        switch (authorizationType)
         {
-            return ReturnThrowUnexpectedPacket(PacketType.CommandResponse);
+            case AuthorizationMethodType.None:
+                // Единственный пока метод авторизации
+                break;
+            default:
+                throw new InvalidEnumArgumentException(nameof(authorizationType),
+                    ( int ) authorizationType,
+                    typeof(AuthorizationMethodType));
         }
 
-        public ValueTask VisitAsync(ErrorResponsePacket packet, CancellationToken token = default)
+        await client.SendAsync(AuthorizationResponsePacket.Ok, token);
+
+        // 2. Бутстрап
+        using (var cts = CreateIdleTimeoutCts(token))
         {
-            return ReturnThrowUnexpectedPacket(PacketType.ErrorResponse);
+            request = await client.ReceiveAsync(cts.Token);
         }
 
-        public ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default)
+        Debug.Assert(Enum.IsDefined(request.Type), "Неизвестный тип пакета",
+            "От клиента получен неизвестный тип пакета {0}: {1}", request.Type, request);
+        BootstrapRequestPacket bootstrapRequest;
+        switch (request.Type)
         {
-            return ReturnThrowUnexpectedPacket(PacketType.NotLeader);
+            case PacketType.BootstrapRequest:
+                bootstrapRequest = ( BootstrapRequestPacket ) request;
+                break;
+            case PacketType.CommandRequest:
+            case PacketType.CommandResponse:
+            case PacketType.AcknowledgeRequest:
+            case PacketType.ErrorResponse:
+            case PacketType.NotLeader:
+            case PacketType.AuthorizationRequest:
+            case PacketType.AuthorizationResponse:
+            case PacketType.BootstrapResponse:
+            case PacketType.ClusterMetadataRequest:
+            case PacketType.ClusterMetadataResponse:
+                _logger.Warning("От клиента получен неожиданный пакет {PacketType}", request.Type);
+                return false;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(request.Type), request.Type,
+                    "От клиента получен неизвестный пакет");
         }
 
-        public ValueTask VisitAsync(AuthorizationRequestPacket packet, CancellationToken token = default)
+        if (!ValidateVersion(bootstrapRequest))
         {
-            return ReturnThrowUnexpectedPacket(PacketType.AuthorizationRequest);
+            await client.SendAsync(BootstrapResponsePacket.Error("Версия клиента не поддерживается"), token);
+            return false;
         }
 
-        public ValueTask VisitAsync(AuthorizationResponsePacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.AuthorizationResponse);
-        }
+        await client.SendAsync(BootstrapResponsePacket.Ok, token);
+        return true;
 
-        public ValueTask VisitAsync(BootstrapResponsePacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.BootstrapResponse);
-        }
-
-        public async ValueTask VisitAsync(BootstrapRequestPacket packet, CancellationToken token = default)
-        {
-            var clientVersion = new Version(packet.Major, packet.Minor, packet.Patch);
-            if (IsCompatibleWith(clientVersion))
-            {
-                await _client.SendAsync(BootstrapResponsePacket.Ok, token);
-                return;
-            }
-
-            await _client.SendAsync(
-                BootstrapResponsePacket.Error(
-                    $"Версия клиента несовместима с версией сервера. Версия сервера: {_applicationInfo.Version}. Версия клиента: {clientVersion}"),
-                token);
-            ShouldClose = true;
-        }
-
-        public ValueTask VisitAsync(ClusterMetadataResponsePacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataResponse);
-        }
-
-        public ValueTask VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataRequest);
-        }
-
-        private bool IsCompatibleWith(Version clientVersion)
+        bool ValidateVersion(BootstrapRequestPacket packet)
         {
             var serverVersion = _applicationInfo.Version;
-            if (serverVersion.Major != clientVersion.Major)
+            if (serverVersion.Major != packet.Major)
             {
                 return false;
             }
 
-            return serverVersion.Minor <= clientVersion.Minor;
-        }
-    }
-
-    private async Task AuthorizeClientAsync(TaskFluxPacketClient client,
-                                            CancellationToken token)
-    {
-        Logger.Debug("Начинаю процесс авторизации клиента");
-        var packet = await client.ReceiveAsync(token);
-        var authorizerVisitor = new AuthorizerClientPacketAsyncVisitor(client);
-        await packet.AcceptAsync(authorizerVisitor, token);
-        Logger.Debug("Клиент авторизовался успешно");
-    }
-
-    private class AuthorizerClientPacketAsyncVisitor : IAsyncPacketVisitor
-    {
-        private readonly TaskFluxPacketClient _client;
-
-        public AuthorizerClientPacketAsyncVisitor(TaskFluxPacketClient client)
-        {
-            _client = client;
-        }
-
-        public ValueTask VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.CommandRequest);
-        }
-
-        public ValueTask VisitAsync(CommandResponsePacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.CommandResponse);
-        }
-
-        public ValueTask VisitAsync(ErrorResponsePacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.ErrorResponse);
-        }
-
-        public ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.ErrorResponse);
-        }
-
-        public async ValueTask VisitAsync(AuthorizationRequestPacket packet, CancellationToken token = default)
-        {
-            var authVisitor = new AuthorizationFlowMethodVisitor(_client);
-            await packet.AuthorizationMethod.AcceptAsync(authVisitor, token);
-        }
-
-        public ValueTask VisitAsync(AuthorizationResponsePacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.AuthorizationResponse);
-        }
-
-        public ValueTask VisitAsync(BootstrapResponsePacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.BootstrapResponse);
-        }
-
-        public ValueTask VisitAsync(BootstrapRequestPacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.BootstrapRequest);
-        }
-
-        public ValueTask VisitAsync(ClusterMetadataResponsePacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataResponse);
-        }
-
-        public ValueTask VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token = default)
-        {
-            return ReturnThrowUnexpectedPacket(PacketType.ClusterMetadataRequest);
-        }
-
-        private class AuthorizationFlowMethodVisitor : IAsyncAuthorizationMethodVisitor
-        {
-            private readonly TaskFluxPacketClient _client;
-
-            public AuthorizationFlowMethodVisitor(TaskFluxPacketClient client)
+            if (serverVersion.Minor < packet.Minor)
             {
-                _client = client;
+                return false;
             }
 
-            public async ValueTask VisitAsync(NoneAuthorizationMethod noneAuthorizationMethod, CancellationToken token)
+            // Патч не проверять - там должны быть только баги
+            return true;
+        }
+    }
+
+    private async Task ProcessClientForeverAsync(TaskFluxClient client, CancellationToken token)
+    {
+        while (token.IsCancellationRequested is false)
+        {
+            Packet request;
+            using (var cts = CreateIdleTimeoutCts(token))
             {
-                await _client.SendAsync(AuthorizationResponsePacket.Ok, token);
+                request = await client.ReceiveAsync(cts.Token);
+            }
+
+            switch (request.Type)
+            {
+                case PacketType.CommandRequest:
+                    await ProcessCommandRequestAsync(client, ( CommandRequestPacket ) request, token);
+                    break;
+                case PacketType.ClusterMetadataRequest:
+                    await ProcessClusterMetadataRequestAsync(client, token);
+                    break;
+                case PacketType.AcknowledgeRequest:
+                case PacketType.CommandResponse:
+                case PacketType.ErrorResponse:
+                case PacketType.NotLeader:
+                case PacketType.AuthorizationRequest:
+                case PacketType.AuthorizationResponse:
+                case PacketType.BootstrapRequest:
+                case PacketType.BootstrapResponse:
+                case PacketType.ClusterMetadataResponse:
+                    _logger.Warning("От клиента получен неожиданный тип пакета {PacketType}", request.Type);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(request.Type), ( int ) request.Type,
+                        "Получен неизвестный тип пакета");
             }
         }
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ValueTask ReturnThrowUnexpectedPacket(PacketType actualType)
+    private async Task ProcessClusterMetadataRequestAsync(TaskFluxClient client,
+                                                          CancellationToken token)
     {
-        return ValueTask.FromException(new UnexpectedPacketException(actualType));
+        var response = new ClusterMetadataResponsePacket(_clusterInfo.Nodes, _clusterInfo.LeaderId?.Id,
+            _clusterInfo.CurrentNodeId.Id);
+        await client.SendAsync(response, token);
     }
 
-    private class ClientCommandRequestPacketVisitor : IAsyncPacketVisitor
+    private async Task ProcessCommandRequestAsync(TaskFluxClient client,
+                                                  CommandRequestPacket request,
+                                                  CancellationToken token)
     {
-        private readonly ClientRequestProcessor _processor;
-        private readonly TaskFluxPacketClient _client;
-        private ILogger Logger => _processor.Logger;
-        public bool ShouldClose { get; private set; }
-
-        public ClientCommandRequestPacketVisitor(ClientRequestProcessor processor,
-                                                 TaskFluxPacketClient client)
+        switch (request.Command.Type)
         {
-            _processor = processor;
-            _client = client;
-        }
-
-        public async ValueTask VisitAsync(CommandRequestPacket packet, CancellationToken token = default)
-        {
-            Command command;
-            try
-            {
-                command = CommandSerializer.Deserialize(packet.Payload);
-            }
-            // 1. Чтобы в бизнес-логике каждый раз не писать проверку - проверим здесь
-            // 2. Зачем клиенту долго ждать, если такую ошибку можно проверить сразу?
-            catch (InvalidQueueNameException invalidName)
-            {
-                // Это ошибка бизнес-логики, поэтому соединение не разрывается
-                // PERF: в статическое поле для оптимизации выделить
-                _processor.Logger.Debug(invalidName,
-                    "Ошибка при десериализации команды, включающей название очереди, полученной от клиента");
-                await _client.SendAsync(
-                    new CommandResponsePacket(ResponseSerializer.Serialize(DefaultErrors.InvalidQueueName)),
-                    token);
+            case NetworkCommandType.Enqueue:
+                await ProcessEnqueueCommandAsync(client, request, token);
                 return;
-            }
-            catch (SerializationException e)
-            {
-                _processor.Logger.Warning(e, "Ошибка при десерилазации команды от клиента. Закрываю соединение");
-                ShouldClose = true;
+            case NetworkCommandType.Dequeue:
+                await ProcessDequeueCommandAsync(client, request, token);
                 return;
+            case NetworkCommandType.Count:
+            case NetworkCommandType.CreateQueue:
+            case NetworkCommandType.DeleteQueue:
+            case NetworkCommandType.ListQueues:
+                break;
+            default:
+                throw new ArgumentOutOfRangeException();
+        }
+
+        Command command;
+        try
+        {
+            command = CommandMapper.Map(request.Command);
+        }
+        catch (InvalidQueueNameException)
+        {
+            await client.SendAsync(new ErrorResponsePacket(( int ) ErrorCodes.InvalidQueueName, string.Empty), token);
+            return;
+        }
+
+        // Обычный путь команды - Запрос -> Ответ
+        var submitResponse = await _requestAcceptor.AcceptAsync(command, token);
+        if (submitResponse.TryGetResponse(out var response))
+        {
+            _logger.Debug("Результат работы команды: {@Response}", response);
+            await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
+        }
+        else
+        {
+            // Если ответа нет, то значит мы не лидер, и команды обрабатывать не можем 
+            await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id ?? null), token);
+        }
+    }
+
+    private async Task ProcessEnqueueCommandAsync(TaskFluxClient client,
+                                                  CommandRequestPacket request,
+                                                  CancellationToken token)
+    {
+        /*
+         * Команда вставки разделена на 2 этапа:
+         * 1. Клиент отправляет пакет с сообщением, который хочет вставить -> Мы его принимаем
+         * 2. Клиент подтверждает вставку (Ack)
+         *
+         * Мы отправляем OK сразу после маппинга, т.к. на этот момент весь пакет отправленный клиентом получили.
+         * Без подобного подтверждения может возникнуть ситуация, когда на момент полного получения пакета с сообщением,
+         * клиент отвалился (например, он послал запись в 1Мб и он раздробился на 1500б по Ethernet).
+         */
+        Command command;
+        try
+        {
+            command = CommandMapper.Map(request.Command);
+        }
+        catch (InvalidQueueNameException)
+        {
+            // Указанное пользователем название очереди невалидное
+            await client.SendAsync(new ErrorResponsePacket(( int ) ErrorCodes.InvalidQueueName, string.Empty), token);
+            return;
+        }
+
+        await client.SendAsync(OkPacket.Instance, token);
+
+        Packet ackPacket;
+        using (var cts = CreateIdleTimeoutCts(token))
+        {
+            ackPacket = await client.ReceiveAsync(cts.Token);
+        }
+
+        Debug.Assert(Enum.IsDefined(ackPacket.Type), "Enum.IsDefined(ackPacket.Type)", "Неизвестный тип пакета: {0}",
+            ackPacket.Type);
+
+        switch (ackPacket.Type)
+        {
+            case PacketType.AcknowledgeRequest:
+                break;
+            case PacketType.NegativeAcknowledgementRequest:
+                // Клиент отказался вставлять новую запись 
+                await client.SendAsync(OkPacket.Instance, token);
+                return;
+            case PacketType.CommandRequest:
+            case PacketType.CommandResponse:
+            case PacketType.ErrorResponse:
+            case PacketType.NotLeader:
+            case PacketType.AuthorizationRequest:
+            case PacketType.AuthorizationResponse:
+            case PacketType.BootstrapRequest:
+            case PacketType.BootstrapResponse:
+            case PacketType.ClusterMetadataRequest:
+            case PacketType.ClusterMetadataResponse:
+            case PacketType.Ok:
+                throw new UnexpectedPacketException(ackPacket, PacketType.AcknowledgeRequest);
+        }
+
+        var submitResponse = await _requestAcceptor.AcceptAsync(command, token);
+        if (submitResponse.TryGetResponse(out var response))
+        {
+            await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
+        }
+        else
+        {
+            await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id), token);
+        }
+    }
+
+    private async Task ProcessDequeueCommandAsync(TaskFluxClient client,
+                                                  CommandRequestPacket packet,
+                                                  CancellationToken token)
+    {
+        /*
+         * Процесс чтения записи разбивается на 2 этапа:
+         * 1. Забираем запись из самой очереди -> Отправляем клиенту
+         * 2. Клиент подтверждает ее обработку -> Коммитим удаление
+         *
+         * В противном случае, пока клиент отсылал запрос и получал запись - отвалился.
+         * В этом случае, запись будет потеряна.
+         */
+        var command = ( DequeueRecordCommand ) CommandMapper.Map(packet.Command);
+        var submitResult = await _requestAcceptor.AcceptAsync(command, token);
+
+        if (submitResult.TryGetResponse(out var response) is false)
+        {
+            // Перестали быть лидером пока запрос обрабатывался
+            await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id), token);
+            return;
+        }
+
+        await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
+
+        if (response.Type != ResponseType.Dequeue)
+        {
+            // Если в ответе получили не Dequeue, то
+            // единственный вариант - ошибка бизнес-логики (нарушение политики, очередь не существует и т.д.)
+            return;
+        }
+
+        var dequeueResponse = ( DequeueResponse ) response;
+        if (!dequeueResponse.Success)
+        {
+            // Если очередь была пуста - приступаем к обработке следующих команд
+            return;
+        }
+
+        /*
+         * На этом моменте мы знаем, что из какой-то очереди была прочитана запись,
+         * но ее прочтение еще не закоммичено.
+         * Теперь ждем:
+         * - Ack - коммитим чтение
+         * - Nack - возвращаем запись обратно
+         */
+        try
+        {
+            // Ожидаем либо Ack, либо Nack
+            Packet request;
+            using (var cts = CreateIdleTimeoutCts(token))
+            {
+                request = await client.ReceiveAsync(cts.Token);
             }
 
-            var result = await _processor._requestAcceptor.AcceptAsync(command, token);
+            Debug.Assert(Enum.IsDefined(request.Type), "Enum.IsDefined(request.Type)", "Неизвестный тип пакета {0}",
+                request.Type);
 
-            Packet responsePacket;
-            if (result.TryGetResponse(out var response))
+            SubmitResponse<Response> submitResponse;
+            switch (request.Type)
             {
-                responsePacket = new CommandResponsePacket(ResponseSerializer.Serialize(response));
+                // Если команду все же нужно выполнить - коммитим выполнение и возвращаем ответ
+                case PacketType.AcknowledgeRequest:
+                    // Явно указываем, что нужно коммитить
+                    dequeueResponse = dequeueResponse.WithDeltaProducing();
+                    submitResponse =
+                        await _requestAcceptor.AcceptAsync(new CommitDequeueCommand(dequeueResponse), token);
+                    break;
+                // Иначе возвращаем ее обратно
+                case PacketType.NegativeAcknowledgementRequest:
+                    // Коммитить результат не нужно
+                    dequeueResponse = dequeueResponse.WithoutDeltaProducing();
+                    submitResponse =
+                        await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(dequeueResponse), token);
+                    break;
+                case PacketType.CommandRequest:
+                case PacketType.CommandResponse:
+                case PacketType.ErrorResponse:
+                case PacketType.NotLeader:
+                case PacketType.AuthorizationRequest:
+                case PacketType.AuthorizationResponse:
+                case PacketType.BootstrapRequest:
+                case PacketType.BootstrapResponse:
+                case PacketType.ClusterMetadataRequest:
+                case PacketType.ClusterMetadataResponse:
+                    throw new UnexpectedPacketException(request, PacketType.AcknowledgeRequest);
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(request.Type), request.Type, "Неизвестный тип пакета");
             }
-            else if (result.WasLeader)
+
+            if (submitResponse.HasValue)
             {
-                responsePacket = new CommandResponsePacket(Array.Empty<byte>());
+                // В любом случае (Ack/Nack) отвечаем OK
+                await client.SendAsync(OkPacket.Instance, token);
             }
             else
             {
-                responsePacket = new NotLeaderPacket(_processor.ClusterInfo.LeaderId is { } id
-                                                         ? id.Id
-                                                         : null);
+                // Если пока отрабатывали лидер кластера сменился
+                await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id), token);
             }
-
-            await responsePacket.AcceptAsync(_client, token);
         }
-
-        public ValueTask VisitAsync(CommandResponsePacket packet, CancellationToken token = default)
+        catch (Exception)
         {
-            Logger.Warning("От клиента пришел неожиданный пакет: DataResponsePacket");
-            ShouldClose = true;
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask VisitAsync(ErrorResponsePacket packet, CancellationToken token = default)
-        {
-            Logger.Warning("От клиента пришел неожиданный пакет: DataResponsePacket");
-            ShouldClose = true;
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask VisitAsync(NotLeaderPacket packet, CancellationToken token = default)
-        {
-            Logger.Warning("От клиента пришел неожиданный пакет: DataResponsePacket");
-            ShouldClose = true;
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask VisitAsync(AuthorizationRequestPacket packet, CancellationToken token = default)
-        {
-            ShouldClose = true;
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask VisitAsync(AuthorizationResponsePacket packet, CancellationToken token = default)
-        {
-            ShouldClose = true;
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask VisitAsync(BootstrapResponsePacket packet, CancellationToken token = default)
-        {
-            ShouldClose = true;
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask VisitAsync(BootstrapRequestPacket packet, CancellationToken token = default)
-        {
-            ShouldClose = true;
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask VisitAsync(ClusterMetadataResponsePacket packet, CancellationToken token = default)
-        {
-            ShouldClose = true;
-            return ValueTask.CompletedTask;
-        }
-
-        public async ValueTask VisitAsync(ClusterMetadataRequestPacket packet, CancellationToken token = default)
-        {
-            var data = new ClusterMetadataResponsePacket(_processor.ClusterInfo.Nodes,
-                GetId(_processor.ClusterInfo.LeaderId), _processor.ClusterInfo.CurrentNodeId.Id);
-            await _client.SendAsync(data, token);
+            await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(dequeueResponse), token);
+            throw;
         }
     }
 
-    private static int? GetId(NodeId? id)
+    private CancellationTokenSource CreateIdleTimeoutCts(CancellationToken token)
     {
-        return id is { } i
-                   ? i.Id
-                   : null;
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        cts.CancelAfter(_options.CurrentValue.IdleTimeout);
+        return cts;
     }
 }

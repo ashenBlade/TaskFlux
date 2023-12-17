@@ -1,5 +1,4 @@
 using TaskFlux.Commands.Error;
-using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.PolicyViolation;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
@@ -7,21 +6,19 @@ using TaskFlux.Models;
 
 namespace TaskFlux.Commands.Enqueue;
 
-public class EnqueueCommand : UpdateCommand
+public class EnqueueCommand : ModificationCommand
 {
     public QueueName Queue { get; }
     public long Key { get; }
-    public byte[] Payload { get; }
+    public byte[] Message { get; }
 
-    public EnqueueCommand(long key, byte[] payload, QueueName queue)
+    public EnqueueCommand(long key, byte[] message, QueueName queue)
     {
-        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(message);
         Key = key;
-        Payload = payload;
+        Message = message;
         Queue = queue;
     }
-
-    public override CommandType Type => CommandType.Enqueue;
 
     public override Response Apply(IApplication application)
     {
@@ -30,24 +27,14 @@ public class EnqueueCommand : UpdateCommand
             return DefaultErrors.QueueDoesNotExist;
         }
 
-        var result = queue.Enqueue(Key, Payload);
+        var result = queue.Enqueue(Key, Message);
 
         if (result.TryGetViolatedPolicy(out var policy))
         {
             return new PolicyViolationResponse(policy);
         }
 
-        return OkResponse.Instance;
-    }
-
-    public override void ApplyNoResult(IApplication context)
-    {
-        if (!context.TaskQueueManager.TryGetQueue(Queue, out var queue))
-        {
-            return;
-        }
-
-        queue.Enqueue(Key, Payload);
+        return new EnqueueResponse(Queue, Key, Message);
     }
 
     public override void Accept(ICommandVisitor visitor)
@@ -55,12 +42,7 @@ public class EnqueueCommand : UpdateCommand
         visitor.Visit(this);
     }
 
-    public override ValueTask AcceptAsync(IAsyncCommandVisitor visitor, CancellationToken token = default)
-    {
-        return visitor.VisitAsync(this, token);
-    }
-
-    public override T Accept<T>(IReturningCommandVisitor<T> visitor)
+    public override T Accept<T>(ICommandVisitor<T> visitor)
     {
         return visitor.Visit(this);
     }
