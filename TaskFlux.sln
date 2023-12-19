@@ -9,23 +9,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{750A408B
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.Raft.Tests", "tests\Consensus.Raft.Tests\Consensus.Raft.Tests.csproj", "{203C0F0F-D20E-44A5-A90E-B0A46EB2C27F}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{085D4247-AF0E-498F-97C7-410383D6FFD8}"
-	ProjectSection(SolutionItems) = preProject
-		docker-compose.yml = docker-compose.yml
-		docs\raft.md = docs\raft.md
-		docs\func-spec.md = docs\func-spec.md
-		docs\developer\client-network-protocol.md = docs\developer\client-network-protocol.md
-		docs\developer\tech-spec.md = docs\developer\tech-spec.md
-		docs\developer\commands.md = docs\developer\commands.md
-		docs\developer\network-protocol.md = docs\developer\network-protocol.md
-		docs\developer\inter-node-network-protocol.md = docs\developer\inter-node-network-protocol.md
-		docs\configuration.md = docs\configuration.md
-		docs\ideas.md = docs\ideas.md
-		docs\queue.md = docs\queue.md
-		docs\installation.md = docs\installation.md
-		docs\queue-policies.md = docs\queue-policies.md
-	EndProjectSection
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Consensus.Peer.Tests", "tests\Consensus.Peer.Tests\Consensus.Peer.Tests.csproj", "{26303C4D-3C0A-4291-82E5-3053131A65BA}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskFlux.PriorityQueue.Tests", "tests\TaskFlux.PriorityQueue.Tests\TaskFlux.PriorityQueue.Tests.csproj", "{55E03A2F-3731-4523-A32C-CD9B1982E7A0}"
