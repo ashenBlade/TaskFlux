@@ -33,6 +33,7 @@ Log.Logger = new LoggerConfiguration()
             .CreateLogger();
 try
 {
+    ThreadPool.SetMinThreads(1000, 1000);
     var configuration = new ConfigurationBuilder()
                        .AddEnvironmentVariables()
                        .AddJsonFile("taskflux.settings.json", optional: true)

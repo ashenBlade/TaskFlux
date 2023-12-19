@@ -96,7 +96,7 @@ public class LeaderState<TCommand, TResponse>
         {
             var peer = peers[i];
             var processor = new ThreadPeerProcessor<TCommand, TResponse>(peer,
-                _logger.ForContext("SourceContext", $"PeerProcessor({peer.Id.Id})"), this);
+                _logger.ForContext("SourceContext", $"PeerProcessor({peer.Id.Id})"), CurrentTerm, this);
             var timer = _timerFactory.CreateHeartbeatTimer();
             processors[i] = ( processor, timer );
         }

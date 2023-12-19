@@ -17,11 +17,12 @@ namespace Consensus.Peer;
 public class TcpPeer : IPeer
 {
     private static BinaryPacketDeserializer Deserializer => BinaryPacketDeserializer.Instance;
-    private Socket _socket;
+
     private readonly EndPoint _endPoint;
     private readonly NodeId _currentNodeId;
     private readonly TimeSpan _requestTimeout;
 
+    private Socket _socket;
     private Lazy<NetworkStream> _lazy;
     private NetworkStream NetworkStream => _lazy.Value;
 
@@ -124,6 +125,8 @@ public class TcpPeer : IPeer
                 return response;
             }
         }
+
+        UpdateSocketState();
 
         if (await TryEstablishConnectionAsync(token))
         {
@@ -394,14 +397,6 @@ public class TcpPeer : IPeer
 
     private bool TryEstablishConnection()
     {
-        if (_socket.Connected)
-        {
-            // Так лучше не проверять, и надо бы использовать Poll,
-            // но если соединение действительно было разорвано, 
-            // то мы об этом узнаем и сделаем повторную попытку установления соединения
-            return true;
-        }
-
         _logger.Debug("Начинаю устанавливать соединение");
 
         try
@@ -458,7 +453,7 @@ public class TcpPeer : IPeer
                     var connectResponsePacket = ( ConnectResponsePacket ) response;
                     if (connectResponsePacket.Success)
                     {
-                        _logger.Debug("Авторизация прошла успшено");
+                        _logger.Debug("Авторизация прошла успешно");
                         return true;
                     }
 

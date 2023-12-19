@@ -70,9 +70,7 @@ public class FollowerState<TCommand, TResponse>
             }
             else
             {
-                _logger.Debug(
-                    "Терм кандидата больше, но голос в терме уже отдал: обновляю только терм. Кандидат: {CandidateId}",
-                    request.CandidateId);
+                _logger.Debug("Терм кандидата больше. Кандидат: {CandidateId}", request.CandidateId);
             }
 
             PersistenceFacade.UpdateState(request.CandidateTerm, null);

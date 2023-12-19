@@ -17,7 +17,23 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
 {
     private volatile bool _disposed;
     private IRaftConsensusModule<TCommand, TResponse> RaftConsensusModule => _caller.RaftConsensusModule;
-    private Term CurrentTerm => RaftConsensusModule.CurrentTerm;
+
+    /// <summary>
+    /// Терм, в котором начали работу
+    /// </summary>
+    /// <remarks>
+    /// Не использовать свойство <see cref="IRaftConsensusModule{TCommand,TResponse}.CurrentTerm"/>,
+    /// т.к. это приведет к ошибкам. Например,
+    /// 1. Мы потеряли соединение с узлом X
+    /// 2. Узел X восстановился
+    /// 3. Узел X перешел в новый терм по таймауту
+    /// 4. Узел X стал новым лидером, а мы (узел) - последователями
+    /// 5. Этот поток-обработчик до сих пор не установили соединение с узлом X - НО ТЕРМ УЖЕ ПОМЕНЯЛСЯ
+    /// 6. Соединение с узлом X восстановилось (для этого обработчика)
+    /// 7. Узел X отвергает все наши запросы, но мы НЕ МОЖЕМ ПОНЯТЬ, ЧТО ПЕРЕШЛИ В НОВЫЙ ТЕРМ И НУЖНО ЗАКОНЧИТЬ РАБОТУ
+    /// </remarks>
+    private Term SavedTerm { get; }
+
     private StoragePersistenceFacade PersistenceFacade => RaftConsensusModule.PersistenceFacade;
 
     /// <summary>
@@ -50,7 +66,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
 
     private readonly AutoResetEvent _queueStopEvent;
 
-    public ThreadPeerProcessor(IPeer peer, ILogger logger, LeaderState<TCommand, TResponse> caller)
+    public ThreadPeerProcessor(IPeer peer, ILogger logger, Term savedTerm, LeaderState<TCommand, TResponse> caller)
     {
         _thread = new Thread(ThreadWorker);
         var handle = new AutoResetEvent(false);
@@ -59,6 +75,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
         _peer = peer;
         _logger = logger;
         _caller = caller;
+        SavedTerm = savedTerm;
     }
 
     public void Start(CancellationToken token)
@@ -113,7 +130,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
                 if (heartbeatOrRequest.TryGetRequest(out var request))
                 {
                     _logger.Debug("Получен запрос для репликации {Index} записи", request.LogIndex);
-                    if (TryReplicateLog(request.LogIndex, peerInfo) is { } greaterTerm)
+                    if (ReplicateLogReturnGreaterTerm(request.LogIndex, peerInfo) is { } greaterTerm)
                     {
                         _logger.Debug("При отправке AppendEntries узел ответил большим термом");
                         request.NotifyFoundGreaterTerm(greaterTerm);
@@ -127,7 +144,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
                 }
                 else if (heartbeatOrRequest.TryGetHeartbeat(out var heartbeat))
                 {
-                    if (TryReplicateLog(peerInfo.NextIndex, peerInfo) is { } greaterTerm)
+                    if (ReplicateLogReturnGreaterTerm(peerInfo.NextIndex, peerInfo) is { } greaterTerm)
                     {
                         _logger.Debug("При отправке Heartbeat запроса узел ответил большим термом");
                         heartbeat.NotifyFoundGreaterTerm(greaterTerm);
@@ -141,6 +158,12 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
             }
 
             _logger.Information("Обработчик узла заканчивает работу");
+        }
+        catch (OperationCanceledException)
+        {
+            /*
+             * Работу нужно завершить, токен отменен
+             */
         }
         catch (Exception e)
         {
@@ -164,7 +187,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
     /// <exception cref="ApplicationException">
     /// Для репликации нужна запись с определенным индексом, но ее нет ни в логе, ни в снапшоте (маловероятно)
     /// </exception>
-    private Term? TryReplicateLog(int replicationIndex, PeerInfo info)
+    private Term? ReplicateLogReturnGreaterTerm(int replicationIndex, PeerInfo info)
     {
         while (!_token.IsCancellationRequested)
         {
@@ -175,7 +198,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
                 {
                     _logger.Debug("Начинаю отправку файла снапшота на узел");
                     var lastEntry = PersistenceFacade.SnapshotStorage.LastLogEntry;
-                    var installSnapshotResponses = _peer.SendInstallSnapshot(new InstallSnapshotRequest(CurrentTerm,
+                    var installSnapshotResponses = _peer.SendInstallSnapshot(new InstallSnapshotRequest(SavedTerm,
                         RaftConsensusModule.Id, lastEntry,
                         snapshot), _token);
 
@@ -190,12 +213,11 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
                             break;
                         }
 
-                        if (CurrentTerm < installSnapshotResponse.CurrentTerm)
+                        if (SavedTerm < installSnapshotResponse.CurrentTerm)
                         {
-                            // В текущей архитектуре - ничего не делаем,
                             _logger.Information(
-                                "От узла {NodeId} получен больший терм {Term}. Текущий терм: {CurrentTerm}", _peer.Id,
-                                installSnapshotResponse.CurrentTerm, PersistenceFacade.CurrentTerm);
+                                "От узла {NodeId} получен больший терм {Term}. Текущий терм: {CurrentTerm}",
+                                _peer.Id, installSnapshotResponse.CurrentTerm, PersistenceFacade.CurrentTerm);
                             return installSnapshotResponse.CurrentTerm;
                         }
 
@@ -223,7 +245,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
             AppendEntriesRequest appendEntriesRequest;
             try
             {
-                appendEntriesRequest = new AppendEntriesRequest(Term: CurrentTerm,
+                appendEntriesRequest = new AppendEntriesRequest(Term: SavedTerm,
                     LeaderCommit: PersistenceFacade.CommitIndex,
                     LeaderId: RaftConsensusModule.Id,
                     PrevLogEntryInfo: PersistenceFacade.GetPrecedingEntryInfo(info.NextIndex),
@@ -273,8 +295,9 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
             }
 
             // Дальше узел отказался принимать наш запрос (Success = false)
+
             // 4. Если вернувшийся терм больше нашего
-            if (CurrentTerm < response.Term)
+            if (SavedTerm < response.Term)
             {
                 // Уведомляем о большем терме. 
                 // Обновление состояния произойдет позже
@@ -367,7 +390,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse>
         {
             if (NextIndex is 0)
             {
-                throw new InvalidOperationException("Нельзя откаться на индекс меньше 0");
+                throw new InvalidOperationException("Нельзя откатиться на индекс меньше 0");
             }
 
             NextIndex--;

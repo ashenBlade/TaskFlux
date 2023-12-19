@@ -75,14 +75,14 @@ public class NodeConnectionManager
         while (token.IsCancellationRequested is false)
         {
             var client = server.Accept();
-            var clientAddress = client.RemoteEndPoint?.ToString();
-            _logger.Debug("Клиент {Address} подключился. Начинаю обработку его запроса", clientAddress);
-            _ = ProcessConnectedClientAsync(token, client, clientAddress);
+            _ = ProcessConnectedClientAsync(token, client);
         }
     }
 
-    private async Task ProcessConnectedClientAsync(CancellationToken token, Socket client, string? clientAddress)
+    private async Task ProcessConnectedClientAsync(CancellationToken token, Socket client)
     {
+        var clientAddress = client.RemoteEndPoint?.ToString();
+        _logger.Debug("Подключился узел по адресу {Address}", clientAddress);
         try
         {
             var packetClient = new PacketClient(client);
@@ -101,12 +101,13 @@ public class NodeConnectionManager
                     return;
                 }
 
+                _logger.Information("Подключился узел {Id}. Начинаю обработку его запросов", nodeId.Id);
                 BeginNewClientSession(nodeId, packetClient, token);
             }
             else
             {
                 _logger.Debug(
-                    "Клиент с адресом {Address} не смог подключиться: не удалось получить Id хоста. Закрываю соединение",
+                    "Узел по адресу {Address} не смог подключиться: не удалось получить Id хоста. Закрываю соединение",
                     clientAddress);
                 await packetClient.SendAsync(new ConnectResponsePacket(false), token);
                 client.Close();
@@ -135,12 +136,12 @@ public class NodeConnectionManager
             };
         _nodes.AddOrUpdate(id,
             static (_, p) => p.Processor,
-            static (_, old, p) =>
+            static (_, old, arg) =>
             {
-                p.Logger.Information(
+                arg.Logger.Information(
                     "В списке соединений уже было соединение с для текущего Id. Закрываю старое соединение");
                 old.Dispose();
-                return p.Processor;
+                return arg.Processor;
             },
             ( Processor: processor, Logger: _logger ));
         _logger.Debug("Начинаю обработку клиента");
