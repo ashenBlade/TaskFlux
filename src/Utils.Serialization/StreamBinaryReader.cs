@@ -1,6 +1,5 @@
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.Text;
 using TaskFlux.Models;
 using TaskFlux.Models.Exceptions;
@@ -10,21 +9,6 @@ namespace Utils.Serialization;
 public struct StreamBinaryReader
 {
     public Stream Stream { get; } = Stream.Null;
-    public bool IsEnd => CheckEnd();
-
-    private bool CheckEnd()
-    {
-        Debug.Assert(Stream.CanSeek,
-            "Чтобы проверять достижение конца потока, поток должен поддерживать Seek операцию");
-        var read = Stream.ReadByte();
-        if (read == -1)
-        {
-            return true;
-        }
-
-        Stream.Seek(-1, SeekOrigin.Current);
-        return false;
-    }
 
     public StreamBinaryReader(Stream stream)
     {

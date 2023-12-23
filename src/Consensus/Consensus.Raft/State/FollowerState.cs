@@ -32,8 +32,6 @@ public class FollowerState<TCommand, TResponse>
         _electionTimer.Schedule();
     }
 
-    // TODO: обновлять id лидера на каждом запросе
-    // TODO: может позволить обновлять состояние в любом случае
     public override RequestVoteResponse Apply(RequestVoteRequest request)
     {
         // Мы в более актуальном Term'е
@@ -98,7 +96,7 @@ public class FollowerState<TCommand, TResponse>
             _logger.Information("Получен AppendEntries с большим термом {GreaterTerm}. Старый терм: {CurrentTerm}",
                 request.Term, CurrentTerm);
             // Мы отстали от общего состояния (старый терм)
-            RaftConsensusModule.PersistenceFacade.UpdateState(request.Term, null);
+            PersistenceFacade.UpdateState(request.Term, null);
         }
 
         if (!PersistenceFacade.PrefixMatch(request.PrevLogEntryInfo))
@@ -117,6 +115,7 @@ public class FollowerState<TCommand, TResponse>
 
         if (PersistenceFacade.CommitIndex == request.LeaderCommit)
         {
+            _leaderId = request.LeaderId;
             return AppendEntriesResponse.Ok(CurrentTerm);
         }
 

@@ -9,7 +9,6 @@
     <ItemGroup>
         <ProjectReference Include="..\..\..\TaskFlux.Commands\TaskFlux.Commands.csproj"/>
         <ProjectReference Include="..\..\Consensus.Raft\Consensus.Raft.csproj"/>
-        <ProjectReference Include="..\Consensus.Application.TaskFlux.Serialization\Consensus.Application.TaskFlux.Serialization.csproj"/>
     </ItemGroup>
 
 </Project>

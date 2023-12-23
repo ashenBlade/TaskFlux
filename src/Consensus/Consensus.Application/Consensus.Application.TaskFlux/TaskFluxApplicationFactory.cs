@@ -39,29 +39,17 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
 
     private static QueueCollection GetQueueCollection(ISnapshot? snapshot)
     {
-        QueueCollection collection;
         if (snapshot is not null)
         {
-            // Восстанавливаем состояние из снапшота
-            var stream = new MemoryStream();
-            foreach (var memory in snapshot.GetAllChunks())
-            {
-                stream.Write(memory.Span);
-            }
-
-            stream.Position = 0;
-
-            collection = QueuesSnapshotSerializer.Deserialize(stream);
-        }
-        else
-        {
-            // Совершенно пустое начальное состояние
-            collection = new QueueCollection();
-
-            // Всегда должна быть очередь по умолчанию
-            collection.CreateQueue(QueueName.Default, PriorityQueueCode.Heap4Arity, null, null, null);
+            // Восстанавливаем из снапшота
+            using var stream = new SnapshotStream(snapshot);
+            return QueuesSnapshotSerializer.Deserialize(stream);
         }
 
+        // Создаем новое начальное состояние с единственной очередью по умолчанию
+
+        var collection = new QueueCollection();
+        collection.CreateQueue(QueueName.Default, PriorityQueueCode.Heap4Arity, null, null, null);
         return collection;
     }
 

@@ -10,7 +10,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Consensus\Consensus.Application\Consensus.Application.TaskFlux.Serialization\Consensus.Application.TaskFlux.Serialization.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.Application\Consensus.Application.TaskFlux\Consensus.Application.TaskFlux.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.NodeProcessor\Consensus.NodeProcessor.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.Raft\Consensus.Raft.csproj"/>

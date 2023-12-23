@@ -357,7 +357,7 @@ internal class ClientRequestProcessor
         }
         else
         {
-            await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id), token);
+            await client.SendAsync(new NotLeaderPacket(_clusterInfo.LeaderId?.Id ?? null), token);
         }
     }
 
