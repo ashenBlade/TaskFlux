@@ -25,6 +25,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     public NodeId Id { get; }
     public Term CurrentTerm => PersistenceFacade.CurrentTerm;
     public NodeId? VotedFor => PersistenceFacade.VotedFor;
+    public NodeId? LeaderId => _currentState.LeaderId;
     public PeerGroup PeerGroup { get; }
     public IApplicationFactory<TCommand, TResponse> ApplicationFactory { get; }
 
@@ -58,7 +59,6 @@ public class RaftConsensusModule<TCommand, TResponse>
         {
             stored.Dispose();
             newState.Initialize();
-            RoleChanged?.Invoke(stored.Role, newState.Role);
             return true;
         }
 
@@ -109,8 +109,6 @@ public class RaftConsensusModule<TCommand, TResponse>
     {
         return _currentState.Apply(command, token);
     }
-
-    public event RoleChangedEventHandler? RoleChanged;
 
     public State<TCommand, TResponse> CreateFollowerState()
     {

@@ -11,6 +11,9 @@ public class CandidateState<TCommand, TResponse>
     : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Candidate;
+
+    // Когда мы кандидат, то еще не известно, кто лидер
+    public override NodeId? LeaderId => null;
     private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts;

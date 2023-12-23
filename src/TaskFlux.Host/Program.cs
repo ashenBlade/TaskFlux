@@ -31,6 +31,7 @@ Log.Logger = new LoggerConfiguration()
             .WriteTo.Console(outputTemplate:
                  "[{Timestamp:HH:mm:ss:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
             .CreateLogger();
+
 try
 {
     ThreadPool.SetMinThreads(1000, 1000);
@@ -51,29 +52,26 @@ try
 
     var nodeId = new NodeId(serverOptions.NodeId);
 
-
     Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
 
     var facade = CreateStoragePersistenceFacade(serverOptions);
     var peers = ExtractPeers(serverOptions, nodeId, networkOptions);
 
     var appInfo = CreateApplicationInfo();
-    var clusterInfo = CreateClusterInfo(serverOptions);
     var nodeInfo = CreateNodeInfo(serverOptions);
 
-    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, nodeInfo, appInfo, clusterInfo);
+    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, nodeInfo, appInfo);
 
-    var consensusModule =
-        new InfoUpdaterRaftConsensusModuleDecorator<Command, Response>(raftConsensusModule, clusterInfo, nodeInfo);
+    var clusterInfo = CreateClusterInfo(serverOptions, raftConsensusModule);
 
-    var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, consensusModule,
+    var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, raftConsensusModule,
         networkOptions.RequestTimeout,
         Log.Logger.ForContext<NodeConnectionManager>());
 
-    var stateObserver = new NodeStateObserver(consensusModule, Log.Logger.ForContext<NodeStateObserver>());
+    var stateObserver = new NodeStateObserver(raftConsensusModule, Log.Logger.ForContext<NodeStateObserver>());
 
     using var requestAcceptor =
-        new ExclusiveRequestAcceptor(consensusModule, Log.ForContext("{SourceContext}", "RequestQueue"));
+        new ExclusiveRequestAcceptor(raftConsensusModule, Log.ForContext("{SourceContext}", "RequestQueue"));
 
     var httpModule = CreateHttpRequestModule(configuration);
     httpModule.AddHandler(HttpMethod.Post, "/command",
@@ -356,8 +354,7 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
                                                                  IPeer[] peers,
                                                                  StoragePersistenceFacade storage,
                                                                  INodeInfo nodeInfo,
-                                                                 IApplicationInfo applicationInfo,
-                                                                 IClusterInfo clusterInfo)
+                                                                 IApplicationInfo applicationInfo)
 {
     var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
     var logger = Log.Logger.ForContext("SourceContext", "Raft");
@@ -369,7 +366,7 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
 
     return RaftConsensusModule<Command, Response>.Create(nodeId, peerGroup, logger, timerFactory,
         jobQueue, storage,
-        commandSerializer, new TaskFluxApplicationFactory(nodeInfo, applicationInfo, clusterInfo));
+        commandSerializer, new TaskFluxApplicationFactory(nodeInfo, applicationInfo));
 }
 
 ApplicationInfo CreateApplicationInfo()
@@ -377,10 +374,9 @@ ApplicationInfo CreateApplicationInfo()
     return new ApplicationInfo(QueueName.Default);
 }
 
-ClusterInfo CreateClusterInfo(RaftServerOptions options)
+ClusterInfo CreateClusterInfo(RaftServerOptions options, IRaftConsensusModule<Command, Response> module)
 {
-    return new ClusterInfo(new NodeId(options.NodeId), new NodeId(options.NodeId),
-        options.Peers.Select(EndPointHelpers.ParseEndPoint));
+    return new ClusterInfo(options.Peers.Select(EndPointHelpers.ParseEndPoint), module);
 }
 
 NodeInfo CreateNodeInfo(RaftServerOptions options)

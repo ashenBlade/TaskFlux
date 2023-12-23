@@ -40,6 +40,11 @@ public interface IRaftConsensusModule<TCommand, TResponse>
     public NodeId? VotedFor { get; }
 
     /// <summary>
+    /// ID известного лидера кластера
+    /// </summary>
+    public NodeId? LeaderId { get; }
+
+    /// <summary>
     /// Заменить роль с <paramref name="oldState"/> на <paramref name="newState"/> с проверкой.
     /// Если предыдущее состояние было <paramref name="oldState"/>, то оно заменяется на новое <paramref name="newState"/>.
     /// Так же для нового состояния вызывается <see cref="State{TCommand,TResponse}.Initialize"/>,
@@ -73,11 +78,6 @@ public interface IRaftConsensusModule<TCommand, TResponse>
     public AppendEntriesResponse Handle(AppendEntriesRequest request);
 
     public IEnumerable<InstallSnapshotResponse> Handle(InstallSnapshotRequest request, CancellationToken token);
-
-    /// <summary>
-    /// Событие, вызывающееся при обновлении роли узла.
-    /// </summary>
-    public event RoleChangedEventHandler RoleChanged;
 
     public State<TCommand, TResponse> CreateFollowerState();
     public State<TCommand, TResponse> CreateLeaderState();

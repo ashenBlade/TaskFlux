@@ -13,6 +13,9 @@ public class LeaderState<TCommand, TResponse>
     : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Leader;
+
+    // Логично, что ID лидера - наш ID (мы в состоянии лидера)
+    public override NodeId? LeaderId => Id;
     private readonly ILogger _logger;
 
     private (ThreadPeerProcessor<TCommand, TResponse> Processor, ITimer Timer)[] _peerProcessors =
@@ -280,7 +283,7 @@ public class LeaderState<TCommand, TResponse>
          * т.к. он отправится по таймеру (он должен вызываться часто).
          * Либо придет новый запрос и он отправится вместе с AppendEntries
          */
-        if (PersistenceFacade.IsLogFileSizeExceeded())
+        if (PersistenceFacade.ShouldCreateSnapshot())
         {
             _logger.Debug("Размер файла лога превышен. Создаю снапшот");
             // Асинхронно это наверно делать не стоит (пока)

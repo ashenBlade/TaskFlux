@@ -1,4 +1,6 @@
 using System.Net;
+using Consensus.Raft;
+using TaskFlux.Commands;
 using TaskFlux.Core;
 using TaskFlux.Models;
 
@@ -6,16 +8,16 @@ namespace TaskFlux.Node;
 
 public class ClusterInfo : IClusterInfo
 {
-    public ClusterInfo(NodeId? leaderId, NodeId nodeId, IEnumerable<EndPoint> nodes)
+    private readonly IRaftConsensusModule<Command, Response> _module;
+    public NodeId? LeaderId => _module.LeaderId;
+    public NodeId CurrentNodeId => _module.Id;
+    public IReadOnlyList<EndPoint> Nodes { get; }
+
+    public ClusterInfo(IEnumerable<EndPoint> nodes, IRaftConsensusModule<Command, Response> module)
     {
-        LeaderId = leaderId;
-        CurrentNodeId = nodeId;
+        _module = module;
         Nodes = nodes.ToArray();
     }
-
-    public NodeId? LeaderId { get; set; }
-    public IReadOnlyList<EndPoint> Nodes { get; }
-    public NodeId CurrentNodeId { get; }
 
     public override string ToString()
     {

@@ -10,6 +10,9 @@ namespace Consensus.Raft.State;
 public class FollowerState<TCommand, TResponse>
     : State<TCommand, TResponse>
 {
+    public override NodeId? LeaderId => _leaderId;
+    private NodeId? _leaderId = null;
+
     public override NodeRole Role => NodeRole.Follower;
     private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
@@ -29,6 +32,8 @@ public class FollowerState<TCommand, TResponse>
         _electionTimer.Schedule();
     }
 
+    // TODO: обновлять id лидера на каждом запросе
+    // TODO: может позволить обновлять состояние в любом случае
     public override RequestVoteResponse Apply(RequestVoteRequest request)
     {
         // Мы в более актуальном Term'е
@@ -83,7 +88,7 @@ public class FollowerState<TCommand, TResponse>
     {
         if (request.Term < CurrentTerm)
         {
-            // Лидер устрел
+            // Лидер устарел/отстал
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
@@ -98,8 +103,8 @@ public class FollowerState<TCommand, TResponse>
 
         if (!PersistenceFacade.PrefixMatch(request.PrevLogEntryInfo))
         {
-            // Префиксы закомиченных записей лога не совпадают 
-            _logger.Information(
+            // Префиксы закоммиченных записей лога не совпадают 
+            _logger.Debug(
                 "Текущий лог не совпадает с логом узла {NodeId}. Моя последняя запись: {MyLastEntry}. Его предыдущая запись: {HisLastEntry}",
                 request.LeaderId, PersistenceFacade.LastEntry, request.PrevLogEntryInfo);
             return AppendEntriesResponse.Fail(CurrentTerm);
@@ -118,15 +123,17 @@ public class FollowerState<TCommand, TResponse>
         // Коммитим записи по индексу лидера
         PersistenceFacade.Commit(request.LeaderCommit);
 
-        // После применения команды, обновляем индекс последней примененной записи.
-        // Этот индекс обновляем сразу, т.к. 
-        // 1. Если возникнет исключение в работе, то это означает неправильную работу самого приложения, а не бизнес-логики
-        // 2. Эта операция сразу сбрасывает данные на диск (Flush) - дорого
+        /*
+         * Вопрос - нужен ли он мне?
+         * В рафте он используется, чтобы отслеживать актуальность состояния,
+         * но я каждый раз восстанавливаю состояние без динамического применения команд.
+         * На первый взгляд, это лишняя работа
+         */
         PersistenceFacade.SetLastApplied(request.LeaderCommit);
 
-        if (PersistenceFacade.IsLogFileSizeExceeded())
+        if (PersistenceFacade.ShouldCreateSnapshot())
         {
-            _logger.Information("Размер файла лога превышен. Создаю снапшот");
+            _logger.Information("Создаю снапшот приложения");
             var oldSnapshot = PersistenceFacade.TryGetSnapshot(out var s)
                                   ? s
                                   : null;
@@ -134,6 +141,8 @@ public class FollowerState<TCommand, TResponse>
             var newSnapshot = ApplicationFactory.CreateSnapshot(oldSnapshot, deltas);
             PersistenceFacade.SaveSnapshot(newSnapshot);
         }
+
+        _leaderId = request.LeaderId;
 
         return AppendEntriesResponse.Ok(CurrentTerm);
     }
@@ -219,6 +228,8 @@ public class FollowerState<TCommand, TResponse>
         }
 
         PersistenceFacade.SetLastApplied(PersistenceFacade.CommitIndex);
+
+        _leaderId = request.LeaderId;
 
         yield return new InstallSnapshotResponse(CurrentTerm);
     }

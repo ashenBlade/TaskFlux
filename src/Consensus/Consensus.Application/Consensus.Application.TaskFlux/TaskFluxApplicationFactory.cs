@@ -13,16 +13,13 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
 {
     private readonly INodeInfo _nodeInfo;
     private readonly IApplicationInfo _applicationInfo;
-    private readonly IClusterInfo _clusterInfo;
 
     public TaskFluxApplicationFactory(
         INodeInfo nodeInfo,
-        IApplicationInfo applicationInfo,
-        IClusterInfo clusterInfo)
+        IApplicationInfo applicationInfo)
     {
         _nodeInfo = nodeInfo;
         _applicationInfo = applicationInfo;
-        _clusterInfo = clusterInfo;
     }
 
     public IApplication<Command, Response> Restore(ISnapshot? snapshot, IEnumerable<byte[]> deltas)
@@ -36,7 +33,7 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
         }
 
         var manager = CreateManager(collection);
-        var application = new TaskFluxApplication(_nodeInfo, _clusterInfo, _applicationInfo, manager);
+        var application = new TaskFluxApplication(_nodeInfo, _applicationInfo, manager);
         return new ProxyTaskFluxApplication(application);
     }
 

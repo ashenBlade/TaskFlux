@@ -8,6 +8,8 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\Consensus\Consensus.Raft\Consensus.Raft.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Commands\TaskFlux.Commands.csproj"/>
       <ProjectReference Include="..\TaskFlux.Core\TaskFlux.Core.csproj" />
     </ItemGroup>
 

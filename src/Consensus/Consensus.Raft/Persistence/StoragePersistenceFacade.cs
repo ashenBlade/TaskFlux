@@ -817,7 +817,7 @@ public class StoragePersistenceFacade
     /// Проверить превышает файл лога максимальный размер
     /// </summary>
     /// <returns><c>true</c> - размер превышен, <c>false</c> - иначе</returns>
-    public bool IsLogFileSizeExceeded()
+    public bool ShouldCreateSnapshot()
     {
         return _sizeChecker.IsLogFileSizeExceeded(_logStorage.FileSize);
     }

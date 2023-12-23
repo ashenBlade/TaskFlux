@@ -40,6 +40,11 @@ public abstract class State<TCommand, TResponse>
     public abstract NodeRole Role { get; }
 
     /// <summary>
+    /// ID известного лидера
+    /// </summary>
+    public abstract NodeId? LeaderId { get; }
+
+    /// <summary>
     /// Применить команду RequestVote
     /// </summary>
     /// <param name="request">Объект запроса</param>
