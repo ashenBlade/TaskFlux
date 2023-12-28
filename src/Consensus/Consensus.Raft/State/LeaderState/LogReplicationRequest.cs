@@ -3,12 +3,11 @@ namespace Consensus.Raft.State.LeaderState;
 /// <summary>
 /// Запрос на синхронизацию логов и отправку узлам AppendEntries.
 /// Когда узел его получает он должен найти новые записи в логе для текущего узла
-/// (информация о последних обработанных записях хранится в <see cref="PeerInfo"/>)
 /// и отправить запрос AppendEntries на узел.
 /// Когда команда (с этим логом) отправлена на узел, то вызывается <see cref="NotifyComplete"/>,
 /// которая инкрементирует счетчик успешных репликаций.
-/// Как только кворум собран (высчитывается в <see cref="_peers"/>) то <see cref="_tcs"/> завершается,
-/// а вызывающая сторона сигнализируется о завершении обработки (таска завершена) 
+/// Как только кворум собран (высчитывается в <see cref="_peers"/>),
+/// вызывающая сторона сигнализируется о завершении обработки (<see cref="_signal"/>) 
 /// </summary>
 public sealed class LogReplicationRequest : IDisposable
 {
@@ -27,11 +26,11 @@ public sealed class LogReplicationRequest : IDisposable
     /// <summary>
     /// Количество отданных успешных ответов/репликаций
     /// </summary>
-    private volatile int _votes = 0;
+    private volatile int _votes;
 
     private readonly PeerGroup _peers;
     private readonly ManualResetEvent _signal;
-    private volatile bool _disposed = false;
+    private volatile bool _disposed;
     private Term? _greaterTerm;
 
     public LogReplicationRequest(

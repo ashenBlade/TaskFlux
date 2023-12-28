@@ -3,8 +3,8 @@ namespace Consensus.Raft.State.LeaderState;
 public class HeartbeatSynchronizer : IDisposable
 {
     private readonly ManualResetEvent _waitHandle = new(false);
-    private volatile bool _end = false;
-    private Term? _greaterTerm = null;
+    private volatile bool _end;
+    private Term? _greaterTerm;
 
     public void NotifySuccess()
     {

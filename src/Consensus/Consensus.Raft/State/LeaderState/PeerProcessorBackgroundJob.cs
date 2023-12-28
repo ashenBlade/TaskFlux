@@ -8,12 +8,12 @@ using TaskFlux.Models;
 namespace Consensus.Raft.State.LeaderState;
 
 /// <summary>
-/// Реализация коммуникации с другими узлами, использующая потоки.
-/// В первой версии использовался пул потоков и все было на async/await.
-/// Потом отказался для большей управляемости и возможности аварийно завершиться при ошибках.
+/// Фоновый обработчик соединения с другими узлами-последователями.
+/// Нужен для репликации записей.
 /// </summary>
-internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
+public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, IDisposable
 {
+    public NodeId NodeId => _peer.Id;
     private volatile bool _disposed;
     private IRaftConsensusModule<TCommand, TResponse> RaftConsensusModule => _caller.RaftConsensusModule;
 
@@ -43,11 +43,6 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
     private readonly ILogger _logger;
 
     /// <summary>
-    /// Фоновый поток обработчик запросов
-    /// </summary>
-    private readonly Thread _thread;
-
-    /// <summary>
     /// Очередь команд для потока обработчика
     /// </summary>
     private readonly RequestQueue _queue;
@@ -58,16 +53,13 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
     /// </summary>
     private readonly LeaderState<TCommand, TResponse> _caller;
 
-    /// <summary>
-    /// Токен отмены, передающийся в момент вызова <see cref="Start"/>
-    /// </summary>
-    private CancellationToken _token;
-
     private readonly AutoResetEvent _queueStopEvent;
 
-    public ThreadPeerProcessor(IPeer peer, ILogger logger, Term savedTerm, LeaderState<TCommand, TResponse> caller)
+    public PeerProcessorBackgroundJob(IPeer peer,
+                                      ILogger logger,
+                                      Term savedTerm,
+                                      LeaderState<TCommand, TResponse> caller)
     {
-        _thread = new Thread(ThreadWorker);
         var handle = new AutoResetEvent(false);
         _queue = new RequestQueue(handle);
         _queueStopEvent = handle;
@@ -77,18 +69,30 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
         SavedTerm = savedTerm;
     }
 
-    public void Start(CancellationToken token)
-    {
-        _token = token;
-        _thread.Start();
-    }
-
     public bool Replicate(LogReplicationRequest request)
     {
         return _queue.Add(request);
     }
 
-    private void ThreadWorker()
+    // TODO: рефакторинг с учетом исключений, nullability и отмены токена
+
+    public void Run(CancellationToken token)
+    {
+        try
+        {
+            ProcessPeer(token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception e)
+        {
+            _logger.Fatal(e, "Во время работы обработчика возникло необработанное исключение");
+            throw;
+        }
+    }
+
+    private void ProcessPeer(CancellationToken token)
     {
         /*
          * Обновление состояния нужно делать не здесь (через этот поток),
@@ -101,74 +105,61 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
          * Если нашли такое - поставим флаг.
          * От лидера все равно запрос и там обновим состояние.
          */
-        try
+        // TODO: попробовать обновить состояние из этого потока/узла, т.к. теперь этот поток не будет блокироваться (не управляется Leader)
+        var peerInfo = new PeerInfo(PersistenceFacade.LastEntry.Index + 1);
+        Term? foundGreaterTerm = null;
+        _logger.Information("Обработчик узла начинает работу");
+        foreach (var heartbeatOrRequest in _queue.ReadAllRequests(token))
         {
-            var peerInfo = new PeerInfo(PersistenceFacade.LastEntry.Index + 1);
-            Term? foundGreaterTerm = null;
-            _logger.Information("Обработчик узла начинает работу");
-            foreach (var heartbeatOrRequest in _queue.ReadAllRequests(_token))
+            // На предыдущих шагах нашли больший терм
+            // Дальше узел станет последователем, а пока завершаем все запросы
+            if (foundGreaterTerm is { } term)
             {
-                // На предыдущих шагах нашли больший терм
-                // Дальше узел станет последователем, а пока завершаем все запросы
-                if (foundGreaterTerm is { } term)
+                // Heartbeat пропускаем
+                if (heartbeatOrRequest.TryGetRequest(out var r))
                 {
-                    // Heartbeat пропускаем
-                    if (heartbeatOrRequest.TryGetRequest(out var r))
-                    {
-                        // Если работа закончена - оповестить всех о конце (можно не выставлять терм, т.к. приложение закрывается)
-                        r.NotifyFoundGreaterTerm(term);
-                    }
-                    else if (heartbeatOrRequest.TryGetHeartbeat(out var h))
-                    {
-                        h.NotifyFoundGreaterTerm(term);
-                    }
-
-                    continue;
+                    // Если работа закончена - оповестить всех о конце (можно не выставлять терм, т.к. приложение закрывается)
+                    r.NotifyFoundGreaterTerm(term);
+                }
+                else if (heartbeatOrRequest.TryGetHeartbeat(out var h))
+                {
+                    h.NotifyFoundGreaterTerm(term);
                 }
 
-                if (heartbeatOrRequest.TryGetRequest(out var request))
-                {
-                    _logger.Debug("Получен запрос для репликации {Index} записи", request.LogIndex);
-                    if (ReplicateLogReturnGreaterTerm(request.LogIndex, peerInfo) is { } greaterTerm)
-                    {
-                        _logger.Debug("При отправке AppendEntries узел ответил большим термом");
-                        request.NotifyFoundGreaterTerm(greaterTerm);
-                        foundGreaterTerm = greaterTerm;
-                    }
-                    else
-                    {
-                        _logger.Debug("Репликация {Index} индекса закончена", request.LogIndex);
-                        request.NotifyComplete();
-                    }
-                }
-                else if (heartbeatOrRequest.TryGetHeartbeat(out var heartbeat))
-                {
-                    if (ReplicateLogReturnGreaterTerm(peerInfo.NextIndex, peerInfo) is { } greaterTerm)
-                    {
-                        _logger.Debug("При отправке Heartbeat запроса узел ответил большим термом");
-                        heartbeat.NotifyFoundGreaterTerm(greaterTerm);
-                        foundGreaterTerm = greaterTerm;
-                    }
-                    else
-                    {
-                        heartbeat.NotifySuccess();
-                    }
-                }
+                continue;
             }
 
-            _logger.Information("Обработчик узла заканчивает работу");
+            if (heartbeatOrRequest.TryGetRequest(out var request))
+            {
+                _logger.Debug("Получен запрос для репликации {Index} записи", request.LogIndex);
+                if (ReplicateLogReturnGreaterTerm(request.LogIndex, peerInfo, token) is { } greaterTerm)
+                {
+                    _logger.Debug("При отправке AppendEntries узел ответил большим термом");
+                    request.NotifyFoundGreaterTerm(greaterTerm);
+                    foundGreaterTerm = greaterTerm;
+                }
+                else
+                {
+                    _logger.Debug("Репликация {Index} индекса закончена", request.LogIndex);
+                    request.NotifyComplete();
+                }
+            }
+            else if (heartbeatOrRequest.TryGetHeartbeat(out var heartbeat))
+            {
+                if (ReplicateLogReturnGreaterTerm(peerInfo.NextIndex, peerInfo, token) is { } greaterTerm)
+                {
+                    _logger.Debug("При отправке Heartbeat запроса узел ответил большим термом");
+                    heartbeat.NotifyFoundGreaterTerm(greaterTerm);
+                    foundGreaterTerm = greaterTerm;
+                }
+                else
+                {
+                    heartbeat.NotifySuccess();
+                }
+            }
         }
-        catch (OperationCanceledException)
-        {
-            /*
-             * Работу нужно завершить, токен отменен
-             */
-        }
-        catch (Exception e)
-        {
-            _logger.Fatal(e, "Во время работы обработчика возникло необработанное исключение");
-            throw;
-        }
+
+        _logger.Information("Обработчик узла заканчивает работу");
     }
 
     /// <summary>
@@ -180,15 +171,16 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
     /// Индекс, до которого нужно среплицировать лог
     /// </param>
     /// <param name="info">Вспомогательная информация про узел - на каком индексе репликации находимся</param>
+    /// <param name="token">Токен отмены</param>
     /// <returns>
     /// <see cref="Term"/> - найденный больший терм, <c>null</c> - репликация прошла успешно
     /// </returns>
     /// <exception cref="ApplicationException">
     /// Для репликации нужна запись с определенным индексом, но ее нет ни в логе, ни в снапшоте (маловероятно)
     /// </exception>
-    private Term? ReplicateLogReturnGreaterTerm(int replicationIndex, PeerInfo info)
+    private Term? ReplicateLogReturnGreaterTerm(int replicationIndex, PeerInfo info, CancellationToken token)
     {
-        while (!_token.IsCancellationRequested)
+        while (!token.IsCancellationRequested)
         {
             if (!PersistenceFacade.TryGetFrom(info.NextIndex, out var entries))
             {
@@ -199,7 +191,7 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                     var lastEntry = PersistenceFacade.SnapshotStorage.LastLogEntry;
                     var installSnapshotResponses = _peer.SendInstallSnapshot(new InstallSnapshotRequest(SavedTerm,
                         RaftConsensusModule.Id, lastEntry,
-                        snapshot), _token);
+                        snapshot), token);
 
                     var connectionBroken = false;
                     foreach (var installSnapshotResponse in installSnapshotResponses)
@@ -260,21 +252,8 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
                 continue;
             }
 
-            AppendEntriesResponse response;
-            while (true)
-            {
-                var currentResponse = _peer.SendAppendEntries(appendEntriesRequest);
-                _token.ThrowIfCancellationRequested();
-                // 2. Если ответ не вернулся (null) - соединение было разорвано - делаем повторную попытку с переподключением
-                if (currentResponse is null)
-                {
-                    // При повторной попытке отправки должен переподключиться
-                    continue;
-                }
-
-                response = currentResponse;
-                break;
-            }
+            // TODO: вот здесь заменил null на повторы
+            var response = _peer.SendAppendEntries(appendEntriesRequest, token);
 
             // 3. Если ответ успешный 
             if (response.Success)
@@ -322,17 +301,9 @@ internal class ThreadPeerProcessor<TCommand, TResponse> : IDisposable
         }
 
         _disposed = true;
-
         _queueStopEvent.Set();
         _queue.Dispose();
         _queueStopEvent.Dispose();
-
-        if (_thread is {IsAlive: true})
-        {
-            Debug.Assert(_thread.ManagedThreadId != Environment.CurrentManagedThreadId,
-                "ДОЛБАЕБ!!!! Пытаешься вызвать Join для самого себя!!!");
-            _thread.Join();
-        }
     }
 
     public bool TryNotifyHeartbeat(out HeartbeatSynchronizer o)

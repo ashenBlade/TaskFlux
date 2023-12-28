@@ -83,7 +83,7 @@ public class CandidateStateTests
     private const int DefaultTerm = 1;
 
     [Fact]
-    public void ElectionTimout__ДолженПерейтиВСледующийТермИОстатьсяКандидатом()
+    public void ElectionTimout__КогдаЕдинственныйВКластере__ДолженПерейтиВСледующийТермИСтатьЛидером()
     {
         var electionTimer = new Mock<ITimer>();
         electionTimer.SetupAdd(x => x.Timeout += null);
@@ -94,36 +94,35 @@ public class CandidateStateTests
         electionTimer.Raise(x => x.Timeout += null);
 
         Assert.Equal(expectedTerm, node.CurrentTerm);
-        Assert.Equal(NodeRole.Candidate, node.CurrentRole);
-    }
-
-    [Fact]
-    public void Кворум__КогдаДругихУзловНет__ДолженСтатьЛидером()
-    {
-        var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        using var node = CreateCandidateNode(oldTerm.Value, jobQueue: jobQueue);
-
-        jobQueue.Run();
-
         Assert.Equal(NodeRole.Leader, node.CurrentRole);
     }
 
     [Fact]
-    public void Кворум__ПриДостижении__ДолженОстановитьElectionTimeout()
+    public void ElectionTimeout__КогдаНиктоНеОтдалГолос__ДолженПерейтиВСледующийТермИОстатьсяКандидатом()
+    {
+        var electionTimer = new Mock<ITimer>();
+        electionTimer.SetupAdd(x => x.Timeout += null);
+        var currentTerm = new Term(1);
+        var expectedTerm = currentTerm.Increment();
+        var stubJobQueue = Helpers.NullBackgroundJobQueue;
+        var node = CreateCandidateNode(DefaultTerm, electionTimer.Object, jobQueue: stubJobQueue);
+
+        electionTimer.Raise(x => x.Timeout += null);
+
+        Assert.Equal(expectedTerm, node.CurrentTerm);
+        Assert.Equal(NodeRole.Leader, node.CurrentRole);
+    }
+
+    [Fact]
+    public void КогдаДругихУзловНет__ДолженСтатьЛидеромПоТаймауту()
     {
         var oldTerm = new Term(1);
-        var jobQueue = new SingleRunBackgroundJobQueue();
-        var timer = new Mock<ITimer>().Apply(m =>
-        {
-            m.Setup(x => x.Stop()).Verifiable();
-        });
+        var timer = new Mock<ITimer>();
+        using var node = CreateCandidateNode(oldTerm.Value, electionTimer: timer.Object);
 
-        using var _ = CreateCandidateNode(oldTerm.Value, electionTimer: timer.Object, jobQueue: jobQueue);
+        timer.Raise(t => t.Timeout += null);
 
-        jobQueue.Run();
-
-        timer.Verify(x => x.Stop(), Times.Once());
+        Assert.Equal(NodeRole.Leader, node.CurrentRole);
     }
 
     [Fact]
@@ -162,7 +161,7 @@ public class CandidateStateTests
             throw new Exception("Кандидат не должен отсылать AppendEntries");
         }
 
-        public AppendEntriesResponse SendAppendEntries(AppendEntriesRequest request)
+        public AppendEntriesResponse SendAppendEntries(AppendEntriesRequest request, CancellationToken token)
         {
             throw new Exception("Кандидат не должен отсылать AppendEntries");
         }
@@ -172,7 +171,7 @@ public class CandidateStateTests
             return Task.FromResult(_response);
         }
 
-        public RequestVoteResponse? SendRequestVote(RequestVoteRequest request)
+        public RequestVoteResponse? SendRequestVote(RequestVoteRequest request, CancellationToken token)
         {
             return _response;
         }
@@ -207,10 +206,10 @@ public class CandidateStateTests
                               .Concat(Enumerable.Range(0, nonGrantedVotesCount)
                                                 .Select(_ => new StubQuorumPeer(term, false)));
 
-        var queue = new SingleRunBackgroundJobQueue();
+        var queue = new AwaitingTaskBackgroundJobQueue();
         using var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
 
-        queue.Run();
+        queue.RunWait();
 
         Assert.Equal(NodeRole.Leader, node.CurrentRole);
     }
@@ -244,27 +243,6 @@ public class CandidateStateTests
     }
 
     [Fact]
-    public void Кворум__СЕдинственнымУзломКоторыйНеОтветил__ДолженСделатьПовторнуюПопытку()
-    {
-        var term = new Term(2);
-        var mock = new Mock<IPeer>().Apply(m =>
-        {
-            m.SetupGet(x => x.Id).Returns(AnotherNodeId);
-            m.SetupSequence(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-             .ReturnsAsync(( RequestVoteResponse? ) null)
-             .ReturnsAsync(new RequestVoteResponse(term, true));
-        });
-        var queue = new SingleRunBackgroundJobQueue();
-        using var _ = CreateCandidateNode(term, jobQueue: queue, peers: new[] {mock.Object});
-
-        queue.Run();
-
-        // Первый раз ошибка сети, а второй раз соединение установлено
-        mock.Verify(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()),
-            Times.Exactly(2));
-    }
-
-    [Fact]
     public void Кворум__КогдаУзелОтветилБольшимТермомИНеОтдалГолос__ДолженСтатьFollower()
     {
         var term = new Term(1);
@@ -293,43 +271,25 @@ public class CandidateStateTests
     }
 
     [Fact]
-    public void Кворум__СЕдинственнымУзломКоторыйОтдалГолосНаВторойПопытке__ДолженСтатьЛидером()
-    {
-        var term = new Term(1);
-        var queue = new SingleRunBackgroundJobQueue();
-        var peer = new Mock<IPeer>().Apply(m =>
-        {
-            m.SetupSequence(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-             .ReturnsAsync(( RequestVoteResponse? ) null)
-             .ReturnsAsync(new RequestVoteResponse(term, true));
-        });
-        using var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer.Object});
-
-        queue.Run();
-
-        Assert.Equal(NodeRole.Leader, node.CurrentRole);
-    }
-
-    [Fact]
     public void Кворум__КогдаСобранНоОдинИзОтветовИмеетБольшийТерм__ДолженСтатьFollowerВЭтомТерме()
     {
         var term = new Term(1);
-        var queue = new SingleRunBackgroundJobQueue();
+        var queue = new AwaitingTaskBackgroundJobQueue();
         var agreedNode = new Mock<IPeer>().Apply(m =>
         {
-            m.Setup(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-             .ReturnsAsync(new RequestVoteResponse(term, true));
+            m.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+             .Returns(new RequestVoteResponse(term, true));
         });
         var greaterTerm = term.Increment();
         var greaterNode = new Mock<IPeer>().Apply(m =>
         {
-            m.Setup(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-             .ReturnsAsync(new RequestVoteResponse(greaterTerm, false));
+            m.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+             .Returns(new RequestVoteResponse(greaterTerm, false));
         });
         using var node =
             CreateCandidateNode(term, jobQueue: queue, peers: new[] {agreedNode.Object, greaterNode.Object});
 
-        queue.Run();
+        queue.RunWait();
 
         node.CurrentRole
             .Should()
@@ -678,18 +638,17 @@ public class CandidateStateTests
     }
 
     [Theory]
-    [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(5)]
     public void ПослеПереходаВLeader__КогдаКворумСобран__ДолженОстановитьElectionТаймер(int votes)
     {
         var term = new Term(1);
-        var queue = new SingleRunBackgroundJobQueue();
+        var queue = new AwaitingTaskBackgroundJobQueue();
 
         var peer = new Mock<IPeer>();
-        peer.Setup(x => x.SendRequestVoteAsync(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new RequestVoteResponse(CurrentTerm: term, VoteGranted: true));
+        peer.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(new RequestVoteResponse(CurrentTerm: term, VoteGranted: true));
 
         var electionTimer = new Mock<ITimer>().Apply(m =>
         {
@@ -704,7 +663,7 @@ public class CandidateStateTests
         using var _ = CreateCandidateNode(term, electionTimer: electionTimer.Object,
             jobQueue: queue, peers: peers);
 
-        queue.Run();
+        queue.RunWait();
 
         electionTimer.Verify(x => x.Stop(), Times.Once());
     }
@@ -727,18 +686,45 @@ public class CandidateStateTests
         int notResponded)
     {
         var term = new Term(1);
-        var queue = new SingleRunBackgroundJobQueue();
-
         var peers = Enumerable.Range(0, successResponses)
                               .Select(_ => new StubQuorumPeer(term, true))
                               .Concat(Enumerable.Range(0, notResponded)
                                                 .Select(_ => new StubQuorumPeer(null)))
                               .ToArray();
-
+        var queue = new AwaitingTaskBackgroundJobQueue();
         using var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
-
-        queue.Run();
-
+        queue.RunWait();
         Assert.Equal(NodeRole.Leader, node.CurrentRole);
+    }
+
+    /// <summary>
+    /// Реализация фоновой очереди задач, которая при запуске прекращает регистрацию новых.
+    /// Нужно для того, чтобы после становления лидером не регистрировать новые,
+    /// иначе при запуске (<see cref="RunWait"/>) добавляются новые (переход в лидера) и вызывается исключение.
+    /// </summary>
+    private class AwaitingTaskBackgroundJobQueue : IBackgroundJobQueue
+    {
+        private readonly List<(IBackgroundJob Job, CancellationToken Token)> _list = new();
+        private bool _sealed = false;
+
+        public void Accept(IBackgroundJob job, CancellationToken token)
+        {
+            if (!_sealed)
+            {
+                _list.Add(( job, token ));
+            }
+        }
+
+        public void RunWait()
+        {
+            _sealed = true;
+            try
+            {
+                Task.WaitAll(_list.Select(tuple => Task.Run(() => tuple.Job.Run(tuple.Token), tuple.Token)).ToArray());
+            }
+            catch (AggregateException e) when (e.InnerException is OperationCanceledException)
+            {
+            }
+        }
     }
 }

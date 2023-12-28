@@ -84,7 +84,7 @@ public class StoragePersistenceFacade
     }
 
     /// <summary>
-    /// Индекс последней закомиченной записи
+    /// Индекс последней закоммиченной записи
     /// </summary>
     public int CommitIndex
     {
@@ -103,7 +103,7 @@ public class StoragePersistenceFacade
     }
 
     /// <summary>
-    /// Индекс последней применной записи журнала.
+    /// Индекс последней примененной записи журнала.
     /// Обновляется после успешного коммита 
     /// </summary>
     private int LastAppliedGlobalIndex { get; set; }
@@ -215,7 +215,7 @@ public class StoragePersistenceFacade
 
     /// <summary>
     /// Добавить в лог переданные записи, начиная с <see cref="startIndex"/> индекса.
-    /// Возможно перезатирание 
+    /// Возможно затирание старых записей 
     /// </summary>
     /// <param name="entries">Записи, которые необходимо добавить</param>
     /// <param name="startIndex">Индекс, начиная с которого необходимо добавить записи</param>
@@ -357,7 +357,7 @@ public class StoragePersistenceFacade
                 var logEntries = _logStorage.ReadFrom(localIndex);
                 var result = new List<LogEntry>(logEntries.Count + _buffer.Count);
                 result.AddRange(logEntries);
-                // Прибаляем весь лог в памяти
+                // Прибавляем весь лог в памяти
                 result.AddRange(_buffer);
                 // Конкатенируем
                 entries = result;
@@ -427,7 +427,7 @@ public class StoragePersistenceFacade
     /// <summary>
     /// Закоммитить лог по переданному индексу
     /// </summary>
-    /// <param name="index">Индекс новой закомиченной записи</param>
+    /// <param name="index">Индекс новой закоммиченной записи</param>
     /// <returns>Результат коммита лога</returns>
     public void Commit(int index)
     {
@@ -450,7 +450,7 @@ public class StoragePersistenceFacade
             if (localIndex < -1)
             {
                 throw new InvalidOperationException(
-                    $"Указанный индекс коммита меньше последней команды в снапшоте. Переданный индекс: {index}. Последний индекс снашпота: {SnapshotStorage.LastLogEntry}");
+                    $"Указанный индекс коммита меньше последней команды в снапшоте. Переданный индекс: {index}. Последний индекс снапшота: {SnapshotStorage.LastLogEntry}");
             }
 
             if (_logStorage.Count + _buffer.Count < localIndex)
@@ -518,11 +518,11 @@ public class StoragePersistenceFacade
     }
 
     /// <summary>
-    /// Получить закомиченные, но еще не примененные записи из лога.
-    /// Это записи, индекс которых находится между индексом последней применненной записи (<see cref="LastAppliedGlobalIndex"/>) и
+    /// Получить закоммиченные, но еще не примененные записи из лога.
+    /// Это записи, индекс которых находится между индексом последней примененной записи (<see cref="LastAppliedGlobalIndex"/>) и
     /// последней закоммиченной записи (<see cref="CommitIndex"/>) 
     /// </summary>
-    /// <returns>Записи, которые были закомичены, но еще не применены</returns>
+    /// <returns>Записи, которые были закоммичены, но еще не применены</returns>
     public IReadOnlyList<LogEntry> GetNotApplied()
     {
         lock (_lock)
@@ -605,13 +605,13 @@ public class StoragePersistenceFacade
          * В противном случае, это будет локальный индекс.
          *
          * Такое может произойти, когда на лидера идет большая нагрузка.
-         * В этом случае, на фолловере (этот узел) будет устанавливаться снапшот.
+         * В этом случае, на последователе (этот узел) будет устанавливаться снапшот.
          * В это время запросы будут идти, и на лидере уже будет устанавливаться новый снапшот,
          * но при отправке нового снапшота
          *
          */
         Debug.Assert(-1 <= lastLocalIndex, "Последний индекс в снапшоте меньше индекса первой моей команды в логе",
-            "Нельзя установить снапшот, когда последний индекс команды в логе меньше нашей первой команды. Последний индекс в снашоте: {0}. Мой последний индекс: {1}. Рассчитанный индекс: {2}",
+            "Нельзя установить снапшот, когда последний индекс команды в логе меньше нашей первой команды. Последний индекс в снапшоте: {0}. Мой последний индекс: {1}. Рассчитанный индекс: {2}",
             lastIncludedEntry.Index, LastEntry.Index, lastLocalIndex);
 
         // 1. Создать временный файл

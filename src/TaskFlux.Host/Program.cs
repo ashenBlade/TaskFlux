@@ -60,7 +60,8 @@ try
     var appInfo = CreateApplicationInfo();
     var nodeInfo = CreateNodeInfo(serverOptions);
 
-    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, nodeInfo, appInfo);
+    using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(serverOptions.Peers.Length, serverOptions.NodeId);
+    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, nodeInfo, appInfo, jobQueue);
 
     var clusterInfo = CreateClusterInfo(serverOptions, raftConsensusModule);
 
@@ -354,9 +355,9 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
                                                                  IPeer[] peers,
                                                                  StoragePersistenceFacade storage,
                                                                  INodeInfo nodeInfo,
-                                                                 IApplicationInfo applicationInfo)
+                                                                 IApplicationInfo applicationInfo,
+                                                                 IBackgroundJobQueue backgroundJobQueue)
 {
-    var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
     var logger = Log.Logger.ForContext("SourceContext", "Raft");
     var commandSerializer = new TaskFluxDeltaExtractor();
     var peerGroup = new PeerGroup(peers);
@@ -365,7 +366,7 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
             heartbeatTimeout: TimeSpan.FromMilliseconds(1000));
 
     return RaftConsensusModule<Command, Response>.Create(nodeId, peerGroup, logger, timerFactory,
-        jobQueue, storage,
+        backgroundJobQueue, storage,
         commandSerializer, new TaskFluxApplicationFactory(nodeInfo, applicationInfo));
 }
 
@@ -387,24 +388,26 @@ NodeInfo CreateNodeInfo(RaftServerOptions options)
 static IPeer[] ExtractPeers(RaftServerOptions serverOptions, NodeId currentNodeId, NetworkOptions networkOptions)
 {
     var peers = new IPeer[serverOptions.Peers.Length - 1]; // Все кроме себя
+    var connectionErrorDelay = TimeSpan.FromSeconds(1);
 
     // Все до текущего узла
-    for (int i = 0; i < currentNodeId.Id; i++)
+    for (var i = 0; i < currentNodeId.Id; i++)
     {
         var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
         var id = new NodeId(i);
         IPeer peer = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
+            connectionErrorDelay,
             Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
         peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
         peers[i] = peer;
     }
 
     // Все после текущего узла
-    for (int i = currentNodeId.Id + 1; i < serverOptions.Peers.Length; i++)
+    for (var i = currentNodeId.Id + 1; i < serverOptions.Peers.Length; i++)
     {
         var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
         var id = new NodeId(i);
-        IPeer peer = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
+        IPeer peer = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout, connectionErrorDelay,
             Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
         peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
         peers[i - 1] = peer;

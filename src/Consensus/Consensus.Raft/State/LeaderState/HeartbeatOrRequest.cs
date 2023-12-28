@@ -1,6 +1,6 @@
 namespace Consensus.Raft.State.LeaderState;
 
-internal record struct HeartbeatOrRequest
+internal readonly record struct HeartbeatOrRequest
 {
     private readonly LogReplicationRequest? _request;
     private readonly HeartbeatSynchronizer? _heartbeatSynchronizer;

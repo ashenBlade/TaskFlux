@@ -9,17 +9,16 @@ using TaskFlux.Models;
 
 namespace Consensus.Raft.State.LeaderState;
 
-public class LeaderState<TCommand, TResponse>
-    : State<TCommand, TResponse>
+public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 {
     public override NodeRole Role => NodeRole.Leader;
 
-    // Логично, что ID лидера - наш ID (мы в состоянии лидера)
+    // Логично, что ID лидера - наш ID
     public override NodeId? LeaderId => Id;
     private readonly ILogger _logger;
 
-    private (ThreadPeerProcessor<TCommand, TResponse> Processor, ITimer Timer)[] _peerProcessors =
-        Array.Empty<(ThreadPeerProcessor<TCommand, TResponse>, ITimer)>();
+    private (PeerProcessorBackgroundJob<TCommand, TResponse> Processor, ITimer Timer)[] _peerProcessors =
+        Array.Empty<(PeerProcessorBackgroundJob<TCommand, TResponse>, ITimer)>();
 
     private readonly IDeltaExtractor<TResponse> _deltaExtractor;
     private readonly ITimerFactory _timerFactory;
@@ -84,21 +83,22 @@ public class LeaderState<TCommand, TResponse>
                 // Запускаем таймер заново
                 p.Timer.Schedule();
             };
-            p.Processor.Start(_becomeFollowerTokenSource.Token);
+
+            BackgroundJobQueue.Accept(p.Processor, _becomeFollowerTokenSource.Token);
             // Сразу же запускаем обработчик, чтобы уведомить других об окончании выборов
             p.Timer.ForceRun();
         });
         _logger.Verbose("Потоки обработчиков узлов запущены");
     }
 
-    private (ThreadPeerProcessor<TCommand, TResponse>, ITimer)[] CreatePeerProcessors()
+    private (PeerProcessorBackgroundJob<TCommand, TResponse>, ITimer)[] CreatePeerProcessors()
     {
         var peers = PeerGroup.Peers;
-        var processors = new (ThreadPeerProcessor<TCommand, TResponse>, ITimer)[peers.Count];
+        var processors = new (PeerProcessorBackgroundJob<TCommand, TResponse>, ITimer)[peers.Count];
         for (var i = 0; i < processors.Length; i++)
         {
             var peer = peers[i];
-            var processor = new ThreadPeerProcessor<TCommand, TResponse>(peer,
+            var processor = new PeerProcessorBackgroundJob<TCommand, TResponse>(peer,
                 _logger.ForContext("SourceContext", $"PeerProcessor({peer.Id.Id})"), CurrentTerm, this);
             var timer = _timerFactory.CreateHeartbeatTimer();
             processors[i] = ( processor, timer );

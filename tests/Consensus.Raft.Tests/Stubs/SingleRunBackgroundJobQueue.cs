@@ -2,21 +2,18 @@ namespace Consensus.Raft.Tests.Stubs;
 
 public class SingleRunBackgroundJobQueue : IBackgroundJobQueue
 {
-    public (Func<Task> Job, CancellationToken Token)? Job { get; set; }
+    private (IBackgroundJob Job, CancellationToken Token)? _pair;
 
-    public void RunInfinite(Func<Task> job, CancellationToken token)
+    public void Accept(IBackgroundJob job, CancellationToken token)
     {
-        Job = ( job, CancellationToken.None );
+        _pair = ( job, token );
     }
 
     public void Run()
     {
-        if (Job is not {Job: { } job, Token: var token})
+        if (_pair is var (job, token))
         {
-            throw new ArgumentNullException(nameof(Job), "Задача не была зарегистрирована");
+            job.Run(token);
         }
-
-
-        job().Wait();
     }
 }

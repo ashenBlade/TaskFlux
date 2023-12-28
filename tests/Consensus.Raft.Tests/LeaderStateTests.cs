@@ -38,7 +38,8 @@ public class LeaderStateTests
                                                  ITimer? heartbeatTimer = null,
                                                  IEnumerable<IPeer>? peers = null,
                                                  LogEntry[]? logEntries = null,
-                                                 IApplication? application = null)
+                                                 IApplication? application = null,
+                                                 IBackgroundJobQueue? jobQueue = null)
     {
         var peerGroup = new PeerGroup(peers switch
                                       {
@@ -60,9 +61,10 @@ public class LeaderStateTests
             m.Setup(x => x.Restore(It.IsAny<ISnapshot?>(), It.IsAny<IEnumerable<byte[]>>()))
              .Returns(application ?? Helpers.NullApplication);
         });
+        jobQueue ??= Helpers.NullBackgroundJobQueue;
 
         var node = new RaftConsensusModule(NodeId, peerGroup, Logger.None, timerFactory,
-            Helpers.NullBackgroundJobQueue, facade, DeltaExtractor, factory.Object);
+            jobQueue, facade, DeltaExtractor, factory.Object);
         node.SetStateTest(node.CreateLeaderState());
         return node;
 
@@ -106,7 +108,8 @@ public class LeaderStateTests
 
         using var node = CreateLeaderNode(term, null);
 
-        var request = new RequestVoteRequest(CandidateId: AnotherNodeId, CandidateTerm: new(otherTerm),
+        var request = new RequestVoteRequest(CandidateId: AnotherNodeId,
+            CandidateTerm: new(otherTerm),
             LastLogEntryInfo: node.PersistenceFacade.LastEntry);
 
         var response = node.Handle(request);
@@ -198,14 +201,13 @@ public class LeaderStateTests
         var peerTerm = term.Increment();
 
         var peer = CreateDefaultPeer();
-        peer.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
-             // Первый вызов для Heartbeat
-            .ReturnsAsync(new AppendEntriesResponse(peerTerm, false)); // Второй для нас
-        peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
+        peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
             .Returns(new AppendEntriesResponse(peerTerm, false));
+        using var queue = new TaskBackgroundJobQueue();
         using var node = CreateLeaderNode(term, null,
             heartbeatTimer: heartbeatTimer.Object,
-            peers: new[] {peer.Object});
+            peers: new[] {peer.Object},
+            jobQueue: queue);
 
         heartbeatTimer.Raise(x => x.Timeout += null);
 
@@ -233,8 +235,8 @@ public class LeaderStateTests
         var beginReached = false;
         var sentEntries = Array.Empty<LogEntry>();
         peer.Setup(x =>
-                 x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
-            .Returns((AppendEntriesRequest request) =>
+                 x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((AppendEntriesRequest request, CancellationToken _) =>
              {
                  // Откатываемся до момента начала лога (полностью пуст)
                  if (request.PrevLogEntryInfo.IsTomb)
@@ -251,9 +253,10 @@ public class LeaderStateTests
 
                  return AppendEntriesResponse.Fail(request.Term);
              });
-
+        using var queue = new TaskBackgroundJobQueue();
         using var node =
-            CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object, peers: new[] {peer.Object});
+            CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object, peers: new[] {peer.Object},
+                jobQueue: queue);
         // Выставляем изначальный лог в 4 команды
         node.PersistenceFacade.LogStorage.SetFileTest(existingFileEntries);
 
@@ -294,8 +297,8 @@ public class LeaderStateTests
         // Отправленные записи при достижении
         var sentEntries = Array.Empty<LogEntry>();
         peer.Setup(x =>
-                 x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
-            .Returns((AppendEntriesRequest request) =>
+                 x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((AppendEntriesRequest request, CancellationToken _) =>
              {
                  // Откатываемся до момента начала лога (полностью пуст)
                  if (request.PrevLogEntryInfo.Index == storedEntriesIndex)
@@ -312,10 +315,10 @@ public class LeaderStateTests
 
                  return AppendEntriesResponse.Fail(request.Term);
              });
-
+        using var queue = new TaskBackgroundJobQueue();
         using var node = CreateLeaderNode(term, null,
             heartbeatTimer: heartbeatTimer.Object, peers: new[] {peer.Object},
-            logEntries: existingFileEntries);
+            logEntries: existingFileEntries, jobQueue: queue);
 
         heartbeatTimer.Raise(x => x.Timeout += null);
 
@@ -428,20 +431,18 @@ public class LeaderStateTests
         var command = 1;
         var expectedResponse = 123;
         var peer = CreateDefaultPeer();
-        peer.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AppendEntriesResponse(term, true))
-            .Verifiable();
-        peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
+        peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
             .Returns(new AppendEntriesResponse(term, true))
             .Verifiable();
         var request = command;
         machine.Setup(x => x.Apply(It.Is<int>(y => y == command)))
                .Returns(expectedResponse)
                .Verifiable();
-
+        using var queue = new TaskBackgroundJobQueue();
         using var node = CreateLeaderNode(term, null,
             peers: new[] {peer.Object},
-            application: machine.Object);
+            application: machine.Object,
+            jobQueue: queue);
 
         var response = node.Handle(request);
 
@@ -471,15 +472,16 @@ public class LeaderStateTests
                               .Select((_, _) => CreateDefaultPeer()
                                   .Apply(m =>
                                    {
-                                       m.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(),
+                                       m.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(),
                                              It.IsAny<CancellationToken>()))
-                                        .ReturnsAsync(AppendEntriesResponse.Ok(term));
-                                       m.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
                                         .Returns(AppendEntriesResponse.Ok(term));
                                    }))
                               .ToArray(peersCount);
+        using var queue = new TaskBackgroundJobQueue();
+        using var node = CreateLeaderNode(term, null,
+            peers: peers.Select(x => x.Object),
+            jobQueue: queue);
 
-        using var node = CreateLeaderNode(term, null, peers: peers.Select(x => x.Object));
         var request = 123;
         var response = node.Handle(request);
 
@@ -494,11 +496,10 @@ public class LeaderStateTests
         var term = new Term(1);
         var peer = CreateDefaultPeer();
         var greaterTerm = term.Increment();
-        peer.Setup(x => x.SendAppendEntriesAsync(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AppendEntriesResponse(greaterTerm, false));
-        peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>()))
+        peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
             .Returns(new AppendEntriesResponse(greaterTerm, false));
-        using var node = CreateLeaderNode(term, null, peers: new[] {peer.Object});
+        using var queue = new TaskBackgroundJobQueue();
+        using var node = CreateLeaderNode(term, null, peers: new[] {peer.Object}, jobQueue: queue);
         var request = 123;
         var response = node.Handle(request);
 
@@ -514,5 +515,30 @@ public class LeaderStateTests
         node.CurrentRole
             .Should()
             .Be(NodeRole.Follower, "нужно становиться последователем, когда другой узел ответил большим термом");
+    }
+
+    private class TaskBackgroundJobQueue : IBackgroundJobQueue, IDisposable
+    {
+        private readonly List<Task> _tasks = new();
+
+        public void Accept(IBackgroundJob job, CancellationToken token)
+        {
+            _tasks.Add(Task.Run(() => job.Run(token), token));
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                Task.WaitAll(_tasks.ToArray());
+            }
+            catch (AggregateException ae) when (ae.InnerException is OperationCanceledException)
+            {
+                /*
+                 * Фоновые потоки обработчики могли не окончить обработку запроса
+                 * прежде чем большинство проголосует за (вернет успешный ответ)
+                 */
+            }
+        }
     }
 }

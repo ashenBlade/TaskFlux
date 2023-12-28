@@ -18,9 +18,26 @@ public class TcpPeer : IPeer
 {
     private static BinaryPacketDeserializer Deserializer => BinaryPacketDeserializer.Instance;
 
+    /// <summary>
+    /// Эндпоинт узла, с которым мы общаемся
+    /// </summary>
     private readonly EndPoint _endPoint;
+
+    /// <summary>
+    /// Id текущего узла.
+    /// Нужен во время установления соединения
+    /// </summary>
     private readonly NodeId _currentNodeId;
+
+    /// <summary>
+    /// Таймаут ожидания ответа от другого сервера
+    /// </summary>
     private readonly TimeSpan _requestTimeout;
+
+    /// <summary>
+    /// Время ожидания между повторными запросами при потере соединения
+    /// </summary>
+    private readonly TimeSpan _connectionErrorDelay;
 
     private Socket _socket;
     private Lazy<NetworkStream> _lazy;
@@ -34,6 +51,7 @@ public class TcpPeer : IPeer
                     NodeId nodeId,
                     NodeId currentNodeId,
                     TimeSpan requestTimeout,
+                    TimeSpan connectionErrorDelay,
                     Lazy<NetworkStream> lazy,
                     ILogger logger)
     {
@@ -42,6 +60,7 @@ public class TcpPeer : IPeer
         _endPoint = endPoint;
         _currentNodeId = currentNodeId;
         _requestTimeout = requestTimeout;
+        _connectionErrorDelay = connectionErrorDelay;
         _lazy = lazy;
         _logger = logger;
     }
@@ -76,7 +95,7 @@ public class TcpPeer : IPeer
             typeof(RaftPacketType));
     }
 
-    public AppendEntriesResponse? SendAppendEntries(AppendEntriesRequest request)
+    public AppendEntriesResponse SendAppendEntries(AppendEntriesRequest request, CancellationToken token)
     {
         var response = SendPacketReconnectingCore(new AppendEntriesRequestPacket(request));
         if (response is null)
@@ -192,7 +211,7 @@ public class TcpPeer : IPeer
             typeof(RaftPacketType));
     }
 
-    public RequestVoteResponse? SendRequestVote(RequestVoteRequest request)
+    public RequestVoteResponse SendRequestVote(RequestVoteRequest request, CancellationToken token)
     {
         var response = SendPacketReconnectingCore(new RequestVoteRequestPacket(request));
         if (response is null)
@@ -583,11 +602,13 @@ public class TcpPeer : IPeer
                                  NodeId nodeId,
                                  EndPoint endPoint,
                                  TimeSpan requestTimeout,
+                                 TimeSpan connectionErrorDelay,
                                  ILogger logger)
     {
         var socket = CreateSocket(requestTimeout);
         var lazyStream = new Lazy<NetworkStream>(() => new NetworkStream(socket));
 
-        return new TcpPeer(socket, endPoint, nodeId, currentNodeId, requestTimeout, lazyStream, logger);
+        return new TcpPeer(socket, endPoint, nodeId, currentNodeId, requestTimeout, connectionErrorDelay, lazyStream,
+            logger);
     }
 }

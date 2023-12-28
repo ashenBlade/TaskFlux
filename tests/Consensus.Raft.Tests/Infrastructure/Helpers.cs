@@ -58,7 +58,7 @@ public static class Helpers
     public static IBackgroundJobQueue CreateNullJobQueue()
     {
         var mock = new Mock<IBackgroundJobQueue>();
-        mock.Setup(x => x.RunInfinite(It.IsAny<Func<Task>>(), It.IsAny<CancellationToken>()));
+        mock.Setup(x => x.Accept(It.IsAny<IBackgroundJob>(), It.IsAny<CancellationToken>()));
         return mock.Object;
     }
 

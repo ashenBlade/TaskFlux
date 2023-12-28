@@ -47,8 +47,8 @@ public class RaftConsensusModule<TCommand, TResponse>
             throw new InvalidOperationException($"Состояние узла уже выставлено в {_currentState.Role}");
         }
 
-        state.Initialize();
         _currentState = state;
+        state.Initialize();
     }
 
     public bool TryUpdateState(State<TCommand, TResponse> newState,
