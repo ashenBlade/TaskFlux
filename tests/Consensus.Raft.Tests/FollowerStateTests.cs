@@ -319,9 +319,10 @@ public class FollowerStateTests
 
     private record ConsensusFileSystem(IFileInfo SnapshotFile);
 
-    private record NodeCreateResult(RaftConsensusModule Module,
-                                    StoragePersistenceFacade Persistence,
-                                    ConsensusFileSystem FileSystem);
+    private record NodeCreateResult(
+        RaftConsensusModule Module,
+        StoragePersistenceFacade Persistence,
+        ConsensusFileSystem FileSystem);
 
     private static NodeCreateResult CreateFollowerNodeNew()
     {
@@ -369,13 +370,10 @@ public class FollowerStateTests
         var leaderTerm = new Term(2);
         var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
             new StubSnapshot(snapshotData));
-        foreach (var response in node.Handle(request))
-        {
-            response.CurrentTerm
-                    .Should()
-                    .Be(leaderTerm, "отправленный лидером терм больше текущего");
-        }
-
+        var response = node.Handle(request);
+        response.CurrentTerm
+                .Should()
+                .Be(leaderTerm, "отправленный лидером терм больше текущего");
 
         var (index, term, data) = persistence.ReadSnapshotFileTest();
         Assert.Equal(10, index);
@@ -394,10 +392,8 @@ public class FollowerStateTests
         var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
             new StubSnapshot(snapshotData));
 
-        foreach (var response in node.Handle(request))
-        {
-            Assert.Equal(leaderTerm, response.CurrentTerm);
-        }
+        var response = node.Handle(request);
+        Assert.Equal(leaderTerm, response.CurrentTerm);
 
         var (index, term, data) = persistence.ReadSnapshotFileTest();
         Assert.Equal(lastIncludedEntry.Index, index);
@@ -418,12 +414,10 @@ public class FollowerStateTests
         var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
             new StubSnapshot(snapshotData));
 
-        foreach (var response in node.Handle(request))
-        {
-            response.CurrentTerm
-                    .Should()
-                    .Be(leaderTerm, "терм лидера больше текущего");
-        }
+        var response = node.Handle(request);
+        response.CurrentTerm
+                .Should()
+                .Be(leaderTerm, "терм лидера больше текущего");
 
         var (index, term, data) = persistence.ReadSnapshotFileTest();
         Assert.Equal(lastIncludedEntry.Index, index);
@@ -432,83 +426,8 @@ public class FollowerStateTests
         Assert.Equal(lastIncludedEntry, persistence.SnapshotStorage.LastLogEntry);
     }
 
-    [Theory]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(5)]
-    [InlineData(10)]
-    public void InstallSnapshot__КогдаЧанковНесколько__ДолженВернутьОтветовНа2БольшеЧемЧанков(int chunksCount)
-    {
-        var (node, _, _) = CreateFollowerNodeNew();
-
-        var snapshot = new Mock<ISnapshot>();
-        snapshot.Setup(x => x.GetAllChunks(It.IsAny<CancellationToken>()))
-                .Returns(GetAllChunks());
-
-        var leaderTerm = new Term(10);
-        var lastLogEntry = new LogEntryInfo(new Term(9), 10);
-
-
-        var responses = node
-                       .Handle(new InstallSnapshotRequest(leaderTerm, AnotherNodeId, lastLogEntry, snapshot.Object))
-                       .ToList();
-
-        responses
-           .Should()
-           .AllSatisfy(r =>
-            {
-                r.CurrentTerm.Should().Be(leaderTerm, "терм лидера больше");
-            })
-           .And
-           .HaveCount(chunksCount + 2,
-                $"{chunksCount} ответов для чанков, 1 после валидации заголовка и еще 1 последний, подтверждающий");
-
-        return;
-
-        IEnumerable<ReadOnlyMemory<byte>> GetAllChunks()
-        {
-            for (int i = 0; i < chunksCount; i++)
-            {
-                var buffer = new byte[Random.Shared.Next(1, 100)];
-                Random.Shared.NextBytes(buffer);
-                yield return buffer;
-            }
-        }
-    }
-
     [Fact]
-    public void InstallSnapshot__КогдаЧанкДанныхОдин__ДолженВернуть3Ответа()
-    {
-        var (node, persistence, _) = CreateFollowerNodeNew();
-
-        var snapshotData = new byte[] {1, 2, 3};
-        var leaderTerm = new Term(4);
-        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
-        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
-            new StubSnapshot(snapshotData));
-
-        var responses = node.Handle(request)
-                            .ToList();
-
-        responses
-           .Should()
-           .AllSatisfy(x =>
-            {
-                x.CurrentTerm
-                 .Should()
-                 .Be(leaderTerm, "терм должен быть как у лидера");
-            }, "терм во время работы не меняется")
-           .And
-           .HaveCount(3, "первый ответ");
-
-        var (index, term, data) = persistence.ReadSnapshotFileTest();
-        Assert.Equal(lastIncludedEntry.Index, index);
-        Assert.Equal(lastIncludedEntry.Term, term);
-        Assert.Equal(snapshotData, data);
-    }
-
-    [Fact]
-    public void InstallSnapshot__КогдаТермЛидераМеньше__ДолженВернуть1Ответ()
+    public void InstallSnapshot__КогдаТермЛидераМеньше__ДолженВернутьОтветСразу()
     {
         var leaderTerm = new Term(4);
         var nodeTerm = leaderTerm.Increment();
@@ -516,22 +435,22 @@ public class FollowerStateTests
         var (node, persistence, _) = CreateFollowerNodeNew();
         persistence.UpdateState(nodeTerm, null);
 
-        var snapshotData = new byte[] {1, 2, 3};
+        var snapshot = new Mock<ISnapshot>().Apply(m =>
+        {
+            m.Setup(x => x.GetAllChunks(It.IsAny<CancellationToken>()))
+             .Returns(Array.Empty<ReadOnlyMemory<byte>>())
+             .Verifiable();
+        });
+
         var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
-        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
-            new StubSnapshot(snapshotData));
+        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry, snapshot.Object);
 
-        var responses = node.Handle(request)
-                            .ToList();
+        var response = node.Handle(request);
+        response.CurrentTerm
+                .Should()
+                .Be(nodeTerm, "терм должен быть как у лидера");
 
-        responses
-           .Should()
-           .AllSatisfy(x =>
-            {
-                x.CurrentTerm.Should().Be(nodeTerm, "терм должен быть как у лидера");
-            }, "терм во время работы не меняется")
-           .And
-           .HaveCount(1, "только один ответ, что терм узла больше терм лидера");
+        snapshot.Verify(x => x.GetAllChunks(It.IsAny<CancellationToken>()), Times.Never());
     }
 
     private static readonly NodeId AnotherNodeId = new NodeId(NodeId.Id + 1);
@@ -657,12 +576,10 @@ public class FollowerStateTests
         var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
             new StubSnapshot(snapshotData));
 
-        foreach (var response in node.Handle(request))
-        {
-            response.CurrentTerm
-                    .Should()
-                    .Be(leaderTerm, "отправленный лидером терм больше текущего");
-        }
+        var response = node.Handle(request);
+        response.CurrentTerm
+                .Should()
+                .Be(leaderTerm, "отправленный лидером терм больше текущего");
 
         persistence.ReadLogBufferTest()
                    .Should()
@@ -686,10 +603,7 @@ public class FollowerStateTests
         storage.SnapshotStorage.WriteSnapshotDataTest(logEntryInfo.Term, logEntryInfo.Index, oldSnapshot);
 
         var request = new InstallSnapshotRequest(term, AnotherNodeId, logEntryInfo, snapshot);
-
-        foreach (var _ in follower.Handle(request))
-        {
-        }
+        follower.Handle(request);
 
         var (lastIndex, lastTerm, snapshotData) = storage.SnapshotStorage.ReadAllDataTest();
         lastIndex.Should()

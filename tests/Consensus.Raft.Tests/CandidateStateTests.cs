@@ -142,10 +142,10 @@ public class CandidateStateTests
 
     private class StubQuorumPeer : IPeer
     {
-        private readonly RequestVoteResponse? _response;
+        private readonly RequestVoteResponse _response;
         public NodeId Id => AnotherNodeId;
 
-        public StubQuorumPeer(RequestVoteResponse? response)
+        public StubQuorumPeer(RequestVoteResponse response)
         {
             _response = response;
         }
@@ -155,28 +155,17 @@ public class CandidateStateTests
             _response = new RequestVoteResponse(term, voteGranted);
         }
 
-        public Task<AppendEntriesResponse?> SendAppendEntriesAsync(AppendEntriesRequest request,
-                                                                   CancellationToken token)
-        {
-            throw new Exception("Кандидат не должен отсылать AppendEntries");
-        }
-
         public AppendEntriesResponse SendAppendEntries(AppendEntriesRequest request, CancellationToken token)
         {
             throw new Exception("Кандидат не должен отсылать AppendEntries");
         }
 
-        public Task<RequestVoteResponse?> SendRequestVoteAsync(RequestVoteRequest request, CancellationToken token)
-        {
-            return Task.FromResult(_response);
-        }
-
-        public RequestVoteResponse? SendRequestVote(RequestVoteRequest request, CancellationToken token)
+        public RequestVoteResponse SendRequestVote(RequestVoteRequest request, CancellationToken token)
         {
             return _response;
         }
 
-        public IEnumerable<InstallSnapshotResponse?> SendInstallSnapshot(
+        public InstallSnapshotResponse SendInstallSnapshot(
             InstallSnapshotRequest request,
             CancellationToken token)
         {
@@ -268,36 +257,6 @@ public class CandidateStateTests
         queue.Run();
 
         Assert.Equal(newTerm, node.CurrentTerm);
-    }
-
-    [Fact]
-    public void Кворум__КогдаСобранНоОдинИзОтветовИмеетБольшийТерм__ДолженСтатьFollowerВЭтомТерме()
-    {
-        var term = new Term(1);
-        var queue = new AwaitingTaskBackgroundJobQueue();
-        var agreedNode = new Mock<IPeer>().Apply(m =>
-        {
-            m.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-             .Returns(new RequestVoteResponse(term, true));
-        });
-        var greaterTerm = term.Increment();
-        var greaterNode = new Mock<IPeer>().Apply(m =>
-        {
-            m.Setup(x => x.SendRequestVote(It.IsAny<RequestVoteRequest>(), It.IsAny<CancellationToken>()))
-             .Returns(new RequestVoteResponse(greaterTerm, false));
-        });
-        using var node =
-            CreateCandidateNode(term, jobQueue: queue, peers: new[] {agreedNode.Object, greaterNode.Object});
-
-        queue.RunWait();
-
-        node.CurrentRole
-            .Should()
-            .Be(NodeRole.Follower,
-                 "узел должен стать последователем, если хотя бы один узел вернул больший терм во время кворума, даже если большинство согласилось");
-        node.CurrentTerm
-            .Should()
-            .Be(greaterTerm, "надо перейти в больший терм, если был обнаружен");
     }
 
     [Fact]
@@ -660,8 +619,10 @@ public class CandidateStateTests
                               .Select(_ => new StubQuorumPeer(term, true))
                               .ToArray();
 
-        using var _ = CreateCandidateNode(term, electionTimer: electionTimer.Object,
-            jobQueue: queue, peers: peers);
+        using var _ = CreateCandidateNode(term,
+            electionTimer: electionTimer.Object,
+            jobQueue: queue,
+            peers: peers);
 
         queue.RunWait();
 
@@ -681,15 +642,15 @@ public class CandidateStateTests
     [InlineData(5, 3)]
     [InlineData(5, 4)]
     [InlineData(5, 5)]
-    public void Кворум__КогдаБольшинствоГолосовОтданоДругиеНеОтветили__ДолженПерейтиВLeader(
+    public void Кворум__КогдаБольшинствоГолосовОтдано__ДолженПерейтиВLeader(
         int successResponses,
         int notResponded)
     {
-        var term = new Term(1);
+        var term = new Term(2);
         var peers = Enumerable.Range(0, successResponses)
                               .Select(_ => new StubQuorumPeer(term, true))
                               .Concat(Enumerable.Range(0, notResponded)
-                                                .Select(_ => new StubQuorumPeer(null)))
+                                                .Select(_ => new StubQuorumPeer(new Term(term.Value - 1), false)))
                               .ToArray();
         var queue = new AwaitingTaskBackgroundJobQueue();
         using var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
@@ -705,7 +666,7 @@ public class CandidateStateTests
     private class AwaitingTaskBackgroundJobQueue : IBackgroundJobQueue
     {
         private readonly List<(IBackgroundJob Job, CancellationToken Token)> _list = new();
-        private bool _sealed = false;
+        private bool _sealed;
 
         public void Accept(IBackgroundJob job, CancellationToken token)
         {

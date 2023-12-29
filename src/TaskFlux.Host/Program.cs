@@ -395,11 +395,9 @@ static IPeer[] ExtractPeers(RaftServerOptions serverOptions, NodeId currentNodeI
     {
         var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
         var id = new NodeId(i);
-        IPeer peer = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
+        peers[i] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
             connectionErrorDelay,
             Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
-        peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
-        peers[i] = peer;
     }
 
     // Все после текущего узла
@@ -407,10 +405,8 @@ static IPeer[] ExtractPeers(RaftServerOptions serverOptions, NodeId currentNodeI
     {
         var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
         var id = new NodeId(i);
-        IPeer peer = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout, connectionErrorDelay,
+        peers[i - 1] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout, connectionErrorDelay,
             Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
-        peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
-        peers[i - 1] = peer;
     }
 
     return peers;

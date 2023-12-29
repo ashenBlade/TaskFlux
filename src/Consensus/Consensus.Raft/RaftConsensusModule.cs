@@ -99,8 +99,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         return _currentState.Apply(request);
     }
 
-    public IEnumerable<InstallSnapshotResponse> Handle(InstallSnapshotRequest request,
-                                                       CancellationToken token = default)
+    public InstallSnapshotResponse Handle(InstallSnapshotRequest request, CancellationToken token = default)
     {
         return _currentState.Apply(request, token);
     }

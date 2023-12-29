@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Consensus.Core;
 using Consensus.Raft.Persistence.Log;
@@ -570,57 +569,21 @@ public class StoragePersistenceFacade
         LastAppliedGlobalIndex = globalIndex;
     }
 
+
     /// <summary>
-    /// Перезаписать старый снапшот новым и обновить файл лога (удалить старые записи).
-    /// Используется для ответа на InstallSnapshot запрос.
+    /// Создать объект для записи нового снапшота
     /// </summary>
-    /// <param name="lastIncludedEntry">
-    /// Информация о последней примененной команде в <paramref name="snapshot"/>.
-    /// Этот метод только сохраняет новый файл снапшота, без очищения или удаления лога команд
-    /// </param>
-    /// <param name="snapshot">Слепок системы</param>
-    /// <param name="token">Токен отмены</param>
-    /// <returns>
-    /// Поток флагов успешности операции.
-    /// Если возвращен <c>false</c> - токен был отменен.
-    /// Используется для посылания ответов узлу-лидеру, отправляющему снапшот.
-    /// Один <c>true</c> на каждый успешно записанный чанк.
-    /// Если достигнут конец, то значение не возвращается - это нужно, чтобы в конце отправить последний InstallSnapshotResponse
-    /// </returns>
-    /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
-    /// <remarks>
-    /// После установки нового снапшота, лог корректируется - удаляются предшествующие записи
-    /// </remarks>
-    public IEnumerable<bool> InstallSnapshot(LogEntryInfo lastIncludedEntry,
-                                             ISnapshot snapshot,
-                                             CancellationToken token = default)
+    /// <param name="lastIncludedSnapshotEntry">Последняя включенная запись в снапшот</param>
+    /// <returns>Объект для создания нового снапшота</returns>
+    public ISnapshotInstaller CreateSnapshot(LogEntryInfo lastIncludedSnapshotEntry)
     {
-        token.ThrowIfCancellationRequested();
-
-        // Сохраним индекс, чтобы потом могли очистить лог
-        var lastLocalIndex = CalculateLocalIndex(lastIncludedEntry.Index);
-
-        /*
-         * Если индекс равен -1, то переданный индекс равен индексу в снапшоте.
-         * В противном случае, это будет локальный индекс.
-         *
-         * Такое может произойти, когда на лидера идет большая нагрузка.
-         * В этом случае, на последователе (этот узел) будет устанавливаться снапшот.
-         * В это время запросы будут идти, и на лидере уже будет устанавливаться новый снапшот,
-         * но при отправке нового снапшота
-         *
-         */
-        Debug.Assert(-1 <= lastLocalIndex, "Последний индекс в снапшоте меньше индекса первой моей команды в логе",
-            "Нельзя установить снапшот, когда последний индекс команды в логе меньше нашей первой команды. Последний индекс в снапшоте: {0}. Мой последний индекс: {1}. Рассчитанный индекс: {2}",
-            lastIncludedEntry.Index, LastEntry.Index, lastLocalIndex);
-
-        // 1. Создать временный файл
+        // Вся работа будет весить через временный файл снапшота.
+        // Для записи в этом файл будет использоваться обертка/фасад
+        var lastLocalIndex = CalculateLocalIndex(lastIncludedSnapshotEntry.Index);
         var snapshotTempFile = _snapshotStorage.CreateTempSnapshotFile();
-
-        // 2. Записать заголовок: маркер, индекс, терм
         try
         {
-            snapshotTempFile.Initialize(lastIncludedEntry);
+            snapshotTempFile.Initialize(lastIncludedSnapshotEntry);
         }
         catch (Exception)
         {
@@ -628,77 +591,82 @@ public class StoragePersistenceFacade
             throw;
         }
 
-        yield return true;
+        return new FileSystemSnapshotInstaller(lastLocalIndex, lastIncludedSnapshotEntry, snapshotTempFile, this);
+    }
 
-        // 3. Записываем сами данные на диск
-        foreach (var chunk in snapshot.GetAllChunks(token))
+    private class FileSystemSnapshotInstaller : ISnapshotInstaller
+    {
+        private readonly int _lastLocalIndex;
+        private readonly LogEntryInfo _lastSnapshotIncludedEntry;
+        private readonly ISnapshotFileWriter _snapshotFileWriter;
+        private readonly StoragePersistenceFacade _parent;
+
+        public FileSystemSnapshotInstaller(
+            int lastLocalIndex,
+            LogEntryInfo lastSnapshotIncludedEntry,
+            ISnapshotFileWriter snapshotFileWriter,
+            StoragePersistenceFacade parent)
         {
-            try
-            {
-                snapshotTempFile.WriteSnapshotChunk(chunk.Span, token);
-            }
-            catch (OperationCanceledException)
-            {
-                snapshotTempFile.Discard();
-                throw;
-            }
-            catch (Exception)
-            {
-                snapshotTempFile.Discard();
-                throw;
-            }
-
-            yield return true;
+            _lastLocalIndex = lastLocalIndex;
+            _lastSnapshotIncludedEntry = lastSnapshotIncludedEntry;
+            _snapshotFileWriter = snapshotFileWriter;
+            _parent = parent;
         }
 
-        // 4. Переименовать файл в нужное имя
-        snapshotTempFile.Save();
-
-        // 5. Очищаем лог до указанного индекса
-        if (lastLocalIndex < _logStorage.Count)
+        public void InstallChunk(ReadOnlySpan<byte> chunk, CancellationToken token)
         {
-            // Индекс находится в самом файле лога
-            if (lastLocalIndex == _logStorage.Count - 1)
+            _snapshotFileWriter.WriteSnapshotChunk(chunk, token);
+        }
+
+        public void Commit()
+        {
+            // 1. Сохраняем файл и переименовываем в нужное имя
+            _snapshotFileWriter.Save();
+
+            // 2. Очищаем лог команд до указанного индекса
+            if (_lastLocalIndex < _parent._logStorage.Count)
             {
-                _logStorage.Clear();
+                // Индекс находится в самом файле лога
+                if (_lastLocalIndex == _parent._logStorage.Count - 1)
+                {
+                    _parent._logStorage.Clear();
+                }
+                else
+                {
+                    _parent._logStorage.RemoveUntil(_lastLocalIndex);
+                }
+            }
+            else if (_lastLocalIndex - _parent._logStorage.Count < _parent._buffer.Count)
+            {
+                var bufferIndex = _lastLocalIndex - _parent._logStorage.Count;
+                if (bufferIndex == _parent._buffer.Count - 1)
+                {
+                    // Очищаем буфер полностью
+                    _parent._buffer.Clear();
+                }
+                else
+                {
+                    // Очищаем буфер до указанного индекса
+                    _parent._buffer.RemoveRange(0, bufferIndex);
+                }
+
+                // Полностью очищаем лог
+                _parent._logStorage.Clear();
             }
             else
             {
-                _logStorage.RemoveUntil(lastLocalIndex);
+                // Очищаем лог и буфер
+                _parent._logStorage.Clear();
+                _parent._buffer.Clear();
             }
+
+            _parent.LastAppliedGlobalIndex = _lastSnapshotIncludedEntry.Index;
         }
-        else if (lastLocalIndex - _logStorage.Count < _buffer.Count)
+
+        public void Discard()
         {
-            var bufferIndex = lastLocalIndex - _logStorage.Count;
-            if (bufferIndex == _buffer.Count - 1)
-            {
-                // Очищаем буфер полностью
-                _buffer.Clear();
-            }
-            else
-            {
-                // Очищаем буфер до указанного индекса
-                _buffer.RemoveRange(0, bufferIndex);
-            }
-
-            // Полностью очищаем лог
-            _logStorage.Clear();
+            _snapshotFileWriter.Discard();
         }
-        else
-        {
-            // Очищаем лог и буфер
-            _logStorage.Clear();
-            _buffer.Clear();
-        }
-
-        LastAppliedGlobalIndex = lastIncludedEntry.Index;
-
-        /*
-         * Ситуации:
-         *   - Последний индекс снапшота среди файла лога
-         *   - Последний индекс снапшота среди буфера
-         *   - Последний индекс снапшота больше всех индексов
-         */
     }
 
     /// <summary>

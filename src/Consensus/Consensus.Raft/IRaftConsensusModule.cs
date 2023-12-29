@@ -77,7 +77,7 @@ public interface IRaftConsensusModule<TCommand, TResponse>
     public RequestVoteResponse Handle(RequestVoteRequest request);
     public AppendEntriesResponse Handle(AppendEntriesRequest request);
 
-    public IEnumerable<InstallSnapshotResponse> Handle(InstallSnapshotRequest request, CancellationToken token);
+    public InstallSnapshotResponse Handle(InstallSnapshotRequest request, CancellationToken token);
 
     public State<TCommand, TResponse> CreateFollowerState();
     public State<TCommand, TResponse> CreateLeaderState();

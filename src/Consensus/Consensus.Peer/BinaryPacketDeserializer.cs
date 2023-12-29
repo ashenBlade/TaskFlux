@@ -40,16 +40,17 @@ public class BinaryPacketDeserializer
         {
             return packetType switch
                    {
-                       RaftPacketType.AppendEntriesRequest    => DeserializeAppendEntriesRequestPacket(stream),
-                       RaftPacketType.AppendEntriesResponse   => DeserializeAppendEntriesResponsePacket(stream),
-                       RaftPacketType.RequestVoteResponse     => DeserializeRequestVoteResponsePacket(stream),
-                       RaftPacketType.RequestVoteRequest      => DeserializeRequestVoteRequestPacket(stream),
-                       RaftPacketType.ConnectRequest          => DeserializeConnectRequestPacket(stream),
-                       RaftPacketType.ConnectResponse         => DeserializeConnectResponsePacket(stream),
-                       RaftPacketType.InstallSnapshotChunk    => DeserializeInstallSnapshotChunkPacket(stream),
-                       RaftPacketType.InstallSnapshotResponse => DeserializeInstallSnapshotResponsePacket(stream),
-                       RaftPacketType.InstallSnapshotRequest  => DeserializeInstallSnapshotRequestPacket(stream),
-                       RaftPacketType.RetransmitRequest       => DeserializeRetransmitRequestPacket(stream),
+                       RaftPacketType.AppendEntriesRequest         => DeserializeAppendEntriesRequestPacket(stream),
+                       RaftPacketType.AppendEntriesResponse        => DeserializeAppendEntriesResponsePacket(stream),
+                       RaftPacketType.RequestVoteResponse          => DeserializeRequestVoteResponsePacket(stream),
+                       RaftPacketType.RequestVoteRequest           => DeserializeRequestVoteRequestPacket(stream),
+                       RaftPacketType.ConnectRequest               => DeserializeConnectRequestPacket(stream),
+                       RaftPacketType.ConnectResponse              => DeserializeConnectResponsePacket(stream),
+                       RaftPacketType.InstallSnapshotChunkRequest  => DeserializeInstallSnapshotChunkPacket(stream),
+                       RaftPacketType.InstallSnapshotResponse      => DeserializeInstallSnapshotResponsePacket(stream),
+                       RaftPacketType.InstallSnapshotRequest       => DeserializeInstallSnapshotRequestPacket(stream),
+                       RaftPacketType.RetransmitRequest            => DeserializeRetransmitRequestPacket(stream),
+                       RaftPacketType.InstallSnapshotChunkResponse => new InstallSnapshotChunkResponsePacket(),
                    };
         }
         catch (SwitchExpressionException)
@@ -91,7 +92,7 @@ public class BinaryPacketDeserializer
                            await DeserializeConnectRequestPacketAsync(stream, token),
                        RaftPacketType.ConnectResponse =>
                            await DeserializeConnectResponsePacketAsync(stream, token),
-                       RaftPacketType.InstallSnapshotChunk =>
+                       RaftPacketType.InstallSnapshotChunkRequest =>
                            await DeserializeInstallSnapshotChunkPacketAsync(stream, token),
                        RaftPacketType.InstallSnapshotRequest =>
                            await DeserializeInstallSnapshotRequestPacketAsync(stream, token),
@@ -99,6 +100,7 @@ public class BinaryPacketDeserializer
                            await DeserializeInstallSnapshotResponsePacketAsync(stream, token),
                        RaftPacketType.RetransmitRequest =>
                            await DeserializeRetransmitRequestPacketAsync(stream, token),
+                       RaftPacketType.InstallSnapshotChunkResponse => new InstallSnapshotChunkResponsePacket(),
                    };
         }
         catch (SwitchExpressionException)
@@ -174,7 +176,7 @@ public class BinaryPacketDeserializer
 
     #region InstallSnapshotChunk
 
-    private static InstallSnapshotChunkPacket DeserializeInstallSnapshotChunkPacket(Stream stream)
+    private static InstallSnapshotChunkRequestPacket DeserializeInstallSnapshotChunkPacket(Stream stream)
     {
         // Читаем размер данных
         Span<byte> headerBuffer = stackalloc byte[4];
@@ -198,7 +200,7 @@ public class BinaryPacketDeserializer
         }
     }
 
-    private static async ValueTask<InstallSnapshotChunkPacket> DeserializeInstallSnapshotChunkPacketAsync(
+    private static async ValueTask<InstallSnapshotChunkRequestPacket> DeserializeInstallSnapshotChunkPacketAsync(
         Stream stream,
         CancellationToken token)
     {
@@ -231,7 +233,7 @@ public class BinaryPacketDeserializer
         }
     }
 
-    private static InstallSnapshotChunkPacket DeserializeInstallSnapshotChunkPacket(Span<byte> payload)
+    private static InstallSnapshotChunkRequestPacket DeserializeInstallSnapshotChunkPacket(Span<byte> payload)
     {
         Debug.Assert(payload.Length >= 4, "payload.Length >= 4",
             "Размер данных не может быть меньше 4 - чек-сумма занимает минимум 4 байта");
@@ -239,10 +241,10 @@ public class BinaryPacketDeserializer
 
         if (payload.Length == 4)
         {
-            return new InstallSnapshotChunkPacket(Array.Empty<byte>());
+            return new InstallSnapshotChunkRequestPacket(Array.Empty<byte>());
         }
 
-        return new InstallSnapshotChunkPacket(payload[..^4].ToArray());
+        return new InstallSnapshotChunkRequestPacket(payload[..^4].ToArray());
 
         static void ValidateChecksum(Span<byte> buffer)
         {

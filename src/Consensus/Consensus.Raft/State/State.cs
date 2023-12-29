@@ -80,6 +80,5 @@ public abstract class State<TCommand, TResponse>
     /// <param name="request"><see cref="InstallSnapshotRequest"/></param>
     /// <param name="token">Токен отмены</param>
     /// <returns><see cref="InstallSnapshotResponse"/></returns>
-    public abstract IEnumerable<InstallSnapshotResponse> Apply(InstallSnapshotRequest request,
-                                                               CancellationToken token = default);
+    public abstract InstallSnapshotResponse Apply(InstallSnapshotRequest request, CancellationToken token = default);
 }

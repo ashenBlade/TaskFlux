@@ -187,42 +187,19 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
                 _logger.Debug("В логе не оказалось записей после индекса: {Index}", info.NextIndex);
                 if (PersistenceFacade.TryGetSnapshot(out var snapshot))
                 {
-                    _logger.Debug("Начинаю отправку файла снапшота на узел");
+                    _logger.Debug("Отправляю снапшот на узел");
                     var lastEntry = PersistenceFacade.SnapshotStorage.LastLogEntry;
-                    var installSnapshotResponses = _peer.SendInstallSnapshot(new InstallSnapshotRequest(SavedTerm,
+                    var installSnapshotResponse = _peer.SendInstallSnapshot(new InstallSnapshotRequest(SavedTerm,
                         RaftConsensusModule.Id, lastEntry,
                         snapshot), token);
 
-                    var connectionBroken = false;
-                    foreach (var installSnapshotResponse in installSnapshotResponses)
+                    if (SavedTerm < installSnapshotResponse.CurrentTerm)
                     {
-                        if (installSnapshotResponse is null)
-                        {
-                            _logger.Debug(
-                                "Во время отправки файла снапшота соединение было разорвано. Прекращаю оправку");
-                            connectionBroken = true;
-                            break;
-                        }
-
-                        if (SavedTerm < installSnapshotResponse.CurrentTerm)
-                        {
-                            _logger.Information(
-                                "От узла {NodeId} получен больший терм {Term}. Текущий терм: {CurrentTerm}",
-                                _peer.Id, installSnapshotResponse.CurrentTerm, PersistenceFacade.CurrentTerm);
-                            return installSnapshotResponse.CurrentTerm;
-                        }
-
-                        // Продолжаем отправлять запросы
+                        _logger.Information("От узла {NodeId} получен больший терм {Term}. Текущий терм: {CurrentTerm}",
+                            _peer.Id, installSnapshotResponse.CurrentTerm, PersistenceFacade.CurrentTerm);
+                        return installSnapshotResponse.CurrentTerm;
                     }
 
-                    if (connectionBroken)
-                    {
-                        _logger.Debug(
-                            "Во время отправки снапшота соединение было разорвано. Делаю повторную попытку отправки снапшота");
-                        continue;
-                    }
-
-                    // Новый индекс - следующий после снапшота
                     info.Set(lastEntry.Index + 1);
                     _logger.Debug("Снапшот отправлен на другой узел");
                     continue;

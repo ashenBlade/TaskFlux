@@ -49,17 +49,13 @@ public class PacketClient
         return null;
     }
 
-    public async ValueTask SendAsync(RaftPacket packet, CancellationToken token)
+    public ValueTask SendAsync(RaftPacket packet, CancellationToken token)
     {
-        try
-        {
-            await packet.SerializeAsync(Stream, token);
-        }
-        catch (SocketException)
-        {
-        }
-        catch (IOException)
-        {
-        }
+        return packet.SerializeAsync(Stream, token);
+    }
+
+    public void Send(RaftPacket packet)
+    {
+        packet.Serialize(Stream);
     }
 }

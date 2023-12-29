@@ -204,12 +204,12 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         }
     }
 
-    public override IEnumerable<InstallSnapshotResponse> Apply(InstallSnapshotRequest request,
-                                                               CancellationToken token = default)
+    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request,
+                                                  CancellationToken token = default)
     {
         if (request.Term < CurrentTerm)
         {
-            return new[] {new InstallSnapshotResponse(CurrentTerm)};
+            return new InstallSnapshotResponse(CurrentTerm);
         }
 
         var state = RaftConsensusModule.CreateFollowerState();

@@ -3,15 +3,15 @@ using Utils.Serialization;
 
 namespace Consensus.Network.Packets;
 
-public class InstallSnapshotChunkPacket : RaftPacket
+public class InstallSnapshotChunkRequestPacket : RaftPacket
 {
     internal const int DataStartPosition = 1  // Маркер
                                          + 4; // Размер чанка
 
     public ReadOnlyMemory<byte> Chunk { get; }
-    public override RaftPacketType PacketType => RaftPacketType.InstallSnapshotChunk;
+    public override RaftPacketType PacketType => RaftPacketType.InstallSnapshotChunkRequest;
 
-    public InstallSnapshotChunkPacket(ReadOnlyMemory<byte> chunk)
+    public InstallSnapshotChunkRequestPacket(ReadOnlyMemory<byte> chunk)
     {
         Chunk = chunk;
     }
@@ -28,7 +28,7 @@ public class InstallSnapshotChunkPacket : RaftPacket
     {
         var checkSum = Crc32CheckSum.Compute(Chunk.Span);
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) RaftPacketType.InstallSnapshotChunk);
+        writer.Write(( byte ) RaftPacketType.InstallSnapshotChunkRequest);
         writer.WriteBuffer(Chunk.Span);
         writer.Write(checkSum);
     }

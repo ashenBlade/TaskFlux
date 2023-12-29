@@ -183,20 +183,20 @@ public class FollowerState<TCommand, TResponse>
         _electionTimer.Dispose();
     }
 
-    public override IEnumerable<InstallSnapshotResponse> Apply(InstallSnapshotRequest request,
-                                                               CancellationToken token = default)
+    public override InstallSnapshotResponse Apply(InstallSnapshotRequest request,
+                                                  CancellationToken token = default)
     {
         if (request.Term < CurrentTerm)
         {
-            _logger.Information("Терм узла меньше моего. Отклоняю InstallSnapshotRequest");
-            yield return new InstallSnapshotResponse(CurrentTerm);
-            yield break;
+            _logger.Information("Терм узла меньше моего. Отклоняю InstallSnapshot запрос");
+            return new InstallSnapshotResponse(CurrentTerm);
         }
 
         using var _ = ElectionTimerScope.BeginScope(_electionTimer);
-        _logger.Information("Начинаю обработку InstallSnapshot");
+        _logger.Information("Получен InstallSnapshot запрос");
         _logger.Debug("Получен снапшот с индексом {Index} и термом {Term}", request.LastEntry.Index,
             request.LastEntry.Term);
+
         if (CurrentTerm < request.Term)
         {
             _logger.Information("Терм лидера больше моего. Обновляю терм до {Term}", request.Term);
@@ -211,25 +211,31 @@ public class FollowerState<TCommand, TResponse>
 
         _electionTimer.Stop();
         _electionTimer.Schedule();
-        _logger.Debug("Начинаю получать чанки снашота");
+        _logger.Debug("Начинаю получать чанки снапшота");
         token.ThrowIfCancellationRequested();
-        foreach (var success in PersistenceFacade.InstallSnapshot(request.LastEntry,
-                     request.Snapshot, token))
+        var snapshotWriter = PersistenceFacade.CreateSnapshot(request.LastEntry);
+        try
         {
-            _electionTimer.Stop();
-            _logger.Debug("Очередной чанк снапшота установлен. Возвращаю ответ");
-            yield return new InstallSnapshotResponse(CurrentTerm);
-
-            if (!success)
+            foreach (var chunk in request.Snapshot.GetAllChunks(token))
             {
-                yield break;
+                using var scope = ElectionTimerScope.BeginScope(_electionTimer);
+                snapshotWriter.InstallChunk(chunk.Span, token);
             }
+
+            snapshotWriter.Commit();
         }
+        catch (Exception)
+        {
+            snapshotWriter.Discard();
+            throw;
+        }
+
+        _logger.Information("Снапшот установлен");
 
         PersistenceFacade.SetLastApplied(PersistenceFacade.CommitIndex);
 
         _leaderId = request.LeaderId;
 
-        yield return new InstallSnapshotResponse(CurrentTerm);
+        return new InstallSnapshotResponse(CurrentTerm);
     }
 }

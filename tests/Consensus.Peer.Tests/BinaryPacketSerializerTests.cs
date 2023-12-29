@@ -270,7 +270,7 @@ public class BinaryPacketSerializerTests
     [InlineData(new byte[] {1, 1, 2, 44, 128, 88, 33, 2})]
     public async Task InstallSnapshotChunk__ДолженДесериализоватьТакуюЖеКоманду(byte[] data)
     {
-        await AssertBase(new InstallSnapshotChunkPacket(data));
+        await AssertBase(new InstallSnapshotChunkRequestPacket(data));
     }
 
     [Theory]
@@ -300,11 +300,11 @@ public class BinaryPacketSerializerTests
     [Fact]
     public async Task InstallSnapshotChunk__КогдаЦелостностьНарушена__ДолженКинутьIntegrityException()
     {
-        var packet = new InstallSnapshotChunkPacket(new byte[]
+        var packet = new InstallSnapshotChunkRequestPacket(new byte[]
         {
             1, 2, 3, 4, 5, 6, 7, 8, 100, 22, byte.MinValue, byte.MaxValue, 0, 0, 4
         });
-        await AssertIntegrityExceptionBase(packet, InstallSnapshotChunkPacket.DataStartPosition,
+        await AssertIntegrityExceptionBase(packet, InstallSnapshotChunkRequestPacket.DataStartPosition,
             packet.GetDataEndPosition());
     }
 

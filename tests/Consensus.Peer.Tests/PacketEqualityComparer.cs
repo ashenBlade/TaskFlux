@@ -59,7 +59,7 @@ public class PacketEqualityComparer : IEqualityComparer<RaftPacket>
             && first.LastEntry == second.LastEntry;
     }
 
-    private static bool Check(InstallSnapshotChunkPacket first, InstallSnapshotChunkPacket second)
+    private static bool Check(InstallSnapshotChunkRequestPacket first, InstallSnapshotChunkRequestPacket second)
     {
         return first.Chunk
                     .ToArray()

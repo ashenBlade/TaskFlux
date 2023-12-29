@@ -157,11 +157,8 @@ public class NodeConnectionProcessor : IDisposable
     {
         var snapshot = new NetworkSnapshot(Client);
         var request = new InstallSnapshotRequest(packet.Term, packet.LeaderId, packet.LastEntry, snapshot);
-        foreach (var response in RaftConsensusModule.Handle(request, token))
-        {
-            await Client.SendAsync(new InstallSnapshotResponsePacket(response.CurrentTerm), token);
-        }
-
+        var response = RaftConsensusModule.Handle(request, token);
+        await Client.SendAsync(new InstallSnapshotResponsePacket(response.CurrentTerm), token);
         return true;
     }
 

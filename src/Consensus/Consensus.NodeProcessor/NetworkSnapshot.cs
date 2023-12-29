@@ -15,13 +15,16 @@ public class NetworkSnapshot : ISnapshot
 
     public IEnumerable<ReadOnlyMemory<byte>> GetAllChunks(CancellationToken token = default)
     {
+        var requestPacket = new InstallSnapshotChunkResponsePacket();
         while (!token.IsCancellationRequested)
         {
+            _client.Send(requestPacket);
+
             var packet = _client.Receive();
             switch (packet)
             {
-                case {PacketType: RaftPacketType.InstallSnapshotChunk}:
-                    var installChunkPacket = ( InstallSnapshotChunkPacket ) packet;
+                case {PacketType: RaftPacketType.InstallSnapshotChunkRequest}:
+                    var installChunkPacket = ( InstallSnapshotChunkRequestPacket ) packet;
                     if (installChunkPacket.Chunk.IsEmpty)
                     {
                         yield break;
@@ -31,8 +34,10 @@ public class NetworkSnapshot : ISnapshot
                     break;
                 default:
                     throw new InvalidDataException(
-                        $"Получен неожиданный пакет данных. Ожидался {RaftPacketType.InstallSnapshotChunk}. Получен: {packet}");
+                        $"Получен неожиданный пакет данных. Ожидался {RaftPacketType.InstallSnapshotChunkRequest}. Получен: {packet}");
             }
         }
+
+        token.ThrowIfCancellationRequested();
     }
 }

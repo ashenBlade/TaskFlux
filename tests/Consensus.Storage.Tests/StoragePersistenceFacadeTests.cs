@@ -22,10 +22,11 @@ public class StoragePersistenceFacadeTests
 {
     private static LogEntry EmptyEntry(int term) => new(new Term(term), Array.Empty<byte>());
 
-    private record ConsensusFileSystem(IFileInfo LogFile,
-                                       IFileInfo MetadataFile,
-                                       IFileInfo SnapshotFile,
-                                       IDirectoryInfo TemporaryDirectory);
+    private record ConsensusFileSystem(
+        IFileInfo LogFile,
+        IFileInfo MetadataFile,
+        IFileInfo SnapshotFile,
+        IDirectoryInfo TemporaryDirectory);
 
     private static readonly string BaseDirectory = Path.Combine("var", "lib", "taskflux");
     private static readonly string ConsensusDirectory = Path.Combine(BaseDirectory, "consensus");
@@ -561,14 +562,21 @@ public class StoragePersistenceFacadeTests
     }
 
     [Fact]
-    public void InstallSnapshot__КогдаЛогБылПустым__ДолженОбновитьИндексПоследнейПримененнойКоманды()
+    public void CreateSnapshot__КогдаЛогБылПустым__ДолженОбновитьИндексПоследнейПримененнойКоманды()
     {
         var (facade, _) = CreateFacade();
         var lastLogEntry = new LogEntryInfo(new Term(7), 10);
         var snapshotData = RandomBytes(0);
 
-        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
-              .EnumerateAll();
+        var writer = facade.CreateSnapshot(lastLogEntry);
+
+        var stubSnapshot = new StubSnapshot(snapshotData);
+        foreach (var chunk in stubSnapshot.GetAllChunks())
+        {
+            writer.InstallChunk(chunk.Span, CancellationToken.None);
+        }
+
+        writer.Commit();
 
         var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
 
@@ -591,14 +599,20 @@ public class StoragePersistenceFacadeTests
     }
 
     [Fact]
-    public void InstallSnapshot__КогдаВЛогеБылиКоманды__ДолженВернутьПравильныеНепримененныеКоманды()
+    public void CreateSnapshot__КогдаВЛогеБылиКоманды__ДолженВернутьПравильныеНепримененныеКоманды()
     {
         var (facade, _) = CreateFacade();
         var lastLogEntry = new LogEntryInfo(new Term(7), 10);
         var snapshotData = RandomBytes(0);
 
-        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
-              .EnumerateAll();
+        var writer = facade.CreateSnapshot(lastLogEntry);
+        var stubSnapshot = new StubSnapshot(snapshotData);
+        foreach (var chunk in stubSnapshot.GetAllChunks())
+        {
+            writer.InstallChunk(chunk.Span, CancellationToken.None);
+        }
+
+        writer.Commit();
 
         var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
 
@@ -628,8 +642,14 @@ public class StoragePersistenceFacadeTests
         var lastLogEntry = new LogEntryInfo(new Term(7), 10);
         var snapshotData = RandomBytes(123);
 
-        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
-              .EnumerateAll();
+        var writer = facade.CreateSnapshot(lastLogEntry);
+        var stubSnapshot = new StubSnapshot(snapshotData);
+        foreach (var chunk in stubSnapshot.GetAllChunks())
+        {
+            writer.InstallChunk(chunk.Span, CancellationToken.None);
+        }
+
+        writer.Commit();
 
         var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
 
@@ -655,8 +675,15 @@ public class StoragePersistenceFacadeTests
 
         var lastLogEntry = new LogEntryInfo(new Term(1), 10);
         var snapshotData = RandomBytes(123);
-        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
-              .EnumerateAll();
+
+        var writer = facade.CreateSnapshot(lastLogEntry);
+        var stubSnapshot = new StubSnapshot(snapshotData);
+        foreach (var chunk in stubSnapshot.GetAllChunks())
+        {
+            writer.InstallChunk(chunk.Span, CancellationToken.None);
+        }
+
+        writer.Commit();
 
         var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
 
@@ -696,8 +723,14 @@ public class StoragePersistenceFacadeTests
         var lastLogEntry = new LogEntryInfo(new Term(3), 3);
         var expectedLog = existingLog[4..];
 
-        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
-              .EnumerateAll();
+        var writer = facade.CreateSnapshot(lastLogEntry);
+        var stubSnapshot = new StubSnapshot(snapshotData);
+        foreach (var chunk in stubSnapshot.GetAllChunks())
+        {
+            writer.InstallChunk(chunk.Span, CancellationToken.None);
+        }
+
+        writer.Commit();
 
         // Проверка корректности общей работы
         var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
@@ -754,8 +787,14 @@ public class StoragePersistenceFacadeTests
         // Индексирование в буфере будет с 3
         var expectedBuffer = existingBuffer[3..];
 
-        facade.InstallSnapshot(lastLogEntry, new StubSnapshot(snapshotData))
-              .EnumerateAll();
+        var writer = facade.CreateSnapshot(lastLogEntry);
+        var stubSnapshot = new StubSnapshot(snapshotData);
+        foreach (var chunk in stubSnapshot.GetAllChunks())
+        {
+            writer.InstallChunk(chunk.Span, CancellationToken.None);
+        }
+
+        writer.Commit();
 
         // Проверка корректности общей работы
         var (actualLastIndex, actualLastTerm, actualData) = facade.ReadSnapshotFileTest();
@@ -1423,15 +1462,4 @@ public class StoragePersistenceFacadeTests
     }
 
     private static bool EqualityComparison(LogEntry left, LogEntry right) => Comparer.Equals(left, right);
-}
-
-file static class EnumerableExtensions
-{
-    public static void EnumerateAll<T>(this IEnumerable<T> data)
-    {
-        foreach (var _ in data)
-        {
-            /*  */
-        }
-    }
 }
