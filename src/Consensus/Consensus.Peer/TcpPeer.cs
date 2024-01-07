@@ -211,7 +211,6 @@ public class TcpPeer : IPeer
 
         // Попытку повторного установления соединения делаем только один раз - при отправке заголовка.
         // Если возникла ошибка, то полностью снапшот отправим в другом запросе
-        // TODO: заменить своим
         var headerResponse = SendPacketReconnectingCore(headerPacket, token);
 
         if (TryGetInstallSnapshotResponse(headerResponse, out var installSnapshotResponse))
@@ -274,20 +273,19 @@ public class TcpPeer : IPeer
     private RaftPacket SendPacketReturning(RaftPacket packet, CancellationToken token)
     {
         Debug.Assert(packet is not null, "packet is not null", "Отправляемый пакет не должен быть null");
-        token.ThrowIfCancellationRequested();
 
         while (true)
         {
+            token.ThrowIfCancellationRequested();
             try
             {
                 packet.Serialize(NetworkStream);
-                token.ThrowIfCancellationRequested();
 
+                token.ThrowIfCancellationRequested();
                 var response = Deserializer.Deserialize(NetworkStream);
                 if (response.PacketType is RaftPacketType.RetransmitRequest)
                 {
                     // Повторно отправляем запрос
-                    token.ThrowIfCancellationRequested();
                     continue;
                 }
 

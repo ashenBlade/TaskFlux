@@ -55,13 +55,10 @@ internal class PeerElectorBackgroundJob<TCommand, TResponse> : IBackgroundJob
         {
             _logger.Debug("Сбор кворума прерван - задача отменена");
         }
-        catch (ObjectDisposedException ode) when (ode.ObjectName == nameof(CancellationTokenSource))
-        {
-            _logger.Debug("Сбор кворума прерван - задача отменена");
-        }
         catch (Exception unhandled)
         {
             _logger.Fatal(unhandled, "Поймано необработанное исключение во время запуска кворума");
+            throw;
         }
     }
 
@@ -86,5 +83,10 @@ internal class PeerElectorBackgroundJob<TCommand, TResponse> : IBackgroundJob
         {
             _coordinator.SignalGreaterTerm(response.CurrentTerm);
         }
+    }
+
+    public override string ToString()
+    {
+        return $"PeerElectionBackgroundJob(NodeId={_peer.Id.Id})";
     }
 }

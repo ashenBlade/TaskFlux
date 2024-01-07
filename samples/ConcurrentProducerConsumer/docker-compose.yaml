@@ -16,6 +16,7 @@ services:
       LISTEN_HOST: tflux.0
       DATA_DIR:
       HTTP_PORT: 1606
+  
   tflux.1:
     build:
       context: ../../src
@@ -48,4 +49,3 @@ services:
       DATA_DIR:
       HTTP_PORT: 1606
     
-  

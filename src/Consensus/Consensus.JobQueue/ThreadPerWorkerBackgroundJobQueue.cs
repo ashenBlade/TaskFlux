@@ -1,17 +1,20 @@
 using System.Collections.Concurrent;
 using Consensus.Raft;
+using Serilog;
 
 namespace Consensus.JobQueue;
 
 public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposable
 {
+    private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
 
     private readonly (Thread Thread, BlockingCollection<(IBackgroundJob Job, CancellationToken Token)> Queue)?[]
         _workers;
 
-    public ThreadPerWorkerBackgroundJobQueue(int clusterSize, int currentNodeId)
+    public ThreadPerWorkerBackgroundJobQueue(int clusterSize, int currentNodeId, ILogger logger)
     {
+        _logger = logger;
         _workers = CreateWorkers(clusterSize, currentNodeId);
     }
 
@@ -41,7 +44,7 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
         {
             if (_workers[i] is var (thread, _))
             {
-                thread.Start();
+                thread.Start(i);
             }
         }
     }
@@ -76,14 +79,16 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
 
     private void ThreadWorker(object? o)
     {
-        var index = ( int ) o!;
-        var collection = _workers[index]!.Value.Queue;
+        var nodeId = ( int ) o!;
+        var collection = _workers[nodeId]!.Value.Queue;
 
         var backgroundJobQueueToken = _cts.Token;
         try
         {
+            _logger.Debug("Очередь фоновых задач для узла {NodeId} запущена", nodeId);
             foreach (var (job, jobToken) in collection.GetConsumingEnumerable(backgroundJobQueueToken))
             {
+                _logger.Debug("Получена задача {Job} для узла {NodeId}", job, nodeId);
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(backgroundJobQueueToken, jobToken);
                 try
                 {
@@ -92,11 +97,15 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
                 catch (OperationCanceledException)
                 {
                 }
+
+                _logger.Debug("Задача {Job} для узла {NodeId} завершилась", job, nodeId);
             }
         }
         catch (OperationCanceledException)
         {
         }
+
+        _logger.Debug("Очередь фоновых задач для узла {NodeId} завершает работу", nodeId);
     }
 
     public void Dispose()
@@ -107,6 +116,7 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
         {
             if (w is var (thread, collection))
             {
+                collection.CompleteAdding();
                 collection.Dispose();
                 thread.Join();
             }

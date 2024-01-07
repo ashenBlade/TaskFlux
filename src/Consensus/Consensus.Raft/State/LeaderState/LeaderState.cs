@@ -25,9 +25,10 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     private IApplication<TCommand, TResponse>? _application;
 
     /// <summary>
-    /// Токен отмены отменяющийся при смене роли с лидера на последователя (другого быть не может)
+    /// Токен времени жизни текущего лидера.
+    /// Отменяется при переходе в новое состояние
     /// </summary>
-    private readonly CancellationTokenSource _becomeFollowerTokenSource = new();
+    private readonly CancellationTokenSource _lifetimeCts = new();
 
     internal LeaderState(IRaftConsensusModule<TCommand, TResponse> raftConsensusModule,
                          ILogger logger,
@@ -42,17 +43,13 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override void Initialize()
     {
-        _logger.Verbose("Инициализируются потоки обработчиков узлов");
         _peerProcessors = CreatePeerProcessors();
-        _logger.Verbose("Потоки обработчиков запускаются");
-
         var oldSnapshot = PersistenceFacade.TryGetSnapshot(out var s)
                               ? s
                               : null;
         var deltas = PersistenceFacade.LogStorage.ReadAll().Select(x => x.Data);
-        _logger.Debug("Восстанавливаю предыдущее состояние");
+        _logger.Information("Восстанавливаю предыдущее состояние");
         _application = ApplicationFactory.Restore(oldSnapshot, deltas);
-
         Array.ForEach(_peerProcessors, p =>
         {
             // Вместе с таймером уйдет и остальное
@@ -84,9 +81,9 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
                 p.Timer.Schedule();
             };
 
-            BackgroundJobQueue.Accept(p.Processor, _becomeFollowerTokenSource.Token);
-            // Сразу же запускаем обработчик, чтобы уведомить других об окончании выборов
+            BackgroundJobQueue.Accept(p.Processor, _lifetimeCts.Token);
             p.Timer.ForceRun();
+            _logger.Debug("Обработчик для узла {NodeId} запущен", p.Processor.NodeId);
         });
         _logger.Verbose("Потоки обработчиков узлов запущены");
     }
@@ -194,8 +191,8 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         // Сначала отменяем токен - после этого очередь должна разгрестись
         try
         {
-            _becomeFollowerTokenSource.Cancel();
-            _becomeFollowerTokenSource.Dispose();
+            _lifetimeCts.Cancel();
+            _lifetimeCts.Dispose();
         }
         catch (ObjectDisposedException)
         {
@@ -314,7 +311,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         CancellationToken token;
         try
         {
-            token = _becomeFollowerTokenSource.Token;
+            token = _lifetimeCts.Token;
         }
         catch (ObjectDisposedException)
         {
@@ -330,5 +327,5 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     /// Флаг сигнализирующий о том, что я (объект, лидер этого терма) все еще активен,
     /// т.е. состояние не изменилось
     /// </summary>
-    private bool IsStillLeader => !_becomeFollowerTokenSource.IsCancellationRequested;
+    private bool IsStillLeader => !_lifetimeCts.IsCancellationRequested;
 }

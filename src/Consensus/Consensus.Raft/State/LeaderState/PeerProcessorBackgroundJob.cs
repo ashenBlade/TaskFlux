@@ -74,8 +74,6 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
         return _queue.Add(request);
     }
 
-    // TODO: рефакторинг с учетом исключений, nullability и отмены токена
-
     public void Run(CancellationToken token)
     {
         try
@@ -105,7 +103,6 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
          * Если нашли такое - поставим флаг.
          * От лидера все равно запрос и там обновим состояние.
          */
-        // TODO: попробовать обновить состояние из этого потока/узла, т.к. теперь этот поток не будет блокироваться (не управляется Leader)
         var peerInfo = new PeerInfo(PersistenceFacade.LastEntry.Index + 1);
         Term? foundGreaterTerm = null;
         _logger.Information("Обработчик узла начинает работу");
@@ -168,7 +165,7 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
     /// по большей части нужна только если реплицируем для Submit запроса, а не Heartbeat.
     /// </summary>
     /// <param name="replicationIndex">
-    /// Индекс, до которого нужно среплицировать лог
+    /// Индекс, до которого нужно реплицировать лог
     /// </param>
     /// <param name="info">Вспомогательная информация про узел - на каком индексе репликации находимся</param>
     /// <param name="token">Токен отмены</param>
@@ -229,7 +226,6 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
                 continue;
             }
 
-            // TODO: вот здесь заменил null на повторы
             var response = _peer.SendAppendEntries(appendEntriesRequest, token);
 
             // 3. Если ответ успешный 
@@ -344,5 +340,10 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
         }
 
         public override string ToString() => $"PeerInfo(NextIndex = {NextIndex})";
+    }
+
+    public override string ToString()
+    {
+        return $"PeerProcessor(NodeId = {NodeId.Id})";
     }
 }

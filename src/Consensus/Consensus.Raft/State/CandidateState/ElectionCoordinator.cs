@@ -1,3 +1,5 @@
+using Serilog;
+
 namespace Consensus.Raft.State;
 
 internal class ElectionCoordinator<TCommand, TResponse>
@@ -6,6 +8,8 @@ internal class ElectionCoordinator<TCommand, TResponse>
     /// Кандидат, на которого мы работаем
     /// </summary>
     private readonly CandidateState<TCommand, TResponse> _state;
+
+    private readonly ILogger _logger;
 
     private PeerGroup Peers => _state.RaftConsensusModule.PeerGroup;
     private IRaftConsensusModule<TCommand, TResponse> Module => _state.RaftConsensusModule;
@@ -21,34 +25,32 @@ internal class ElectionCoordinator<TCommand, TResponse>
     /// </summary>
     private int _voted;
 
-    public ElectionCoordinator(CandidateState<TCommand, TResponse> state, Term term)
+    public ElectionCoordinator(CandidateState<TCommand, TResponse> state, ILogger logger, Term term)
     {
         _term = term;
         _state = state;
+        _logger = logger;
     }
 
     /// <summary>
-    /// Указать, что какой-то узел отдал голос за нас
+    /// Указать, что какой-то узел отдал свой голос 
     /// </summary>
     public void Vote()
     {
         var votes = Interlocked.Increment(ref _voted);
         if (IsQuorumThresholdPassed(votes))
         {
+            _logger.Information("Количество полученных голосов превысило предел. Становлюсь лидером");
             var leader = Module.CreateLeaderState();
             if (Module.TryUpdateState(leader, _state))
             {
+                _logger.Debug("Превышен порог необходимых голосов. Становлюсь лидером");
                 Module.PersistenceFacade.UpdateState(_term.Increment(), null);
             }
-        }
-    }
-
-    public void SignalGreaterTerm(Term term)
-    {
-        var follower = Module.CreateFollowerState();
-        if (Module.TryUpdateState(follower, _state))
-        {
-            Module.PersistenceFacade.UpdateState(term, null);
+            else
+            {
+                _logger.Debug("Стать лидером не удалось: состояние изменилось");
+            }
         }
     }
 
@@ -64,4 +66,13 @@ internal class ElectionCoordinator<TCommand, TResponse>
     /// </remarks>
     private bool IsQuorumThresholdPassed(int votes) =>
         Peers.IsQuorumReached(votes) && !Peers.IsQuorumReached(votes - 1);
+
+    public void SignalGreaterTerm(Term term)
+    {
+        var follower = Module.CreateFollowerState();
+        if (Module.TryUpdateState(follower, _state))
+        {
+            Module.PersistenceFacade.UpdateState(term, null);
+        }
+    }
 }

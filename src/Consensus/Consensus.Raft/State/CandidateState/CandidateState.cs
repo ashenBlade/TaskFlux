@@ -39,8 +39,9 @@ public class CandidateState<TCommand, TResponse>
         var term = CurrentTerm;
         var nodeId = Id;
         var lastEntry = PersistenceFacade.LastEntry;
-        var coordinator = new ElectionCoordinator<TCommand, TResponse>(this, term);
+        var coordinator = new ElectionCoordinator<TCommand, TResponse>(this, _logger, term);
 
+        _logger.Information("Запускаю обработчиков для сбора консенсуса");
         foreach (var peer in PeerGroup.Peers)
         {
             var worker =
@@ -63,7 +64,7 @@ public class CandidateState<TCommand, TResponse>
             if (RaftConsensusModule.TryUpdateState(leaderState, this))
             {
                 _logger.Debug("Сработал Election Timeout и в кластере я один. Становлюсь лидером");
-                RaftConsensusModule.PersistenceFacade.UpdateState(CurrentTerm.Increment(), null);
+                PersistenceFacade.UpdateState(CurrentTerm.Increment(), null);
                 return;
             }
         }
@@ -72,7 +73,7 @@ public class CandidateState<TCommand, TResponse>
         if (RaftConsensusModule.TryUpdateState(candidateState, this))
         {
             _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
-            RaftConsensusModule.PersistenceFacade.UpdateState(CurrentTerm.Increment(), Id);
+            PersistenceFacade.UpdateState(CurrentTerm.Increment(), Id);
         }
     }
 
@@ -148,9 +149,9 @@ public class CandidateState<TCommand, TResponse>
 
     public override void Dispose()
     {
+        _electionTimer.Timeout -= OnElectionTimerTimeout;
         _electionTimer.Stop();
         _lifetimeCts.Cancel();
-        _electionTimer.Timeout -= OnElectionTimerTimeout;
 
         _lifetimeCts.Dispose();
         _electionTimer.Dispose();

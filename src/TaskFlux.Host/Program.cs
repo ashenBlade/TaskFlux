@@ -34,7 +34,6 @@ Log.Logger = new LoggerConfiguration()
 
 try
 {
-    ThreadPool.SetMinThreads(1000, 1000);
     var configuration = new ConfigurationBuilder()
                        .AddEnvironmentVariables()
                        .AddJsonFile("taskflux.settings.json", optional: true)
@@ -60,9 +59,9 @@ try
     var appInfo = CreateApplicationInfo();
     var nodeInfo = CreateNodeInfo(serverOptions);
 
-    using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(serverOptions.Peers.Length, serverOptions.NodeId);
+    using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(serverOptions.Peers.Length, serverOptions.NodeId,
+        Log.Logger.ForContext("SourceContext", "BackgroundJobQueue"));
     using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, nodeInfo, appInfo, jobQueue);
-
     var clusterInfo = CreateClusterInfo(serverOptions, raftConsensusModule);
 
     var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, raftConsensusModule,
@@ -98,13 +97,16 @@ try
 
     try
     {
+        Log.Logger.Debug("Запускаю потоки обработчиков узлов");
+        jobQueue.Start();
+
         Log.Logger.Information("Запускаю таймер выборов");
         raftConsensusModule.Start();
 
         Log.Logger.Information("Запускаю менеджер подключений узлов");
         nodeConnectionThread.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
 
-        Log.Logger.Information("Запукаю фоновые задачи");
+        Log.Logger.Information("Запускаю фоновые задачи");
         await Task.WhenAll(stateObserver.RunAsync(cts.Token),
             httpModule.RunAsync(cts.Token),
             binaryRequestModule.RunAsync(cts.Token),
@@ -264,13 +266,14 @@ StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions option
             }
             catch (Exception e)
             {
-                Log.Fatal(e, "Ошибка при создании файла снашпота - {Path}", snapshotFile.FullName);
+                Log.Fatal(e, "Ошибка при создании файла снапшота - {Path}", snapshotFile.FullName);
                 throw;
             }
         }
 
         return new FileSystemSnapshotStorage(new FileInfoWrapper(fs, snapshotFile),
-            new DirectoryInfoWrapper(fs, tempDirectory), Log.ForContext("SourceContext", "SnapshotManager"));
+            new DirectoryInfoWrapper(fs, tempDirectory),
+            Log.ForContext("SourceContext", "SnapshotManager"));
     }
 
     FileLogStorage CreateFileLogStorage()
@@ -388,7 +391,7 @@ NodeInfo CreateNodeInfo(RaftServerOptions options)
 static IPeer[] ExtractPeers(RaftServerOptions serverOptions, NodeId currentNodeId, NetworkOptions networkOptions)
 {
     var peers = new IPeer[serverOptions.Peers.Length - 1]; // Все кроме себя
-    var connectionErrorDelay = TimeSpan.FromSeconds(1);
+    var connectionErrorDelay = TimeSpan.FromMilliseconds(100);
 
     // Все до текущего узла
     for (var i = 0; i < currentNodeId.Id; i++)

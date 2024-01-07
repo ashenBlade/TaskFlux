@@ -15,6 +15,12 @@ public interface IPeer
     /// </summary>
     public NodeId Id { get; }
 
+    /// <summary>
+    /// Отправить запрос для добавления новых записей в лог
+    /// </summary>
+    /// <param name="request">Запрос для добавления записей</param>
+    /// <param name="token">Токен отмены</param>
+    /// <returns>Результат добавления записей</returns>
     public AppendEntriesResponse SendAppendEntries(AppendEntriesRequest request, CancellationToken token);
 
     /// <summary>
@@ -26,7 +32,11 @@ public interface IPeer
     /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
     public RequestVoteResponse SendRequestVote(RequestVoteRequest request, CancellationToken token);
 
-    // TODO: возвращать не IEnumerable, а полноценный ответ типа: Ok, GreaterTerm и т.д.
-    // так же с переповторами (как-нибудь это все надо обрабатывать)
+    /// <summary>
+    /// Отправить запрос на установку снапшота
+    /// </summary>
+    /// <param name="request">Запрос для установки снапшота</param>
+    /// <param name="token">Токен отмены</param>
+    /// <returns>Результат установки снапшота</returns>
     public InstallSnapshotResponse SendInstallSnapshot(InstallSnapshotRequest request, CancellationToken token);
 }

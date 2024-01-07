@@ -58,7 +58,7 @@ public class FollowerState<TCommand, TResponse>
                 "Получен RequestVote от узла за которого можем проголосовать. Id узла {NodeId}, Терм узла {Term}. Обновляю состояние",
                 request.CandidateId.Id, request.CandidateTerm.Value);
 
-            RaftConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
+            PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -167,13 +167,17 @@ public class FollowerState<TCommand, TResponse>
 
     private void OnElectionTimerTimeout()
     {
-        _logger.Debug("Сработал Election Timeout. Перехожу в состояние Candidate");
         var candidateState = RaftConsensusModule.CreateCandidateState();
         if (RaftConsensusModule.TryUpdateState(candidateState, this))
         {
+            _logger.Debug("Сработал Election Timeout. Стал кандидатом");
             // Голосуем за себя и переходим в следующий терм
             RaftConsensusModule.PersistenceFacade.UpdateState(RaftConsensusModule.CurrentTerm.Increment(),
                 RaftConsensusModule.Id);
+        }
+        else
+        {
+            _logger.Debug("Сработал таймер выборов, но перейти в кандидата не удалось: состояние уже изменилось");
         }
     }
 

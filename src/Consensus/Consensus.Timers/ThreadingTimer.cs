@@ -28,7 +28,7 @@ internal abstract class ThreadingTimer : ITimer
             return;
         }
 
-        Timeout?.Invoke();
+        _timer.Change(0, Infinite);
     }
 
     public void Schedule()
