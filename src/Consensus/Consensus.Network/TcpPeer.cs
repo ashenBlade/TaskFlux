@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
-using Consensus.Network;
 using Consensus.Network.Packets;
 using Consensus.Peer.Exceptions;
 using Consensus.Raft;
@@ -13,13 +12,10 @@ using Consensus.Raft.Commands.RequestVote;
 using Serilog;
 using TaskFlux.Models;
 
-namespace Consensus.Peer;
+namespace Consensus.Network;
 
-// TODO: обновить отправку снапшота и добавить логику переподключения вечного (м.б. с таймаутами)
 public class TcpPeer : IPeer
 {
-    private static BinaryPacketDeserializer Deserializer => BinaryPacketDeserializer.Instance;
-
     /// <summary>
     /// Эндпоинт узла, с которым мы общаемся
     /// </summary>
@@ -74,26 +70,26 @@ public class TcpPeer : IPeer
 
         switch (response.PacketType)
         {
-            case RaftPacketType.AppendEntriesResponse:
+            case NodePacketType.AppendEntriesResponse:
                 var appendEntriesResponsePacket = ( AppendEntriesResponsePacket ) response;
                 return appendEntriesResponsePacket.Response;
 
-            case RaftPacketType.AppendEntriesRequest:
-            case RaftPacketType.ConnectRequest:
-            case RaftPacketType.ConnectResponse:
-            case RaftPacketType.RequestVoteRequest:
-            case RaftPacketType.RequestVoteResponse:
-            case RaftPacketType.InstallSnapshotRequest:
-            case RaftPacketType.InstallSnapshotResponse:
-            case RaftPacketType.InstallSnapshotChunkRequest:
-            case RaftPacketType.InstallSnapshotChunkResponse:
-            case RaftPacketType.RetransmitRequest:
-                throw new UnexpectedPacketException(response, RaftPacketType.AppendEntriesResponse);
+            case NodePacketType.AppendEntriesRequest:
+            case NodePacketType.ConnectRequest:
+            case NodePacketType.ConnectResponse:
+            case NodePacketType.RequestVoteRequest:
+            case NodePacketType.RequestVoteResponse:
+            case NodePacketType.InstallSnapshotRequest:
+            case NodePacketType.InstallSnapshotResponse:
+            case NodePacketType.InstallSnapshotChunkRequest:
+            case NodePacketType.InstallSnapshotChunkResponse:
+            case NodePacketType.RetransmitRequest:
+                throw new UnexpectedPacketException(response, NodePacketType.AppendEntriesResponse);
         }
 
         throw new InvalidEnumArgumentException(nameof(response.PacketType),
             ( int ) response.PacketType,
-            typeof(RaftPacketType));
+            typeof(NodePacketType));
     }
 
     /// <summary>
@@ -101,8 +97,8 @@ public class TcpPeer : IPeer
     /// </summary>
     /// <param name="packet">Пакет, который нужно отправить</param>
     /// <param name="token">Токен отмены</param>
-    /// <returns>Полученный пакет или <c>null</c>, если соедение потеряно</returns>
-    private RaftPacket SendPacketReconnectingCore(RaftPacket packet, CancellationToken token)
+    /// <returns>Полученный пакет или <c>null</c>, если соединение потеряно</returns>
+    private NodePacket SendPacketReconnectingCore(NodePacket packet, CancellationToken token)
     {
         Debug.Assert(packet != null, "packet != null", "Отправляемый пакет не должен быть null");
 
@@ -138,25 +134,25 @@ public class TcpPeer : IPeer
 
         switch (response.PacketType)
         {
-            case RaftPacketType.RequestVoteResponse:
+            case NodePacketType.RequestVoteResponse:
                 var requestVoteResponsePacket = ( RequestVoteResponsePacket ) response;
                 return requestVoteResponsePacket.Response;
 
-            case RaftPacketType.AppendEntriesRequest:
-            case RaftPacketType.AppendEntriesResponse:
-            case RaftPacketType.ConnectRequest:
-            case RaftPacketType.ConnectResponse:
-            case RaftPacketType.RequestVoteRequest:
-            case RaftPacketType.InstallSnapshotRequest:
-            case RaftPacketType.InstallSnapshotResponse:
-            case RaftPacketType.InstallSnapshotChunkRequest:
-            case RaftPacketType.InstallSnapshotChunkResponse:
-            case RaftPacketType.RetransmitRequest:
-                throw new UnexpectedPacketException(response, RaftPacketType.RequestVoteResponse);
+            case NodePacketType.AppendEntriesRequest:
+            case NodePacketType.AppendEntriesResponse:
+            case NodePacketType.ConnectRequest:
+            case NodePacketType.ConnectResponse:
+            case NodePacketType.RequestVoteRequest:
+            case NodePacketType.InstallSnapshotRequest:
+            case NodePacketType.InstallSnapshotResponse:
+            case NodePacketType.InstallSnapshotChunkRequest:
+            case NodePacketType.InstallSnapshotChunkResponse:
+            case NodePacketType.RetransmitRequest:
+                throw new UnexpectedPacketException(response, NodePacketType.RequestVoteResponse);
         }
 
         throw new InvalidEnumArgumentException(nameof(response.PacketType), ( int ) response.PacketType,
-            typeof(RaftPacketType));
+            typeof(NodePacketType));
     }
 
     public InstallSnapshotResponse SendInstallSnapshot(InstallSnapshotRequest request,
@@ -240,19 +236,19 @@ public class TcpPeer : IPeer
             return installSnapshotResponse;
         }
 
-        throw new UnexpectedPacketException(lastChunkResponse, RaftPacketType.InstallSnapshotResponse);
+        throw new UnexpectedPacketException(lastChunkResponse, NodePacketType.InstallSnapshotResponse);
 
-        static bool TryGetInstallSnapshotResponse(RaftPacket packet, out InstallSnapshotResponse response)
+        static bool TryGetInstallSnapshotResponse(NodePacket packet, out InstallSnapshotResponse response)
         {
-            if (packet.PacketType is RaftPacketType.InstallSnapshotResponse)
+            if (packet.PacketType is NodePacketType.InstallSnapshotResponse)
             {
                 response = new InstallSnapshotResponse(( ( InstallSnapshotResponsePacket ) packet ).CurrentTerm);
                 return true;
             }
 
-            if (packet.PacketType is not RaftPacketType.InstallSnapshotChunkResponse)
+            if (packet.PacketType is not NodePacketType.InstallSnapshotChunkResponse)
             {
-                throw new UnexpectedPacketException(packet, RaftPacketType.InstallSnapshotChunkResponse);
+                throw new UnexpectedPacketException(packet, NodePacketType.InstallSnapshotChunkResponse);
             }
 
             response = default!;
@@ -270,7 +266,7 @@ public class TcpPeer : IPeer
     /// <returns>Полученный пакет, или <c>null</c> если соединение потеряно</returns>
     /// <exception cref="SocketException">Ошибка при отправке/приеме пакета</exception>
     /// <exception cref="IOException">Ошибка при отправке/приеме пакета</exception>
-    private RaftPacket SendPacketReturning(RaftPacket packet, CancellationToken token)
+    private NodePacket SendPacketReturning(NodePacket packet, CancellationToken token)
     {
         Debug.Assert(packet is not null, "packet is not null", "Отправляемый пакет не должен быть null");
 
@@ -282,8 +278,8 @@ public class TcpPeer : IPeer
                 packet.Serialize(NetworkStream);
 
                 token.ThrowIfCancellationRequested();
-                var response = Deserializer.Deserialize(NetworkStream);
-                if (response.PacketType is RaftPacketType.RetransmitRequest)
+                var response = NodePacket.Deserialize(NetworkStream);
+                if (response.PacketType is NodePacketType.RetransmitRequest)
                 {
                     // Повторно отправляем запрос
                     continue;
@@ -339,7 +335,7 @@ public class TcpPeer : IPeer
 
                 switch (response.PacketType)
                 {
-                    case RaftPacketType.ConnectResponse:
+                    case NodePacketType.ConnectResponse:
 
                         var connectResponsePacket = ( ConnectResponsePacket ) response;
                         if (connectResponsePacket.Success)
@@ -350,20 +346,20 @@ public class TcpPeer : IPeer
 
                         throw new AuthenticationException("Ошибка при попытке авторизации на узле");
 
-                    case RaftPacketType.ConnectRequest:
-                    case RaftPacketType.RequestVoteRequest:
-                    case RaftPacketType.RequestVoteResponse:
-                    case RaftPacketType.AppendEntriesRequest:
-                    case RaftPacketType.AppendEntriesResponse:
-                    case RaftPacketType.InstallSnapshotRequest:
-                    case RaftPacketType.InstallSnapshotChunkRequest:
-                    case RaftPacketType.InstallSnapshotResponse:
-                    case RaftPacketType.RetransmitRequest:
-                        throw new UnexpectedPacketException(response, RaftPacketType.ConnectResponse);
+                    case NodePacketType.ConnectRequest:
+                    case NodePacketType.RequestVoteRequest:
+                    case NodePacketType.RequestVoteResponse:
+                    case NodePacketType.AppendEntriesRequest:
+                    case NodePacketType.AppendEntriesResponse:
+                    case NodePacketType.InstallSnapshotRequest:
+                    case NodePacketType.InstallSnapshotChunkRequest:
+                    case NodePacketType.InstallSnapshotResponse:
+                    case NodePacketType.RetransmitRequest:
+                        throw new UnexpectedPacketException(response, NodePacketType.ConnectResponse);
 
                     default:
                         throw new InvalidEnumArgumentException(nameof(response.PacketType), ( int ) response.PacketType,
-                            typeof(RaftPacketType));
+                            typeof(NodePacketType));
                 }
             }
             catch (SocketException)

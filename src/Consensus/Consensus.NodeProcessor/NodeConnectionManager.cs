@@ -151,7 +151,7 @@ public class NodeConnectionManager
     private static async Task<NodeId?> TryAuthenticateAsync(PacketClient client, CancellationToken token)
     {
         var packet = await client.ReceiveAsync(token);
-        if (packet is {PacketType: RaftPacketType.ConnectRequest})
+        if (packet is {PacketType: NodePacketType.ConnectRequest})
         {
             var request = ( ConnectRequestPacket ) packet;
             return request.Id;

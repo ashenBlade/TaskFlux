@@ -2,8 +2,8 @@
 using System.IO.Abstractions;
 using Consensus.Application.TaskFlux;
 using Consensus.JobQueue;
+using Consensus.Network;
 using Consensus.NodeProcessor;
-using Consensus.Peer;
 using Consensus.Raft;
 using Consensus.Raft.Persistence;
 using Consensus.Raft.Persistence.Log;

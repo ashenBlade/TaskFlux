@@ -3,11 +3,12 @@ using TaskFlux.Models;
 
 namespace Consensus.Raft.Commands.AppendEntries;
 
-public record AppendEntriesRequest(Term Term,
-                                   int LeaderCommit,
-                                   NodeId LeaderId,
-                                   LogEntryInfo PrevLogEntryInfo,
-                                   IReadOnlyList<LogEntry> Entries)
+public record AppendEntriesRequest(
+    Term Term,
+    int LeaderCommit,
+    NodeId LeaderId,
+    LogEntryInfo PrevLogEntryInfo,
+    IReadOnlyList<LogEntry> Entries)
 {
     public static AppendEntriesRequest Heartbeat(Term term,
                                                  int leaderCommit,

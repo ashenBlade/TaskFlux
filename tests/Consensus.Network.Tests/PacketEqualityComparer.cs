@@ -1,15 +1,14 @@
-using Consensus.Network;
 using Consensus.Network.Packets;
 
 #pragma warning disable CS8767 // Nullability of reference types in type of parameter doesn't match implicitly implemented member (possibly because of nullability attributes).
 
-namespace Consensus.Peer.Tests;
+namespace Consensus.Network.Tests;
 
-public class PacketEqualityComparer : IEqualityComparer<RaftPacket>
+public class PacketEqualityComparer : IEqualityComparer<NodePacket>
 {
     public static readonly PacketEqualityComparer Instance = new();
 
-    public bool Equals(RaftPacket x, RaftPacket y)
+    public bool Equals(NodePacket x, NodePacket y)
     {
         return Check(( dynamic ) x, ( dynamic ) y);
     }
@@ -74,7 +73,7 @@ public class PacketEqualityComparer : IEqualityComparer<RaftPacket>
     private static bool Check(RetransmitRequestPacket first, RetransmitRequestPacket second)
         => first.PacketType == second.PacketType;
 
-    public int GetHashCode(RaftPacket obj)
+    public int GetHashCode(NodePacket obj)
     {
         return ( int ) obj.PacketType;
     }

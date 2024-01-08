@@ -4,9 +4,9 @@ namespace Consensus.Network.Packets;
 /// Пакет, посылаемый в случае если принимаемая сторона запрашивает переотправку пакета.
 /// Отправляется в случае, если принятый пакет был нарушен 
 /// </summary>
-public class RetransmitRequestPacket : RaftPacket
+public class RetransmitRequestPacket : NodePacket
 {
-    public override RaftPacketType PacketType => RaftPacketType.RetransmitRequest;
+    public override NodePacketType PacketType => NodePacketType.RetransmitRequest;
 
     protected override int EstimatePacketSize()
     {
@@ -15,6 +15,6 @@ public class RetransmitRequestPacket : RaftPacket
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
-        buffer[0] = ( byte ) RaftPacketType.RetransmitRequest;
+        buffer[0] = ( byte ) NodePacketType.RetransmitRequest;
     }
 }

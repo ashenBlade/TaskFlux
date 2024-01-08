@@ -1,10 +1,11 @@
 using Consensus.Raft.Persistence;
 
-namespace Consensus.Peer.Tests;
+namespace Consensus.Network.Tests;
 
-public class LogEntryEqualityComparer: IEqualityComparer<LogEntry>
+public class LogEntryEqualityComparer : IEqualityComparer<LogEntry>
 {
     public static readonly LogEntryEqualityComparer Instance = new();
+
     public bool Equals(LogEntry x, LogEntry y)
     {
         return x.Term.Equals(y.Term)
@@ -15,7 +16,7 @@ public class LogEntryEqualityComparer: IEqualityComparer<LogEntry>
     {
         return HashCode.Combine(obj.Term, obj.Data);
     }
-    
+
     private static bool PayloadEquals(byte[] first, byte[] second)
     {
         if (first.Length != second.Length)

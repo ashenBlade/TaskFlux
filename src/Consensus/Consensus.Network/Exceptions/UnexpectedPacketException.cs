@@ -7,14 +7,14 @@ public class UnexpectedPacketException : Exception
     /// <summary>
     /// Полученный пакет
     /// </summary>
-    public RaftPacket ReceivedPacket { get; }
+    public NodePacket ReceivedPacket { get; }
 
     /// <summary>
     /// Ожидаемый пакет
     /// </summary>
-    public RaftPacketType Expected { get; }
+    public NodePacketType Expected { get; }
 
-    public UnexpectedPacketException(RaftPacket receivedPacket, RaftPacketType expected)
+    public UnexpectedPacketException(NodePacket receivedPacket, NodePacketType expected)
     {
         ReceivedPacket = receivedPacket;
         Expected = expected;

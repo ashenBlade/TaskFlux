@@ -1,11 +1,13 @@
+using System.Buffers;
+using Consensus.Raft;
 using Consensus.Raft.Commands.AppendEntries;
 using Utils.Serialization;
 
 namespace Consensus.Network.Packets;
 
-public class AppendEntriesResponsePacket : RaftPacket
+public class AppendEntriesResponsePacket : NodePacket
 {
-    public override RaftPacketType PacketType => RaftPacketType.AppendEntriesResponse;
+    public override NodePacketType PacketType => NodePacketType.AppendEntriesResponse;
 
     protected override int EstimatePacketSize()
     {
@@ -17,7 +19,7 @@ public class AppendEntriesResponsePacket : RaftPacket
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) RaftPacketType.AppendEntriesResponse);
+        writer.Write(( byte ) NodePacketType.AppendEntriesResponse);
         writer.Write(Response.Success);
         writer.Write(Response.Term.Value);
     }
@@ -28,5 +30,37 @@ public class AppendEntriesResponsePacket : RaftPacket
     public AppendEntriesResponsePacket(AppendEntriesResponse response)
     {
         Response = response;
+    }
+
+    public new static AppendEntriesResponsePacket Deserialize(Stream stream)
+    {
+        Span<byte> buffer = stackalloc byte[sizeof(bool) + sizeof(int)];
+        stream.ReadExactly(buffer);
+        return DeserializePayload(buffer);
+    }
+
+    private static AppendEntriesResponsePacket DeserializePayload(Span<byte> buffer)
+    {
+        var reader = new SpanBinaryReader(buffer);
+        var success = reader.ReadBool();
+        var term = reader.ReadInt32();
+        return new AppendEntriesResponsePacket(new AppendEntriesResponse(new Term(term), success));
+    }
+
+    public new static async Task<AppendEntriesResponsePacket> DeserializeAsync(Stream stream, CancellationToken token)
+    {
+        const int packetSize = sizeof(bool)
+                             + sizeof(int);
+        var buffer = ArrayPool<byte>.Shared.Rent(packetSize);
+        try
+        {
+            var memory = buffer.AsMemory(0, packetSize);
+            await stream.ReadExactlyAsync(memory, token);
+            return DeserializePayload(memory.Span);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 }

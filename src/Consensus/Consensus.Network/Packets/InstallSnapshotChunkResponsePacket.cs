@@ -1,16 +1,16 @@
 namespace Consensus.Network.Packets;
 
-public class InstallSnapshotChunkResponsePacket : RaftPacket
+public class InstallSnapshotChunkResponsePacket : NodePacket
 {
-    public override RaftPacketType PacketType => RaftPacketType.InstallSnapshotChunkResponse;
+    public override NodePacketType PacketType => NodePacketType.InstallSnapshotChunkResponse;
 
     protected override int EstimatePacketSize()
     {
-        return sizeof(RaftPacketType);
+        return sizeof(NodePacketType);
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
-        buffer[0] = ( byte ) RaftPacketType.InstallSnapshotChunkResponse;
+        buffer[0] = ( byte ) NodePacketType.InstallSnapshotChunkResponse;
     }
 }

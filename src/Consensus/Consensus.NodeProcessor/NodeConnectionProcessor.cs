@@ -75,7 +75,7 @@ public class NodeConnectionProcessor : IDisposable
         CloseClient();
     }
 
-    private async ValueTask<RaftPacket?> ReceivePacketAsync(CancellationToken token)
+    private async ValueTask<NodePacket?> ReceivePacketAsync(CancellationToken token)
     {
         while (true)
         {
@@ -102,17 +102,17 @@ public class NodeConnectionProcessor : IDisposable
     /// <c>true</c> - запрос успешно обработан <br/>
     /// <c>false</c> - обработка должна закончиться
     /// </returns>
-    private async Task<bool> ProcessPacket(RaftPacket packet, CancellationToken token)
+    private async Task<bool> ProcessPacket(NodePacket packet, CancellationToken token)
     {
         try
         {
             switch (packet.PacketType)
             {
-                case RaftPacketType.AppendEntriesRequest:
+                case NodePacketType.AppendEntriesRequest:
                     return await ProcessAppendEntriesAsync(( AppendEntriesRequestPacket ) packet, token);
-                case RaftPacketType.RequestVoteRequest:
+                case NodePacketType.RequestVoteRequest:
                     return await ProcessRequestVoteAsync(( RequestVoteRequestPacket ) packet, token);
-                case RaftPacketType.InstallSnapshotRequest:
+                case NodePacketType.InstallSnapshotRequest:
                     return await ProcessInstallSnapshotAsync(( InstallSnapshotRequestPacket ) packet, token);
                 default:
                     Logger.Error("От клиента получен неожиданный тип пакета: {PacketType}. Закрываю соединение",

@@ -12,7 +12,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Consensus\Consensus.Peer\Consensus.Peer.csproj"/>
         <ProjectReference Include="..\TaskFlux.Models\TaskFlux.Models.csproj"/>
         <ProjectReference Include="..\Utils.Serialization\Utils.Serialization.csproj"/>
     </ItemGroup>

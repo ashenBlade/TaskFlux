@@ -23,7 +23,7 @@ public class NetworkSnapshot : ISnapshot
             var packet = _client.Receive();
             switch (packet)
             {
-                case {PacketType: RaftPacketType.InstallSnapshotChunkRequest}:
+                case {PacketType: NodePacketType.InstallSnapshotChunkRequest}:
                     var installChunkPacket = ( InstallSnapshotChunkRequestPacket ) packet;
                     if (installChunkPacket.Chunk.IsEmpty)
                     {
@@ -34,7 +34,7 @@ public class NetworkSnapshot : ISnapshot
                     break;
                 default:
                     throw new InvalidDataException(
-                        $"Получен неожиданный пакет данных. Ожидался {RaftPacketType.InstallSnapshotChunkRequest}. Получен: {packet}");
+                        $"Получен неожиданный пакет данных. Ожидался {NodePacketType.InstallSnapshotChunkRequest}. Получен: {packet}");
             }
         }
 

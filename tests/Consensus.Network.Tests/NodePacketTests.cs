@@ -1,5 +1,4 @@
 using System.Text;
-using Consensus.Network;
 using Consensus.Network.Packets;
 using Consensus.Peer.Exceptions;
 using Consensus.Raft;
@@ -9,36 +8,33 @@ using Consensus.Raft.Persistence;
 using FluentAssertions;
 using TaskFlux.Models;
 
-namespace Consensus.Peer.Tests;
+namespace Consensus.Network.Tests;
 
-[Trait("Category", "Raft")]
-public class BinaryPacketSerializerTests
+[Trait("Category", "Serialization")]
+public class NodePacketTests
 {
-    private static BinaryPacketDeserializer Deserializer => BinaryPacketDeserializer.Instance;
     private static LogEntry Entry(int term, string data) => new(new Term(term), Encoding.UTF8.GetBytes(data));
 
-    private static async Task AssertBase(RaftPacket expected)
+    private static void AssertBase(NodePacket expected)
     {
         // Синхронно
         {
             var stream = new MemoryStream();
-            // ReSharper disable once MethodHasAsyncOverload
             expected.Serialize(stream);
             stream.Position = 0;
-            // ReSharper disable once MethodHasAsyncOverload
-            var actual = Deserializer.Deserialize(stream);
+            var actual = NodePacket.Deserialize(stream);
             actual.Should()
-                  .Be(expected, PacketEqualityComparer.Instance, "синхронная реализация");
+                  .Be(expected, PacketEqualityComparer.Instance);
         }
 
         // Асинхронно
         {
             var stream = new MemoryStream();
-            await expected.SerializeAsync(stream);
+            expected.SerializeAsync(stream).GetAwaiter().GetResult();
             stream.Position = 0;
-            var actual = await Deserializer.DeserializeAsync(stream);
+            var actual = NodePacket.DeserializeAsync(stream, CancellationToken.None).GetAwaiter().GetResult();
             actual.Should()
-                  .Be(expected, PacketEqualityComparer.Instance, "асинхронная реализация");
+                  .Be(expected, PacketEqualityComparer.Instance);
         }
     }
 
@@ -50,30 +46,31 @@ public class BinaryPacketSerializerTests
         array[index] ^= bitToInvert;
     }
 
-    public static async Task AssertIntegrityExceptionBase(RaftPacket packet, int start, int end)
+    private static void AssertIntegrityExceptionBase(NodePacket packet, int start, int end)
     {
         // Проверяем, что изменение даже 1 бита приводит к исключению
 
-        // Синхронно
+        // Синхронное
         {
             var stream = new MemoryStream();
-            // ReSharper disable once MethodHasAsyncOverload
             packet.Serialize(stream);
             stream.Position = 0;
             var buffer = stream.ToArray();
             InvertRandomBit(buffer, start, end);
-            Assert.ThrowsAny<IntegrityException>(() => Deserializer.Deserialize(new MemoryStream(buffer)));
+            Assert.ThrowsAny<IntegrityException>(() => NodePacket.Deserialize(new MemoryStream(buffer)));
         }
 
-        // Асинхронно
+        // Асинхронное
         {
             var stream = new MemoryStream();
-            await packet.SerializeAsync(stream);
+            packet.Serialize(stream);
             stream.Position = 0;
             var buffer = stream.ToArray();
             InvertRandomBit(buffer, start, end);
-            await Assert.ThrowsAnyAsync<IntegrityException>(() =>
-                Deserializer.DeserializeAsync(new MemoryStream(buffer)).AsTask());
+            Assert.ThrowsAnyAsync<IntegrityException>(() =>
+                       NodePacket.DeserializeAsync(new MemoryStream(buffer), CancellationToken.None))
+                  .GetAwaiter()
+                  .GetResult();
         }
     }
 
@@ -86,7 +83,7 @@ public class BinaryPacketSerializerTests
     [InlineData(2, 3523, 222, 0)]
     [InlineData(1, 23, 20, 0)]
     [InlineData(3, 1234, 45, 90)]
-    public async Task RequestVoteRequest__ДолженДесериализоватьИдентичныйОбъект(
+    public void RequestVoteRequest__ДолженДесериализоватьИдентичныйОбъект(
         int peerId,
         int term,
         int logTerm,
@@ -94,7 +91,7 @@ public class BinaryPacketSerializerTests
     {
         var requestVote = new RequestVoteRequest(CandidateId: new NodeId(peerId), CandidateTerm: new Term(term),
             LastLogEntryInfo: new LogEntryInfo(new Term(logTerm), index));
-        await AssertBase(new RequestVoteRequestPacket(requestVote));
+        AssertBase(new RequestVoteRequestPacket(requestVote));
     }
 
     [Theory]
@@ -106,7 +103,7 @@ public class BinaryPacketSerializerTests
     [InlineData(76, 222222, 1, 333, 35624)]
     [InlineData(134, 987654, 1, 3, 1)]
     [InlineData(98765, 1234, 45, 90, 124)]
-    public async Task AppendEntriesRequest__СПустымМассивомКоманд__ДолженДесериализоватьИдентичныйОбъект(
+    public void AppendEntriesRequest__СПустымМассивомКоманд__ДолженДесериализоватьИдентичныйОбъект(
         int term,
         int leaderId,
         int leaderCommit,
@@ -115,7 +112,7 @@ public class BinaryPacketSerializerTests
     {
         var appendEntries = AppendEntriesRequest.Heartbeat(new Term(term), leaderCommit, new NodeId(leaderId),
             new LogEntryInfo(new Term(logTerm), logIndex));
-        await AssertBase(new AppendEntriesRequestPacket(appendEntries));
+        AssertBase(new AppendEntriesRequestPacket(appendEntries));
     }
 
     public static IEnumerable<object[]> IntWithBoolPairwise =>
@@ -124,23 +121,23 @@ public class BinaryPacketSerializerTests
 
     [Theory]
     [MemberData(nameof(IntWithBoolPairwise))]
-    public async Task RequestVoteResponse__ДолженДесериализоватьИдентичныйОбъект(
+    public void RequestVoteResponse__ДолженДесериализоватьИдентичныйОбъект(
         int term,
         bool voteGranted)
     {
         var response = new RequestVoteResponse(CurrentTerm: new Term(term), VoteGranted: voteGranted);
-        await AssertBase(new RequestVoteResponsePacket(response));
+        AssertBase(new RequestVoteResponsePacket(response));
     }
 
 
     [Theory]
     [MemberData(nameof(IntWithBoolPairwise))]
-    public async Task AppendEntriesResponse__ДолженДесериализоватьИдентичныйОбъект(
+    public void AppendEntriesResponse__ДолженДесериализоватьИдентичныйОбъект(
         int term,
         bool success)
     {
         var response = new AppendEntriesResponse(new Term(term), success);
-        await AssertBase(new AppendEntriesResponsePacket(response));
+        AssertBase(new AppendEntriesResponsePacket(response));
     }
 
     [Theory]
@@ -148,7 +145,7 @@ public class BinaryPacketSerializerTests
     [InlineData(3, 2, 22, 3, 2, 2, "")]
     [InlineData(3, 2, 22, 3, 2, 3, "                 ")]
     [InlineData(50, 2, 30, 3, 30, 2, "\n\n")]
-    public async Task AppendEntriesRequest__СОднойКомандой__ДолженДесериализоватьОбъектСОднимLogEntry(
+    public void AppendEntriesRequest__СОднойКомандой__ДолженДесериализоватьОбъектСОднимLogEntry(
         int term,
         int leaderId,
         int leaderCommit,
@@ -159,7 +156,7 @@ public class BinaryPacketSerializerTests
     {
         var appendEntries = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId),
             new LogEntryInfo(new Term(logTerm), logIndex), new[] {Entry(logEntryTerm, command),});
-        await AssertBase(new AppendEntriesRequestPacket(appendEntries));
+        AssertBase(new AppendEntriesRequestPacket(appendEntries));
     }
 
     [Theory]
@@ -168,7 +165,7 @@ public class BinaryPacketSerializerTests
     [InlineData(3, 2, 22, 3, 2, 3, "                 ")]
     [InlineData(50, 2, 30, 3, 30, 2, "\n\n")]
     [InlineData(50, 12, 40, 30, 30, 4, "вызвать компьютерного мастера")]
-    public async Task AppendEntriesRequest__СОднойКомандой__ДолженДесериализоватьLogEntryСТемиЖеДанными(
+    public void AppendEntriesRequest__СОднойКомандой__ДолженДесериализоватьLogEntryСТемиЖеДанными(
         int term,
         int leaderId,
         int leaderCommit,
@@ -180,7 +177,7 @@ public class BinaryPacketSerializerTests
         var expected = Entry(logEntryTerm, command);
         var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId),
             new LogEntryInfo(new Term(logTerm), logIndex), new[] {expected});
-        await AssertBase(new AppendEntriesRequestPacket(request));
+        AssertBase(new AppendEntriesRequestPacket(request));
     }
 
     public static IEnumerable<object[]> СериализацияAppendEntriesСНесколькимиКомандами = new[]
@@ -196,7 +193,7 @@ public class BinaryPacketSerializerTests
 
     [Theory]
     [MemberData(nameof(СериализацияAppendEntriesСНесколькимиКомандами))]
-    public async Task AppendEntriesRequest__СНесколькимиКомандами__ДолженДесериализоватьТакоеЖеКоличествоКоманд(
+    public void AppendEntriesRequest__СНесколькимиКомандами__ДолженДесериализоватьТакоеЖеКоличествоКоманд(
         int term,
         int leaderId,
         int leaderCommit,
@@ -206,12 +203,12 @@ public class BinaryPacketSerializerTests
     {
         var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId),
             new LogEntryInfo(new Term(logTerm), logIndex), entries);
-        await AssertBase(new AppendEntriesRequestPacket(request));
+        AssertBase(new AppendEntriesRequestPacket(request));
     }
 
     [Theory]
     [MemberData(nameof(СериализацияAppendEntriesСНесколькимиКомандами))]
-    public async Task AppendEntriesRequest__СНесколькимиКомандами__ДолженДесериализоватьКомандыСТемиЖеСамымиДанными(
+    public void AppendEntriesRequest__СНесколькимиКомандами__ДолженДесериализоватьКомандыСТемиЖеСамымиДанными(
         int term,
         int leaderId,
         int leaderCommit,
@@ -221,7 +218,7 @@ public class BinaryPacketSerializerTests
     {
         var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId),
             new LogEntryInfo(new Term(logTerm), logIndex), entries);
-        await AssertBase(new AppendEntriesRequestPacket(request));
+        AssertBase(new AppendEntriesRequestPacket(request));
     }
 
     [Theory]
@@ -232,17 +229,17 @@ public class BinaryPacketSerializerTests
     [InlineData(2)]
     [InlineData(3)]
     [InlineData(10)]
-    public async Task ConnectRequest__ДолженДесериализоватьТакуюЖеКоманду(int nodeId)
+    public void ConnectRequest__ДолженДесериализоватьТакуюЖеКоманду(int nodeId)
     {
-        await AssertBase(new ConnectRequestPacket(new NodeId(nodeId)));
+        AssertBase(new ConnectRequestPacket(new NodeId(nodeId)));
     }
 
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task ConnectResponse__ДолженДесериализоватьТакуюЖеКоманду(bool success)
+    public void ConnectResponse__ДолженДесериализоватьТакуюЖеКоманду(bool success)
     {
-        await AssertBase(new ConnectResponsePacket(success));
+        AssertBase(new ConnectResponsePacket(success));
     }
 
     [Theory]
@@ -250,13 +247,13 @@ public class BinaryPacketSerializerTests
     [InlineData(int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue)]
     [InlineData(333, 2324621, 745, 4365346)]
     [InlineData(63456, int.MaxValue, -1, 4365346)]
-    public async Task InstallSnapshotRequest__ДолженДесериализоватьТакуюЖеКоманду(
+    public void InstallSnapshotRequest__ДолженДесериализоватьТакуюЖеКоманду(
         int term,
         int leaderId,
         int lastIndex,
         int lastTerm)
     {
-        await AssertBase(new InstallSnapshotRequestPacket(new Term(term), new NodeId(leaderId),
+        AssertBase(new InstallSnapshotRequestPacket(new Term(term), new NodeId(leaderId),
             new LogEntryInfo(new Term(lastTerm), lastIndex)));
     }
 
@@ -268,9 +265,9 @@ public class BinaryPacketSerializerTests
     [InlineData(new byte[] {1, 2})]
     [InlineData(new byte[] {255, 254, 253, 252})]
     [InlineData(new byte[] {1, 1, 2, 44, 128, 88, 33, 2})]
-    public async Task InstallSnapshotChunk__ДолженДесериализоватьТакуюЖеКоманду(byte[] data)
+    public void InstallSnapshotChunk__ДолженДесериализоватьТакуюЖеКоманду(byte[] data)
     {
-        await AssertBase(new InstallSnapshotChunkRequestPacket(data));
+        AssertBase(new InstallSnapshotChunkRequestPacket(data));
     }
 
     [Theory]
@@ -282,35 +279,35 @@ public class BinaryPacketSerializerTests
     [InlineData(int.MaxValue)]
     [InlineData(int.MaxValue - 1)]
     [InlineData(666)]
-    public async Task InstallSnapshotResponse__ДолженДесериализоватьТакуюЖеКоманду(int term)
+    public void InstallSnapshotResponse__ДолженДесериализоватьТакуюЖеКоманду(int term)
     {
-        await AssertBase(new InstallSnapshotResponsePacket(new Term(term)));
+        AssertBase(new InstallSnapshotResponsePacket(new Term(term)));
     }
 
     [Fact]
-    public async Task AppendEntriesRequest__КогдаЦелостностьНарушена__ДолженКинутьIntegrityException()
+    public void AppendEntriesRequest__КогдаЦелостностьНарушена__ДолженКинутьIntegrityException()
     {
         var packet = new AppendEntriesRequestPacket(new AppendEntriesRequest(new Term(123), 1234,
             new NodeId(2), new LogEntryInfo(new Term(34), 1242),
             new LogEntry[] {new(new Term(32), new byte[] {1, 2, 6, 4, 31, 200, 55})}));
-        await AssertIntegrityExceptionBase(packet, AppendEntriesRequestPacket.DataStartPosition,
+        AssertIntegrityExceptionBase(packet, AppendEntriesRequestPacket.DataStartPosition,
             packet.GetDataEndPosition());
     }
 
     [Fact]
-    public async Task InstallSnapshotChunk__КогдаЦелостностьНарушена__ДолженКинутьIntegrityException()
+    public void InstallSnapshotChunk__КогдаЦелостностьНарушена__ДолженКинутьIntegrityException()
     {
         var packet = new InstallSnapshotChunkRequestPacket(new byte[]
         {
             1, 2, 3, 4, 5, 6, 7, 8, 100, 22, byte.MinValue, byte.MaxValue, 0, 0, 4
         });
-        await AssertIntegrityExceptionBase(packet, InstallSnapshotChunkRequestPacket.DataStartPosition,
+        AssertIntegrityExceptionBase(packet, InstallSnapshotChunkRequestPacket.DataStartPosition,
             packet.GetDataEndPosition());
     }
 
     [Fact]
-    public async Task RetransmitRequestPacket__ДолженДесериализоватьТакуюЖеКоманду()
+    public void RetransmitRequestPacket__ДолженДесериализоватьТакуюЖеКоманду()
     {
-        await AssertBase(new RetransmitRequestPacket());
+        AssertBase(new RetransmitRequestPacket());
     }
 }

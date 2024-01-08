@@ -4,7 +4,6 @@
         <TargetFramework>net7.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-
         <IsPackable>false</IsPackable>
     </PropertyGroup>
 
@@ -23,8 +22,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\src\Consensus\Consensus.Raft\Consensus.Raft.csproj"/>
-      <ProjectReference Include="..\..\src\Consensus\Consensus.Peer\Consensus.Peer.csproj" />
+        <ProjectReference Include="..\..\src\Consensus\Consensus.Network\Consensus.Network.csproj"/>
     </ItemGroup>
 
 </Project>

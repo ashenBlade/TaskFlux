@@ -1,12 +1,10 @@
 using System.Net.Sockets;
 using Consensus.Network;
-using Consensus.Peer;
 
 namespace Consensus.NodeProcessor;
 
 public class PacketClient
 {
-    private static BinaryPacketDeserializer Deserializer => BinaryPacketDeserializer.Instance;
     public Socket Socket { get; }
     private readonly Lazy<NetworkStream> _lazy;
     private NetworkStream Stream => _lazy.Value;
@@ -17,11 +15,11 @@ public class PacketClient
         _lazy = new Lazy<NetworkStream>(() => new NetworkStream(socket));
     }
 
-    public async ValueTask<RaftPacket?> ReceiveAsync(CancellationToken token)
+    public async ValueTask<NodePacket?> ReceiveAsync(CancellationToken token)
     {
         try
         {
-            return await Deserializer.DeserializeAsync(Stream, token);
+            return await NodePacket.DeserializeAsync(Stream, token);
         }
         catch (SocketException)
         {
@@ -33,11 +31,11 @@ public class PacketClient
         return null;
     }
 
-    public RaftPacket? Receive()
+    public NodePacket? Receive()
     {
         try
         {
-            return Deserializer.Deserialize(Stream);
+            return NodePacket.Deserialize(Stream);
         }
         catch (SocketException)
         {
@@ -49,12 +47,12 @@ public class PacketClient
         return null;
     }
 
-    public ValueTask SendAsync(RaftPacket packet, CancellationToken token)
+    public ValueTask SendAsync(NodePacket packet, CancellationToken token)
     {
         return packet.SerializeAsync(Stream, token);
     }
 
-    public void Send(RaftPacket packet)
+    public void Send(NodePacket packet)
     {
         packet.Serialize(Stream);
     }

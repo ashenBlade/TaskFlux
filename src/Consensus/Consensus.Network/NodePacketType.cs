@@ -1,6 +1,6 @@
 namespace Consensus.Network;
 
-public enum RaftPacketType : byte
+public enum NodePacketType : byte
 {
     AppendEntriesRequest = ( byte ) 'A',
     AppendEntriesResponse = ( byte ) 'a',
