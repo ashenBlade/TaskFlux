@@ -1,36 +1,33 @@
+using TaskFlux.Commands.CreateQueue.ImplementationDetails;
 using TaskFlux.Commands.Error;
 using TaskFlux.Commands.Ok;
 using TaskFlux.Commands.Visitors;
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
 using TaskFlux.Models;
-using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Commands.CreateQueue;
 
 public class CreateQueueCommand : ModificationCommand
 {
     public QueueName Queue { get; }
-    public PriorityQueueCode Code { get; }
-    public int? MaxQueueSize { get; }
-    public int? MaxPayloadSize { get; }
-    public (long, long)? PriorityRange { get; }
+    public QueueImplementationDetails Details { get; }
 
     private ITaskQueue CreateTaskQueue()
     {
-        var builder = new TaskQueueBuilder(Queue, Code);
+        var builder = new TaskQueueBuilder(Queue, Details.Code);
 
-        if (MaxQueueSize is { } maxQueueSize)
+        if (Details.TryGetMaxQueueSize(out var maxQueueSize))
         {
             builder.WithMaxQueueSize(maxQueueSize);
         }
 
-        if (MaxPayloadSize is { } maxPayloadSize)
+        if (Details.TryGetMaxPayloadSize(out var maxPayloadSize))
         {
             builder.WithMaxPayloadSize(maxPayloadSize);
         }
 
-        if (PriorityRange is var (min, max))
+        if (Details.TryGetPriorityRange(out var min, out var max))
         {
             builder.WithPriorityRange(min, max);
         }
@@ -38,39 +35,16 @@ public class CreateQueueCommand : ModificationCommand
         return builder.Build();
     }
 
-    public CreateQueueCommand(QueueName queue,
-                              PriorityQueueCode code,
-                              int? maxQueueSize,
-                              int? maxPayloadSize,
-                              (long, long)? priorityRange)
+    /// <summary>
+    /// Конструктор для команды создания очереди
+    /// </summary>
+    /// <param name="queue">Название очереди, которое нужно создать</param>
+    /// <param name="details">Детали реализации очереди</param>
+    public CreateQueueCommand(QueueName queue, QueueImplementationDetails details)
     {
-        if (priorityRange is var (min, max) && max < min)
-        {
-            throw new ArgumentException("Минимальное значение ключа не может быть больше максимального");
-        }
-
-        if (maxPayloadSize is < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxPayloadSize), maxPayloadSize,
-                "Максимальный размер сообщения не может быть отрицательным значением");
-        }
-
-        if (maxQueueSize is < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxQueueSize), maxQueueSize,
-                "Максимальный размер очереди не может быть отрицательным значением");
-        }
-
-        if (code is PriorityQueueCode.QueueArray && priorityRange is null)
-        {
-            throw new ArgumentException("Необходимо указать диапазон ключей для списка очередей");
-        }
-
+        ArgumentNullException.ThrowIfNull(details);
         Queue = queue;
-        Code = code;
-        MaxQueueSize = maxQueueSize;
-        MaxPayloadSize = maxPayloadSize;
-        PriorityRange = priorityRange;
+        Details = details;
     }
 
     public override Response Apply(IApplication context)
@@ -86,9 +60,13 @@ public class CreateQueueCommand : ModificationCommand
         {
             queue = CreateTaskQueue();
         }
-        catch (InvalidOperationException ioe)
+        catch (InvalidOperationException)
         {
-            return new ErrorResponse(ErrorType.InvalidQueueParameters, ioe.Message);
+            /*
+             * Все значения мы проверяем еще на этапе создания QueueImplementationDetails,
+             * поэтому этот вариант маловероятен, но все же лучше перебздеть, чем недобздеть
+             */
+            return new ErrorResponse(ErrorType.Unknown, "Переданные для создания очереди пар*аметры некорректны");
         }
 
         if (manager.TryAddQueue(Queue, queue))

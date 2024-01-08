@@ -7,11 +7,11 @@ public class CreateQueueOptions
     internal (long, long)? PriorityRange { get; set; }
     internal int? MaxQueueSize { get; set; }
     internal int? MaxMessageSize { get; set; }
-    internal int ImplementationCode { get; set; } = PriorityQueueCodes.Default;
+    internal int ImplementationCode { get; set; } = NetworkPriorityQueueCodes.Heap;
 
     public CreateQueueOptions UseHeap()
     {
-        ImplementationCode = PriorityQueueCodes.Heap;
+        ImplementationCode = NetworkPriorityQueueCodes.Heap;
         return this;
     }
 
@@ -20,7 +20,7 @@ public class CreateQueueOptions
         CheckPriorityRange(min, max);
 
         PriorityRange = ( min, max );
-        ImplementationCode = PriorityQueueCodes.QueueArray;
+        ImplementationCode = NetworkPriorityQueueCodes.QueueArray;
         return this;
     }
 

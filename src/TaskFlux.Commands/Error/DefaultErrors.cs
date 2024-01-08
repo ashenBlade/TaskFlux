@@ -3,11 +3,11 @@ namespace TaskFlux.Commands.Error;
 public static class DefaultErrors
 {
     public static readonly ErrorResponse InvalidQueueName =
-        new(ErrorType.InvalidQueueName, "Неправильное название очереди");
+        new(ErrorType.InvalidQueueName, string.Empty);
 
     public static readonly ErrorResponse QueueDoesNotExist =
-        new(ErrorType.QueueDoesNotExist, "Очередь не существует");
+        new(ErrorType.QueueDoesNotExist, string.Empty);
 
     public static readonly ErrorResponse QueueAlreadyExists =
-        new(ErrorType.QueueAlreadyExists, "Очередь уже существует");
+        new(ErrorType.QueueAlreadyExists, string.Empty);
 }

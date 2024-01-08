@@ -20,7 +20,7 @@ public class NetworkCommandEqualityComparer : IEqualityComparer<NetworkCommand>
 
     private static bool Check(CreateQueueNetworkCommand left, CreateQueueNetworkCommand right) =>
         left.QueueName == right.QueueName
-     && left.MaxMessageSize == right.MaxMessageSize
+     && left.MaxPayloadSize == right.MaxPayloadSize
      && left.MaxQueueSize == right.MaxQueueSize
      && left.Code == right.Code
      && left.PriorityRange == right.PriorityRange;

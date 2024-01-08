@@ -14,6 +14,7 @@ public class PolicyViolationResponse : Response
         Debug.Assert(violatedPolicy is not null,
             "violatedPolicy is not null",
             "Объект нарушенной политики не может быть null");
+        ArgumentNullException.ThrowIfNull(violatedPolicy);
 
         ViolatedPolicy = violatedPolicy;
     }

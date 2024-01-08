@@ -34,12 +34,12 @@ public class NetworkCommandTests
     }
 
     [Theory]
-    [InlineData(PriorityQueueCodes.Default)]
-    [InlineData(PriorityQueueCodes.QueueArray)]
-    [InlineData(PriorityQueueCodes.Heap)]
-    [InlineData(3)]
-    [InlineData(5)]
-    [InlineData(10)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(100)]
+    [InlineData(int.MaxValue - 1)]
+    [InlineData(int.MaxValue)]
     public void CreateQueue__Code__Serialization(int code)
     {
         AssertBase(new CreateQueueNetworkCommand(QueueName.Default, code, null, null, null));
@@ -53,7 +53,7 @@ public class NetworkCommandTests
     [InlineData(int.MaxValue)]
     public void CreateQueue__MaxQueueSize__Serialization(int maxSize)
     {
-        AssertBase(new CreateQueueNetworkCommand(QueueName.Default, PriorityQueueCodes.Default, maxSize, null, null));
+        AssertBase(new CreateQueueNetworkCommand(QueueName.Default, 1, maxSize, null, null));
     }
 
     [Theory]
@@ -64,7 +64,7 @@ public class NetworkCommandTests
     [InlineData(int.MaxValue)]
     public void CreateQueue__MaxMessageSize__Serialization(int maxSize)
     {
-        AssertBase(new CreateQueueNetworkCommand(QueueName.Default, PriorityQueueCodes.Default, null, maxSize, null));
+        AssertBase(new CreateQueueNetworkCommand(QueueName.Default, 1, null, maxSize, null));
     }
 
     [Theory]
@@ -75,7 +75,7 @@ public class NetworkCommandTests
     [InlineData(0, long.MaxValue)]
     public void CreateQueue__PriorityRange__Serialization(long min, long max)
     {
-        AssertBase(new CreateQueueNetworkCommand(QueueName.Default, PriorityQueueCodes.Default, null, null,
+        AssertBase(new CreateQueueNetworkCommand(QueueName.Default, 1, null, null,
             ( min, max )));
     }
 

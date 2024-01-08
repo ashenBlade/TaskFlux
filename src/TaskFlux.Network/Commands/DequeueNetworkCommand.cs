@@ -35,7 +35,7 @@ public sealed class DequeueNetworkCommand : NetworkCommand
     public new static async ValueTask<DequeueNetworkCommand> DeserializeAsync(Stream stream, CancellationToken token)
     {
         var reader = new StreamBinaryReader(stream);
-        var queueName = await reader.ReadRawQueueNameAsync(token);
+        var queueName = await reader.ReadAsQueueNameAsync(token);
         return new DequeueNetworkCommand(queueName);
     }
 

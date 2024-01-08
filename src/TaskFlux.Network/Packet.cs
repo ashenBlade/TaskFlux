@@ -18,11 +18,19 @@ public abstract class Packet
     /// </summary>
     /// <param name="stream">Поток из которого нужно десериализовать пакет</param>
     /// <param name="token">Токен отмены</param>
-    /// <returns>Десерилазованный пакет</returns>
+    /// <exception cref="UnknownPacketException">Получен неизвестный маркер пакета</exception>
+    /// <exception cref="UnknownCommandTypeException">Получен неизвестный маркер команды</exception>
+    /// <exception cref="UnknownResponseTypeException">Получен неизвестный маркер ответа</exception>
+    /// <exception cref="UnknownAuthorizationMethodException">Получен неизвестный маркер типа авторизации</exception>
+    /// <exception cref="UnknownQueuePolicyException">Получен неизвестный маркер политики очереди</exception>
+    /// <exception cref="EndOfStreamException"><paramref name="stream"/> закрылся</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="token"/> был отменен</exception>
+    /// <returns>Десериализованный пакет</returns>
     public static async ValueTask<Packet> DeserializeAsync(Stream stream, CancellationToken token)
     {
         var reader = new StreamBinaryReader(stream);
         var marker = await reader.ReadByteAsync(token);
+        // Отсортировал в порядке частотности получения пакетов (взял из головы - статистики пока нет)
         switch (( PacketType ) marker)
         {
             case PacketType.CommandRequest:

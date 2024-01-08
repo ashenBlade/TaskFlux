@@ -13,4 +13,9 @@
         <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Host.Modules.csproj"/>
     </ItemGroup>
 
+    <PropertyGroup>
+        <WarningsAsErrors>CS8509</WarningsAsErrors>
+        <NoWarn>1701;1702;CS8524</NoWarn>
+    </PropertyGroup>
+
 </Project>

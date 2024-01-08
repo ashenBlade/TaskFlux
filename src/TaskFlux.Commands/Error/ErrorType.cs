@@ -3,7 +3,7 @@ namespace TaskFlux.Commands.Error;
 /// <summary>
 /// Ошибка бизнес-логики, возникающая во время выполнения команды
 /// </summary>
-public enum ErrorType : byte
+public enum ErrorType : int
 {
     /// <summary>
     /// Неизвестный тип ошибки
@@ -28,5 +28,30 @@ public enum ErrorType : byte
     /// <summary>
     /// При создании очереди был указан неверный набор параметров
     /// </summary>
-    InvalidQueueParameters = 4,
+    PriorityRangeViolation = 4,
+
+    /// <summary>
+    /// Указано некорректное значение диапазона приоритетов
+    /// </summary>
+    InvalidPriorityRange = 5,
+
+    /// <summary>
+    /// Указано некорректное значение максимального размера очереди
+    /// </summary>
+    InvalidMaxQueueSize = 6,
+
+    /// <summary>
+    /// Указано некорректное значение максимального размера сообщения
+    /// </summary>
+    InvalidMaxPayloadSize = 7,
+
+    /// <summary>
+    /// Диапазон приоритетов не указан
+    /// </summary>
+    PriorityRangeNotSpecified = 8,
+
+    /// <summary>
+    /// Получен неизвестный код приоритетной очереди
+    /// </summary>
+    UnknownPriorityQueueCode = 9,
 }

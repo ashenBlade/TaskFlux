@@ -5,7 +5,6 @@ namespace TaskFlux.Network.Authorization;
 public class NoneAuthorizationMethod : AuthorizationMethod
 {
     public override AuthorizationMethodType AuthorizationMethodType => AuthorizationMethodType.None;
-    public static readonly NoneAuthorizationMethod Instance = new();
 
     public override int EstimatePayloadSize()
     {

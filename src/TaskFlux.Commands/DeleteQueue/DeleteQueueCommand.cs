@@ -8,22 +8,22 @@ namespace TaskFlux.Commands.DeleteQueue;
 
 public class DeleteQueueCommand : ModificationCommand
 {
-    public QueueName QueueName { get; }
+    public QueueName Queue { get; }
 
-    public DeleteQueueCommand(QueueName queueName)
+    public DeleteQueueCommand(QueueName queue)
     {
-        QueueName = queueName;
+        Queue = queue;
     }
 
     public override Response Apply(IApplication context)
     {
         var manager = context.TaskQueueManager;
-        if (!manager.HasQueue(QueueName))
+        if (!manager.HasQueue(Queue))
         {
             return DefaultErrors.QueueDoesNotExist;
         }
 
-        if (manager.TryDeleteQueue(QueueName, out _))
+        if (manager.TryDeleteQueue(Queue, out _))
         {
             return OkResponse.Instance;
         }

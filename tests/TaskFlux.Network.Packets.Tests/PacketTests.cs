@@ -25,10 +25,7 @@ public class PacketTests
         new NetworkCommand[] {new CountNetworkCommand(QueueName.Default)},
         new NetworkCommand[] {new DequeueNetworkCommand(QueueName.Default)},
         new NetworkCommand[] {new EnqueueNetworkCommand(QueueName.Parse("asdf"), 123, "hello, world"u8.ToArray())},
-        new NetworkCommand[]
-        {
-            new CreateQueueNetworkCommand(QueueName.Parse("asdf"), PriorityQueueCodes.Default, null, null, null)
-        },
+        new NetworkCommand[] {new CreateQueueNetworkCommand(QueueName.Parse("asdf"), 1, null, null, null)},
         new NetworkCommand[] {new DeleteQueueNetworkCommand(QueueName.Parse("@@@@@"))},
         new NetworkCommand[] {new ListQueuesNetworkCommand()}
     };

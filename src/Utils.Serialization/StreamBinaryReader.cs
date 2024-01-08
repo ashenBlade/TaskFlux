@@ -120,7 +120,7 @@ public struct StreamBinaryReader
     /// </summary>
     /// <param name="token"></param>
     /// <returns></returns>
-    public async Task<string> ReadRawQueueNameAsync(CancellationToken token)
+    public async Task<string> ReadAsQueueNameAsync(CancellationToken token)
     {
         var length = await ReadByteAsync(token);
         var buffer = ArrayPool<byte>.Shared.Rent(length);

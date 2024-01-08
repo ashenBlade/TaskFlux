@@ -15,6 +15,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\TaskFlux.Network\TaskFlux.Network.csproj"/>
+        <ProjectReference Include="..\..\src\TaskFlux.PriorityQueue\TaskFlux.PriorityQueue.csproj"/>
         <ProjectReference Include="..\TaskFlux.Client\TaskFlux.Client.csproj"/>
     </ItemGroup>
 

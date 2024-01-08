@@ -11,6 +11,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Consensus\Consensus.Application\Consensus.Application.TaskFlux\Consensus.Application.TaskFlux.csproj"/>
+        <ProjectReference Include="..\Consensus\Consensus.Network\Consensus.Network.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.NodeProcessor\Consensus.NodeProcessor.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.Raft\Consensus.Raft.csproj"/>
         <ProjectReference Include="..\Consensus\Consensus.JobQueue\Consensus.JobQueue.csproj"/>

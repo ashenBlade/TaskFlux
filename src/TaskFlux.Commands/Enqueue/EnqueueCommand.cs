@@ -15,6 +15,7 @@ public class EnqueueCommand : ModificationCommand
     public EnqueueCommand(long key, byte[] message, QueueName queue)
     {
         ArgumentNullException.ThrowIfNull(message);
+
         Key = key;
         Message = message;
         Queue = queue;

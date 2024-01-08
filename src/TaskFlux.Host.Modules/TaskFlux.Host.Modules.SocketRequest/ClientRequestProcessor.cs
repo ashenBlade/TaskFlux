@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Net.Sockets;
 using Consensus.Core.Submit;
@@ -8,7 +7,7 @@ using TaskFlux.Commands;
 using TaskFlux.Commands.Dequeue;
 using TaskFlux.Core;
 using TaskFlux.Host.Modules.SocketRequest.Exceptions;
-using TaskFlux.Models.Exceptions;
+using TaskFlux.Host.Modules.SocketRequest.Mapping;
 using TaskFlux.Network;
 using TaskFlux.Network.Authorization;
 using TaskFlux.Network.Commands;
@@ -80,6 +79,10 @@ internal class ClientRequestProcessor
         {
             _logger.Warning(upe, "От клиента получен неизвестный пакет");
         }
+        catch (UnknownQueuePolicyException uqpe)
+        {
+            _logger.Warning(uqpe, "От клиента получен неизвестный тип политики очереди");
+        }
         catch (IOException io)
         {
             _logger.Warning(io, "Ошибка во время коммуникации с клиентом");
@@ -122,12 +125,14 @@ internal class ClientRequestProcessor
             case PacketType.BootstrapResponse:
             case PacketType.ClusterMetadataResponse:
             case PacketType.ClusterMetadataRequest:
-                _logger.Warning("От клиента получен неожиданный пакет. Ожидался пакет авторизации. Получен: {Packet}",
+                _logger.Information(
+                    "От клиента получен неожиданный пакет. Ожидался пакет авторизации. Получен: {Packet}",
                     request.Type);
                 return false;
             default:
-                throw new InvalidEnumArgumentException(nameof(request.Type), ( int ) ( request.Type ),
-                    typeof(PacketType));
+                Debug.Assert(false, "false", "Получено неизвестное значение типа пакета: {0}", request.Type);
+                throw new ArgumentOutOfRangeException(nameof(request.Type), ( int ) request.Type,
+                    "Неизвестное значение типа пакета");
         }
 
         var authorizationType = authorizationRequest.AuthorizationMethod.AuthorizationMethodType;
@@ -137,14 +142,14 @@ internal class ClientRequestProcessor
                 // Единственный пока метод авторизации
                 break;
             default:
-                throw new InvalidEnumArgumentException(nameof(authorizationType),
-                    ( int ) authorizationType,
-                    typeof(AuthorizationMethodType));
+                Debug.Assert(false, "false", "Неизвестное значение метода авторизации: {0}", authorizationType);
+                throw new ArgumentOutOfRangeException(nameof(authorizationType),
+                    ( int ) authorizationType, "Неизвестное значение метода авторизации");
         }
 
         await client.SendAsync(AuthorizationResponsePacket.Ok, token);
 
-        // 2. Бутстрап
+        // 2. Настройка клиента
         using (var cts = CreateIdleTimeoutCts(token))
         {
             request = await client.ReceiveAsync(cts.Token);
@@ -168,14 +173,17 @@ internal class ClientRequestProcessor
             case PacketType.BootstrapResponse:
             case PacketType.ClusterMetadataRequest:
             case PacketType.ClusterMetadataResponse:
+            case PacketType.NegativeAcknowledgementRequest:
+            case PacketType.Ok:
                 _logger.Warning("От клиента получен неожиданный пакет {PacketType}", request.Type);
                 return false;
             default:
+                Debug.Assert(false, "false", "Неизвестное значение типа пакета: {0}", request.Type);
                 throw new ArgumentOutOfRangeException(nameof(request.Type), request.Type,
-                    "От клиента получен неизвестный пакет");
+                    "Неизвестное значение типа пакета");
         }
 
-        if (!ValidateVersion(bootstrapRequest))
+        if (!IsVersionSupported(bootstrapRequest))
         {
             await client.SendAsync(BootstrapResponsePacket.Error("Версия клиента не поддерживается"), token);
             return false;
@@ -184,7 +192,7 @@ internal class ClientRequestProcessor
         await client.SendAsync(BootstrapResponsePacket.Ok, token);
         return true;
 
-        bool ValidateVersion(BootstrapRequestPacket packet)
+        bool IsVersionSupported(BootstrapRequestPacket packet)
         {
             var serverVersion = _applicationInfo.Version;
             if (serverVersion.Major != packet.Major)
@@ -229,6 +237,8 @@ internal class ClientRequestProcessor
                 case PacketType.BootstrapRequest:
                 case PacketType.BootstrapResponse:
                 case PacketType.ClusterMetadataResponse:
+                case PacketType.NegativeAcknowledgementRequest:
+                case PacketType.Ok:
                     _logger.Warning("От клиента получен неожиданный тип пакета {PacketType}", request.Type);
                     break;
                 default:
@@ -264,7 +274,10 @@ internal class ClientRequestProcessor
             case NetworkCommandType.ListQueues:
                 break;
             default:
-                throw new ArgumentOutOfRangeException();
+                Debug.Assert(false, "Неизвестный тип команды", "Получен неизвестный тип NetworkCommand: {0}",
+                    request.Command.Type);
+                throw new ArgumentOutOfRangeException(nameof(request.Command.Type), request.Command.Type,
+                    "Получен неизвестный тип команды");
         }
 
         Command command;
@@ -272,9 +285,11 @@ internal class ClientRequestProcessor
         {
             command = CommandMapper.Map(request.Command);
         }
-        catch (InvalidQueueNameException)
+        catch (MappingException me)
         {
-            await client.SendAsync(new ErrorResponsePacket(( int ) ErrorCodes.InvalidQueueName, string.Empty), token);
+            await client.SendAsync(new ErrorResponsePacket(( int ) me.ErrorCode,
+                    string.Empty /* На данном этапе все коды ясно говорят какая ошибка произошла - доп. сообщений не надо */),
+                token);
             return;
         }
 
@@ -310,10 +325,10 @@ internal class ClientRequestProcessor
         {
             command = CommandMapper.Map(request.Command);
         }
-        catch (InvalidQueueNameException)
+        catch (MappingException me)
         {
             // Указанное пользователем название очереди невалидное
-            await client.SendAsync(new ErrorResponsePacket(( int ) ErrorCodes.InvalidQueueName, string.Empty), token);
+            await client.SendAsync(new ErrorResponsePacket(( int ) me.ErrorCode, string.Empty), token);
             return;
         }
 
