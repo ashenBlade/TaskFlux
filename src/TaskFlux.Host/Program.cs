@@ -11,22 +11,19 @@ using Consensus.Raft.Persistence.Metadata;
 using Consensus.Raft.Persistence.Snapshot;
 using Consensus.Timers;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Serilog;
 using TaskFlux.Commands;
-using TaskFlux.Core;
 using TaskFlux.Host;
+using TaskFlux.Host.Configuration;
 using TaskFlux.Host.Infrastructure;
-using TaskFlux.Host.Modules;
-using TaskFlux.Host.Modules.HttpRequest;
-using TaskFlux.Host.Modules.SocketRequest;
-using TaskFlux.Host.Options;
 using TaskFlux.Host.RequestAcceptor;
 using TaskFlux.Models;
-using TaskFlux.Node;
-using Utils.Network;
+using TaskFlux.Transport.Common;
 
 Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Verbose()
+            .MinimumLevel.Debug()
             .Enrich.FromLogContext()
             .WriteTo.Console(outputTemplate:
                  "[{Timestamp:HH:mm:ss:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
@@ -34,168 +31,88 @@ Log.Logger = new LoggerConfiguration()
 
 try
 {
-    var configuration = new ConfigurationBuilder()
-                       .AddEnvironmentVariables()
-                       .AddJsonFile("taskflux.settings.json", optional: true)
-                       .Build();
+    var options = GetApplicationOptions();
 
-    var networkOptions = configuration.GetSection("NETWORK") is { } section
-                      && section.Exists()
-                             ? section.Get<NetworkOptions>() ?? NetworkOptions.Default
-                             : NetworkOptions.Default;
-
-    var serverOptions = configuration.Get<RaftServerOptions>()
-                     ?? throw new Exception("Не найдено настроек сервера");
-
-    ValidateOptions(serverOptions);
-
-    var nodeId = new NodeId(serverOptions.NodeId);
-
-    Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
-
-    var facade = CreateStoragePersistenceFacade(serverOptions);
-    var peers = ExtractPeers(serverOptions, nodeId, networkOptions);
-
-    var appInfo = CreateApplicationInfo();
-    var nodeInfo = CreateNodeInfo(serverOptions);
-
-    using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(serverOptions.Peers.Length, serverOptions.NodeId,
-        Log.Logger.ForContext("SourceContext", "BackgroundJobQueue"));
-    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, nodeInfo, appInfo, jobQueue);
-    var clusterInfo = CreateClusterInfo(serverOptions, raftConsensusModule);
-
-    var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, raftConsensusModule,
-        networkOptions.RequestTimeout,
-        Log.Logger.ForContext<NodeConnectionManager>());
-
-    var stateObserver = new NodeStateObserver(raftConsensusModule, Log.Logger.ForContext<NodeStateObserver>());
-
-    using var requestAcceptor =
-        new ExclusiveRequestAcceptor(raftConsensusModule, Log.ForContext("{SourceContext}", "RequestQueue"));
-
-    var httpModule = CreateHttpRequestModule(configuration);
-    httpModule.AddHandler(HttpMethod.Post, "/command",
-        new SubmitCommandRequestHandler(requestAcceptor, clusterInfo, appInfo,
-            Log.ForContext<SubmitCommandRequestHandler>()));
-
-    var binaryRequestModule = CreateBinaryRequestModule(requestAcceptor, appInfo, clusterInfo, configuration);
-
-    var nodeConnectionThread = new Thread(o =>
+    if (!TryValidateOptions(options))
     {
-        var (manager, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
-        manager.Run(token);
-    }) {Priority = ThreadPriority.Highest, Name = "Обработчик подключений узлов",};
+        return 1;
+    }
 
-    using var cts = new CancellationTokenSource();
+    var nodeId = new NodeId(options.Cluster.NodeId);
 
-    // ReSharper disable once AccessToDisposedClosure
+    var facade = InitializeStorage(options.Cluster);
+    var peers = ExtractPeers(options.Cluster, nodeId, options.Network);
+
+    using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(options.Cluster.Peers.Length, options.Cluster.NodeId,
+        Log.Logger.ForContext("SourceContext", "BackgroundJobQueue"));
+    using var consensusModule = CreateRaftConsensusModule(nodeId, peers, facade, jobQueue);
+    using var requestAcceptor =
+        new ExclusiveRequestAcceptor(consensusModule, Log.ForContext("SourceContext", "RequestAcceptor"));
+    using var connectionManager = new NodeConnectionManager(options.Cluster.ListenHost, options.Cluster.ListenPort,
+        consensusModule, options.Network.RequestTimeout, Log.ForContext<NodeConnectionManager>());
+    using var applicationLifetimeCts = new CancellationTokenSource();
+
     Console.CancelKeyPress += (_, args) =>
     {
-        cts.Cancel();
+        // ReSharper disable once AccessToDisposedClosure
+        applicationLifetimeCts.Cancel();
         args.Cancel = true;
     };
 
-    try
-    {
-        Log.Logger.Debug("Запускаю потоки обработчиков узлов");
-        jobQueue.Start();
+    var taskFluxHostedService = new TaskFluxNodeHostedService(consensusModule, requestAcceptor, jobQueue,
+        connectionManager, Log.ForContext<TaskFluxNodeHostedService>());
 
-        Log.Logger.Information("Запускаю таймер выборов");
-        raftConsensusModule.Start();
+    await RunNodeAsync(taskFluxHostedService,
+        consensusModule,
+        requestAcceptor,
+        applicationLifetimeCts.Token);
 
-        Log.Logger.Information("Запускаю менеджер подключений узлов");
-        nodeConnectionThread.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
+    async Task RunNodeAsync(TaskFluxNodeHostedService node,
+                            IRaftConsensusModule<Command, Response> module,
+                            IRequestAcceptor acceptor,
+                            CancellationToken token)
+    {
+        var host = new HostBuilder()
+                  .ConfigureHostConfiguration(builder =>
+                       builder.AddEnvironmentVariables()
+                              .AddCommandLine(args))
+                  .ConfigureAppConfiguration(builder =>
+                       builder.AddEnvironmentVariables()
+                              .AddCommandLine(args))
+                  .ConfigureLogging(logging => logging.AddSerilog())
+                  .ConfigureServices((_, services) =>
+                   {
+                       services.AddHostedService(_ => node);
 
-        Log.Logger.Information("Запускаю фоновые задачи");
-        await Task.WhenAll(stateObserver.RunAsync(cts.Token),
-            httpModule.RunAsync(cts.Token),
-            binaryRequestModule.RunAsync(cts.Token),
-            Task.Run(() =>
-            {
-                // ReSharper disable once AccessToDisposedClosure
-                var token = cts.Token;
-                // ReSharper disable once AccessToDisposedClosure
-                requestAcceptor.Start(token);
-            }));
-    }
-    catch (Exception e)
-    {
-        Log.Fatal(e, "Ошибка во время работы сервера");
-    }
-    finally
-    {
-        cts.Cancel();
-        nodeConnectionThread.Join();
+                       services.AddSingleton(module);
+                       services.AddSingleton(acceptor);
+                       services.AddSingleton(options);
+                       services.AddSingleton<IApplicationInfo>(sp => new ProxyApplicationInfo(
+                           sp.GetRequiredService<IRaftConsensusModule<Command, Response>>(),
+                           sp.GetRequiredService<ApplicationOptions>().Cluster.Peers));
+
+                       services.AddNodeStateObserverHostedService();
+                       services.AddTcpRequestModule();
+                       services.AddHttpRequestModule();
+                   })
+                  .UseConsoleLifetime()
+                  .Build();
+        await host.RunAsync(token);
     }
 }
 catch (Exception e)
 {
     Log.Fatal(e, "Необработанное исключение во время настройки сервера");
+    return 1;
 }
 finally
 {
     Log.CloseAndFlush();
 }
 
-return;
+return 0;
 
-
-SocketRequestModule CreateBinaryRequestModule(IRequestAcceptor requestAcceptor,
-                                              IApplicationInfo applicationInfo,
-                                              IClusterInfo clusterInfo,
-                                              IConfiguration config)
-{
-    var options = GetOptions();
-
-    try
-    {
-        Validator.ValidateObject(options, new ValidationContext(options), true);
-    }
-    catch (ValidationException ve)
-    {
-        Log.Error(ve, "Ошибка валидации настроек модуля бинарных запросов");
-        throw;
-    }
-
-    return new SocketRequestModule(requestAcceptor,
-        new StaticOptionsMonitor<SocketRequestModuleOptions>(options),
-        clusterInfo,
-        applicationInfo,
-        Log.ForContext<SocketRequestModule>());
-
-    SocketRequestModuleOptions GetOptions()
-    {
-        var section = config.GetSection("BINARY_REQUEST");
-        if (!section.Exists())
-        {
-            return SocketRequestModuleOptions.Default;
-        }
-
-        return section.Get<SocketRequestModuleOptions>()
-            ?? SocketRequestModuleOptions.Default;
-    }
-}
-
-void ValidateOptions(RaftServerOptions serverOptions)
-{
-    var errors = new List<ValidationResult>();
-    if (!Validator.TryValidateObject(serverOptions, new ValidationContext(serverOptions), errors, true))
-    {
-        throw new Exception(
-            $"Найдены ошибки при валидации конфигурации: {string.Join(',', errors.Select(x => x.ErrorMessage))}");
-    }
-}
-
-HttpRequestModule CreateHttpRequestModule(IConfiguration config)
-{
-    var httpModuleOptions = config.GetSection("HTTP")
-                                  .Get<HttpRequestModuleOptions>()
-                         ?? HttpRequestModuleOptions.Default;
-
-    return new HttpRequestModule(httpModuleOptions.Port, Log.ForContext<HttpRequestModule>());
-}
-
-StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions options)
+StoragePersistenceFacade InitializeStorage(ClusterOptions options)
 {
     var dataDirectory = GetDataDirectory(options);
 
@@ -336,18 +253,20 @@ StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions option
         }
     }
 
-    string GetDataDirectory(RaftServerOptions raftServerOptions)
+    string GetDataDirectory(ClusterOptions raftServerOptions)
     {
         string workingDirectory;
         if (!string.IsNullOrWhiteSpace(raftServerOptions.DataDirectory))
         {
             workingDirectory = raftServerOptions.DataDirectory;
-            Log.Information("Указана директория данных: {WorkingDirectory}", workingDirectory);
+            Log.Debug("Указана директория данных: {WorkingDirectory}", workingDirectory);
         }
         else
         {
-            Log.Information("Директория данных не указана. Выставляю в рабочую директорию");
-            workingDirectory = Directory.GetCurrentDirectory();
+            var currentDirectory = Directory.GetCurrentDirectory();
+            Log.Information("Директория данных не указана. Выставляю в рабочую директорию: {CurrentDirectory}",
+                currentDirectory);
+            workingDirectory = currentDirectory;
         }
 
         return workingDirectory;
@@ -357,38 +276,23 @@ StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions option
 RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
                                                                  IPeer[] peers,
                                                                  StoragePersistenceFacade storage,
-                                                                 INodeInfo nodeInfo,
-                                                                 IApplicationInfo applicationInfo,
                                                                  IBackgroundJobQueue backgroundJobQueue)
 {
     var logger = Log.Logger.ForContext("SourceContext", "Raft");
-    var commandSerializer = new TaskFluxDeltaExtractor();
+    var deltaExtractor = new TaskFluxDeltaExtractor();
     var peerGroup = new PeerGroup(peers);
-    var timerFactory =
-        new ThreadingTimerFactory(TimeSpan.FromMilliseconds(1500), TimeSpan.FromMilliseconds(2500),
-            heartbeatTimeout: TimeSpan.FromMilliseconds(1000));
+    var timerFactory = new ThreadingTimerFactory(lower: TimeSpan.FromMilliseconds(1500),
+        upper: TimeSpan.FromMilliseconds(2500),
+        heartbeatTimeout: TimeSpan.FromMilliseconds(1000));
+    var applicationFactory = new TaskFluxApplicationFactory();
 
-    return RaftConsensusModule<Command, Response>.Create(nodeId, peerGroup, logger, timerFactory,
+    return RaftConsensusModule<Command, Response>.Create(nodeId,
+        peerGroup, logger, timerFactory,
         backgroundJobQueue, storage,
-        commandSerializer, new TaskFluxApplicationFactory(nodeInfo, applicationInfo));
+        deltaExtractor, applicationFactory);
 }
 
-ApplicationInfo CreateApplicationInfo()
-{
-    return new ApplicationInfo(QueueName.Default);
-}
-
-ClusterInfo CreateClusterInfo(RaftServerOptions options, IRaftConsensusModule<Command, Response> module)
-{
-    return new ClusterInfo(options.Peers.Select(EndPointHelpers.ParseEndPoint), module);
-}
-
-NodeInfo CreateNodeInfo(RaftServerOptions options)
-{
-    return new NodeInfo(new NodeId(options.NodeId), NodeRole.Follower);
-}
-
-static IPeer[] ExtractPeers(RaftServerOptions serverOptions, NodeId currentNodeId, NetworkOptions networkOptions)
+static IPeer[] ExtractPeers(ClusterOptions serverOptions, NodeId currentNodeId, NetworkOptions networkOptions)
 {
     var peers = new IPeer[serverOptions.Peers.Length - 1]; // Все кроме себя
     var connectionErrorDelay = TimeSpan.FromMilliseconds(100);
@@ -396,7 +300,7 @@ static IPeer[] ExtractPeers(RaftServerOptions serverOptions, NodeId currentNodeI
     // Все до текущего узла
     for (var i = 0; i < currentNodeId.Id; i++)
     {
-        var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
+        var endpoint = serverOptions.Peers[i];
         var id = new NodeId(i);
         peers[i] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
             connectionErrorDelay,
@@ -406,11 +310,32 @@ static IPeer[] ExtractPeers(RaftServerOptions serverOptions, NodeId currentNodeI
     // Все после текущего узла
     for (var i = currentNodeId.Id + 1; i < serverOptions.Peers.Length; i++)
     {
-        var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
+        var endpoint = serverOptions.Peers[i];
         var id = new NodeId(i);
         peers[i - 1] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout, connectionErrorDelay,
             Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
     }
 
     return peers;
+}
+
+ApplicationOptions GetApplicationOptions()
+{
+    var root = new ConfigurationBuilder()
+              .AddTaskFluxSource(args, "taskflux.settings.json")
+              .Build();
+
+    return ApplicationOptions.FromConfiguration(root);
+}
+
+bool TryValidateOptions(ApplicationOptions options)
+{
+    var results = new List<ValidationResult>();
+    if (Validator.TryValidateObject(options, new ValidationContext(options), results, true))
+    {
+        return true;
+    }
+
+    Log.Fatal("Ошибка валидации конфигурации. Обнаружены ошибки: {Errors}", results.Select(r => r.ErrorMessage));
+    return false;
 }

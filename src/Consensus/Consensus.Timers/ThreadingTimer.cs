@@ -1,4 +1,4 @@
-using Consensus.Raft;
+using ITimer = Consensus.Raft.ITimer;
 
 namespace Consensus.Timers;
 

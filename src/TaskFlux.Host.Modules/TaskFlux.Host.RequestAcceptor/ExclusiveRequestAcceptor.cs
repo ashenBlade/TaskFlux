@@ -1,8 +1,9 @@
-﻿using Consensus.Core.Submit;
+﻿using System.Collections.Concurrent;
+using Consensus.Core.Submit;
 using Consensus.Raft;
 using Serilog;
 using TaskFlux.Commands;
-using TaskFlux.Host.Modules;
+using TaskFlux.Transport.Common;
 
 namespace TaskFlux.Host.RequestAcceptor;
 
@@ -10,9 +11,8 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 {
     private readonly IRaftConsensusModule<Command, Response> _module;
     private readonly ILogger _logger;
-    private readonly BlockingChannel<UserRequest> _channel = new();
+    private readonly BlockingCollection<UserRequest> _channel = new();
     private readonly CancellationTokenSource _cts = new();
-    private CancellationTokenRegistration? _tokenRegistration = null;
     private Thread? _thread;
 
     public ExclusiveRequestAcceptor(IRaftConsensusModule<Command, Response> module, ILogger logger)
@@ -41,23 +41,24 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
     public async Task<SubmitResponse<Response>> AcceptAsync(Command command, CancellationToken token = default)
     {
         var request = new UserRequest(command, token);
-        var registration = new CancellationTokenRegistration();
+        CancellationTokenRegistration? registration = token.CanBeCanceled
+                                                          ? token.Register(static r => ( ( UserRequest ) r! ).Cancel(),
+                                                              request)
+                                                          : null;
         try
         {
-            if (token.CanBeCanceled)
-            {
-                registration = token.Register(static r => ( ( UserRequest ) r! ).Cancel(), request);
-            }
-
             _logger.Debug("Отправляю запрос в очередь");
-            _channel.Write(request);
+            _channel.Add(request, token);
             var result = await request.CommandTask;
             _logger.Debug("Команда выполнилась");
             return result;
         }
         finally
         {
-            await registration.DisposeAsync();
+            if (registration is { } r)
+            {
+                await r.DisposeAsync();
+            }
         }
     }
 
@@ -77,7 +78,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
         try
         {
             _logger.Information("Начинаю читать запросы от пользователей");
-            foreach (var request in _channel.ReadAll(token))
+            foreach (var request in _channel.GetConsumingEnumerable(token))
             {
                 if (request.IsCancelled)
                 {
@@ -106,26 +107,21 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
         }
     }
 
-    public void Start(CancellationToken token)
+    public void Start()
     {
-        _tokenRegistration = token.Register(() => _cts.Cancel());
         _thread = new Thread(ThreadWorker);
         _logger.Information("Запускаю поток обработки пользовательских запросов");
         _thread.Start();
     }
 
+    public void Stop()
+    {
+        _cts.Cancel();
+    }
+
     public void Dispose()
     {
-        try
-        {
-            _cts.Cancel();
-            _cts.Dispose();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-
-        _tokenRegistration?.Dispose();
+        _cts.Dispose();
         _channel.Dispose();
         _thread?.Join();
     }

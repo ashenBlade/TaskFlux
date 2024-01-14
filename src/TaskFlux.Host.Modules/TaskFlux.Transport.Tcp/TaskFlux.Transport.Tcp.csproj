@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\Consensus\Consensus.Raft\Consensus.Raft.csproj"/>
+      <ProjectReference Include="..\..\TaskFlux.Commands\TaskFlux.Commands.csproj" />
+        <ProjectReference Include="..\..\TaskFlux.Network\TaskFlux.Network.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Transport.Common\TaskFlux.Transport.Common.csproj"/>
+    </ItemGroup>
+
+    <PropertyGroup>
+        <WarningsAsErrors>CS8509</WarningsAsErrors>
+        <NoWarn>1701;1702;CS8524</NoWarn>
+    </PropertyGroup>
+
+</Project>

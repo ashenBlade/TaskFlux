@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using Consensus.Network;
@@ -10,33 +11,35 @@ using TaskFlux.Models;
 
 namespace Consensus.NodeProcessor;
 
-public class NodeConnectionManager
+public class NodeConnectionManager : IDisposable
 {
     private readonly string _host;
     private readonly int _port;
-    private readonly IRaftConsensusModule<Command, Response> _raft;
+    private readonly IRaftConsensusModule<Command, Response> _module;
     private readonly TimeSpan _requestTimeout;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<NodeId, NodeConnectionProcessor> _nodes = new();
+    private (Thread WorkerThread, Socket Server, CancellationTokenSource Lifetime)? _workerData;
 
     public NodeConnectionManager(string host,
                                  int port,
-                                 IRaftConsensusModule<Command, Response> raft,
+                                 IRaftConsensusModule<Command, Response> module,
                                  TimeSpan requestTimeout,
                                  ILogger logger)
     {
         _host = host;
         _port = port;
-        _raft = raft;
+        _module = module;
         _requestTimeout = requestTimeout;
         _logger = logger;
+        _workerData = ( new Thread(ThreadWorker), CreateServerSocket(), new CancellationTokenSource() );
     }
 
-    public void Run(CancellationToken token)
+    private Socket CreateServerSocket()
     {
-        _logger.Information("Модуль взаимодействия с другими узлами запускается");
+        var server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         var endpoint = GetListenAddress();
-        using var server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        _logger.Debug("Прослушивание подключений узлов кластера по адресу: {EndPoint}", endpoint);
         try
         {
             server.Bind(endpoint);
@@ -47,69 +50,76 @@ public class NodeConnectionManager
             throw;
         }
 
-        _logger.Information("Начинаю прослушивать входящие запросы");
-        server.Listen();
+        return server;
+    }
 
+    private void ThreadWorker()
+    {
+        Debug.Assert(_workerData is not null, "_workerData is not null",
+            "Данные для работы сервера должны быть инициализированы");
+        var (_, server, cts) = _workerData.Value;
+
+        _logger.Information("Модуль обработки запросов узлов кластера запускается");
+        _logger.Information("Начинаю прослушивать входящие запросы узлов");
+        server.Listen(_module.PeerGroup.Peers.Count + 1);
         try
         {
-            RunMainLoop(token, server);
+            while (true)
+            {
+                var client = server.Accept();
+                _ = ProcessConnectedClientAsync(client, cts);
+            }
         }
-        catch (OperationCanceledException)
+        catch (SocketException se) when (se.SocketErrorCode is SocketError.Interrupted)
         {
-            _logger.Information("Запрошено завершение работы. Закрываю все соединения");
-        }
-        finally
-        {
-            server.Shutdown(SocketShutdown.Receive);
-            server.Close();
-        }
-
-        foreach (var node in _nodes)
-        {
-            node.Value.Dispose();
         }
     }
 
-    private void RunMainLoop(CancellationToken token, Socket server)
+    public void Start()
     {
-        while (token.IsCancellationRequested is false)
+        if (_workerData is var (thread, _, _))
         {
-            var client = server.Accept();
-            _ = ProcessConnectedClientAsync(token, client);
+            thread.Start();
+        }
+        else
+        {
+            throw new InvalidOperationException("Обработчик запросов узлов кластера завершил свою работу");
         }
     }
 
-    private async Task ProcessConnectedClientAsync(CancellationToken token, Socket client)
+    private async Task ProcessConnectedClientAsync(Socket client, CancellationTokenSource cts)
     {
+        await Task.Yield();
+
         var clientAddress = client.RemoteEndPoint?.ToString();
         _logger.Debug("Подключился узел по адресу {Address}", clientAddress);
         try
         {
             var packetClient = new PacketClient(client);
-            if (await TryAuthenticateAsync(packetClient, token) is { } nodeId)
+            if (await TryAuthenticateAsync(packetClient) is { } nodeId)
             {
                 try
                 {
-                    await packetClient.SendAsync(new ConnectResponsePacket(true), token);
+                    await packetClient.SendAsync(new ConnectResponsePacket(true), CancellationToken.None);
                 }
                 catch (Exception e)
                 {
                     _logger.Warning(e, "Ошибка во время установления соединения с узлом");
-                    await client.DisconnectAsync(false, token);
+                    await client.DisconnectAsync(false);
                     client.Close();
                     client.Dispose();
                     return;
                 }
 
                 _logger.Information("Подключился узел {Id}. Начинаю обработку его запросов", nodeId.Id);
-                BeginNewClientSession(nodeId, packetClient, token);
+                BeginNewClientSession(nodeId, cts, packetClient);
             }
             else
             {
                 _logger.Debug(
                     "Узел по адресу {Address} не смог подключиться: не удалось получить Id хоста. Закрываю соединение",
                     clientAddress);
-                await packetClient.SendAsync(new ConnectResponsePacket(false), token);
+                await packetClient.SendAsync(new ConnectResponsePacket(false), CancellationToken.None);
                 client.Close();
                 client.Dispose();
             }
@@ -122,18 +132,15 @@ public class NodeConnectionManager
         }
     }
 
-    private void BeginNewClientSession(NodeId id, PacketClient client, CancellationToken token)
+    private void BeginNewClientSession(NodeId id, CancellationTokenSource cts, PacketClient client)
     {
         var requestTimeoutMs = ( int ) _requestTimeout.TotalMilliseconds;
         client.Socket.SendTimeout = requestTimeoutMs;
         client.Socket.ReceiveTimeout = requestTimeoutMs;
         client.Socket.NoDelay = true;
 
-        var processor = new NodeConnectionProcessor(id, client, _raft,
-            _logger.ForContext("SourceContext", $"NodeConnectionProcessor({id.Id})"))
-            {
-                CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(token)
-            };
+        var processor = new NodeConnectionProcessor(id, client, _module,
+            _logger.ForContext("SourceContext", $"NodeConnectionProcessor({id.Id})")) {CancellationTokenSource = cts};
         _nodes.AddOrUpdate(id,
             static (_, p) => p.Processor,
             static (_, old, arg) =>
@@ -148,9 +155,9 @@ public class NodeConnectionManager
         _ = processor.ProcessClientBackground();
     }
 
-    private static async Task<NodeId?> TryAuthenticateAsync(PacketClient client, CancellationToken token)
+    private static async Task<NodeId?> TryAuthenticateAsync(PacketClient client)
     {
-        var packet = await client.ReceiveAsync(token);
+        var packet = await client.ReceiveAsync(CancellationToken.None);
         if (packet is {PacketType: NodePacketType.ConnectRequest})
         {
             var request = ( ConnectRequestPacket ) packet;
@@ -160,31 +167,53 @@ public class NodeConnectionManager
         return null;
     }
 
-    private EndPoint GetListenAddress()
+    private IPEndPoint GetListenAddress()
     {
-        _logger.Debug("Хост: {Host}", _host);
+        // Для прослушивания сокет поддерживает только IP адрес
         if (IPAddress.TryParse(_host, out var address))
         {
             return new IPEndPoint(address, _port);
         }
 
+        _logger.Verbose("Нахожу IP адреса для хоста {Host}", _host);
         var found = Dns.GetHostAddresses(_host)
                        .Where(a => a.AddressFamily == AddressFamily.InterNetwork)
                        .ToArray();
-
-        switch (found)
+        if (found.Length == 1)
         {
-            case []:
-                _logger.Fatal("Для переданного хоста {Host} не удалось найти IP адреса для биндинга", _host);
-                throw new ApplicationException("Не удалось получить IP адрес для биндинга");
-            case [var ip]:
-                _logger.Information("По переданному хосту найден IP адрес {Address}", ip.ToString());
-                return new IPEndPoint(ip, _port);
-            default:
-                _logger.Fatal(
-                    "Для переданного хоста найдено более одного IP адреса. Необходимо указать только 1. {Addresses}",
-                    found.Select(x => x.ToString()));
-                throw new ApplicationException("Для переданного хоста найдено более 1 адреса");
+            var ip = found[0];
+            _logger.Debug("По адресу хоста {Host} найден IP адрес {IPAddress}", _host, ip);
+            return new IPEndPoint(ip, _port);
+        }
+
+        if (found.Length == 0)
+        {
+            throw new ArgumentException($"Не удалось получить IP адрес для переданного хоста {_host}");
+        }
+
+        throw new ArgumentException(
+            $"По переданному хосту найдено больше 1 IP адреса. Для работы требуется только 1 адрес. Найденные адреса: {string.Join(',', found.Select(a => a.ToString()))}");
+    }
+
+    public void Stop()
+    {
+        if (_workerData is var (_, server, cts))
+        {
+            // Останавливаем обработчиков узлов кластера
+            cts.Cancel();
+
+            // Прекращаем слушать сокет
+            server.Shutdown(SocketShutdown.Both);
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_workerData is var (thread, server, cts))
+        {
+            cts.Dispose();
+            server.Dispose();
+            thread.Join();
         }
     }
 }

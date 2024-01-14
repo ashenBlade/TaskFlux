@@ -23,12 +23,12 @@ public class ThreadingTimerFactory : ITimerFactory
         _heartbeatTimeout = heartbeatTimeout;
     }
 
-    public ITimer CreateHeartbeatTimer()
+    public Raft.ITimer CreateHeartbeatTimer()
     {
         return new ConstantThreadingTimer(_heartbeatTimeout);
     }
 
-    public ITimer CreateElectionTimer()
+    public Raft.ITimer CreateElectionTimer()
     {
         return new RandomizedThreadingTimer(_lower, _upper);
     }

@@ -95,6 +95,7 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
                     job.Run(cts.Token);
                 }
                 catch (OperationCanceledException)
+                    when (jobToken.IsCancellationRequested)
                 {
                 }
 
@@ -110,18 +111,27 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
 
     public void Dispose()
     {
-        _cts.Cancel();
+        _cts.Dispose();
 
         Array.ForEach(_workers, static w =>
         {
             if (w is var (thread, collection))
             {
-                collection.CompleteAdding();
                 collection.Dispose();
                 thread.Join();
             }
         });
+    }
 
-        _cts.Dispose();
+    public void Stop()
+    {
+        _cts.Cancel();
+        Array.ForEach(_workers, static w =>
+        {
+            if (w is var (_, queue))
+            {
+                queue.CompleteAdding();
+            }
+        });
     }
 }

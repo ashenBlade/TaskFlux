@@ -9,11 +9,11 @@ services:
       - '8080:2602'
       - '8081:1606'
     environment:
-      PEERS__0: tflux.1:5000
-      NODE_ID: 0
-      LISTEN_PORT: 5000
-      LISTEN_HOST: tflux.1
-      DATA_DIR:
-      HTTP_PORT: 1606
+      TASKFLUX_PEERS: tflux.1:5000
+      TASKFLUX_NODE_ID: 0
+      TASKFLUX_LISTEN_PORT: 5000
+      TASKFLUX_LISTEN_HOST: tflux.1
+      TASKFLUX_DATA_DIR:
+      TASKFLUX_HTTP_PORT: 1606
     
   

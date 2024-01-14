@@ -11,17 +11,6 @@ namespace Consensus.Application.TaskFlux;
 
 public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
 {
-    private readonly INodeInfo _nodeInfo;
-    private readonly IApplicationInfo _applicationInfo;
-
-    public TaskFluxApplicationFactory(
-        INodeInfo nodeInfo,
-        IApplicationInfo applicationInfo)
-    {
-        _nodeInfo = nodeInfo;
-        _applicationInfo = applicationInfo;
-    }
-
     public IApplication<Command, Response> Restore(ISnapshot? snapshot, IEnumerable<byte[]> deltas)
     {
         var collection = GetQueueCollection(snapshot);
@@ -33,7 +22,7 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
         }
 
         var manager = CreateManager(collection);
-        var application = new TaskFluxApplication(_nodeInfo, _applicationInfo, manager);
+        var application = new TaskFluxApplication(manager);
         return new ProxyTaskFluxApplication(application);
     }
 
