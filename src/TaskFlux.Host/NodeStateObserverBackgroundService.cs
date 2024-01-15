@@ -1,18 +1,18 @@
-using Consensus.Raft;
 using Microsoft.Extensions.Hosting;
 using Serilog;
-using TaskFlux.Commands;
+using TaskFlux.Consensus;
+using TaskFlux.Core.Commands;
 
 namespace TaskFlux.Host;
 
 public class NodeStateObserverBackgroundService : BackgroundService
 {
-    private readonly IRaftConsensusModule<Command, Response> _module;
+    private readonly RaftConsensusModule<Command, Response> _module;
     private readonly TimeSpan _interval;
     private readonly ILogger _logger;
 
     public NodeStateObserverBackgroundService(
-        IRaftConsensusModule<Command, Response> module,
+        RaftConsensusModule<Command, Response> module,
         TimeSpan interval,
         ILogger logger)
     {

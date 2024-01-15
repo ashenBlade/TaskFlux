@@ -1,7 +1,6 @@
-using TaskFlux.Core.Policies;
 using TaskFlux.Core.Queue;
 
-namespace TaskFlux.Core;
+namespace TaskFlux.Core.Policies;
 
 /// <summary>
 /// Политика выполнения операций над очередью

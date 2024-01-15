@@ -12,8 +12,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\TaskFlux.Models\TaskFlux.Models.csproj"/>
-        <ProjectReference Include="..\Utils.Serialization\Utils.Serialization.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Core\TaskFlux.Core.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Utils\TaskFlux.Utils.csproj"/>
     </ItemGroup>
 
 </Project>

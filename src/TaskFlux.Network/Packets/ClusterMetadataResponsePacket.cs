@@ -1,7 +1,7 @@
 using System.Buffers;
 using System.Net;
 using System.Text;
-using Utils.Serialization;
+using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Network.Packets;
 

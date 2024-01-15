@@ -1,9 +1,9 @@
-using Consensus.Raft;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
-using TaskFlux.Commands;
+using TaskFlux.Application;
+using TaskFlux.Consensus;
+using TaskFlux.Core.Commands;
 using TaskFlux.Host.Configuration;
-using TaskFlux.Transport.Common;
 using TaskFlux.Transport.Http;
 using TaskFlux.Transport.Tcp;
 
@@ -11,19 +11,20 @@ namespace TaskFlux.Host.Infrastructure;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddNodeStateObserverHostedService(this IServiceCollection sc)
+    public static IServiceCollection AddNodeStateObserverHostedService(this IServiceCollection sc,
+                                                                       RaftConsensusModule<Command, Response> module)
     {
-        return sc.AddHostedService(sp =>
-            new NodeStateObserverBackgroundService(sp.GetRequiredService<IRaftConsensusModule<Command, Response>>(),
-                TimeSpan.FromSeconds(5), Log.ForContext("SourceContext", "StateObserver")));
+        return sc.AddHostedService(_ =>
+            new NodeStateObserverBackgroundService(module, TimeSpan.FromSeconds(5),
+                Log.ForContext("SourceContext", "StateObserver")));
     }
 
     public static IServiceCollection AddTcpRequestModule(this IServiceCollection sc)
     {
-        return sc.AddHostedService(sp => new SocketRequestModule(sp.GetRequiredService<IRequestAcceptor>(),
+        return sc.AddHostedService(sp => new TcpAdapterBackgroundService(sp.GetRequiredService<IRequestAcceptor>(),
             sp.GetRequiredService<ApplicationOptions>().TcpModule,
             sp.GetRequiredService<IApplicationInfo>(),
-            Log.ForContext<SocketRequestModule>()));
+            Log.ForContext<TcpAdapterBackgroundService>()));
     }
 
     public static IServiceCollection AddHttpRequestModule(this IServiceCollection sc)
@@ -32,7 +33,8 @@ public static class ServiceCollectionExtensions
         {
             var options = sp.GetRequiredService<ApplicationOptions>().Http;
             var service =
-                new HttpRequestBackgroundService(options.HttpPort, Log.ForContext<HttpRequestBackgroundService>());
+                new HttpAdapterBackgroundService(options.HttpAdapterListenPort,
+                    Log.ForContext<HttpAdapterBackgroundService>());
             service.AddHandler(HttpMethod.Post, "/command",
                 new SubmitCommandRequestHandler(sp.GetRequiredService<IRequestAcceptor>(),
                     sp.GetRequiredService<IApplicationInfo>(),

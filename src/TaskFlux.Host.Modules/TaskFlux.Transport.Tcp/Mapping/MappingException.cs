@@ -1,4 +1,4 @@
-using TaskFlux.Commands.Error;
+using TaskFlux.Core.Commands.Error;
 
 namespace TaskFlux.Transport.Tcp.Mapping;
 

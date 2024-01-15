@@ -1,5 +1,5 @@
-using TaskFlux.Models;
-using Utils.Serialization;
+using TaskFlux.Core;
+using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Network.Responses;
 

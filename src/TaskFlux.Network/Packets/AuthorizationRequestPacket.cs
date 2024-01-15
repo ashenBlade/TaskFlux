@@ -1,6 +1,6 @@
 using System.Buffers;
 using TaskFlux.Network.Authorization;
-using Utils.Serialization;
+using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Network.Packets;
 

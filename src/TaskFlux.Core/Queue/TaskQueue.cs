@@ -1,4 +1,4 @@
-using TaskFlux.Models;
+using TaskFlux.Core.Policies;
 using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;

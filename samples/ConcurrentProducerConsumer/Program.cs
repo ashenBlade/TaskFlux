@@ -3,7 +3,7 @@ using System.Net;
 using Serilog;
 using TaskFlux.Client;
 using TaskFlux.Client.Exceptions;
-using TaskFlux.Models;
+using TaskFlux.Core;
 
 // ReSharper disable once AccessToDisposedClosure
 

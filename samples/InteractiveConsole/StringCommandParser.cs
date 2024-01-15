@@ -1,6 +1,6 @@
 using InteractiveConsole.Commands;
 using TaskFlux.Client;
-using TaskFlux.Models;
+using TaskFlux.Core;
 using TaskFlux.PriorityQueue;
 
 namespace InteractiveConsole;

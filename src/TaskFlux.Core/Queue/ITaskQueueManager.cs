@@ -1,5 +1,3 @@
-using TaskFlux.Models;
-
 namespace TaskFlux.Core.Queue;
 
 /// <summary>

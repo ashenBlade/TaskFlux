@@ -1,15 +1,15 @@
 using System.Diagnostics;
 using System.Net.Sockets;
-using Consensus.Core.Submit;
 using Serilog;
-using TaskFlux.Commands;
-using TaskFlux.Commands.Dequeue;
+using TaskFlux.Application;
+using TaskFlux.Consensus;
+using TaskFlux.Core.Commands;
+using TaskFlux.Core.Commands.Dequeue;
 using TaskFlux.Network;
 using TaskFlux.Network.Authorization;
 using TaskFlux.Network.Commands;
 using TaskFlux.Network.Exceptions;
 using TaskFlux.Network.Packets;
-using TaskFlux.Transport.Common;
 using TaskFlux.Transport.Tcp.Exceptions;
 using TaskFlux.Transport.Tcp.Mapping;
 
@@ -18,14 +18,14 @@ namespace TaskFlux.Transport.Tcp;
 internal class ClientRequestProcessor
 {
     private readonly TcpClient _client;
-    private readonly SocketRequestModuleOptions _options;
+    private readonly TcpAdapterOptions _options;
     private readonly IRequestAcceptor _requestAcceptor;
     private readonly IApplicationInfo _applicationInfo;
     private readonly ILogger _logger;
 
     public ClientRequestProcessor(TcpClient client,
                                   IRequestAcceptor requestAcceptor,
-                                  SocketRequestModuleOptions options,
+                                  TcpAdapterOptions options,
                                   IApplicationInfo applicationInfo,
                                   ILogger logger)
     {

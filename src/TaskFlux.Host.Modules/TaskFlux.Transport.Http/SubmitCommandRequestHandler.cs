@@ -3,21 +3,21 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Consensus.Core.Submit;
 using Serilog;
-using TaskFlux.Commands;
-using TaskFlux.Commands.Count;
-using TaskFlux.Commands.CreateQueue;
-using TaskFlux.Commands.DeleteQueue;
-using TaskFlux.Commands.Dequeue;
-using TaskFlux.Commands.Enqueue;
-using TaskFlux.Commands.Error;
-using TaskFlux.Commands.ListQueues;
-using TaskFlux.Commands.Ok;
-using TaskFlux.Commands.PolicyViolation;
-using TaskFlux.Commands.Visitors;
-using TaskFlux.Models;
-using TaskFlux.Transport.Common;
+using TaskFlux.Application;
+using TaskFlux.Consensus;
+using TaskFlux.Core;
+using TaskFlux.Core.Commands;
+using TaskFlux.Core.Commands.Count;
+using TaskFlux.Core.Commands.CreateQueue;
+using TaskFlux.Core.Commands.DeleteQueue;
+using TaskFlux.Core.Commands.Dequeue;
+using TaskFlux.Core.Commands.Enqueue;
+using TaskFlux.Core.Commands.Error;
+using TaskFlux.Core.Commands.ListQueues;
+using TaskFlux.Core.Commands.Ok;
+using TaskFlux.Core.Commands.PolicyViolation;
+using TaskFlux.Core.Commands.Visitors;
 
 namespace TaskFlux.Transport.Http;
 
@@ -121,7 +121,7 @@ public class SubmitCommandRequestHandler : IRequestHandler
     }
 
     private async Task RespondAsync(HttpListenerResponse httpResponse,
-                                    SubmitResponse<Commands.Response> submitResponse)
+                                    SubmitResponse<Core.Commands.Response> submitResponse)
     {
         Dictionary<string, object?> resultData;
         HttpStatusCode responseStatus;

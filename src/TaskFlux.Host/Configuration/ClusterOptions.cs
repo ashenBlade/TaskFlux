@@ -1,7 +1,8 @@
 using System.ComponentModel.DataAnnotations;
 using System.Net;
 using Microsoft.Extensions.Configuration;
-using Utils.Network;
+using TaskFlux.Host.Infrastructure;
+using TaskFlux.Utils.Network;
 
 namespace TaskFlux.Host.Configuration;
 
@@ -11,33 +12,46 @@ public class ClusterOptions
     /// Массив адресов всех узлов кластера, включая текущий с соответствием индекса его Id
     /// </summary>
     [MinLength(1)]
-    public EndPoint[] Peers { get; set; } = Array.Empty<EndPoint>();
+    public EndPoint[] ClusterPeers { get; init; } = Array.Empty<EndPoint>();
+
+    public const int DefaultNodeId = 0;
 
     /// <summary>
     /// Id текущего узла
     /// </summary>
     [Required]
     [Range(0, int.MaxValue, ErrorMessage = "Id узла не может быть отрицательным")]
-    public int NodeId { get; set; }
+    public int ClusterNodeId { get; init; } = DefaultNodeId;
+
+    public const int DefaultClusterListenPort = 5000;
 
     [Required]
     [Range(IPEndPoint.MinPort, IPEndPoint.MaxPort)]
-    public int ListenPort { get; set; }
+    public int ClusterListenPort { get; init; } = DefaultClusterListenPort;
+
+    private const string DefaultClusterListenHost = "localhost";
 
     [Required]
-    public string ListenHost { get; set; } = "localhost";
+    public string ClusterListenHost { get; init; } = DefaultClusterListenHost;
+
+    public const int DefaultReceiveBufferSize = 2048;
 
     [Range(1, int.MaxValue)]
-    public int ReceiveBufferSize { get; set; } = 512;
+    public int ClusterReceiveBufferSize { get; init; } = DefaultReceiveBufferSize;
 
+    public const string DefaultDataDirectory = "/var/lib/tflux";
+
+    // TODO: вынести отдельно куда-нибудь
     [Required]
-    public string DataDirectory { get; set; } = "/var/lib/tflux";
+    public string ClusterDataDirectory { get; init; } = DefaultDataDirectory;
+
+    public static TimeSpan DefaultRequestTimeout => TimeSpan.FromSeconds(5);
+
+    public TimeSpan ClusterRequestTimeout { get; init; } = DefaultRequestTimeout;
 
     public static ClusterOptions FromConfiguration(IConfiguration configuration)
     {
-        var value = configuration.Get<ClusterOptions>()
-                 ?? new ClusterOptions();
-        var endpointsArrayString = configuration.GetValue<string>(nameof(Peers))
+        var endpointsArrayString = configuration.GetValue<string>(nameof(ClusterPeers))
                                 ?? throw new ArgumentException("Не удалось получить адреса узлов кластера");
 
         var endpointsRaw = endpointsArrayString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -59,7 +73,16 @@ public class ClusterOptions
             throw new ArgumentException("В конфигурации не указано ни одного адреса узла кластера");
         }
 
-        value.Peers = peers.ToArray();
-        return value;
+        return new ClusterOptions()
+        {
+            ClusterPeers = peers.ToArray(),
+            ClusterDataDirectory = configuration.GetString(nameof(ClusterDataDirectory), DefaultDataDirectory),
+            ClusterListenHost = configuration.GetString(nameof(ClusterListenHost), DefaultClusterListenHost),
+            ClusterListenPort = configuration.GetValue(nameof(ClusterListenPort), DefaultClusterListenPort),
+            ClusterNodeId = configuration.GetValue(nameof(ClusterNodeId), 0),
+            ClusterRequestTimeout = configuration.GetValue(nameof(ClusterRequestTimeout), DefaultRequestTimeout),
+            ClusterReceiveBufferSize =
+                configuration.GetValue(nameof(ClusterReceiveBufferSize), DefaultReceiveBufferSize)
+        };
     }
 }

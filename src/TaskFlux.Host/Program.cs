@@ -1,26 +1,23 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.IO.Abstractions;
-using Consensus.Application.TaskFlux;
-using Consensus.JobQueue;
-using Consensus.Network;
-using Consensus.NodeProcessor;
-using Consensus.Raft;
-using Consensus.Raft.Persistence;
-using Consensus.Raft.Persistence.Log;
-using Consensus.Raft.Persistence.Metadata;
-using Consensus.Raft.Persistence.Snapshot;
-using Consensus.Timers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
-using TaskFlux.Commands;
+using TaskFlux.Application;
+using TaskFlux.Consensus;
+using TaskFlux.Consensus.Cluster;
+using TaskFlux.Consensus.Cluster.Network;
+using TaskFlux.Consensus.Persistence;
+using TaskFlux.Consensus.Persistence.Log;
+using TaskFlux.Consensus.Persistence.Metadata;
+using TaskFlux.Consensus.Persistence.Snapshot;
+using TaskFlux.Consensus.Timers;
+using TaskFlux.Core;
+using TaskFlux.Core.Commands;
 using TaskFlux.Host;
 using TaskFlux.Host.Configuration;
 using TaskFlux.Host.Infrastructure;
-using TaskFlux.Host.RequestAcceptor;
-using TaskFlux.Models;
-using TaskFlux.Transport.Common;
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
@@ -38,18 +35,20 @@ try
         return 1;
     }
 
-    var nodeId = new NodeId(options.Cluster.NodeId);
+    var nodeId = new NodeId(options.Cluster.ClusterNodeId);
 
     var facade = InitializeStorage(options.Cluster);
     var peers = ExtractPeers(options.Cluster, nodeId, options.Network);
 
-    using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(options.Cluster.Peers.Length, options.Cluster.NodeId,
+    using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(options.Cluster.ClusterPeers.Length,
+        options.Cluster.ClusterNodeId,
         Log.Logger.ForContext("SourceContext", "BackgroundJobQueue"));
     using var consensusModule = CreateRaftConsensusModule(nodeId, peers, facade, jobQueue);
     using var requestAcceptor =
         new ExclusiveRequestAcceptor(consensusModule, Log.ForContext("SourceContext", "RequestAcceptor"));
-    using var connectionManager = new NodeConnectionManager(options.Cluster.ListenHost, options.Cluster.ListenPort,
-        consensusModule, options.Network.RequestTimeout, Log.ForContext<NodeConnectionManager>());
+    using var connectionManager = new NodeConnectionManager(options.Cluster.ClusterListenHost,
+        options.Cluster.ClusterListenPort,
+        consensusModule, options.Network.ClientRequestTimeout, Log.ForContext<NodeConnectionManager>());
     using var applicationLifetimeCts = new CancellationTokenSource();
 
     Console.CancelKeyPress += (_, args) =>
@@ -68,7 +67,7 @@ try
         applicationLifetimeCts.Token);
 
     async Task RunNodeAsync(TaskFluxNodeHostedService node,
-                            IRaftConsensusModule<Command, Response> module,
+                            RaftConsensusModule<Command, Response> module,
                             IRequestAcceptor acceptor,
                             CancellationToken token)
     {
@@ -84,19 +83,18 @@ try
                    {
                        services.AddHostedService(_ => node);
 
-                       services.AddSingleton(module);
                        services.AddSingleton(acceptor);
                        services.AddSingleton(options);
-                       services.AddSingleton<IApplicationInfo>(sp => new ProxyApplicationInfo(
-                           sp.GetRequiredService<IRaftConsensusModule<Command, Response>>(),
-                           sp.GetRequiredService<ApplicationOptions>().Cluster.Peers));
+                       services.AddSingleton<IApplicationInfo>(sp => new ProxyApplicationInfo(module,
+                           sp.GetRequiredService<ApplicationOptions>().Cluster.ClusterPeers));
 
-                       services.AddNodeStateObserverHostedService();
+                       services.AddNodeStateObserverHostedService(module);
                        services.AddTcpRequestModule();
                        services.AddHttpRequestModule();
                    })
                   .UseConsoleLifetime()
                   .Build();
+
         await host.RunAsync(token);
     }
 }
@@ -256,9 +254,9 @@ StoragePersistenceFacade InitializeStorage(ClusterOptions options)
     string GetDataDirectory(ClusterOptions raftServerOptions)
     {
         string workingDirectory;
-        if (!string.IsNullOrWhiteSpace(raftServerOptions.DataDirectory))
+        if (!string.IsNullOrWhiteSpace(raftServerOptions.ClusterDataDirectory))
         {
-            workingDirectory = raftServerOptions.DataDirectory;
+            workingDirectory = raftServerOptions.ClusterDataDirectory;
             Log.Debug("Указана директория данных: {WorkingDirectory}", workingDirectory);
         }
         else
@@ -294,25 +292,26 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
 
 static IPeer[] ExtractPeers(ClusterOptions serverOptions, NodeId currentNodeId, NetworkOptions networkOptions)
 {
-    var peers = new IPeer[serverOptions.Peers.Length - 1]; // Все кроме себя
+    var peers = new IPeer[serverOptions.ClusterPeers.Length - 1]; // Все кроме себя
     var connectionErrorDelay = TimeSpan.FromMilliseconds(100);
 
     // Все до текущего узла
     for (var i = 0; i < currentNodeId.Id; i++)
     {
-        var endpoint = serverOptions.Peers[i];
+        var endpoint = serverOptions.ClusterPeers[i];
         var id = new NodeId(i);
-        peers[i] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
+        peers[i] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.ClientRequestTimeout,
             connectionErrorDelay,
             Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
     }
 
     // Все после текущего узла
-    for (var i = currentNodeId.Id + 1; i < serverOptions.Peers.Length; i++)
+    for (var i = currentNodeId.Id + 1; i < serverOptions.ClusterPeers.Length; i++)
     {
-        var endpoint = serverOptions.Peers[i];
+        var endpoint = serverOptions.ClusterPeers[i];
         var id = new NodeId(i);
-        peers[i - 1] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout, connectionErrorDelay,
+        peers[i - 1] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.ClientRequestTimeout,
+            connectionErrorDelay,
             Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
     }
 

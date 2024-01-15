@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using TaskFlux.Models;
 
 namespace TaskFlux.Core.Queue;
 

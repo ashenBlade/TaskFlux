@@ -1,6 +1,6 @@
 using TaskFlux.Network.Exceptions;
 using TaskFlux.Network.Packets;
-using Utils.Serialization;
+using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Network;
 

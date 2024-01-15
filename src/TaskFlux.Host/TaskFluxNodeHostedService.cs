@@ -1,10 +1,9 @@
-using Consensus.JobQueue;
-using Consensus.NodeProcessor;
-using Consensus.Raft;
 using Microsoft.Extensions.Hosting;
 using Serilog;
-using TaskFlux.Commands;
-using TaskFlux.Host.RequestAcceptor;
+using TaskFlux.Application;
+using TaskFlux.Consensus;
+using TaskFlux.Consensus.Cluster;
+using TaskFlux.Core.Commands;
 
 namespace TaskFlux.Host;
 
