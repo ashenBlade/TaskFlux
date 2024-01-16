@@ -15,7 +15,7 @@ namespace TaskFlux.Consensus.State;
 public abstract class State<TCommand, TResponse>
 {
     internal RaftConsensusModule<TCommand, TResponse> RaftConsensusModule { get; }
-    protected StoragePersistenceFacade PersistenceFacade => RaftConsensusModule.PersistenceFacade;
+    protected StoragePersistenceFacade Persistence => RaftConsensusModule.Persistence;
     protected Term CurrentTerm => RaftConsensusModule.CurrentTerm;
     protected NodeId? VotedFor => RaftConsensusModule.VotedFor;
     protected NodeId Id => RaftConsensusModule.Id;

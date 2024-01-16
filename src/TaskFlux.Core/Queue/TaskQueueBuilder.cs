@@ -52,6 +52,8 @@ public class TaskQueueBuilder
 
     public TaskQueueBuilder WithData(IReadOnlyCollection<(long, byte[])> data)
     {
+        ArgumentNullException.ThrowIfNull(data);
+
         _payload = data;
         return this;
     }

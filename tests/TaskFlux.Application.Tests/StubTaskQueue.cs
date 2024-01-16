@@ -34,7 +34,7 @@ public class StubTaskQueue : ITaskQueue
     }
 
 
-    public Result Enqueue(long key, byte[] payload)
+    public EnqueueResult Enqueue(long key, byte[] payload)
     {
         Assert.True(false, "Метод не должен быть вызван при серилазации");
         throw new InvalidOperationException("Нельзя этот методы вызывать во время сериализации");

@@ -752,16 +752,19 @@ public class StoragePersistenceFacade
     /// Получить снапшот состояния, если файл существовал
     /// </summary>
     /// <param name="snapshot">Хранившийся файл снапшота</param>
+    /// <param name="lastLogEntry">Последняя запись, включенная в снапшот</param>
     /// <returns><c>true</c> - файл снапшота существовал, <c>false</c> - файл снапшота не существовал</returns>
-    public bool TryGetSnapshot(out ISnapshot snapshot)
+    public bool TryGetSnapshot(out ISnapshot snapshot, out LogEntryInfo lastLogEntry)
     {
         if (!_snapshotStorage.LastLogEntry.IsTomb)
         {
             snapshot = _snapshotStorage.GetSnapshot();
+            lastLogEntry = _snapshotStorage.LastLogEntry;
             return true;
         }
 
         snapshot = default!;
+        lastLogEntry = default;
         return false;
     }
 
@@ -787,6 +790,15 @@ public class StoragePersistenceFacade
     public bool ShouldCreateSnapshot()
     {
         return _sizeChecker.IsLogFileSizeExceeded(_logStorage.FileSize);
+    }
+
+    /// <summary>
+    /// Прочитать из лога все закоммиченные команды.
+    /// </summary>
+    /// <returns>Список из всех закоммиченных команд</returns>
+    public IEnumerable<byte[]> ReadAllLogDelta()
+    {
+        throw new NotImplementedException();
     }
 
     // Для тестов

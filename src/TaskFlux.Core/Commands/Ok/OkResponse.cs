@@ -12,7 +12,6 @@ public class OkResponse : Response
         visitor.Visit(this);
     }
 
-    // TODO: убрать получение дельты в посетителя
     public override T Accept<T>(IResponseVisitor<T> visitor)
     {
         return visitor.Visit(this);

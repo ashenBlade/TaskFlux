@@ -8,6 +8,7 @@ public class TaskQueueMetadata : ITaskQueueMetadata
 
     public TaskQueueMetadata(ITaskQueue parent)
     {
+        ArgumentNullException.ThrowIfNull(parent);
         _parent = parent;
     }
 

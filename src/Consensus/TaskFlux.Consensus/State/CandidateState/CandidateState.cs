@@ -37,7 +37,7 @@ public class CandidateState<TCommand, TResponse>
 
         var term = CurrentTerm;
         var nodeId = Id;
-        var lastEntry = PersistenceFacade.LastEntry;
+        var lastEntry = Persistence.LastEntry;
         var coordinator = new ElectionCoordinator<TCommand, TResponse>(this, _logger, term);
 
         _logger.Information("Запускаю обработчиков для сбора консенсуса");
@@ -63,7 +63,7 @@ public class CandidateState<TCommand, TResponse>
             if (RaftConsensusModule.TryUpdateState(leaderState, this))
             {
                 _logger.Debug("Сработал Election Timeout и в кластере я один. Становлюсь лидером");
-                PersistenceFacade.UpdateState(CurrentTerm.Increment(), null);
+                Persistence.UpdateState(CurrentTerm.Increment(), null);
                 return;
             }
         }
@@ -72,7 +72,7 @@ public class CandidateState<TCommand, TResponse>
         if (RaftConsensusModule.TryUpdateState(candidateState, this))
         {
             _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
-            PersistenceFacade.UpdateState(CurrentTerm.Increment(), Id);
+            Persistence.UpdateState(CurrentTerm.Increment(), Id);
         }
     }
 
@@ -101,7 +101,7 @@ public class CandidateState<TCommand, TResponse>
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
         }
 
-        var logConflicts = PersistenceFacade.Conflicts(request.LastLogEntryInfo);
+        var logConflicts = Persistence.Conflicts(request.LastLogEntryInfo);
         if (logConflicts)
         {
             _logger.Debug("При обработке RequestVote от узла {NodeId} обнаружен конфликт лога", request.CandidateId);
@@ -112,7 +112,7 @@ public class CandidateState<TCommand, TResponse>
             var followerState = RaftConsensusModule.CreateFollowerState();
             if (RaftConsensusModule.TryUpdateState(followerState, this))
             {
-                RaftConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
+                RaftConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
             }
 
             return new RequestVoteResponse(CurrentTerm, !logConflicts);
@@ -134,7 +134,7 @@ public class CandidateState<TCommand, TResponse>
             var followerState = RaftConsensusModule.CreateFollowerState();
             if (RaftConsensusModule.TryUpdateState(followerState, this))
             {
-                RaftConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
+                RaftConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
                 return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
             }
 

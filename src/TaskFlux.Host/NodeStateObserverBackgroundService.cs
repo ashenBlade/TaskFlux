@@ -30,7 +30,7 @@ public class NodeStateObserverBackgroundService : BackgroundService
                 _logger.Information(
                     "Состояние: {State}; Терм {Term}; Последняя запись лога: {@LastEntry}; Голос За: {VotedFor}",
                     _module.CurrentRole, _module.CurrentTerm,
-                    _module.PersistenceFacade.LastEntry, _module.VotedFor);
+                    _module.Persistence.LastEntry, _module.VotedFor);
                 await Task.Delay(_interval, token);
             }
         }

@@ -43,11 +43,12 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     public override void Initialize()
     {
         _peerProcessors = CreatePeerProcessors();
-        var oldSnapshot = PersistenceFacade.TryGetSnapshot(out var s)
+        var oldSnapshot = Persistence.TryGetSnapshot(out var s, out _)
                               ? s
                               : null;
-        var deltas = PersistenceFacade.LogStorage.ReadAll().Select(x => x.Data);
+
         _logger.Information("Восстанавливаю предыдущее состояние");
+        var deltas = Persistence.ReadAllLogDelta();
         _application = ApplicationFactory.Restore(oldSnapshot, deltas);
         Array.ForEach(_peerProcessors, p =>
         {
@@ -64,7 +65,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
                             var follower = RaftConsensusModule.CreateFollowerState();
                             if (RaftConsensusModule.TryUpdateState(follower, this))
                             {
-                                RaftConsensusModule.PersistenceFacade.UpdateState(greaterTerm, null);
+                                RaftConsensusModule.Persistence.UpdateState(greaterTerm, null);
                             }
 
                             return;
@@ -136,7 +137,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
         }
 
-        var logConflicts = PersistenceFacade.Conflicts(request.LastLogEntryInfo);
+        var logConflicts = Persistence.Conflicts(request.LastLogEntryInfo);
 
         if (CurrentTerm < request.CandidateTerm)
         {
@@ -144,7 +145,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
             if (RaftConsensusModule.TryUpdateState(followerState, this))
             {
-                RaftConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, null);
+                RaftConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
                 return new RequestVoteResponse(CurrentTerm, !logConflicts);
             }
 
@@ -167,7 +168,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             var followerState = RaftConsensusModule.CreateFollowerState();
             if (RaftConsensusModule.TryUpdateState(followerState, this))
             {
-                RaftConsensusModule.PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
+                RaftConsensusModule.Persistence.UpdateState(request.CandidateTerm, request.CandidateId);
                 return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
             }
 
@@ -230,7 +231,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         // Добавляем команду в буфер
         _logger.Verbose("Записываю дельту в буфер");
         var newEntry = new LogEntry(CurrentTerm, delta);
-        var appended = PersistenceFacade.AppendBuffer(newEntry);
+        var appended = Persistence.AppendBuffer(newEntry);
 
         // Сигнализируем узлам, чтобы принялись реплицировать
         _logger.Verbose("Реплицирую команду");
@@ -247,7 +248,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             if (RaftConsensusModule.TryUpdateState(RaftConsensusModule.CreateFollowerState(), this))
             {
                 _logger.Verbose("Стал Follower");
-                PersistenceFacade.UpdateState(greaterTerm, null);
+                Persistence.UpdateState(greaterTerm, null);
                 return SubmitResponse<TResponse>.NotLeader;
             }
 
@@ -271,20 +272,20 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         // Коммитим запись и применяем 
         _logger.Verbose("Коммичу команду с индексом {Index}", appended.Index);
-        PersistenceFacade.Commit(appended.Index);
-        PersistenceFacade.SetLastApplied(appended.Index);
+        Persistence.Commit(appended.Index);
+        Persistence.SetLastApplied(appended.Index);
 
         /*
          * На этом моменте Heartbeat не отправляю,
          * т.к. он отправится по таймеру (он должен вызываться часто).
          * Либо придет новый запрос и он отправится вместе с AppendEntries
          */
-        if (PersistenceFacade.ShouldCreateSnapshot())
+        if (Persistence.ShouldCreateSnapshot())
         {
             _logger.Debug("Размер файла лога превышен. Создаю снапшот");
             // Асинхронно это наверно делать не стоит (пока)
             var snapshot = _application.GetSnapshot();
-            PersistenceFacade.SaveSnapshot(snapshot, token);
+            Persistence.SaveSnapshot(snapshot, token);
         }
         else
         {

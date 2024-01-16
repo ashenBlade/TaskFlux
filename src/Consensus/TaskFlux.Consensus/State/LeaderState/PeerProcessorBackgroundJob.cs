@@ -33,7 +33,7 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
     /// </remarks>
     private Term SavedTerm { get; }
 
-    private StoragePersistenceFacade PersistenceFacade => RaftConsensusModule.PersistenceFacade;
+    private StoragePersistenceFacade PersistenceFacade => RaftConsensusModule.Persistence;
 
     /// <summary>
     /// Узел, с которым общаемся
@@ -182,10 +182,9 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
             if (!PersistenceFacade.TryGetFrom(info.NextIndex, out var entries))
             {
                 _logger.Debug("В логе не оказалось записей после индекса: {Index}", info.NextIndex);
-                if (PersistenceFacade.TryGetSnapshot(out var snapshot))
+                if (PersistenceFacade.TryGetSnapshot(out var snapshot, out var lastEntry))
                 {
                     _logger.Debug("Отправляю снапшот на узел");
-                    var lastEntry = PersistenceFacade.SnapshotStorage.LastLogEntry;
                     var installSnapshotResponse = _peer.SendInstallSnapshot(new InstallSnapshotRequest(SavedTerm,
                         RaftConsensusModule.Id, lastEntry,
                         snapshot), token);

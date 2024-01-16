@@ -111,7 +111,7 @@ public class LeaderStateTests
 
         var request = new RequestVoteRequest(CandidateId: AnotherNodeId,
             CandidateTerm: new(otherTerm),
-            LastLogEntryInfo: node.PersistenceFacade.LastEntry);
+            LastLogEntryInfo: node.Persistence.LastEntry);
 
         var response = node.Handle(request);
 
@@ -164,8 +164,8 @@ public class LeaderStateTests
 
         using var node = CreateLeaderNode(term, null);
 
-        var request = AppendEntriesRequest.Heartbeat(new(otherTerm), node.PersistenceFacade.CommitIndex, AnotherNodeId,
-            node.PersistenceFacade.LastEntry);
+        var request = AppendEntriesRequest.Heartbeat(new(otherTerm), node.Persistence.CommitIndex, AnotherNodeId,
+            node.Persistence.LastEntry);
 
         var response = node.Handle(request);
 
@@ -178,8 +178,8 @@ public class LeaderStateTests
         var term = new Term(1);
         using var node = CreateLeaderNode(term, null);
         var expectedTerm = term.Increment();
-        var request = AppendEntriesRequest.Heartbeat(expectedTerm, node.PersistenceFacade.CommitIndex,
-            AnotherNodeId, node.PersistenceFacade.LastEntry);
+        var request = AppendEntriesRequest.Heartbeat(expectedTerm, node.Persistence.CommitIndex,
+            AnotherNodeId, node.Persistence.LastEntry);
 
         var response = node.Handle(request);
 
@@ -255,11 +255,11 @@ public class LeaderStateTests
                  return AppendEntriesResponse.Fail(request.Term);
              });
         using var queue = new TaskBackgroundJobQueue();
-        using var node =
-            CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object, peers: new[] {peer.Object},
-                jobQueue: queue);
+        using var node = CreateLeaderNode(term, null, heartbeatTimer: heartbeatTimer.Object, peers: new[] {peer.Object},
+            jobQueue: queue);
+
         // Выставляем изначальный лог в 4 команды
-        node.PersistenceFacade.LogStorage.SetFileTest(existingFileEntries);
+        node.Persistence.LogStorage.SetFileTest(existingFileEntries);
 
         heartbeatTimer.Raise(x => x.Timeout += null);
 
@@ -353,7 +353,7 @@ public class LeaderStateTests
         Assert.True(response.Success);
         Assert.Equal(expectedTerm, node.CurrentTerm);
 
-        var actualEntries = node.PersistenceFacade.ReadLogBufferTest();
+        var actualEntries = node.Persistence.ReadLogBufferTest();
         Assert.Equal(entries, actualEntries);
     }
 
@@ -383,7 +383,7 @@ public class LeaderStateTests
                                     .ToArray();
         var (expectedFile, expectedBuffer) = nodeEntries.Split(index);
         using var node = CreateLeaderNode(term, null);
-        node.PersistenceFacade.SetupBufferTest(nodeEntries);
+        node.Persistence.SetupBufferTest(nodeEntries);
         var request = new AppendEntriesRequest(expectedTerm, index, AnotherNodeId, LogEntryInfo.Tomb,
             Array.Empty<LogEntry>());
         var response = node.Handle(request);
@@ -391,9 +391,9 @@ public class LeaderStateTests
         Assert.True(response.Success);
         Assert.Equal(expectedTerm, response.Term);
 
-        var actualFile = node.PersistenceFacade.ReadLogFileTest();
+        var actualFile = node.Persistence.ReadLogFileTest();
         Assert.Equal(expectedFile, actualFile, LogEntryComparer);
-        var actualBuffer = node.PersistenceFacade.ReadLogBufferTest();
+        var actualBuffer = node.Persistence.ReadLogBufferTest();
         Assert.Equal(expectedBuffer, actualBuffer, LogEntryComparer);
     }
 
@@ -413,7 +413,7 @@ public class LeaderStateTests
         var response = node.Handle(request);
 
         Assert.Equal(expectedResponse, response.Response);
-        var committedEntry = node.PersistenceFacade.ReadLogFileTest().Single();
+        var committedEntry = node.Persistence.ReadLogFileTest().Single();
         AssertCommandEqual(committedEntry, expectedResponse);
         mock.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }
@@ -448,7 +448,7 @@ public class LeaderStateTests
         var response = node.Handle(request);
 
         Assert.Equal(expectedResponse, response.Response);
-        var committedEntry = node.PersistenceFacade.ReadLogFileTest().Single();
+        var committedEntry = node.Persistence.ReadLogFileTest().Single();
         AssertCommandEqual(committedEntry, expectedResponse);
         machine.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }

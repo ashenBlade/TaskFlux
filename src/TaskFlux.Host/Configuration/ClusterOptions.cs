@@ -41,7 +41,6 @@ public class ClusterOptions
 
     public const string DefaultDataDirectory = "/var/lib/tflux";
 
-    // TODO: вынести отдельно куда-нибудь
     [Required]
     public string ClusterDataDirectory { get; init; } = DefaultDataDirectory;
 

@@ -50,14 +50,14 @@ public class FollowerState<TCommand, TResponse>
             VotedFor == request.CandidateId;
 
         // Отдать свободный голос можем только за кандидата 
-        var logConflicts = PersistenceFacade.Conflicts(request.LastLogEntryInfo);
+        var logConflicts = Persistence.Conflicts(request.LastLogEntryInfo);
         if (canVote && !logConflicts)
         {
             _logger.Debug(
                 "Получен RequestVote от узла за которого можем проголосовать. Id узла {NodeId}, Терм узла {Term}. Обновляю состояние",
                 request.CandidateId.Id, request.CandidateTerm.Value);
 
-            PersistenceFacade.UpdateState(request.CandidateTerm, request.CandidateId);
+            Persistence.UpdateState(request.CandidateTerm, request.CandidateId);
 
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
         }
@@ -68,14 +68,14 @@ public class FollowerState<TCommand, TResponse>
             {
                 _logger.Debug(
                     "Терм кандидата больше, но лог конфликтует: обновляю только терм. Кандидат: {CandidateId}. Моя последняя запись: {MyLastEntry}. Его последняя запись: {CandidateLastEntry}",
-                    request.CandidateId, PersistenceFacade.LastEntry, request.LastLogEntryInfo);
+                    request.CandidateId, Persistence.LastEntry, request.LastLogEntryInfo);
             }
             else
             {
                 _logger.Debug("Терм кандидата больше. Кандидат: {CandidateId}", request.CandidateId);
             }
 
-            PersistenceFacade.UpdateState(request.CandidateTerm, null);
+            Persistence.UpdateState(request.CandidateTerm, null);
         }
 
         return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
@@ -95,31 +95,31 @@ public class FollowerState<TCommand, TResponse>
             _logger.Information("Получен AppendEntries с большим термом {GreaterTerm}. Старый терм: {CurrentTerm}",
                 request.Term, CurrentTerm);
             // Мы отстали от общего состояния (старый терм)
-            PersistenceFacade.UpdateState(request.Term, null);
+            Persistence.UpdateState(request.Term, null);
         }
 
-        if (!PersistenceFacade.PrefixMatch(request.PrevLogEntryInfo))
+        if (!Persistence.PrefixMatch(request.PrevLogEntryInfo))
         {
             // Префиксы закоммиченных записей лога не совпадают 
             _logger.Debug(
                 "Текущий лог не совпадает с логом узла {NodeId}. Моя последняя запись: {MyLastEntry}. Его предыдущая запись: {HisLastEntry}",
-                request.LeaderId, PersistenceFacade.LastEntry, request.PrevLogEntryInfo);
+                request.LeaderId, Persistence.LastEntry, request.PrevLogEntryInfo);
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
         if (0 < request.Entries.Count)
         {
-            PersistenceFacade.InsertBufferRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
+            Persistence.InsertBufferRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
 
-        if (PersistenceFacade.CommitIndex == request.LeaderCommit)
+        if (Persistence.CommitIndex == request.LeaderCommit)
         {
             _leaderId = request.LeaderId;
             return AppendEntriesResponse.Ok(CurrentTerm);
         }
 
         // Коммитим записи по индексу лидера
-        PersistenceFacade.Commit(request.LeaderCommit);
+        Persistence.Commit(request.LeaderCommit);
 
         /*
          * Вопрос - нужен ли он мне?
@@ -127,17 +127,17 @@ public class FollowerState<TCommand, TResponse>
          * но я каждый раз восстанавливаю состояние без динамического применения команд.
          * На первый взгляд, это лишняя работа
          */
-        PersistenceFacade.SetLastApplied(request.LeaderCommit);
+        Persistence.SetLastApplied(request.LeaderCommit);
 
-        if (PersistenceFacade.ShouldCreateSnapshot())
+        if (Persistence.ShouldCreateSnapshot())
         {
             _logger.Information("Создаю снапшот приложения");
-            var oldSnapshot = PersistenceFacade.TryGetSnapshot(out var s)
+            var oldSnapshot = Persistence.TryGetSnapshot(out var s, out var _)
                                   ? s
                                   : null;
-            var deltas = PersistenceFacade.LogStorage.ReadAll().Select(x => x.Data);
+            var deltas = Persistence.ReadAllLogDelta();
             var newSnapshot = ApplicationFactory.CreateSnapshot(oldSnapshot, deltas);
-            PersistenceFacade.SaveSnapshot(newSnapshot);
+            Persistence.SaveSnapshot(newSnapshot);
         }
 
         _leaderId = request.LeaderId;
@@ -171,7 +171,7 @@ public class FollowerState<TCommand, TResponse>
         {
             _logger.Debug("Сработал Election Timeout. Стал кандидатом");
             // Голосуем за себя и переходим в следующий терм
-            RaftConsensusModule.PersistenceFacade.UpdateState(RaftConsensusModule.CurrentTerm.Increment(),
+            RaftConsensusModule.Persistence.UpdateState(RaftConsensusModule.CurrentTerm.Increment(),
                 RaftConsensusModule.Id);
         }
         else
@@ -204,19 +204,19 @@ public class FollowerState<TCommand, TResponse>
         {
             _logger.Information("Терм лидера больше моего. Обновляю терм до {Term}", request.Term);
             NodeId? votedFor = null;
-            if (PersistenceFacade.VotedFor is null || PersistenceFacade.VotedFor == request.LeaderId)
+            if (Persistence.VotedFor is null || Persistence.VotedFor == request.LeaderId)
             {
                 votedFor = request.LeaderId;
             }
 
-            PersistenceFacade.UpdateState(request.Term, votedFor);
+            Persistence.UpdateState(request.Term, votedFor);
         }
 
         _electionTimer.Stop();
         _electionTimer.Schedule();
         _logger.Debug("Начинаю получать чанки снапшота");
         token.ThrowIfCancellationRequested();
-        var snapshotWriter = PersistenceFacade.CreateSnapshot(request.LastEntry);
+        var snapshotWriter = Persistence.CreateSnapshot(request.LastEntry);
         try
         {
             foreach (var chunk in request.Snapshot.GetAllChunks(token))
@@ -235,7 +235,7 @@ public class FollowerState<TCommand, TResponse>
 
         _logger.Information("Снапшот установлен");
 
-        PersistenceFacade.SetLastApplied(PersistenceFacade.CommitIndex);
+        Persistence.SetLastApplied(Persistence.CommitIndex);
 
         _leaderId = request.LeaderId;
 

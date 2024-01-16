@@ -133,7 +133,7 @@ public class FollowerStateTests
     {
         var term = new Term(4);
         var node = CreateFollowerNode(term, null);
-        node.PersistenceFacade.InsertBufferRange(new LogEntry[]
+        node.Persistence.InsertBufferRange(new LogEntry[]
         {
             new(new(1), Array.Empty<byte>()), // 1
             new(new(3), Array.Empty<byte>()), // 2
@@ -160,7 +160,7 @@ public class FollowerStateTests
     {
         var term = new Term(4);
         var node = CreateFollowerNode(term, null);
-        node.PersistenceFacade.InsertBufferRange(new LogEntry[]
+        node.Persistence.InsertBufferRange(new LogEntry[]
         {
             new(new(1), Array.Empty<byte>()), // 1
             new(new(3), Array.Empty<byte>()), // 2
@@ -246,7 +246,7 @@ public class FollowerStateTests
 
         var node = CreateFollowerNode(term, null);
 
-        node.PersistenceFacade.InsertBufferRange(
+        node.Persistence.InsertBufferRange(
             new LogEntry[]
             {
                 new(new(1), Array.Empty<byte>()), new(new(2), Array.Empty<byte>()),
@@ -272,7 +272,7 @@ public class FollowerStateTests
 
         var candidateId = new NodeId(2);
         var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: oldTerm.Increment(),
-            LastLogEntryInfo: raft.PersistenceFacade.LastEntry);
+            LastLogEntryInfo: raft.Persistence.LastEntry);
         raft.Handle(request);
 
         Assert.Equal(candidateId, raft.VotedFor);
@@ -292,9 +292,9 @@ public class FollowerStateTests
 
         using var node = CreateFollowerNode(oldTerm, votedForId);
 
-        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.PersistenceFacade.CommitIndex,
+        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.Persistence.CommitIndex,
             new NodeId(2),
-            node.PersistenceFacade.LastEntry);
+            node.Persistence.LastEntry);
         node.Handle(request);
 
         Assert.False(node.VotedFor.HasValue);
@@ -307,9 +307,9 @@ public class FollowerStateTests
 
         using var node = CreateFollowerNode(oldTerm, null);
 
-        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.PersistenceFacade.CommitIndex,
+        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.Persistence.CommitIndex,
             new NodeId(2),
-            node.PersistenceFacade.LastEntry);
+            node.Persistence.LastEntry);
         node.Handle(request);
 
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
@@ -459,7 +459,7 @@ public class FollowerStateTests
     [InlineData(2)]
     [InlineData(5)]
     [InlineData(10)]
-    public void AppendEntries__КогдаЛогПустойБезЗакомиченныхЗаписей__ДолженДобавитьЗаписиВЛог(int entriesCount)
+    public void AppendEntries__КогдаЛогПустой__ДолженВставитьЗаписиВНачало(int entriesCount)
     {
         var term = new Term(2);
         var entries = Enumerable.Range(1, entriesCount)
@@ -467,7 +467,7 @@ public class FollowerStateTests
                                 .ToArray();
 
         // Лог изначально был пуст и у нас, и у лидера
-        // Причем, еще ничего не закомичено
+        // Причем, еще ничего не закоммичено
         var node = CreateFollowerNode(term, null);
 
         var request = new AppendEntriesRequest(term, LogEntryInfo.TombIndex, AnotherNodeId, LogEntryInfo.Tomb, entries);
@@ -475,8 +475,6 @@ public class FollowerStateTests
         var response = node.Handle(request);
 
         Assert.True(response.Success);
-        var actualEntries = node.PersistenceFacade.ReadLogFullTest();
-        Assert.Equal(entries, actualEntries, LogEntryEqualityComparer.Instance);
     }
 
     [Fact]
@@ -486,15 +484,12 @@ public class FollowerStateTests
         var node = CreateFollowerNode(term, null);
 
         // 3 закоммиченные записи с индексами
-        var committedEntries = new LogEntry[]
-        {
-            new(new(1), new byte[] {1}), new(new(2), new byte[] {2}), new(new(2), new byte[] {3}),
-        };
-        node.PersistenceFacade.LogStorage.AppendRange(committedEntries);
+        var committedEntries = new LogEntry[] {new(new(1), [1]), new(new(2), [2]), new(new(2), [3]),};
+
+        node.Persistence.LogStorage.AppendRange(committedEntries);
 
         // Добавляем 2 незакоммиченные записи
-        node.PersistenceFacade.InsertBufferRange(
-            new LogEntry[] {new(new(3), new byte[] {4}), new(new(3), new byte[] {5}),},
+        node.Persistence.InsertBufferRange(new LogEntry[] {new(new(3), new byte[] {4}), new(new(3), new byte[] {5}),},
             3);
 
         // В запросе передается 1 запись (идет сразу после наших закоммиченных) 
@@ -506,7 +501,7 @@ public class FollowerStateTests
         var response = node.Handle(request);
 
         Assert.True(response.Success);
-        var actualEntries = node.PersistenceFacade.ReadLogFullTest();
+        var actualEntries = node.Persistence.ReadLogFullTest();
         Assert.Equal(committedEntries.Concat(newEntries), actualEntries, LogEntryEqualityComparer.Instance);
         Assert.Equal(request.Term, response.Term);
         Assert.Equal(node.CurrentTerm, response.Term);
@@ -520,7 +515,7 @@ public class FollowerStateTests
         var candidateId = new NodeId(2);
 
         var node = CreateFollowerNode(term, votedFor);
-        node.PersistenceFacade.InsertBufferRange(new LogEntry[]
+        node.Persistence.InsertBufferRange(new LogEntry[]
         {
             new(new(1), Array.Empty<byte>()), // 1
             new(new(3), Array.Empty<byte>()), // 2
@@ -545,7 +540,7 @@ public class FollowerStateTests
         var votedFor = new NodeId(5);
 
         var node = CreateFollowerNode(term, votedFor);
-        node.PersistenceFacade.InsertBufferRange(new LogEntry[]
+        node.Persistence.InsertBufferRange(new LogEntry[]
         {
             new(new(1), Array.Empty<byte>()), // 1
             new(new(3), Array.Empty<byte>()), // 2

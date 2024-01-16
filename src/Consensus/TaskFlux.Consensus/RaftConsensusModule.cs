@@ -41,12 +41,12 @@ public class RaftConsensusModule<TCommand, TResponse>
     /// <summary>
     /// Номер текущего терма
     /// </summary>
-    public Term CurrentTerm => PersistenceFacade.CurrentTerm;
+    public Term CurrentTerm => Persistence.CurrentTerm;
 
     /// <summary>
     /// Id кандидата, за которого проголосовала текущая нода
     /// </summary>
-    public NodeId? VotedFor => PersistenceFacade.VotedFor;
+    public NodeId? VotedFor => Persistence.VotedFor;
 
     /// <summary>
     /// ID известного лидера кластера
@@ -115,7 +115,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     /// <summary>
     /// Фасад для работы с файлами
     /// </summary>
-    public StoragePersistenceFacade PersistenceFacade { get; }
+    public StoragePersistenceFacade Persistence { get; }
 
     internal RaftConsensusModule(
         NodeId id,
@@ -123,7 +123,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         ILogger logger,
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
-        StoragePersistenceFacade persistenceFacade,
+        StoragePersistenceFacade persistence,
         IDeltaExtractor<TResponse> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
@@ -133,7 +133,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         _logger = logger;
         PeerGroup = peerGroup;
         BackgroundJobQueue = backgroundJobQueue;
-        PersistenceFacade = persistenceFacade;
+        Persistence = persistence;
         ApplicationFactory = applicationFactory;
     }
 
