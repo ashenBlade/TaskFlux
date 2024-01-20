@@ -10,7 +10,8 @@ public class ApplicationOptions
     public NetworkOptions Network { get; private set; } = new();
     public HttpAdapterOptions Http { get; private set; } = new();
     public TcpAdapterOptions TcpModule { get; private set; } = new();
-
+    public LoggingOptions Logging { get; private set; } = new();
+    public PersistenceOptions Persistence { get; private set; } = new();
 
     /// <summary>
     /// Создать новую конфигурацию приложения, используя переданные аргументы
@@ -21,8 +22,10 @@ public class ApplicationOptions
         {
             Cluster = ClusterOptions.FromConfiguration(configuration),
             Network = NetworkOptions.FromConfiguration(configuration),
-            Http = configuration.Get<HttpAdapterOptions>(),
-            TcpModule = configuration.Get<TcpAdapterOptions>()
+            Http = HttpAdapterOptions.FromConfiguration(configuration),
+            TcpModule = TcpAdapterOptions.FromConfiguration(configuration),
+            Persistence = PersistenceOptions.FromConfiguration(configuration),
+            Logging = LoggingOptions.FromConfiguration(configuration),
         };
     }
 }

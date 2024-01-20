@@ -40,12 +40,23 @@ public class CandidateState<TCommand, TResponse>
         var lastEntry = Persistence.LastEntry;
         var coordinator = new ElectionCoordinator<TCommand, TResponse>(this, _logger, term);
 
+        CancellationToken token;
+        try
+        {
+            token = _lifetimeCts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            // Такое может случиться, когда мы только запустились в уже работающем кластере - лидер только сейчас отправил запрос и мы стали Follower
+            return;
+        }
+
         _logger.Information("Запускаю обработчиков для сбора консенсуса");
         foreach (var peer in PeerGroup.Peers)
         {
             var worker =
                 new PeerElectorBackgroundJob<TCommand, TResponse>(term, lastEntry, nodeId, peer, coordinator, _logger);
-            BackgroundJobQueue.Accept(worker, _lifetimeCts.Token);
+            BackgroundJobQueue.Accept(worker, token);
         }
 
         _electionTimer.Timeout += OnElectionTimerTimeout;

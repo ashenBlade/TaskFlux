@@ -4,8 +4,9 @@ using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Consensus.Persistence.Metadata;
 
-public class FileMetadataStorage : IMetadataStorage
+public class MetadataFile
 {
+    // TODO: маркер обновить
     private const int Marker = Constants.Marker;
 
     private const int CurrentVersion = 1;
@@ -53,7 +54,7 @@ public class FileMetadataStorage : IMetadataStorage
     ///    - Указанная в файле версия несовместима с текущей <br/>\
     /// </exception>
     /// <exception cref="IOException">Во время чтения данных произошла ошибка</exception>
-    public FileMetadataStorage(Stream file, Term defaultTerm, NodeId? defaultVotedFor)
+    public MetadataFile(Stream file, Term defaultTerm, NodeId? defaultVotedFor)
     {
         if (!file.CanRead)
         {

@@ -109,7 +109,7 @@ public class FollowerState<TCommand, TResponse>
 
         if (0 < request.Entries.Count)
         {
-            Persistence.InsertBufferRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
+            Persistence.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
         }
 
         if (Persistence.CommitIndex == request.LeaderCommit)
@@ -118,16 +118,9 @@ public class FollowerState<TCommand, TResponse>
             return AppendEntriesResponse.Ok(CurrentTerm);
         }
 
-        // Коммитим записи по индексу лидера
-        Persistence.Commit(request.LeaderCommit);
-
-        /*
-         * Вопрос - нужен ли он мне?
-         * В рафте он используется, чтобы отслеживать актуальность состояния,
-         * но я каждый раз восстанавливаю состояние без динамического применения команд.
-         * На первый взгляд, это лишняя работа
-         */
-        Persistence.SetLastApplied(request.LeaderCommit);
+        // Дополнительная проверка того, что не выходим за кол-во записей у себя же
+        var commitIndex = Math.Min(request.LeaderCommit, Persistence.LastEntry.Index);
+        Persistence.Commit(commitIndex);
 
         if (Persistence.ShouldCreateSnapshot())
         {
@@ -135,9 +128,20 @@ public class FollowerState<TCommand, TResponse>
             var oldSnapshot = Persistence.TryGetSnapshot(out var s, out var _)
                                   ? s
                                   : null;
-            var deltas = Persistence.ReadAllLogDelta();
+            var deltas = Persistence.ReadCommittedDelta();
             var newSnapshot = ApplicationFactory.CreateSnapshot(oldSnapshot, deltas);
-            Persistence.SaveSnapshot(newSnapshot);
+            var lastIncludedEntry = Persistence.GetEntryInfo(Persistence.CommitIndex);
+            try
+            {
+                Persistence.SaveSnapshot(newSnapshot, lastIncludedEntry);
+            }
+            catch (Exception e)
+            {
+                _logger.Error(e,
+                    "Ошибка во время сохранения снапшота. Последний {LastEntry}. Коммит лидера: {LeaderCommit}",
+                    lastIncludedEntry, request.LeaderCommit);
+                throw;
+            }
         }
 
         _leaderId = request.LeaderId;
@@ -233,9 +237,9 @@ public class FollowerState<TCommand, TResponse>
             throw;
         }
 
-        _logger.Information("Снапшот установлен");
+        _logger.Debug("Снапшот установлен");
 
-        Persistence.SetLastApplied(Persistence.CommitIndex);
+        // Persistence.SetLastApplied(Persistence.CommitIndex);
 
         _leaderId = request.LeaderId;
 

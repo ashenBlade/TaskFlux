@@ -39,11 +39,6 @@ public class ClusterOptions
     [Range(1, int.MaxValue)]
     public int ClusterReceiveBufferSize { get; init; } = DefaultReceiveBufferSize;
 
-    public const string DefaultDataDirectory = "/var/lib/tflux";
-
-    [Required]
-    public string ClusterDataDirectory { get; init; } = DefaultDataDirectory;
-
     public static TimeSpan DefaultRequestTimeout => TimeSpan.FromSeconds(5);
 
     public TimeSpan ClusterRequestTimeout { get; init; } = DefaultRequestTimeout;
@@ -75,7 +70,6 @@ public class ClusterOptions
         return new ClusterOptions()
         {
             ClusterPeers = peers.ToArray(),
-            ClusterDataDirectory = configuration.GetString(nameof(ClusterDataDirectory), DefaultDataDirectory),
             ClusterListenHost = configuration.GetString(nameof(ClusterListenHost), DefaultClusterListenHost),
             ClusterListenPort = configuration.GetValue(nameof(ClusterListenPort), DefaultClusterListenPort),
             ClusterNodeId = configuration.GetValue(nameof(ClusterNodeId), 0),

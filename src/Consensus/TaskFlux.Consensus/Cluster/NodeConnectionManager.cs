@@ -18,7 +18,7 @@ public class NodeConnectionManager : IDisposable
     private readonly TimeSpan _requestTimeout;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<NodeId, NodeConnectionProcessor> _nodes = new();
-    private (Thread WorkerThread, Socket Server, CancellationTokenSource Lifetime)? _workerData;
+    private readonly (Thread WorkerThread, Socket Server, CancellationTokenSource Lifetime)? _workerData;
 
     public NodeConnectionManager(string host,
                                  int port,
@@ -58,8 +58,8 @@ public class NodeConnectionManager : IDisposable
             "Данные для работы сервера должны быть инициализированы");
         var (_, server, cts) = _workerData.Value;
 
-        _logger.Information("Модуль обработки запросов узлов кластера запускается");
-        _logger.Information("Начинаю прослушивать входящие запросы узлов");
+        _logger.Information(
+            "Модуль обработки запросов узлов кластера запускается. Начинаю прослушивать входящие запросы узлов");
         server.Listen(_module.PeerGroup.Peers.Count + 1);
         try
         {

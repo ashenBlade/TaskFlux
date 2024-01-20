@@ -15,6 +15,8 @@
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
     volumes:
       - tflux.1.volume:/var/lib/tflux
+    networks:
+      - taskflux-network
       
   tflux.2:
     build:
@@ -32,7 +34,9 @@
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
     volumes:
       - tflux.2.volume:/var/lib/tflux
-      
+    networks:
+      - taskflux-network
+  
   tflux.3:
     build:
       context: src
@@ -49,6 +53,8 @@
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
     volumes:
       - tflux.3.volume:/var/lib/tflux
+    networks:
+      - taskflux-network
 
 volumes:
   tflux.1.volume:
@@ -57,3 +63,7 @@ volumes:
     driver: local
   tflux.3.volume:
     driver: local
+
+networks:
+  taskflux-network:
+    driver: bridge

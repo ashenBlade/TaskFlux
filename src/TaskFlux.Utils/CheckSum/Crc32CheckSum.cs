@@ -5,7 +5,7 @@
 /// </summary>
 public static class Crc32CheckSum
 {
-    private const uint InitialValue = 0xFFFFFFFF;
+    public const uint InitialValue = 0xFFFFFFFF;
     private const uint Complement = 0x04C11DB7;
 
     private static readonly uint[] Table = ComputeTable();
@@ -70,20 +70,23 @@ public static class Crc32CheckSum
         };
     }
 
-    public static uint Compute(ReadOnlySpan<byte> payload)
+    /// <summary>
+    /// Рассчитать CRC32 чек-сумму по переданным данным
+    /// </summary>
+    /// <param name="payload">Данные для которых нужно вычислить чек-сумму</param>
+    /// <returns>Чек-сумма</returns>
+    public static uint Compute(ReadOnlySpan<byte> payload) => Compute(InitialValue, payload);
+
+    /// <summary>
+    /// Вычислить чек-сумму для переданных данных с использованием значения.
+    /// Используется, когда данные поступают чанками и нужно вычислять чек-сумму постепенно 
+    /// </summary>
+    /// <param name="initialValue">Значение чек-суммы, которое нужно использовать как начальное значение</param>
+    /// <param name="payload">Данные, для которых нужно вычислить чек-сумму</param>
+    /// <returns>Вычисленное значение чек-суммы</returns>
+    public static uint Compute(uint initialValue, ReadOnlySpan<byte> payload)
     {
-        if (payload.Length == 0)
-        {
-            /*
-             * Такое часто будет встречаться, т.к. чек-сумма вычисляется и для Heartbeat.
-             * Входных байтов нет, поэтому регистр модифицироваться не будет.
-             */
-
-            return InitialValue;
-        }
-
-        var register = InitialValue;
-
+        var register = initialValue;
         foreach (var b in payload)
         {
             register = ( register << 8 ) ^ Table[( register >> 24 ) ^ b];

@@ -115,7 +115,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     /// <summary>
     /// Фасад для работы с файлами
     /// </summary>
-    public StoragePersistenceFacade Persistence { get; }
+    public FileSystemPersistenceFacade Persistence { get; }
 
     internal RaftConsensusModule(
         NodeId id,
@@ -123,7 +123,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         ILogger logger,
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
-        StoragePersistenceFacade persistence,
+        FileSystemPersistenceFacade persistence,
         IDeltaExtractor<TResponse> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
@@ -199,7 +199,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         ILogger logger,
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
-        StoragePersistenceFacade persistenceFacade,
+        FileSystemPersistenceFacade persistenceFacade,
         IDeltaExtractor<TResponse> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {

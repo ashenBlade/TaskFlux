@@ -48,7 +48,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
                               : null;
 
         _logger.Information("Восстанавливаю предыдущее состояние");
-        var deltas = Persistence.ReadAllLogDelta();
+        var deltas = Persistence.ReadCommittedDelta();
         _application = ApplicationFactory.Restore(oldSnapshot, deltas);
         Array.ForEach(_peerProcessors, p =>
         {
@@ -229,12 +229,12 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         }
 
         // Добавляем команду в буфер
-        _logger.Verbose("Записываю дельту в буфер");
+        _logger.Verbose("Добавляю команду в лог");
         var newEntry = new LogEntry(CurrentTerm, delta);
-        var appended = Persistence.AppendBuffer(newEntry);
+        var appended = Persistence.Append(newEntry);
 
         // Сигнализируем узлам, чтобы принялись реплицировать
-        _logger.Verbose("Реплицирую команду");
+        _logger.Verbose("Начинаю репликацию записанной команды");
         var success = TryReplicate(appended.Index, out var greaterTerm);
         if (!success)
         {
@@ -270,10 +270,8 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         // Лучше сначала применить и, если что не так, упасть,
         // чем закоммитить, а потом каждый раз валиться при восстановлении
 
-        // Коммитим запись и применяем 
         _logger.Verbose("Коммичу команду с индексом {Index}", appended.Index);
         Persistence.Commit(appended.Index);
-        Persistence.SetLastApplied(appended.Index);
 
         /*
          * На этом моменте Heartbeat не отправляю,
@@ -282,14 +280,9 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
          */
         if (Persistence.ShouldCreateSnapshot())
         {
-            _logger.Debug("Размер файла лога превышен. Создаю снапшот");
-            // Асинхронно это наверно делать не стоит (пока)
+            _logger.Debug("Создаю снапшот");
             var snapshot = _application.GetSnapshot();
-            Persistence.SaveSnapshot(snapshot, token);
-        }
-        else
-        {
-            _logger.Verbose("Размер лога не превышен");
+            Persistence.SaveSnapshot(snapshot, appended, token);
         }
 
         // Возвращаем результат

@@ -25,12 +25,13 @@ public class NodeStateObserverBackgroundService : BackgroundService
     {
         try
         {
+            var persistence = _module.Persistence;
             while (token.IsCancellationRequested is false)
             {
                 _logger.Information(
-                    "Состояние: {State}; Терм {Term}; Последняя запись лога: {@LastEntry}; Голос За: {VotedFor}",
-                    _module.CurrentRole, _module.CurrentTerm,
-                    _module.Persistence.LastEntry, _module.VotedFor);
+                    "Роль: {State}; Терм: {Term}; Последняя запись лога: {LastEntry}; Запись в снапшоте: {SnapshotEntry}; Запись в логе (всего/коммит): {LogCount}/{LogCommitIndex}",
+                    _module.CurrentRole, _module.CurrentTerm.Value, persistence.LastEntry,
+                    persistence.SnapshotStorage.LastApplied, persistence.Log.Count, persistence.Log.CommitIndex + 1);
                 await Task.Delay(_interval, token);
             }
         }

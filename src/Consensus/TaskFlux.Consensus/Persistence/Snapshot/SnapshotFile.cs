@@ -2,7 +2,6 @@ using System.Buffers;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Abstractions;
-using Serilog;
 using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Consensus.Persistence.Snapshot;
@@ -10,27 +9,25 @@ namespace TaskFlux.Consensus.Persistence.Snapshot;
 /// <summary>
 /// Файловый интерфейс взаимодействия с файлами снапшотов
 /// </summary>
-public class FileSystemSnapshotStorage : ISnapshotStorage
+public class SnapshotFile
 {
     /// <inheritdoc cref="Constants.Marker"/>
     public const int Marker = Constants.Marker;
+    // TODO: маркер файла снапшота обновить
 
     private readonly IFileInfo _snapshotFile;
     private readonly IDirectoryInfo _temporarySnapshotFileDirectory;
-    private readonly ILogger _logger;
 
-    public bool HasSnapshot => !LastLogEntry.IsTomb;
+    public bool HasSnapshot => !LastApplied.IsTomb;
 
-    public FileSystemSnapshotStorage(
+    public SnapshotFile(
         IFileInfo snapshotFile,
-        IDirectoryInfo temporarySnapshotFileDirectory,
-        ILogger logger)
+        IDirectoryInfo temporarySnapshotFileDirectory)
     {
         ArgumentNullException.ThrowIfNull(snapshotFile);
         ArgumentNullException.ThrowIfNull(temporarySnapshotFileDirectory);
         _snapshotFile = snapshotFile;
         _temporarySnapshotFileDirectory = temporarySnapshotFileDirectory;
-        _logger = logger;
 
         Initialize();
     }
@@ -40,7 +37,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         var fileLength = _snapshotFile.Length;
         if (!_snapshotFile.Exists || fileLength == 0)
         {
-            LastLogEntry = LogEntryInfo.Tomb;
+            LastApplied = LogEntryInfo.Tomb;
             return;
         }
 
@@ -76,7 +73,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             throw new InvalidDataException($"Терм команды, хранившийся в снапшоте, - отрицательный. Терм: {term}");
         }
 
-        LastLogEntry = new LogEntryInfo(new Term(term), index);
+        LastApplied = new LogEntryInfo(new Term(term), index);
     }
 
     public ISnapshotFileWriter CreateTempSnapshotFile()
@@ -87,8 +84,8 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
     /// <summary>
     /// Информация о последней записи лога, которая была применена к снапшоту
     /// </summary>
-    /// <remarks><see cref="LogEntryInfo.Tomb"/> - означает отсуствие снапшота</remarks>
-    public LogEntryInfo LastLogEntry { get; private set; } = LogEntryInfo.Tomb;
+    /// <remarks><see cref="LogEntryInfo.Tomb"/> - означает отсутствие снапшота</remarks>
+    public LogEntryInfo LastApplied { get; private set; } = LogEntryInfo.Tomb;
 
     /// <summary>
     /// Получить снапшот, хранящийся в файле на диске
@@ -165,7 +162,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         /// Родительский объект хранилища снапшота.
         /// Для него это все и замутили - ему нужно обновить файл снапшота
         /// </summary>
-        private FileSystemSnapshotStorage _parent;
+        private SnapshotFile _parent;
 
         private enum SnapshotFileState
         {
@@ -190,7 +187,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
         /// </summary>
         private SnapshotFileState _state = SnapshotFileState.Start;
 
-        public FileSystemSnapshotFileWriter(FileSystemSnapshotStorage parent)
+        public FileSystemSnapshotFileWriter(SnapshotFile parent)
         {
             _parent = parent;
         }
@@ -278,7 +275,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             _temporarySnapshotFileStream.Dispose();
             _temporarySnapshotFile.MoveTo(_parent._snapshotFile.FullName, true);
 
-            _parent.LastLogEntry = _writtenLogEntry.Value;
+            _parent.LastApplied = _writtenLogEntry.Value;
 
             _state = SnapshotFileState.Finished;
         }
@@ -353,7 +350,7 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
     /// <param name="lastTerm">Терм последней команды снапшота</param>
     /// <param name="lastIndex">Индекс последней команды снапшота</param>
     /// <param name="snapshot">Снапшот, который нужно записать</param>
-    internal void WriteSnapshotDataTest(Term lastTerm, int lastIndex, ISnapshot snapshot)
+    internal void SetupSnapshotTest(Term lastTerm, int lastIndex, ISnapshot snapshot)
     {
         using var stream = _snapshotFile.OpenWrite();
         var writer = new StreamBinaryWriter(stream);
@@ -366,6 +363,6 @@ public class FileSystemSnapshotStorage : ISnapshotStorage
             writer.Write(chunk.Span);
         }
 
-        LastLogEntry = new LogEntryInfo(lastTerm, lastIndex);
+        LastApplied = new LogEntryInfo(lastTerm, lastIndex);
     }
 }

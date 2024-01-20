@@ -22,6 +22,8 @@ public readonly record struct Term
         Value = term;
     }
 
+    public static implicit operator Term(int t) => new(t);
+
     public static explicit operator int(Term term) => term.Value;
     public static bool operator <(Term left, Term right) => left.Value < right.Value;
     public static bool operator >(Term left, Term right) => left.Value > right.Value;

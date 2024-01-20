@@ -34,4 +34,14 @@ public readonly record struct LogEntryInfo(Term Term, int Index)
     /// Такая запись сигнализирует о том, что в логе нет записей
     /// </summary>
     public bool IsTomb => Index == TombIndex;
+
+    public override string ToString()
+    {
+        if (IsTomb)
+        {
+            return "LogEntryInfo(Tomb)";
+        }
+
+        return $"LogEntryInfo(Index = {Index}; Term = {Term.Value})";
+    }
 }

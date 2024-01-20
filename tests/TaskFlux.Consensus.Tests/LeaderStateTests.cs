@@ -51,9 +51,9 @@ public class LeaderStateTests
                                ? Helpers.NullTimerFactory
                                : new ConstantTimerFactory(heartbeatTimer);
         var facade = CreateFacade();
-        if (logEntries is {Length: > 0})
+        if (logEntries is not null)
         {
-            facade.LogStorage.SetFileTest(logEntries);
+            facade.Log.SetupLogTest(committed: logEntries, uncommitted: Array.Empty<LogEntry>());
         }
 
         var factory = new Mock<IApplicationFactory<int, int>>().Apply(m =>
@@ -69,13 +69,13 @@ public class LeaderStateTests
         node.SetStateTest(node.CreateLeaderState());
         return node;
 
-        StoragePersistenceFacade CreateFacade()
+        FileSystemPersistenceFacade CreateFacade()
         {
             var fs = Helpers.CreateFileSystem();
-            var log = new FileLogStorage(fs.Log, fs.TemporaryDirectory);
-            var metadata = new FileMetadataStorage(fs.Metadata.Open(FileMode.Open), term, votedFor);
-            var snapshotStorage = new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory, Logger.None);
-            return new StoragePersistenceFacade(log, metadata, snapshotStorage);
+            var log = new FileLog(fs.Log, fs.TemporaryDirectory);
+            var metadata = new MetadataFile(fs.Metadata.Open(FileMode.Open), term, votedFor);
+            var snapshotStorage = new SnapshotFile(fs.Snapshot, fs.TemporaryDirectory);
+            return new FileSystemPersistenceFacade(log, metadata, snapshotStorage, Logger.None);
         }
     }
 
@@ -228,7 +228,7 @@ public class LeaderStateTests
         });
 
         // В логе изначально было 4 записи
-        var existingFileEntries = new[] {IntDataEntry(1), IntDataEntry(1), IntDataEntry(2), IntDataEntry(3),};
+        var committed = new[] {IntDataEntry(1), IntDataEntry(1), IntDataEntry(2), IntDataEntry(3),};
 
         var peer = CreateDefaultPeer();
 
@@ -259,14 +259,14 @@ public class LeaderStateTests
             jobQueue: queue);
 
         // Выставляем изначальный лог в 4 команды
-        node.Persistence.LogStorage.SetFileTest(existingFileEntries);
+        node.Persistence.Log.SetupLogTest(committed, uncommitted: Array.Empty<LogEntry>());
 
         heartbeatTimer.Raise(x => x.Timeout += null);
 
         beginReached.Should()
                     .BeTrue("Окончание репликации должно быть закончено, когда достигнуто начало лога");
         sentEntries.Should()
-                   .BeEquivalentTo(existingFileEntries, options => options.Using(LogEntryComparer),
+                   .BeEquivalentTo(committed, options => options.Using(LogEntryComparer),
                         "Отправленные записи должны полностью соответствовать логу");
     }
 
@@ -353,8 +353,8 @@ public class LeaderStateTests
         Assert.True(response.Success);
         Assert.Equal(expectedTerm, node.CurrentTerm);
 
-        var actualEntries = node.Persistence.ReadLogBufferTest();
-        Assert.Equal(entries, actualEntries);
+        var actualEntries = node.Persistence.Log.GetUncommittedTest();
+        Assert.Equal(entries, actualEntries, LogEntryComparer);
     }
 
     private static readonly LogEntryEqualityComparer LogEntryComparer = LogEntryEqualityComparer.Instance;
@@ -374,27 +374,27 @@ public class LeaderStateTests
     [InlineData(5, 2)]
     [InlineData(5, 3)]
     [InlineData(5, 4)]
-    public void AppendEntries__КогдаТермБольше__ДолженЗакоммититьЗаписи(int bufferSize, int index)
+    public void AppendEntries__КогдаТермБольше__ДолженЗакоммититьЗаписи(int uncommittedCount, int commitIndex)
     {
         var term = new Term(3);
         var expectedTerm = term.Increment();
-        var nodeEntries = Enumerable.Range(0, bufferSize)
-                                    .Select(_ => IntLogEntry(term))
+        var uncommitted = Enumerable.Range(1, uncommittedCount)
+                                    .Select(i => IntLogEntry(i))
                                     .ToArray();
-        var (expectedFile, expectedBuffer) = nodeEntries.Split(index);
+        var (expectedCommitted, expectedUncommitted) = uncommitted.Split(commitIndex);
         using var node = CreateLeaderNode(term, null);
-        node.Persistence.SetupBufferTest(nodeEntries);
-        var request = new AppendEntriesRequest(expectedTerm, index, AnotherNodeId, LogEntryInfo.Tomb,
+        node.Persistence.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted);
+        var request = new AppendEntriesRequest(expectedTerm, commitIndex, AnotherNodeId, LogEntryInfo.Tomb,
             Array.Empty<LogEntry>());
+
         var response = node.Handle(request);
 
         Assert.True(response.Success);
         Assert.Equal(expectedTerm, response.Term);
-
-        var actualFile = node.Persistence.ReadLogFileTest();
-        Assert.Equal(expectedFile, actualFile, LogEntryComparer);
-        var actualBuffer = node.Persistence.ReadLogBufferTest();
-        Assert.Equal(expectedBuffer, actualBuffer, LogEntryComparer);
+        var actualCommitted = node.Persistence.Log.GetCommittedTest();
+        Assert.Equal(expectedCommitted, actualCommitted, LogEntryComparer);
+        var actualUncommitted = node.Persistence.Log.GetUncommittedTest();
+        Assert.Equal(expectedUncommitted, actualUncommitted, LogEntryComparer);
     }
 
     [Fact]
@@ -413,7 +413,7 @@ public class LeaderStateTests
         var response = node.Handle(request);
 
         Assert.Equal(expectedResponse, response.Response);
-        var committedEntry = node.Persistence.ReadLogFileTest().Single();
+        var committedEntry = node.Persistence.Log.GetCommittedTest().Single();
         AssertCommandEqual(committedEntry, expectedResponse);
         mock.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }
@@ -448,7 +448,7 @@ public class LeaderStateTests
         var response = node.Handle(request);
 
         Assert.Equal(expectedResponse, response.Response);
-        var committedEntry = node.Persistence.ReadLogFileTest().Single();
+        var committedEntry = node.Persistence.Log.GetCommittedTest().Single();
         AssertCommandEqual(committedEntry, expectedResponse);
         machine.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }

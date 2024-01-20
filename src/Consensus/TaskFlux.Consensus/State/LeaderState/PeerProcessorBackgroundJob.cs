@@ -33,7 +33,7 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
     /// </remarks>
     private Term SavedTerm { get; }
 
-    private StoragePersistenceFacade PersistenceFacade => RaftConsensusModule.Persistence;
+    private FileSystemPersistenceFacade Persistence => RaftConsensusModule.Persistence;
 
     /// <summary>
     /// Узел, с которым общаемся
@@ -103,7 +103,7 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
          * Если нашли такое - поставим флаг.
          * От лидера все равно запрос и там обновим состояние.
          */
-        var peerInfo = new PeerInfo(PersistenceFacade.LastEntry.Index + 1);
+        var peerInfo = new PeerInfo(Persistence.LastEntry.Index + 1);
         Term? foundGreaterTerm = null;
         _logger.Information("Обработчик узла начинает работу");
         foreach (var heartbeatOrRequest in _queue.ReadAllRequests(token))
@@ -179,10 +179,10 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
     {
         while (!token.IsCancellationRequested)
         {
-            if (!PersistenceFacade.TryGetFrom(info.NextIndex, out var entries))
+            if (!Persistence.TryGetFrom(info.NextIndex, out var entries))
             {
                 _logger.Debug("В логе не оказалось записей после индекса: {Index}", info.NextIndex);
-                if (PersistenceFacade.TryGetSnapshot(out var snapshot, out var lastEntry))
+                if (Persistence.TryGetSnapshot(out var snapshot, out var lastEntry))
                 {
                     _logger.Debug("Отправляю снапшот на узел");
                     var installSnapshotResponse = _peer.SendInstallSnapshot(new InstallSnapshotRequest(SavedTerm,
@@ -192,7 +192,7 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
                     if (SavedTerm < installSnapshotResponse.CurrentTerm)
                     {
                         _logger.Information("От узла {NodeId} получен больший терм {Term}. Текущий терм: {CurrentTerm}",
-                            _peer.Id, installSnapshotResponse.CurrentTerm, PersistenceFacade.CurrentTerm);
+                            _peer.Id, installSnapshotResponse.CurrentTerm, Persistence.CurrentTerm);
                         return installSnapshotResponse.CurrentTerm;
                     }
 
@@ -210,9 +210,9 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
             try
             {
                 appendEntriesRequest = new AppendEntriesRequest(Term: SavedTerm,
-                    LeaderCommit: PersistenceFacade.CommitIndex,
+                    LeaderCommit: Persistence.CommitIndex,
                     LeaderId: RaftConsensusModule.Id,
-                    PrevLogEntryInfo: PersistenceFacade.GetPrecedingEntryInfo(info.NextIndex),
+                    PrevLogEntryInfo: Persistence.GetPrecedingEntryInfo(info.NextIndex),
                     Entries: entries);
             }
             catch (ArgumentOutOfRangeException)

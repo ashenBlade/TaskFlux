@@ -4,5 +4,5 @@ namespace TaskFlux.Consensus.Persistence.Log;
 /// Информация о записи в логе файла
 /// </summary>
 /// <param name="Term">Терм записи</param>
-/// <param name="Position">Позиция записи в файле</param>
+/// <param name="Position">Позиция записи в файле (начиная с маркера записи)</param>
 internal readonly record struct PositionTerm(Term Term, long Position);

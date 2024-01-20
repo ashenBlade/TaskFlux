@@ -3,8 +3,8 @@ using TaskFlux.Core;
 
 namespace TaskFlux.Consensus.Tests;
 
-[Trait("Category", "Raft")]
-public class FileMetadataStorageTests
+[Trait("Category", "Persistence")]
+public class MetadataFileTests
 {
     private static MemoryStream CreateStream()
     {
@@ -27,7 +27,7 @@ public class FileMetadataStorageTests
     {
         using var memory = CreateStream();
         var expected = new Term(term);
-        var storage = new FileMetadataStorage(memory, expected, null);
+        var storage = new MetadataFile(memory, expected, null);
 
         var actual = storage.Term;
         Assert.Equal(expected, actual);
@@ -47,7 +47,7 @@ public class FileMetadataStorageTests
         NodeId? expected = votedFor is null
                                ? null
                                : new NodeId(votedFor.Value);
-        var storage = new FileMetadataStorage(memory, Term.Start, expected);
+        var storage = new MetadataFile(memory, Term.Start, expected);
 
         var actual = storage.VotedFor;
         Assert.Equal(expected, actual);
@@ -67,7 +67,7 @@ public class FileMetadataStorageTests
                                                               int? newVotedFor)
     {
         using var memory = CreateStream();
-        var storage = new FileMetadataStorage(memory, new Term(defaultTerm), ToNodeId(defaultVotedFor));
+        var storage = new MetadataFile(memory, new Term(defaultTerm), ToNodeId(defaultVotedFor));
         var expectedTerm = new Term(newTerm);
         var expectedVotedFor = ToNodeId(newVotedFor);
 
@@ -106,7 +106,7 @@ public class FileMetadataStorageTests
     {
         using var memory = CreateStream();
         var expectedVotedFor = GetNodeId(newVotedFor);
-        var storage = new FileMetadataStorage(memory, Term.Start, GetNodeId(defaultVotedFor));
+        var storage = new MetadataFile(memory, Term.Start, GetNodeId(defaultVotedFor));
 
         storage.Update(Term.Start, expectedVotedFor);
 
@@ -137,11 +137,11 @@ public class FileMetadataStorageTests
     {
         using var memory = CreateStream();
         var expectedTerm = GetTerm(setTerm);
-        var oldStorage = new FileMetadataStorage(memory, GetTerm(defaultTerm), null);
+        var oldStorage = new MetadataFile(memory, GetTerm(defaultTerm), null);
 
         oldStorage.Update(expectedTerm, null);
 
-        var newStorage = new FileMetadataStorage(memory, GetTerm(newDefaultTerm), null);
+        var newStorage = new MetadataFile(memory, GetTerm(newDefaultTerm), null);
 
         var (actualTerm, _) = newStorage.ReadStoredDataTest();
         Assert.Equal(expectedTerm, actualTerm);

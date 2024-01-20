@@ -63,19 +63,20 @@ public class CandidateStateTests
         node.SetStateTest(node.CreateCandidateState());
         return node;
 
-        StoragePersistenceFacade CreateStoragePersistenceFacade()
+        FileSystemPersistenceFacade CreateStoragePersistenceFacade()
         {
             var fs = Helpers.CreateFileSystem();
-            var logStorage = new FileLogStorage(fs.Log, fs.TemporaryDirectory);
+            var logStorage = new FileLog(fs.Log, fs.TemporaryDirectory);
             var metadataStorage =
-                new FileMetadataStorage(fs.Metadata.Open(FileMode.Open), new Term(term), NodeId);
-            var snapshotStorage = new FileSystemSnapshotStorage(fs.Snapshot, fs.TemporaryDirectory, Logger.None);
+                new MetadataFile(fs.Metadata.Open(FileMode.Open), new Term(term), NodeId);
+            var snapshotStorage = new SnapshotFile(fs.Snapshot, fs.TemporaryDirectory);
             if (fileSizeChecker is null)
             {
-                return new StoragePersistenceFacade(logStorage, metadataStorage, snapshotStorage);
+                return new FileSystemPersistenceFacade(logStorage, metadataStorage, snapshotStorage, Logger.None);
             }
 
-            return new StoragePersistenceFacade(logStorage, metadataStorage, snapshotStorage, fileSizeChecker);
+            return new FileSystemPersistenceFacade(logStorage, metadataStorage, snapshotStorage, Logger.None,
+                fileSizeChecker);
         }
     }
 
@@ -313,21 +314,21 @@ public class CandidateStateTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(5)]
-    public void AppendEntries__ВКонецПустогоЛога__ДолженДобавитьЗаписи(int entriesCount)
+    public void AppendEntries__КогдаЛогПуст__ДолженДобавитьЗаписиБезКоммита(int entriesCount)
     {
         var term = new Term(2);
         using var node = CreateCandidateNode(term);
-
         var entries = Enumerable.Range(0, entriesCount)
                                 .Select(_ => RandomDataEntry(term))
                                 .ToArray();
+
         var request = new AppendEntriesRequest(term, LogEntryInfo.TombIndex, AnotherNodeId, LogEntryInfo.Tomb, entries);
         var response = node.Handle(request);
         Assert.True(response.Success);
 
-        var buffer = node.Persistence.ReadLogBufferTest();
-        Assert.Equal(entries, buffer);
-        Assert.Empty(node.Persistence.ReadLogFileTest());
+        var uncommitted = node.Persistence.Log.GetUncommittedTest();
+        Assert.Equal(entries, uncommitted, LogEntryComparer);
+        Assert.Empty(node.Persistence.Log.GetCommittedTest());
     }
 
     [Theory]
@@ -347,7 +348,7 @@ public class CandidateStateTests
         var bufferEntries = Enumerable.Range(0, logSize)
                                       .Select(_ => RandomDataEntry(term))
                                       .ToArray();
-        node.Persistence.SetupBufferTest(bufferEntries);
+        node.Persistence.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted: bufferEntries);
         var request = new AppendEntriesRequest(term, LogEntryInfo.TombIndex, AnotherNodeId,
             node.Persistence.LastEntry, entries);
         var expectedBuffer = bufferEntries.Concat(entries);
@@ -355,9 +356,9 @@ public class CandidateStateTests
         var response = node.Handle(request);
 
         Assert.True(response.Success);
-        var actualBuffer = node.Persistence.ReadLogBufferTest();
-        Assert.Equal(expectedBuffer, actualBuffer);
-        Assert.Empty(node.Persistence.ReadLogFileTest());
+        var actualBuffer = node.Persistence.Log.GetUncommittedTest();
+        Assert.Equal(expectedBuffer, actualBuffer, LogEntryComparer);
+        Assert.Empty(node.Persistence.Log.GetCommittedTest());
     }
 
     [Theory]
@@ -375,15 +376,15 @@ public class CandidateStateTests
 
         var (expectedFile, expectedBuffer) = bufferEntries.Split(commitIndex);
         using var node = CreateCandidateNode(term);
-        node.Persistence.SetupBufferTest(bufferEntries);
+        node.Persistence.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted: bufferEntries);
 
         var request = new AppendEntriesRequest(term, commitIndex, AnotherNodeId, node.Persistence.LastEntry,
             Array.Empty<LogEntry>());
         var response = node.Handle(request);
 
         Assert.True(response.Success);
-        Assert.Equal(expectedBuffer, node.Persistence.ReadLogBufferTest(), LogEntryComparer);
-        Assert.Equal(expectedFile, node.Persistence.ReadLogFileTest(), LogEntryComparer);
+        Assert.Equal(expectedBuffer, node.Persistence.Log.GetUncommittedTest(), LogEntryComparer);
+        Assert.Equal(expectedFile, node.Persistence.Log.GetCommittedTest(), LogEntryComparer);
     }
 
     [Theory]
@@ -407,15 +408,15 @@ public class CandidateStateTests
         var expectedBuffer = expectedBufferEnqueued.Concat(enqueueEntries);
 
         using var node = CreateCandidateNode(term);
-        node.Persistence.SetupBufferTest(bufferEntries);
+        node.Persistence.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), bufferEntries);
 
         var request = new AppendEntriesRequest(term, commitIndex, AnotherNodeId, node.Persistence.LastEntry,
             enqueueEntries);
         var response = node.Handle(request);
 
         Assert.True(response.Success);
-        Assert.Equal(expectedBuffer, node.Persistence.ReadLogBufferTest(), LogEntryComparer);
-        Assert.Equal(expectedFile, node.Persistence.ReadLogFileTest(), LogEntryComparer);
+        Assert.Equal(expectedBuffer, node.Persistence.Log.GetUncommittedTest(), LogEntryComparer);
+        Assert.Equal(expectedFile, node.Persistence.Log.GetCommittedTest(), LogEntryComparer);
     }
 
     private static readonly LogEntryEqualityComparer LogEntryComparer = new();
@@ -425,7 +426,7 @@ public class CandidateStateTests
     {
         var term = new Term(5);
         using var node = CreateCandidateNode(term);
-        var nodeEntries = new[]
+        var uncommitted = new[]
         {
             RandomDataEntry(1), // 0
             RandomDataEntry(2), // 1
@@ -434,7 +435,7 @@ public class CandidateStateTests
             RandomDataEntry(3), // 4
             RandomDataEntry(4), // 5
         };
-        node.Persistence.SetupBufferTest(nodeEntries);
+        node.Persistence.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted: uncommitted);
         /*
          * Конфликт на 5 записи (индекс 4).
          * Наш терм: 3
@@ -450,14 +451,14 @@ public class CandidateStateTests
         var response = node.Handle(request);
 
         Assert.False(response.Success);
-        Assert.Equal(nodeEntries, node.Persistence.ReadLogFullTest());
+        Assert.Equal(uncommitted, node.Persistence.Log.ReadAllTest(), LogEntryComparer);
     }
 
     [Fact]
     public void AppendEntries__КогдаРазмерЛогаПревысилМаксимальный__ДолженСоздатьСнапшот()
     {
         var term = new Term(5);
-        var existingEntries = new[]
+        var uncommitted = new[]
         {
             RandomDataEntry(1), // 0
             RandomDataEntry(2), // 1
@@ -475,7 +476,7 @@ public class CandidateStateTests
         });
         using var node = CreateCandidateNode(term,
             fileSizeChecker: StubFileSizeChecker.Exceeded, applicationFactory: applicationFactory.Object);
-        node.Persistence.SetupBufferTest(existingEntries);
+        node.Persistence.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted: uncommitted);
         var expectedLastIndex = 4;
         var expectedLastTerm = 5;
         // Этим запросом закоммитим сразу все записи
@@ -498,8 +499,7 @@ public class CandidateStateTests
                   .Be(expectedLastTerm,
                        "Последний терм команды снапшота должен равняться последнему терму примененной команды");
 
-        node.Persistence
-            .ReadLogFullTest()
+        node.Persistence.Log.ReadAllTest()
             .Should()
             .BeEmpty("После создания снапшота лог должен быть пуст");
 
@@ -517,7 +517,7 @@ public class CandidateStateTests
         var queue = new SingleRunBackgroundJobQueue();
         using var node = CreateCandidateNode(currentTerm, jobQueue: queue);
         var nodeEntries = new[] {RandomDataEntry(1), RandomDataEntry(2), RandomDataEntry(2), RandomDataEntry(2),};
-        node.Persistence.InsertBufferRange(nodeEntries, 0);
+        node.Persistence.InsertRange(nodeEntries, 0);
         var newTerm = currentTerm.Increment();
 
         // Конфликт на 1 индексе (2 запись) - наш терм = 2, его терм = 1

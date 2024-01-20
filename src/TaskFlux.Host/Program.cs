@@ -4,6 +4,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
+using Serilog.Core;
+using Serilog.Events;
 using TaskFlux.Application;
 using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster;
@@ -19,8 +21,10 @@ using TaskFlux.Host;
 using TaskFlux.Host.Configuration;
 using TaskFlux.Host.Infrastructure;
 
+var logLevelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
+
 Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Debug()
+            .MinimumLevel.ControlledBy(logLevelSwitch)
             .Enrich.FromLogContext()
             .WriteTo.Console(outputTemplate:
                  "[{Timestamp:HH:mm:ss:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
@@ -35,9 +39,13 @@ try
         return 1;
     }
 
+    logLevelSwitch.MinimumLevel = options.Logging.LogLevel;
+
     var nodeId = new NodeId(options.Cluster.ClusterNodeId);
 
-    var facade = InitializeStorage(options.Cluster);
+    var facade = InitializePersistence(options.Persistence);
+    DumpDataState(facade);
+
     var peers = ExtractPeers(options.Cluster, nodeId, options.Network);
 
     using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(options.Cluster.ClusterPeers.Length,
@@ -92,7 +100,6 @@ try
                        services.AddTcpRequestModule();
                        services.AddHttpRequestModule();
                    })
-                  .UseConsoleLifetime()
                   .Build();
 
         await host.RunAsync(token);
@@ -110,8 +117,10 @@ finally
 
 return 0;
 
-StoragePersistenceFacade InitializeStorage(ClusterOptions options)
+// TODO: когда приложение закрывается, то нужно прекращать подключаться к узлам (Cancellation Token не работает)
+FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
 {
+    // TODO: блокировать (Lock) файлы после открытия
     var dataDirectory = GetDataDirectory(options);
 
     var fs = new FileSystem();
@@ -123,8 +132,10 @@ StoragePersistenceFacade InitializeStorage(ClusterOptions options)
     var metadataStorage = CreateMetadataStorage();
     var snapshotStorage = CreateSnapshotStorage();
 
-    return new StoragePersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage,
-        maxLogFileSize: 1024 /* 1 Кб */);
+    // TODO: запустить процесс и посмотреть как изменятся данные
+    return new FileSystemPersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage,
+        Log.ForContext<FileSystemPersistenceFacade>(),
+        maxLogFileSize: options.MaxLogFileSize);
 
     DirectoryInfo CreateTemporaryDirectory()
     {
@@ -168,7 +179,7 @@ StoragePersistenceFacade InitializeStorage(ClusterOptions options)
         return dir;
     }
 
-    FileSystemSnapshotStorage CreateSnapshotStorage()
+    SnapshotFile CreateSnapshotStorage()
     {
         var snapshotFile = new FileInfo(Path.Combine(consensusDirectory.FullName, "raft.snapshot"));
         if (!snapshotFile.Exists)
@@ -186,16 +197,15 @@ StoragePersistenceFacade InitializeStorage(ClusterOptions options)
             }
         }
 
-        return new FileSystemSnapshotStorage(new FileInfoWrapper(fs, snapshotFile),
-            new DirectoryInfoWrapper(fs, tempDirectory),
-            Log.ForContext("SourceContext", "SnapshotManager"));
+        return new SnapshotFile(new FileInfoWrapper(fs, snapshotFile),
+            new DirectoryInfoWrapper(fs, tempDirectory));
     }
 
-    FileLogStorage CreateFileLogStorage()
+    FileLog CreateFileLogStorage()
     {
         try
         {
-            return FileLogStorage.InitializeFromFileSystem(new DirectoryInfoWrapper(fs, consensusDirectory),
+            return FileLog.InitializeFromFileSystem(new DirectoryInfoWrapper(fs, consensusDirectory),
                 new DirectoryInfoWrapper(fs, tempDirectory));
         }
         catch (Exception e)
@@ -205,7 +215,7 @@ StoragePersistenceFacade InitializeStorage(ClusterOptions options)
         }
     }
 
-    FileMetadataStorage CreateMetadataStorage()
+    MetadataFile CreateMetadataStorage()
     {
         var metadataFile = new FileInfo(Path.Combine(consensusDirectory.FullName, "raft.metadata"));
         FileStream fileStream;
@@ -237,7 +247,7 @@ StoragePersistenceFacade InitializeStorage(ClusterOptions options)
 
         try
         {
-            return new FileMetadataStorage(fileStream, new Term(1), null);
+            return new MetadataFile(fileStream, new Term(1), null);
         }
         catch (InvalidDataException invalidDataException)
         {
@@ -251,13 +261,13 @@ StoragePersistenceFacade InitializeStorage(ClusterOptions options)
         }
     }
 
-    string GetDataDirectory(ClusterOptions raftServerOptions)
+    string GetDataDirectory(PersistenceOptions persistenceOptions)
     {
         string workingDirectory;
-        if (!string.IsNullOrWhiteSpace(raftServerOptions.ClusterDataDirectory))
+        if (!string.IsNullOrWhiteSpace(persistenceOptions.WorkingDirectory))
         {
-            workingDirectory = raftServerOptions.ClusterDataDirectory;
-            Log.Debug("Указана директория данных: {WorkingDirectory}", workingDirectory);
+            workingDirectory = persistenceOptions.WorkingDirectory;
+            Log.Debug("Указана рабочая директория: {WorkingDirectory}", workingDirectory);
         }
         else
         {
@@ -273,7 +283,7 @@ StoragePersistenceFacade InitializeStorage(ClusterOptions options)
 
 RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
                                                                  IPeer[] peers,
-                                                                 StoragePersistenceFacade storage,
+                                                                 FileSystemPersistenceFacade storage,
                                                                  IBackgroundJobQueue backgroundJobQueue)
 {
     var logger = Log.Logger.ForContext("SourceContext", "Raft");
@@ -337,4 +347,23 @@ bool TryValidateOptions(ApplicationOptions options)
 
     Log.Fatal("Ошибка валидации конфигурации. Обнаружены ошибки: {Errors}", results.Select(r => r.ErrorMessage));
     return false;
+}
+
+void DumpDataState(FileSystemPersistenceFacade persistence)
+{
+    Log.Information("Последняя команда состояния: {LastEntry}", persistence.LastEntry);
+    if (persistence.SnapshotStorage.HasSnapshot)
+    {
+        Log.Information("Последняя запись в снапшоте: {LastSnapshotEntry}", persistence.SnapshotStorage.LastApplied);
+    }
+    else
+    {
+        Log.Information("Снапшот отсутствует");
+    }
+
+    Log.Information("Количество записей в логе: {LogEntriesCount}", persistence.Log.Count);
+    if (persistence.Log.Count > 0)
+    {
+        Log.Information("Индекс закоммиченной команды: {CommitIndex}", persistence.Log.CommitIndex);
+    }
 }
