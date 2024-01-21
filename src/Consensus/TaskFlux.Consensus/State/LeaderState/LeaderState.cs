@@ -29,11 +29,11 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     /// </summary>
     private readonly CancellationTokenSource _lifetimeCts = new();
 
-    internal LeaderState(RaftConsensusModule<TCommand, TResponse> raftConsensusModule,
+    internal LeaderState(RaftConsensusModule<TCommand, TResponse> consensusModule,
                          ILogger logger,
                          IDeltaExtractor<TResponse> deltaExtractor,
                          ITimerFactory timerFactory)
-        : base(raftConsensusModule)
+        : base(consensusModule)
     {
         _logger = logger;
         _deltaExtractor = deltaExtractor;
@@ -62,10 +62,10 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
                     {
                         if (synchronizer.TryWaitGreaterTerm(out var greaterTerm))
                         {
-                            var follower = RaftConsensusModule.CreateFollowerState();
-                            if (RaftConsensusModule.TryUpdateState(follower, this))
+                            var follower = ConsensusModule.CreateFollowerState();
+                            if (ConsensusModule.TryUpdateState(follower, this))
                             {
-                                RaftConsensusModule.Persistence.UpdateState(greaterTerm, null);
+                                ConsensusModule.Persistence.UpdateState(greaterTerm, null);
                             }
 
                             return;
@@ -125,9 +125,9 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         // Прийти может только от другого лидера с большим термом
 
-        var follower = RaftConsensusModule.CreateFollowerState();
-        RaftConsensusModule.TryUpdateState(follower, this);
-        return RaftConsensusModule.Handle(request);
+        var follower = ConsensusModule.CreateFollowerState();
+        ConsensusModule.TryUpdateState(follower, this);
+        return ConsensusModule.Handle(request);
     }
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)
@@ -141,16 +141,16 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            var followerState = RaftConsensusModule.CreateFollowerState();
+            var followerState = ConsensusModule.CreateFollowerState();
 
-            if (RaftConsensusModule.TryUpdateState(followerState, this))
+            if (ConsensusModule.TryUpdateState(followerState, this))
             {
-                RaftConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
+                ConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
                 return new RequestVoteResponse(CurrentTerm, !logConflicts);
             }
 
             // Уже есть новое состояние - пусть оно ответит
-            return RaftConsensusModule.Handle(request);
+            return ConsensusModule.Handle(request);
         }
 
         var canVote =
@@ -165,14 +165,14 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
          &&                // За которого можем проголосовать и
             !logConflicts) // У которого лог не хуже нашего
         {
-            var followerState = RaftConsensusModule.CreateFollowerState();
-            if (RaftConsensusModule.TryUpdateState(followerState, this))
+            var followerState = ConsensusModule.CreateFollowerState();
+            if (ConsensusModule.TryUpdateState(followerState, this))
             {
-                RaftConsensusModule.Persistence.UpdateState(request.CandidateTerm, request.CandidateId);
+                ConsensusModule.Persistence.UpdateState(request.CandidateTerm, request.CandidateId);
                 return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
             }
 
-            return RaftConsensusModule.Handle(request);
+            return ConsensusModule.Handle(request);
         }
 
         // Кандидат только что проснулся и не знает о текущем состоянии дел. 
@@ -209,9 +209,9 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             return new InstallSnapshotResponse(CurrentTerm);
         }
 
-        var state = RaftConsensusModule.CreateFollowerState();
-        RaftConsensusModule.TryUpdateState(state, this);
-        return RaftConsensusModule.Handle(request, token);
+        var state = ConsensusModule.CreateFollowerState();
+        ConsensusModule.TryUpdateState(state, this);
+        return ConsensusModule.Handle(request, token);
     }
 
     public override SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default)
@@ -242,17 +242,17 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             if (Role != NodeRole.Leader)
             {
                 // Пока выполняли запрос перестали быть лидером
-                return RaftConsensusModule.Handle(command, token);
+                return ConsensusModule.Handle(command, token);
             }
 
-            if (RaftConsensusModule.TryUpdateState(RaftConsensusModule.CreateFollowerState(), this))
+            if (ConsensusModule.TryUpdateState(ConsensusModule.CreateFollowerState(), this))
             {
                 _logger.Verbose("Стал Follower");
                 Persistence.UpdateState(greaterTerm, null);
                 return SubmitResponse<TResponse>.NotLeader;
             }
 
-            return RaftConsensusModule.Handle(command, token);
+            return ConsensusModule.Handle(command, token);
         }
 
         /*

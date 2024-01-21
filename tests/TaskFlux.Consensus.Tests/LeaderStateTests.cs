@@ -72,9 +72,10 @@ public class LeaderStateTests
         FileSystemPersistenceFacade CreateFacade()
         {
             var fs = Helpers.CreateFileSystem();
-            var log = new FileLog(fs.Log, fs.TemporaryDirectory);
-            var metadata = new MetadataFile(fs.Metadata.Open(FileMode.Open), term, votedFor);
-            var snapshotStorage = new SnapshotFile(fs.Snapshot, fs.TemporaryDirectory);
+            var log = FileLog.Initialize(fs.DataDirectory);
+            var metadata = MetadataFile.Initialize(fs.DataDirectory);
+            metadata.SetupMetadataTest(term, votedFor);
+            var snapshotStorage = SnapshotFile.Initialize(fs.DataDirectory);
             return new FileSystemPersistenceFacade(log, metadata, snapshotStorage, Logger.None);
         }
     }

@@ -15,7 +15,7 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
 {
     public NodeId NodeId => _peer.Id;
     private volatile bool _disposed;
-    private RaftConsensusModule<TCommand, TResponse> RaftConsensusModule => _caller.RaftConsensusModule;
+    private RaftConsensusModule<TCommand, TResponse> RaftConsensusModule => _caller.ConsensusModule;
 
     /// <summary>
     /// Терм, в котором начали работу

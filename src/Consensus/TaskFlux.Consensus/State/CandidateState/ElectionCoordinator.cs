@@ -11,8 +11,8 @@ internal class ElectionCoordinator<TCommand, TResponse>
 
     private readonly ILogger _logger;
 
-    private PeerGroup Peers => _state.RaftConsensusModule.PeerGroup;
-    private RaftConsensusModule<TCommand, TResponse> Module => _state.RaftConsensusModule;
+    private PeerGroup Peers => _state.ConsensusModule.PeerGroup;
+    private RaftConsensusModule<TCommand, TResponse> Module => _state.ConsensusModule;
 
     /// <summary>
     /// Терм кандидата (тот в котором зашли в это состояние)

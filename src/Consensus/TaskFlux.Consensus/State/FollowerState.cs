@@ -16,10 +16,10 @@ public class FollowerState<TCommand, TResponse>
     private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
 
-    internal FollowerState(RaftConsensusModule<TCommand, TResponse> raftConsensusModule,
+    internal FollowerState(RaftConsensusModule<TCommand, TResponse> consensusModule,
                            ITimer electionTimer,
                            ILogger logger)
-        : base(raftConsensusModule)
+        : base(consensusModule)
     {
         _electionTimer = electionTimer;
         _logger = logger;
@@ -170,13 +170,13 @@ public class FollowerState<TCommand, TResponse>
 
     private void OnElectionTimerTimeout()
     {
-        var candidateState = RaftConsensusModule.CreateCandidateState();
-        if (RaftConsensusModule.TryUpdateState(candidateState, this))
+        var candidateState = ConsensusModule.CreateCandidateState();
+        if (ConsensusModule.TryUpdateState(candidateState, this))
         {
             _logger.Debug("Сработал Election Timeout. Стал кандидатом");
             // Голосуем за себя и переходим в следующий терм
-            RaftConsensusModule.Persistence.UpdateState(RaftConsensusModule.CurrentTerm.Increment(),
-                RaftConsensusModule.Id);
+            ConsensusModule.Persistence.UpdateState(ConsensusModule.CurrentTerm.Increment(),
+                ConsensusModule.Id);
         }
         else
         {

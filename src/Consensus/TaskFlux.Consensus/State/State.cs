@@ -14,18 +14,18 @@ namespace TaskFlux.Consensus.State;
 /// </remarks>
 public abstract class State<TCommand, TResponse>
 {
-    internal RaftConsensusModule<TCommand, TResponse> RaftConsensusModule { get; }
-    protected FileSystemPersistenceFacade Persistence => RaftConsensusModule.Persistence;
-    protected Term CurrentTerm => RaftConsensusModule.CurrentTerm;
-    protected NodeId? VotedFor => RaftConsensusModule.VotedFor;
-    protected NodeId Id => RaftConsensusModule.Id;
-    protected IBackgroundJobQueue BackgroundJobQueue => RaftConsensusModule.BackgroundJobQueue;
-    protected IApplicationFactory<TCommand, TResponse> ApplicationFactory => RaftConsensusModule.ApplicationFactory;
-    protected PeerGroup PeerGroup => RaftConsensusModule.PeerGroup;
+    internal RaftConsensusModule<TCommand, TResponse> ConsensusModule { get; }
+    protected FileSystemPersistenceFacade Persistence => ConsensusModule.Persistence;
+    protected Term CurrentTerm => ConsensusModule.CurrentTerm;
+    protected NodeId? VotedFor => ConsensusModule.VotedFor;
+    protected NodeId Id => ConsensusModule.Id;
+    protected IBackgroundJobQueue BackgroundJobQueue => ConsensusModule.BackgroundJobQueue;
+    protected IApplicationFactory<TCommand, TResponse> ApplicationFactory => ConsensusModule.ApplicationFactory;
+    protected PeerGroup PeerGroup => ConsensusModule.PeerGroup;
 
-    internal State(RaftConsensusModule<TCommand, TResponse> raftConsensusModule)
+    internal State(RaftConsensusModule<TCommand, TResponse> consensusModule)
     {
-        RaftConsensusModule = raftConsensusModule;
+        ConsensusModule = consensusModule;
     }
 
     /// <summary>

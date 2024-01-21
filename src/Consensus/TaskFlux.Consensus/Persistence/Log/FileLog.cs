@@ -2,6 +2,7 @@
 using System.IO.Abstractions;
 using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
+using IOException = System.IO.IOException;
 
 namespace TaskFlux.Consensus.Persistence.Log;
 
@@ -57,12 +58,25 @@ public class FileLog : IDisposable
     /// <summary>
     /// Поток, представляющий файл
     /// </summary>
-    private FileSystemStream _logFileStream = null!;
+    private FileSystemStream _logFileStream;
+
+    private record struct LogRecord(Term Term, uint CheckSum, int PayloadLength, long Position)
+    {
+        public long GetNextRecordPosition()
+        {
+            return Position       // Начало в файле
+                 + sizeof(int)    // Маркер
+                 + sizeof(int)    // Терм
+                 + sizeof(uint)   // Чек-сумма
+                 + sizeof(int)    // Длина данных
+                 + PayloadLength; // Размер данных
+        }
+    }
 
     /// <summary>
     /// Список отображений: индекс записи - позиция в файле (потоке)
     /// </summary>
-    private List<PositionTerm> _index = null!;
+    private List<LogRecord> _log = null!;
 
     /// <summary>
     /// Позиция, начиная с которой необходимо записывать в лог новые элементы.
@@ -70,19 +84,10 @@ public class FileLog : IDisposable
     /// в противном случае - на конец последней записи, прямо на начало <see cref="EndOfDataRecordMarker"/>.
     /// Т.е. при дозаписи необходимо позиционироваться на эту позицию.
     /// </summary>
-    /// <remarks>
-    /// Необходимо постоянно отслеживать и обновлять этот указатель
-    /// </remarks>
-    private long _appendPosition = DataStartPosition;
-
-    /// <summary>
-    /// Получить позицию в файле, по которому необходимо производить дозапись новых элементов
-    /// </summary>
-    /// <returns></returns>
-    private long GetAppendPosition()
-    {
-        return _appendPosition;
-    }
+    private long GetAppendPosition() =>
+        _log.Count == 0
+            ? DataStartPosition
+            : _log[^1].GetNextRecordPosition();
 
     /// <summary>
     /// Индекс последней закоммиченной записи.
@@ -93,7 +98,7 @@ public class FileLog : IDisposable
     /// <summary>
     /// Количество записей в логе с учетом закоммиченных и нет.
     /// </summary>
-    public int Count => _index.Count;
+    public int Count => _log.Count;
 
     /// <summary>
     /// Получить индекс последней закоммиченной записи.
@@ -118,56 +123,80 @@ public class FileLog : IDisposable
     /// </summary>
     private const int NoCommittedEntriesIndex = -1;
 
-    internal FileLog(IFileInfo logFile, IDirectoryInfo temporaryDirectory)
+    private FileLog(FileSystemStream fileStream,
+                    IFileInfo logFile,
+                    IDirectoryInfo temporaryDirectory,
+                    List<LogRecord> log,
+                    int commitIndex)
     {
         _logFile = logFile;
         _temporaryDirectory = temporaryDirectory;
-
-        InitializeCtor();
+        _logFileStream = fileStream;
+        _log = log;
+        CommitIndex = commitIndex;
     }
 
     private void InitializeCtor()
     {
         // Разделяю, чтобы выводить более информативные сообщения об ошибках
-        if (!_logFile.Exists)
+        try
         {
-            try
-            {
-                _logFileStream = _logFile.Create();
-            }
-            catch (UnauthorizedAccessException uae)
-            {
-                throw new IOException("Не удалось создать новый файл лога команд: нет прав для создания файла", uae);
-            }
-            catch (IOException e)
-            {
-                throw new IOException("Не удалось создать новый файл лога команд", e);
-            }
+            _logFileStream = _logFile.Open(FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         }
-        else
+        catch (IOException e)
+        {
+            throw new IOException("Не удалось открыть файл лога команд", e);
+        }
+
+        ( _log, CommitIndex ) = Initialize(_logFileStream);
+    }
+
+    public static FileLog Initialize(IDirectoryInfo dataDirectory)
+    {
+        var logFile =
+            dataDirectory.FileSystem.FileInfo.New(Path.Combine(dataDirectory.FullName, Constants.LogFileName));
+        var tempDir = dataDirectory.FileSystem.DirectoryInfo.New(Path.Combine(dataDirectory.FullName,
+            Constants.TemporaryDirectoryName));
+
+        if (!tempDir.Exists)
         {
             try
             {
-                _logFileStream = _logFile.Open(FileMode.Open);
+                tempDir.Create();
             }
-            catch (UnauthorizedAccessException uae)
+            catch (Exception e)
             {
-                throw new IOException("Не удалось открыть файл лога команд: ошибка доступа к файлу", uae);
-            }
-            catch (IOException e)
-            {
-                throw new IOException("Не удалось открыть файл лога команд: файл уже открыт", e);
+                throw new IOException("Ошибка во время создания директории для временных файлов", e);
             }
         }
 
-        ( _index, CommitIndex, _appendPosition ) = Initialize(_logFileStream);
+        FileSystemStream fileStream;
+        try
+        {
+            fileStream = logFile.Open(FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (Exception e)
+        {
+            throw new IOException("Ошибка во время создания файла лога", e);
+        }
+
+        try
+        {
+            var (index, commitIndex) = Initialize(fileStream);
+            return new FileLog(fileStream, logFile, tempDir, index, commitIndex);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
     }
 
     /// <summary>
     /// Прочитать и инициализировать индекс с диска.
     /// Выполняется во время создания объекта
     /// </summary>
-    private static (List<PositionTerm> Index, int CommitIndex, long AppendPosition) Initialize(FileSystemStream file)
+    private static (List<LogRecord> Index, int CommitIndex) Initialize(FileSystemStream file)
     {
         try
         {
@@ -180,7 +209,7 @@ public class FileLog : IDisposable
                 new StreamBinaryWriter(file).Write(EndOfDataRecordMarker);
                 file.Flush(true);
 
-                return ( new List<PositionTerm>(), NoCommittedEntriesIndex, DataStartPosition );
+                return ( new List<LogRecord>(), NoCommittedEntriesIndex );
             }
 
             if (file.Length < HeaderSizeBytes)
@@ -214,8 +243,7 @@ public class FileLog : IDisposable
                     $"Индекс закоммиченной записи меньше 0 и при этом не равен -1. Прочитанный индекс: {commitIndex}");
             }
 
-            var index = new List<PositionTerm>();
-            var appendPosition = DataStartPosition;
+            var index = new List<LogRecord>();
 
             // Воссоздаем индекс
 
@@ -278,8 +306,7 @@ public class FileLog : IDisposable
                         }
                     }
 
-                    index.Add(new PositionTerm(term, filePosition));
-                    appendPosition = file.Position;
+                    index.Add(new LogRecord(term, storedCheckSum, dataLength, filePosition));
                 }
             }
             catch (EndOfStreamException e)
@@ -295,7 +322,7 @@ public class FileLog : IDisposable
                     $"Индекс закоммиченной записи больше количества записей в логе. Индекс коммита: {commitIndex}. Записей в логе: {index.Count}");
             }
 
-            return ( index, commitIndex, appendPosition );
+            return ( index, commitIndex );
         }
         catch (Exception)
         {
@@ -313,9 +340,7 @@ public class FileLog : IDisposable
         writer.Write(commitIndex);
     }
 
-    // Очень надеюсь, что такого никогда не произойдет
-    // Чтобы такого точно не произошло, надо на уровне выставления максимального размера файла лога ограничение сделать
-    public ulong FileSize => checked( ( ulong ) _logFileStream.Length );
+    public ulong FileSize => ( ulong ) _logFileStream.Length;
 
     /// <summary>
     /// Запись новую запись в конец файла лога без коммита
@@ -323,19 +348,18 @@ public class FileLog : IDisposable
     /// <param name="entry">Запись, которую нужно добавить</param>
     public LogEntryInfo Append(LogEntry entry)
     {
-        var savedAppendPosition = _logFileStream.Seek(_appendPosition, SeekOrigin.Begin);
+        var savedAppendPosition = _logFileStream.Seek(GetAppendPosition(), SeekOrigin.Begin);
         var writer = new StreamBinaryWriter(_logFileStream);
 
         AppendRecordCore(entry, ref writer);
 
-        _appendPosition = _logFileStream.Position;
         writer.Write(EndOfDataRecordMarker);
 
         _logFileStream.Flush(true);
 
-        _index.Add(new PositionTerm(entry.Term, savedAppendPosition));
+        _log.Add(new LogRecord(entry.Term, entry.GetCheckSum(), entry.Data.Length, savedAppendPosition));
 
-        return new LogEntryInfo(entry.Term, _index.Count - 1);
+        return new LogEntryInfo(entry.Term, _log.Count - 1);
     }
 
     private static void AppendRecordCore(LogEntry entry, ref StreamBinaryWriter writer)
@@ -358,18 +382,17 @@ public class FileLog : IDisposable
         }
 
         var writer = new StreamBinaryWriter(_logFileStream);
-        var startPosition = _index.Count == 0
+        var startPosition = _log.Count == 0
                                 ? DataStartPosition
-                                : _appendPosition;
+                                : GetAppendPosition();
         _logFileStream.Seek(startPosition, SeekOrigin.Begin);
 
         foreach (var entry in entries)
         {
-            _index.Add(new PositionTerm(entry.Term, _logFileStream.Position));
+            _log.Add(new LogRecord(entry.Term, entry.GetCheckSum(), entry.Data.Length, _logFileStream.Position));
             AppendRecordCore(entry, ref writer);
         }
 
-        _appendPosition = _logFileStream.Position;
         writer.Write(EndOfDataRecordMarker);
         _logFileStream.Flush(true);
     }
@@ -382,7 +405,7 @@ public class FileLog : IDisposable
                 "Следующий индекс записи в логе не может быть отрицательным");
         }
 
-        if (nextIndex > _index.Count)
+        if (nextIndex > _log.Count)
         {
             throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
                 "Следующий индекс записи в логе не может быть больше размера лога");
@@ -390,7 +413,7 @@ public class FileLog : IDisposable
 
         return nextIndex == 0
                    ? LogEntryInfo.Tomb
-                   : new LogEntryInfo(_index[nextIndex - 1].Term, nextIndex - 1);
+                   : new LogEntryInfo(_log[nextIndex - 1].Term, nextIndex - 1);
     }
 
     /// <summary>
@@ -400,12 +423,12 @@ public class FileLog : IDisposable
     /// <returns>Последняя запись в логе. Может быть <see cref="LogEntryInfo.Tomb"/>, если записей нет</returns>
     public LogEntryInfo GetLastLogEntry()
     {
-        if (_index.Count == 0)
+        if (_log.Count == 0)
         {
             return LogEntryInfo.Tomb;
         }
 
-        return new LogEntryInfo(_index[^1].Term, _index.Count - 1);
+        return new LogEntryInfo(_log[^1].Term, _log.Count - 1);
     }
 
     /// <summary>
@@ -415,115 +438,19 @@ public class FileLog : IDisposable
     /// <returns><c>true</c> - в логе были записи, <c>false</c> - лог пуст</returns>
     public bool TryGetLastLogEntry(out LogEntryInfo lastLogEntry)
     {
-        if (_index.Count == 0)
+        if (_log.Count == 0)
         {
             lastLogEntry = LogEntryInfo.Tomb;
             return false;
         }
 
-        lastLogEntry = new LogEntryInfo(_index[^1].Term, _index.Count - 1);
+        lastLogEntry = new LogEntryInfo(_log[^1].Term, _log.Count - 1);
         return true;
-    }
-
-    public IReadOnlyList<LogEntry> ReadFrom(int startIndex)
-    {
-        if (_index.Count <= startIndex)
-        {
-            return Array.Empty<LogEntry>();
-        }
-
-        var position = _index[startIndex].Position;
-        return ReadLogCoreTest(position);
-    }
-
-    /// <summary>
-    /// Читать данные из файла постепенно, начиная с указанной позиции
-    /// </summary>
-    /// <param name="position">Позиция в файле, с которой нужно читать записи. Указывает на начало</param>
-    /// <returns>Поток записей лога</returns>
-    /// <exception cref="InvalidDataException">В файле представлены неверные данные</exception>
-    /// <remarks>
-    /// Метод будет читать до конца, пока не дойдет до конца файла,
-    /// поэтому вызывающий должен контролировать сколько записей он хочет получить
-    /// </remarks>
-    private List<LogEntry> ReadLogCoreTest(long position)
-    {
-        _logFileStream.Seek(position, SeekOrigin.Begin);
-
-        var result = new List<LogEntry>();
-        var reader = new StreamBinaryReader(_logFileStream);
-        while (_logFileStream.Position < _logFileStream.Length)
-        {
-            // | Маркер | Терм | Чек-сумма | Данные |
-            var recordMarker = reader.ReadUInt32();
-            if (recordMarker != RecordMarker)
-            {
-                Debug.Assert(recordMarker == EndOfDataRecordMarker, "recordMarker == EndOfDataRecordMarker",
-                    "Прочитан не маркер записи и не маркер окончания записей");
-                break;
-            }
-
-            var term = reader.ReadInt32();
-            var storedCheckSum = reader.ReadUInt32();
-            var payload = reader.ReadBuffer();
-            Debug.Assert(Crc32CheckSum.Compute(payload) == storedCheckSum,
-                "Crc32CheckSum.Compute(payload) == storedCheckSum", "Чек-суммы не совпадают");
-            result.Add(new LogEntry(new Term(term), payload));
-        }
-
-        return result;
     }
 
     public LogEntryInfo GetInfoAt(int index)
     {
-        return new LogEntryInfo(_index[index].Term, index);
-    }
-
-    /// <summary>
-    /// Создать новый <see cref="FileLog"/> и тут же его инициализировать.
-    /// Используется во время старта приложения.
-    /// </summary>
-    /// <param name="dataDirectory">
-    /// Информация о директории с данными рафта.
-    /// В базовой директории - это `{BASE}/consensus`.
-    /// В ней должен лежать файл с логом - `raft.log`
-    /// </param>
-    /// <param name="temporaryDirectory">
-    /// Директория для временных файлов.
-    /// Должна существовать на момент вызова функции
-    /// </param>
-    /// <returns>Новый, инициализированный <see cref="FileLog"/></returns>
-    /// <exception cref="InvalidDataException">
-    /// Обнаружены ошибки во время инициализации файла (потока) данных: <br/>
-    ///    - Поток не пуст и при этом его размер меньше минимального (размер заголовка) <br/> 
-    ///    - Полученное магическое число не соответствует требуемому <br/>
-    ///    - Указанная в файле версия несовместима с текущей <br/>\
-    /// </exception>
-    /// <exception cref="ArgumentException">
-    /// <paramref name="temporaryDirectory"/> - не существует
-    /// </exception>
-    /// <exception cref="IOException">
-    /// - Ошибка во время создания нового файла лога, либо <br/>
-    /// - Ошибка во время открытия существующего файла лога, либо <br/>
-    /// </exception>
-    public static FileLog InitializeFromFileSystem(IDirectoryInfo dataDirectory,
-                                                   IDirectoryInfo temporaryDirectory)
-    {
-        var fileStream = OpenOrCreateLogFile();
-        if (!temporaryDirectory.Exists)
-        {
-            throw new ArgumentException(
-                $"Директории для временных файлов не существует. Директория: {temporaryDirectory.FullName}");
-        }
-
-        return new FileLog(fileStream, temporaryDirectory);
-
-        IFileInfo OpenOrCreateLogFile()
-        {
-            var file = dataDirectory.FileSystem.FileInfo.New(Path.Combine(dataDirectory.FullName,
-                Constants.LogFileName));
-            return file;
-        }
+        return new LogEntryInfo(_log[index].Term, index);
     }
 
     public void Dispose()
@@ -531,8 +458,7 @@ public class FileLog : IDisposable
         _logFileStream.Flush(true);
         _logFileStream.Close();
         _logFileStream.Dispose();
-        _index.Clear();
-        _appendPosition = DataStartPosition;
+        _log.Clear();
     }
 
     /// <summary>
@@ -541,7 +467,7 @@ public class FileLog : IDisposable
     /// <remarks>Используется для тестов</remarks>
     internal IReadOnlyList<LogEntry> ReadAllTest()
     {
-        return ReadRangeCore(0, _index.Count);
+        return ReadRangeCore(0, _log.Count);
     }
 
 
@@ -559,14 +485,13 @@ public class FileLog : IDisposable
                 "Индекс записи в логе не может быть отрицательным");
         }
 
-        if (_index.Count == 0)
+        if (_log.Count == 0)
         {
             // Очищать ничего не нужно
             return;
         }
 
         var newCommitIndex = Math.Max(CommitIndex - removeUntil - 1, -1);
-        long appendPosition;
 
         // 1. Создаем временный файл лога
         var (file, stream) = CreateTempLogFile();
@@ -574,27 +499,22 @@ public class FileLog : IDisposable
         {
             // Инициализируем заголовок
             WriteHeader(stream, newCommitIndex);
-            var copyStartPosition = _appendPosition;
-            if (removeUntil < _index.Count - 1)
+            if (removeUntil < _log.Count - 1)
             {
-                // Если очистить нужно не весь файл, то
-                // Копируем данные с исходного файла лога
-                copyStartPosition = _index[removeUntil + 1].Position;
+                var copyStartPosition = _log[removeUntil + 1].Position;
                 _logFileStream.Seek(copyStartPosition, SeekOrigin.Begin);
                 _logFileStream.CopyTo(stream);
+                // Предполагаю, что маркер окончания данных уже есть в файле,
+                // поэтому дополнительно записывать его не нужно
+            }
+            else
+            {
+                var writer = new StreamBinaryWriter(stream);
+                writer.Write(EndOfDataRecordMarker);
             }
 
-            appendPosition = DataStartPosition + _appendPosition - copyStartPosition;
-            // TODO: вот тут надо правильно обновлять индекс последней записи
 
-            // Записываем в конец маркер окончания данных
-            var writer = new StreamBinaryWriter(stream);
-            // BUG: этот индекс может указывать на конец файла - т.е. EndOfDataMarker и тогда их 2 будет 2
-            // appendPosition = stream.Position;
-
-            writer.Write(EndOfDataRecordMarker);
-
-            // Переименовываем в целевой файл
+            // Заменяем временный файл, файлом лога
             file.MoveTo(_logFile.FullName, true);
         }
         catch (Exception)
@@ -605,12 +525,10 @@ public class FileLog : IDisposable
         }
 
         stream.Flush(true);
-        // Обновляем свое состояние
 
         var oldLogFile = _logFileStream;
         _logFileStream = stream;
         CommitIndex = newCommitIndex;
-        _appendPosition = appendPosition;
         RemoveIndexPrefix(removeUntil + 1);
 
         oldLogFile.Dispose();
@@ -618,35 +536,33 @@ public class FileLog : IDisposable
 
         (IFileInfo, FileSystemStream) CreateTempLogFile()
         {
-            while (true)
+            var tempName = Path.GetRandomFileName();
+            var fullPath = Path.Combine(_temporaryDirectory.FullName, tempName);
+            var tempFile = _temporaryDirectory.FileSystem.FileInfo.New(fullPath);
+            try
             {
-                var tempName = Path.GetRandomFileName();
-                var fullPath = Path.Combine(_temporaryDirectory.FullName, tempName);
-                var tempFile = _temporaryDirectory.FileSystem.FileInfo.New(fullPath);
-                try
-                {
-                    return ( tempFile, tempFile.Open(FileMode.CreateNew) );
-                }
-                catch (IOException)
-                {
-                }
+                return ( tempFile, tempFile.Open(FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None) );
+            }
+            catch (IOException io)
+            {
+                throw new IOException("Ошибка при создании временного файла лога", io);
             }
         }
 
         void RemoveIndexPrefix(int count)
         {
-            if (_index.Count <= count || count == 0)
+            if (_log.Count <= count || count == 0)
             {
-                _index.Clear();
+                _log.Clear();
                 return;
             }
 
-            var positionDelta = _index[count].Position - DataStartPosition;
-            _index.RemoveRange(0, count);
-            for (var i = 0; i < _index.Count; i++)
+            var positionDelta = _log[count].Position - DataStartPosition;
+            _log.RemoveRange(0, count);
+            for (var i = 0; i < _log.Count; i++)
             {
-                var pt = _index[i];
-                _index[i] = pt with {Position = pt.Position - positionDelta};
+                var pt = _log[i];
+                _log[i] = pt with {Position = pt.Position - positionDelta};
             }
         }
     }
@@ -658,18 +574,18 @@ public class FileLog : IDisposable
     /// <returns>Список из прочитанных записей</returns>
     public IReadOnlyList<LogEntry> GetFrom(int localIndex)
     {
-        if (_index.Count < localIndex)
+        if (_log.Count < localIndex)
         {
             throw new ArgumentOutOfRangeException(nameof(localIndex), localIndex,
-                $"Указанный индекс больше количества записей в логе: {_index.Count}");
+                $"Указанный индекс больше количества записей в логе: {_log.Count}");
         }
 
-        if (localIndex == _index.Count)
+        if (localIndex == _log.Count)
         {
             return Array.Empty<LogEntry>();
         }
 
-        return ReadRangeCore(localIndex, _index.Count - localIndex);
+        return ReadRangeCore(localIndex, _log.Count - localIndex);
     }
 
     /// <summary>
@@ -680,15 +596,15 @@ public class FileLog : IDisposable
     /// <returns>Список из прочитанных записей</returns>
     private IReadOnlyList<LogEntry> ReadRangeCore(int start, int count)
     {
-        Debug.Assert(start + count <= _index.Count, "start + count < _index.Count",
+        Debug.Assert(start + count <= _log.Count, "start + count < _index.Count",
             "Индекс начала чтения не может быть больше индекса окончания. Индекс начала: {0}. Количество записей: {1}",
             start, count);
-        if (_index.Count == 0)
+        if (_log.Count == 0)
         {
             return Array.Empty<LogEntry>();
         }
 
-        var startPosition = _index[start].Position;
+        var startPosition = _log[start].Position;
         _logFileStream.Seek(startPosition, SeekOrigin.Begin);
 
         var i = 1;
@@ -714,83 +630,66 @@ public class FileLog : IDisposable
     /// <param name="index">Индекс, начиная с которого необходимо записывать данные</param>
     public void InsertRangeOverwrite(IReadOnlyList<LogEntry> entries, int index)
     {
-        try
+        if (entries.Count == 0)
         {
-            if (entries.Count == 0)
-            {
-                return;
-            }
-
-            if (index < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(index), index,
-                    "Индекс записи не может быть отрицательным");
-            }
-
-            if (_index.Count < index)
-            {
-                throw new ArgumentOutOfRangeException(nameof(index), index,
-                    $"Индекс записи превышает размер лога. Текущий размер лога: {_index.Count}");
-            }
-
-            if (index <= CommitIndex)
-            {
-                throw new ArgumentOutOfRangeException(nameof(index), index,
-                    $"Нельзя перезаписать закоммиченные записи. Индекс закоммиченной записи: {CommitIndex}");
-            }
-
-            /*
-             * Тут могут быть 2 случая:
-             * 1. Записать в конец файла - localIndex = _index.Count
-             * 2. Перезаписать существующие записи - localIndex < _index.Count
-             */
-
-            if (index == _index.Count)
-            {
-                AppendRange(entries);
-                return;
-            }
-
-            // Записываем данные в лог
-            var startPosition = _index[index].Position;
-            _logFileStream.Position = startPosition;
-            var writer = new StreamBinaryWriter(_logFileStream);
-            var newIndexValues = new List<PositionTerm>();
-
-            var hasData = false;
-
-            foreach (var entry in entries)
-            {
-                newIndexValues.Add(new PositionTerm(entry.Term, _logFileStream.Position));
-                AppendRecordCore(entry, ref writer);
-                hasData = true;
-            }
-
-            if (hasData)
-            {
-                _appendPosition = _logFileStream.Position;
-                writer.Write(EndOfDataRecordMarker);
-                _logFileStream.Flush(true);
-
-
-                // // Обновляем индекс
-                // TODO: возможно в этом месте ошибка
-                _index.RemoveRange(index, _index.Count - index);
-                _index.AddRange(newIndexValues);
-            }
+            return;
         }
-        finally
+
+        if (index < 0)
         {
-            // Проверяем целостность файла - ЭТО ТОЛЬКО НА ВРЕМЯ ДЕБАГА!!!
-            try
-            {
-                Initialize(_logFileStream);
-            }
-            catch (Exception e)
-            {
-                throw new InvalidDataException($"Ошибка при валидации файла после дозаписи. Запись по индексу: {index}",
-                    e);
-            }
+            throw new ArgumentOutOfRangeException(nameof(index), index,
+                "Индекс записи не может быть отрицательным");
+        }
+
+        if (_log.Count < index)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), index,
+                $"Индекс записи превышает размер лога. Текущий размер лога: {_log.Count}");
+        }
+
+        if (index <= CommitIndex)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), index,
+                $"Нельзя перезаписать закоммиченные записи. Индекс закоммиченной записи: {CommitIndex}");
+        }
+
+        /*
+         * Тут могут быть 2 случая:
+         * 1. Записать в конец файла - localIndex = _index.Count
+         * 2. Перезаписать существующие записи - localIndex < _index.Count
+         */
+
+        if (index == _log.Count)
+        {
+            AppendRange(entries);
+            return;
+        }
+
+        // Записываем данные в лог
+        var startPosition = _log[index].Position;
+        _logFileStream.Position = startPosition;
+        var writer = new StreamBinaryWriter(_logFileStream);
+        var newIndexValues = new List<LogRecord>();
+
+        var hasData = false;
+
+        foreach (var entry in entries)
+        {
+            newIndexValues.Add(new LogRecord(entry.Term, entry.GetCheckSum(), entry.Data.Length,
+                _logFileStream.Position));
+            AppendRecordCore(entry, ref writer);
+            hasData = true;
+        }
+
+        if (hasData)
+        {
+            writer.Write(EndOfDataRecordMarker);
+            _logFileStream.Flush(true);
+
+
+            // Обновляем индекс
+            _log.RemoveRange(index, _log.Count - index);
+            _log.AddRange(newIndexValues);
         }
     }
 
@@ -800,7 +699,7 @@ public class FileLog : IDisposable
     /// <param name="index">Индекс в логе, который нужно закоммитить</param>
     public void Commit(int index)
     {
-        if (_index.Count <= index)
+        if (_log.Count <= index)
         {
             throw new ArgumentOutOfRangeException(nameof(index), index,
                 "Индекс для коммита превышает размер лога");
@@ -828,20 +727,20 @@ public class FileLog : IDisposable
 
     internal IReadOnlyList<LogEntry> GetUncommittedTest()
     {
-        if (_index.Count == 0)
+        if (_log.Count == 0)
         {
             // Лог пуст
             return Array.Empty<LogEntry>();
         }
 
         // Не работает, когда в логе только 1 запись
-        if (CommitIndex == _index.Count - 1)
+        if (CommitIndex == _log.Count - 1)
         {
             // Все закоммичены, либо лог пуст
             return Array.Empty<LogEntry>();
         }
 
-        return ReadRangeCore(CommitIndex + 1, _index.Count - CommitIndex - 1);
+        return ReadRangeCore(CommitIndex + 1, _log.Count - CommitIndex - 1);
     }
 
     private static bool TryReadLogEntry(ref StreamBinaryReader reader, out LogEntry entry, bool checkCrc = false)
@@ -851,7 +750,7 @@ public class FileLog : IDisposable
         {
             Debug.Assert(recordMarker == EndOfDataRecordMarker, "recordMarker == EndOfDataRecordMarker",
                 "Прочитанный маркер не равняется маркеру начала или конца записи");
-            entry = default;
+            entry = default!;
             return false;
         }
 
@@ -890,11 +789,10 @@ public class FileLog : IDisposable
 
         foreach (var entry in committed.Concat(uncommitted))
         {
-            _index.Add(new PositionTerm(entry.Term, _logFileStream.Position));
+            _log.Add(new LogRecord(entry.Term, entry.GetCheckSum(), entry.Data.Length, _logFileStream.Position));
             AppendRecordCore(entry, ref writer);
         }
 
-        _appendPosition = _logFileStream.Position;
         writer.Write(EndOfDataRecordMarker);
         _logFileStream.Flush(true);
     }
@@ -906,7 +804,7 @@ public class FileLog : IDisposable
     /// <remarks>Перечисление ленивое</remarks>
     public IEnumerable<byte[]> ReadCommittedData()
     {
-        if (_index.Count == 0)
+        if (_log.Count == 0)
         {
             yield break;
         }
@@ -946,13 +844,13 @@ public class FileLog : IDisposable
 
     public bool TryGetLogEntryInfo(int index, out LogEntryInfo entry)
     {
-        if (_index.Count <= index)
+        if (_log.Count <= index)
         {
             entry = LogEntryInfo.Tomb;
             return false;
         }
 
-        entry = new LogEntryInfo(_index[index].Term, index);
+        entry = new LogEntryInfo(_log[index].Term, index);
         return true;
     }
 
@@ -961,7 +859,7 @@ public class FileLog : IDisposable
     /// </summary>
     public void Clear()
     {
-        if (_index.Count == 0)
+        if (_log.Count == 0)
         {
             return;
         }
@@ -974,7 +872,7 @@ public class FileLog : IDisposable
 
         // Очищаем содержимое файла лога
         writer.Write(EndOfDataRecordMarker);
-        _index.Clear();
+        _log.Clear();
     }
 
     internal void ValidateFileTest()

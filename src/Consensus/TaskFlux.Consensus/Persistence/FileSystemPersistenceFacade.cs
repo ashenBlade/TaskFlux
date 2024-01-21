@@ -29,12 +29,12 @@ public class FileSystemPersistenceFacade
     /// <summary>
     /// Файл метаданных - `consensus/raft.metadata`
     /// </summary>
-    private readonly MetadataFile _metadataStorage;
+    private readonly MetadataFile _metadata;
 
     /// <summary>
     /// Файл снапшота - `consensus/raft.snapshot`
     /// </summary>
-    private readonly SnapshotFile _snapshotStorage;
+    private readonly SnapshotFile _snapshot;
 
     /// <summary>
     /// Метод для проверки превышения размера файла лога.
@@ -51,19 +51,19 @@ public class FileSystemPersistenceFacade
         {
             lock (_lock)
             {
-                if (_snapshotStorage.HasSnapshot)
+                if (_snapshot.HasSnapshot)
                 {
                     if (_log.TryGetLastLogEntry(out var logLastEntry))
                     {
                         return logLastEntry with
                         {
                             Index = logLastEntry.Index
-                                  + _snapshotStorage.LastApplied.Index
+                                  + _snapshot.LastApplied.Index
                                   + 1
                         };
                     }
 
-                    return _snapshotStorage.LastApplied;
+                    return _snapshot.LastApplied;
                 }
 
 
@@ -81,14 +81,14 @@ public class FileSystemPersistenceFacade
         {
             lock (_lock)
             {
-                if (SnapshotStorage.HasSnapshot)
+                if (Snapshot.HasSnapshot)
                 {
                     if (_log.TryGetCommitIndex(out var logCommitIndex))
                     {
-                        return SnapshotStorage.LastApplied.Index + logCommitIndex + 1;
+                        return Snapshot.LastApplied.Index + logCommitIndex + 1;
                     }
 
-                    return SnapshotStorage.LastApplied.Index;
+                    return Snapshot.LastApplied.Index;
                 }
 
                 return _log.CommitIndex;
@@ -105,7 +105,7 @@ public class FileSystemPersistenceFacade
         {
             lock (_lock)
             {
-                return _metadataStorage.Term;
+                return _metadata.Term;
             }
         }
     }
@@ -119,32 +119,33 @@ public class FileSystemPersistenceFacade
         {
             lock (_lock)
             {
-                return _metadataStorage.VotedFor;
+                return _metadata.VotedFor;
             }
         }
     }
 
-    public SnapshotFile SnapshotStorage => _snapshotStorage;
+    public SnapshotFile Snapshot => _snapshot;
     public FileLog Log => _log;
+    public MetadataFile Metadata => _metadata;
 
     public FileSystemPersistenceFacade(FileLog log,
-                                       MetadataFile metadataStorage,
-                                       SnapshotFile snapshotStorage,
+                                       MetadataFile metadata,
+                                       SnapshotFile snapshot,
                                        ILogger logger,
                                        ulong maxLogFileSize = Constants.MaxLogFileSize)
-        : this(log, metadataStorage, snapshotStorage, logger, new SizeLogFileSizeChecker(maxLogFileSize))
+        : this(log, metadata, snapshot, logger, new SizeLogFileSizeChecker(maxLogFileSize))
     {
     }
 
     internal FileSystemPersistenceFacade(FileLog log,
-                                         MetadataFile metadataStorage,
-                                         SnapshotFile snapshotStorage,
+                                         MetadataFile metadata,
+                                         SnapshotFile snapshot,
                                          ILogger logger,
                                          ILogFileSizeChecker sizeChecker)
     {
         _log = log;
-        _metadataStorage = metadataStorage;
-        _snapshotStorage = snapshotStorage;
+        _metadata = metadata;
+        _snapshot = snapshot;
         _logger = logger;
         _sizeChecker = sizeChecker;
     }
@@ -223,7 +224,7 @@ public class FileSystemPersistenceFacade
         {
             _logger.Verbose("Добавляю запись {Entry} в лог", entry);
             var logInfo = _log.Append(entry);
-            return logInfo with {Index = CalculateGlobalIndex(_snapshotStorage.LastApplied.Index, logInfo.Index)};
+            return logInfo with {Index = CalculateGlobalIndex(_snapshot.LastApplied.Index, logInfo.Index)};
         }
     }
 
@@ -264,13 +265,13 @@ public class FileSystemPersistenceFacade
              * должна иметь терм не меньше терма переданного префикса.
              * Это единственное предположение.
              */
-            return prefix.Term <= SnapshotStorage.LastApplied.Term;
+            return prefix.Term <= Snapshot.LastApplied.Term;
         }
 
         if (localIndex == -1)
         {
             // Префикс указывает на последнюю запись в снапшоте
-            return prefix.Term == SnapshotStorage.LastApplied.Term;
+            return prefix.Term == Snapshot.LastApplied.Term;
         }
 
         if (_log.TryGetLogEntryInfo(localIndex, out var entryInfo))
@@ -293,7 +294,7 @@ public class FileSystemPersistenceFacade
 
         if (localIndex == -1)
         {
-            return SnapshotStorage.LastApplied;
+            return Snapshot.LastApplied;
         }
 
         return _log.GetInfoAt(localIndex) with {Index = globalIndex};
@@ -355,7 +356,7 @@ public class FileSystemPersistenceFacade
 
         // Если снапшота нет, то -(-1) - 1 = 0 - ничего не изменятся (индекс лога == индекс глобальный)
         // Если снапшот есть, то из переданного globalIndex вычитается кол-во записей в снапшоте = -(LastAppliedIndex + 1) 
-        return globalIndex - ( SnapshotStorage.LastApplied.Index + 1 );
+        return globalIndex - ( Snapshot.LastApplied.Index + 1 );
     }
 
     /// <summary>
@@ -384,21 +385,11 @@ public class FileSystemPersistenceFacade
             if (logIndex < -1)
             {
                 throw new InvalidOperationException(
-                    $"Указанный индекс коммита меньше последней команды в снапшоте. Переданный индекс: {index}. Последний индекс снапшота: {SnapshotStorage.LastApplied}");
+                    $"Указанный индекс коммита меньше последней команды в снапшоте. Переданный индекс: {index}. Последний индекс снапшота: {Snapshot.LastApplied}");
             }
 
             _logger.Verbose("Коммичу индекс {GlobalIndex}/{LogIndex}", index, logIndex);
             _log.Commit(logIndex);
-            try
-            {
-                _log.ValidateFileTest();
-            }
-            catch (Exception e)
-            {
-                _logger.Error(e,
-                    "Ошибка при валидации валидации файла лога после коммита. Индекс коммита {CommitIndex}", logIndex);
-                throw;
-            }
         }
     }
 
@@ -420,17 +411,17 @@ public class FileSystemPersistenceFacade
             var localIndex = CalculateLogIndex(index);
             if (localIndex == -1)
             {
-                return SnapshotStorage.LastApplied;
+                return Snapshot.LastApplied;
             }
 
             var logEntryInfo = _log.GetInfoAt(localIndex);
 
-            if (SnapshotStorage.LastApplied.IsTomb)
+            if (Snapshot.LastApplied.IsTomb)
             {
                 return logEntryInfo;
             }
 
-            return logEntryInfo with {Index = logEntryInfo.Index + SnapshotStorage.LastApplied.Index};
+            return logEntryInfo with {Index = logEntryInfo.Index + Snapshot.LastApplied.Index};
         }
     }
 
@@ -455,13 +446,19 @@ public class FileSystemPersistenceFacade
 
         lock (_lock)
         {
-            if (_snapshotStorage.LastApplied.Index + 1 == nextIndex)
+            if (_snapshot.LastApplied.Index + 1 == nextIndex)
             {
-                return _snapshotStorage.LastApplied;
+                return _snapshot.LastApplied;
             }
 
             return GetLogEntryInfoAtIndex(nextIndex - 1);
         }
+    }
+
+    public bool TryGetSnapshotLastEntryInfo(out LogEntryInfo entryInfo)
+    {
+        entryInfo = Snapshot.LastApplied;
+        return !entryInfo.IsTomb;
     }
 
     /// <summary>
@@ -474,7 +471,7 @@ public class FileSystemPersistenceFacade
         // Вся работа будет весить через временный файл снапшота.
         // Для записи в этом файл будет использоваться обертка/фасад
         var lastLocalIndex = CalculateLogIndex(lastIncludedSnapshotEntry.Index);
-        var snapshotTempFile = _snapshotStorage.CreateTempSnapshotFile();
+        var snapshotTempFile = _snapshot.CreateTempSnapshotFile();
         try
         {
             _logger.Verbose("Инициализирую временный файл снапшота с последней записью {LastEntry}",
@@ -516,25 +513,12 @@ public class FileSystemPersistenceFacade
             _parent._logger.Verbose("Сохраняю файл снапшота");
             // 1. Обновляем файл снапшота
             _snapshotFileWriter.Save();
-            // TODO: вот тут возможно причина ошибок
 
             // 2. Очищаем лог
             if (_lastIncludedLocalIndex >= 0)
             {
                 _parent._logger.Verbose("Очищаю лог до индекса {LogIndex}", _lastIncludedLocalIndex);
                 _parent.Log.TruncateUntil(_lastIncludedLocalIndex);
-
-                try
-                {
-                    _parent.Log.ValidateFileTest();
-                }
-                catch (Exception e)
-                {
-                    _parent._logger.Error(e,
-                        "Ошибка при валидации файла лога после создания снапшота. Индекс лога: {LogIndex}",
-                        _lastIncludedLocalIndex);
-                    throw;
-                }
             }
             else
             {
@@ -563,7 +547,7 @@ public class FileSystemPersistenceFacade
         token.ThrowIfCancellationRequested();
         var oldLocalIndex = CalculateLogIndex(lastIncludedEntry.Index);
         // 1. Создать временный файл
-        var snapshotTempFile = _snapshotStorage.CreateTempSnapshotFile();
+        var snapshotTempFile = _snapshot.CreateTempSnapshotFile();
 
         try
         {
@@ -629,16 +613,7 @@ public class FileSystemPersistenceFacade
     /// <returns><c>true</c> - файл снапшота существовал, <c>false</c> - файл снапшота не существовал</returns>
     public bool TryGetSnapshot(out ISnapshot snapshot, out LogEntryInfo lastLogEntry)
     {
-        if (!_snapshotStorage.LastApplied.IsTomb)
-        {
-            snapshot = _snapshotStorage.GetSnapshot();
-            lastLogEntry = _snapshotStorage.LastApplied;
-            return true;
-        }
-
-        snapshot = default!;
-        lastLogEntry = default;
-        return false;
+        return Snapshot.TryGetSnapshot(out snapshot, out lastLogEntry);
     }
 
     /// <summary>
@@ -653,7 +628,7 @@ public class FileSystemPersistenceFacade
         lock (_lock)
         {
             _logger.Verbose("Записываю новый терм {Term} и отданный голос {VotedFor}", newTerm, votedFor);
-            _metadataStorage.Update(newTerm, votedFor);
+            _metadata.Update(newTerm, votedFor);
         }
     }
 

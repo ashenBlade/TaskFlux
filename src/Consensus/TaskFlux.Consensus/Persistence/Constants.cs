@@ -3,25 +3,24 @@ namespace TaskFlux.Consensus.Persistence;
 public class Constants
 {
     /// <summary>
-    /// Маркер файла, относящегося к приложению.
-    /// В каждом файле первые 4 байта должны быть равны ему.
-    /// </summary>
-    internal const int Marker = 0x2F6F0F2F;
-
-    /// <summary>
     /// Название файла с метаданными
     /// </summary>
-    public const string MetadataFileName = "raft.metadata";
+    public const string MetadataFileName = "tflux.metadata";
 
     /// <summary>
     /// Название файла лога команд
     /// </summary>
-    public const string LogFileName = "raft.log";
+    public const string LogFileName = "tflux.log";
 
     /// <summary>
     /// Название файла снапшота
     /// </summary>
-    public const string SnapshotFileName = "raft.snapshot";
+    public const string SnapshotFileName = "tflux.snapshot";
+
+    /// <summary>
+    /// Название директории для временных файлов
+    /// </summary>
+    public const string TemporaryDirectoryName = "temporary";
 
     /// <summary>
     /// Максимальный размер файла лога по умолчанию

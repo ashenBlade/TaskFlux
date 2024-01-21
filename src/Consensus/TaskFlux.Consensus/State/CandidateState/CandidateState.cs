@@ -21,10 +21,10 @@ public class CandidateState<TCommand, TResponse>
     private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
 
-    internal CandidateState(RaftConsensusModule<TCommand, TResponse> raftConsensusModule,
+    internal CandidateState(RaftConsensusModule<TCommand, TResponse> consensusModule,
                             ITimer electionTimer,
                             ILogger logger)
-        : base(raftConsensusModule)
+        : base(consensusModule)
     {
         _electionTimer = electionTimer;
         _logger = logger;
@@ -70,8 +70,8 @@ public class CandidateState<TCommand, TResponse>
         // Пока такой хак, думаю в будущем, если буду один в кластере - сразу лидером стартую
         if (PeerGroup.Peers.Count == 0)
         {
-            var leaderState = RaftConsensusModule.CreateLeaderState();
-            if (RaftConsensusModule.TryUpdateState(leaderState, this))
+            var leaderState = ConsensusModule.CreateLeaderState();
+            if (ConsensusModule.TryUpdateState(leaderState, this))
             {
                 _logger.Debug("Сработал Election Timeout и в кластере я один. Становлюсь лидером");
                 Persistence.UpdateState(CurrentTerm.Increment(), null);
@@ -79,8 +79,8 @@ public class CandidateState<TCommand, TResponse>
             }
         }
 
-        var candidateState = RaftConsensusModule.CreateCandidateState();
-        if (RaftConsensusModule.TryUpdateState(candidateState, this))
+        var candidateState = ConsensusModule.CreateCandidateState();
+        if (ConsensusModule.TryUpdateState(candidateState, this))
         {
             _logger.Debug("Сработал Election Timeout. Перехожу в новый терм");
             Persistence.UpdateState(CurrentTerm.Increment(), Id);
@@ -94,9 +94,9 @@ public class CandidateState<TCommand, TResponse>
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
-        var followerState = RaftConsensusModule.CreateFollowerState();
-        RaftConsensusModule.TryUpdateState(followerState, this);
-        return RaftConsensusModule.Handle(request);
+        var followerState = ConsensusModule.CreateFollowerState();
+        ConsensusModule.TryUpdateState(followerState, this);
+        return ConsensusModule.Handle(request);
     }
 
     public override SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default)
@@ -112,44 +112,17 @@ public class CandidateState<TCommand, TResponse>
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
         }
 
-        var logConflicts = Persistence.Conflicts(request.LastLogEntryInfo);
-        if (logConflicts)
-        {
-            _logger.Debug("При обработке RequestVote от узла {NodeId} обнаружен конфликт лога", request.CandidateId);
-        }
-
         if (CurrentTerm < request.CandidateTerm)
         {
-            var followerState = RaftConsensusModule.CreateFollowerState();
-            if (RaftConsensusModule.TryUpdateState(followerState, this))
+            var followerState = ConsensusModule.CreateFollowerState();
+            if (ConsensusModule.TryUpdateState(followerState, this))
             {
-                RaftConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
+                ConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
             }
 
-            return new RequestVoteResponse(CurrentTerm, !logConflicts);
-        }
-
-        var canVote =
-            // Ранее не голосовали
-            VotedFor is null
-          ||
-            // Текущий лидер/кандидат посылает этот запрос (почему бы не согласиться)
-            VotedFor == request.CandidateId;
-
-        // Отдать свободный голос можем только за кандидата 
-        if (canVote
-          &&
-            // У которого лог в консистентном с нашим состоянием
-            !logConflicts)
-        {
-            var followerState = RaftConsensusModule.CreateFollowerState();
-            if (RaftConsensusModule.TryUpdateState(followerState, this))
-            {
-                RaftConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
-                return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
-            }
-
-            return RaftConsensusModule.Handle(request);
+            // Даже если не смогли стать фолловером (не смогли обновить состояние), 
+            // все равно делегируем обработку запроса 
+            return ConsensusModule.Handle(request);
         }
 
         // Кандидат только что проснулся и не знает о текущем состоянии дел. 
@@ -175,8 +148,8 @@ public class CandidateState<TCommand, TResponse>
             return new InstallSnapshotResponse(CurrentTerm);
         }
 
-        var state = RaftConsensusModule.CreateFollowerState();
-        if (RaftConsensusModule.TryUpdateState(state, this))
+        var state = ConsensusModule.CreateFollowerState();
+        if (ConsensusModule.TryUpdateState(state, this))
         {
             _logger.Debug("Получен InstallSnapshotRequest с термом не меньше моего. Перехожу в Follower");
         }
@@ -185,6 +158,6 @@ public class CandidateState<TCommand, TResponse>
             _logger.Debug("Получен InstallSnapshotRequest с термом не меньше моего, но перейти в Follower не удалось");
         }
 
-        return RaftConsensusModule.Handle(request, token);
+        return ConsensusModule.Handle(request, token);
     }
 }

@@ -1,5 +1,4 @@
 using System.IO.Abstractions;
-using System.IO.Abstractions.TestingHelpers;
 using System.Text;
 using FluentAssertions;
 using TaskFlux.Consensus.Persistence;
@@ -14,7 +13,7 @@ public class FileLogTests : IDisposable
     private static LogEntry Entry(int term, string data)
         => new(new Term(term), Encoding.UTF8.GetBytes(data));
 
-    private record MockFiles(IFileInfo LogFile, IDirectoryInfo TemporaryDirectory);
+    private record MockFiles(IFileInfo LogFile, IDirectoryInfo TemporaryDirectory, IDirectoryInfo DataDirectory);
 
     /// <summary>
     /// Файлы, который создаются вызовом <see cref="CreateLog"/>.
@@ -26,9 +25,9 @@ public class FileLogTests : IDisposable
 
     public void Dispose()
     {
-        if (_createdFiles is var (logFile, tempDir))
+        if (_createdFiles is var (logFile, tempDir, dataDir))
         {
-            var fileLogCreation = () => new FileLog(logFile, tempDir);
+            var fileLogCreation = () => FileLog.Initialize(dataDir);
             fileLogCreation.Should()
                            .NotThrow("объект лога должен уметь создаваться после операций другого объекта лога");
         }
@@ -44,20 +43,10 @@ public class FileLogTests : IDisposable
 
     private (FileLog Log, MockFiles Mock) CreateLog()
     {
-        var temporaryDirectoryName = "temporary";
-        var logFileName = "log.file";
-
-        var fs = new MockFileSystem(files: new Dictionary<string, MockFileData>()
-        {
-            {logFileName, new MockFileData(Array.Empty<byte>())}, {temporaryDirectoryName, new MockDirectoryData()}
-        });
-
-
-        var fileInfo = new MockFileInfo(fs, logFileName);
-        var temporaryDirectory = fs.DirectoryInfo.New(temporaryDirectoryName);
-        var mockFiles = new MockFiles(fileInfo, temporaryDirectory);
+        var fileSystem = Helpers.CreateFileSystem();
+        var mockFiles = new MockFiles(fileSystem.Log, fileSystem.TemporaryDirectory, fileSystem.DataDirectory);
         _createdFiles = mockFiles;
-        var fileLog = new FileLog(fileInfo, temporaryDirectory);
+        var fileLog = FileLog.Initialize(fileSystem.DataDirectory);
         _createdFileLog = fileLog;
         return ( fileLog, mockFiles );
     }
@@ -181,27 +170,6 @@ public class FileLogTests : IDisposable
         Assert.Equal(entriesCount, actual.Count);
     }
 
-    [Fact]
-    public void ReadFrom__КогдаЛогПустИИндекс0__ДолженВернутьПустойСписок()
-    {
-        var (storage, _) = CreateLog();
-
-        var actual = storage.ReadFrom(0);
-        Assert.Empty(actual);
-    }
-
-    [Fact]
-    public void ReadFrom__КогдаВЛоге1ЗаписьИИндекс0__ДолженВернутьСписокИзЭтойЗаписи()
-    {
-        var (storage, _) = CreateLog();
-        var expected = Entry(2, "sample data");
-
-        storage.Append(expected);
-        var actual = storage.ReadFrom(0).Single();
-
-        Assert.Equal(expected, actual, Comparer);
-    }
-
     [Theory]
     [InlineData(2, 1)]
     [InlineData(2, 2)]
@@ -244,7 +212,8 @@ public class FileLogTests : IDisposable
 
         var (firstLog, fs) = CreateLog();
         firstLog.AppendRange(entries);
-        var secondLog = new FileLog(fs.LogFile, fs.TemporaryDirectory);
+
+        var secondLog = FileLog.Initialize(fs.DataDirectory);
         var actual = secondLog.ReadAllTest();
 
         Assert.Equal(entries, actual, Comparer);
@@ -1049,13 +1018,80 @@ public class FileLogTests : IDisposable
         log.Dispose();
 
 
-        var operation = ( () => new FileLog(fs.LogFile, fs.TemporaryDirectory) );
+        var operation = ( () => FileLog.Initialize(fs.DataDirectory) );
         operation.Should()
                  .NotThrow("файл должен остаться в корректном состоянии")
                  .Which
                  .ReadAllTest()
                  .Should()
                  .Equal(expected, LogEntryEquals, "данные должны обрезаться");
+    }
+
+    [Theory]
+    [InlineData(10, 10, 9, 10, 10)]
+    [InlineData(10, 10, 19, 5, 0)]
+    [InlineData(10, 0, 9, 10, 0)]
+    [InlineData(10, 5, 12, 3, 2)]
+    public void
+        InsertRangeOverwriteПослеTruncateUntil__КогдаДозаписьПроизводитсяВКонец__ДолженКорректноЗаписатьДанныеВКонец(
+        int committedCount,
+        int uncommittedCount,
+        int truncateIndex,
+        int insertCount,
+        int insertIndex)
+    {
+        var (log, _) = CreateLog();
+        var committed = Enumerable.Range(1, committedCount)
+                                  .Select(i => Entry(i, i.ToString()))
+                                  .ToArray();
+        var uncommitted = Enumerable.Range(1 + committedCount, uncommittedCount)
+                                    .Select(i => Entry(i, i.ToString()))
+                                    .ToArray();
+        log.SetupLogTest(committed, uncommitted);
+        var toInsert = CreateEntries(1 + committedCount + uncommittedCount, insertCount);
+        var expected = committed.Concat(uncommitted).Skip(truncateIndex + 1).Concat(toInsert).ToArray();
+
+        log.TruncateUntil(truncateIndex);
+        log.InsertRangeOverwrite(toInsert, insertIndex);
+
+        var actual = log.ReadAllTest();
+        Assert.Equal(expected, actual, Comparer);
+    }
+
+    [Theory]
+    [InlineData(10, 10, 15, 1, 2)]
+    [InlineData(10, 10, 14, 5, 3)]
+    [InlineData(10, 10, 14, 5, 2)]
+    [InlineData(10, 1, 9, 10, 0)]
+    [InlineData(10, 5, 12, 3, 1)]
+    public void
+        InsertRangeOverwriteПослеTruncateUntil__КогдаЧастьЗаписейПерезаписывается__ДолженКорректноПерезаписатьДанные(
+        int committedCount,
+        int uncommittedCount,
+        int truncateIndex,
+        int insertCount,
+        int insertIndex)
+    {
+        var (log, _) = CreateLog();
+        var committed = Enumerable.Range(1, committedCount)
+                                  .Select(i => Entry(i, i.ToString()))
+                                  .ToArray();
+        var uncommitted = Enumerable.Range(1 + committedCount, uncommittedCount)
+                                    .Select(i => Entry(i, i.ToString()))
+                                    .ToArray();
+        log.SetupLogTest(committed, uncommitted);
+        var toInsert = CreateEntries(1 + committedCount + uncommittedCount, insertCount);
+        var expected = committed.Concat(uncommitted)
+                                .Skip(truncateIndex + 1)
+                                .Take(insertIndex)
+                                .Concat(toInsert)
+                                .ToArray();
+
+        log.TruncateUntil(truncateIndex);
+        log.InsertRangeOverwrite(toInsert, insertIndex);
+
+        var actual = log.ReadAllTest();
+        Assert.Equal(expected, actual, Comparer);
     }
 
 

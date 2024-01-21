@@ -31,7 +31,7 @@ public class NodeStateObserverBackgroundService : BackgroundService
                 _logger.Information(
                     "Роль: {State}; Терм: {Term}; Последняя запись лога: {LastEntry}; Запись в снапшоте: {SnapshotEntry}; Запись в логе (всего/коммит): {LogCount}/{LogCommitIndex}",
                     _module.CurrentRole, _module.CurrentTerm.Value, persistence.LastEntry,
-                    persistence.SnapshotStorage.LastApplied, persistence.Log.Count, persistence.Log.CommitIndex + 1);
+                    persistence.Snapshot.LastApplied, persistence.Log.Count, persistence.Log.CommitIndex + 1);
                 await Task.Delay(_interval, token);
             }
         }

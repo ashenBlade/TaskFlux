@@ -49,6 +49,7 @@ public class CandidateStateTests
                                                            IApplicationFactory? applicationFactory = null)
     {
         var facade = CreateStoragePersistenceFacade();
+        facade.Metadata.SetupMetadataTest(term, null);
         electionTimer ??= Mock.Of<ITimer>();
         var timerFactory = electionTimer is null
                                ? Helpers.NullTimerFactory
@@ -66,10 +67,9 @@ public class CandidateStateTests
         FileSystemPersistenceFacade CreateStoragePersistenceFacade()
         {
             var fs = Helpers.CreateFileSystem();
-            var logStorage = new FileLog(fs.Log, fs.TemporaryDirectory);
-            var metadataStorage =
-                new MetadataFile(fs.Metadata.Open(FileMode.Open), new Term(term), NodeId);
-            var snapshotStorage = new SnapshotFile(fs.Snapshot, fs.TemporaryDirectory);
+            var logStorage = FileLog.Initialize(fs.DataDirectory);
+            var metadataStorage = MetadataFile.Initialize(fs.DataDirectory);
+            var snapshotStorage = SnapshotFile.Initialize(fs.DataDirectory);
             if (fileSizeChecker is null)
             {
                 return new FileSystemPersistenceFacade(logStorage, metadataStorage, snapshotStorage, Logger.None);
@@ -489,7 +489,7 @@ public class CandidateStateTests
                 .Should()
                 .BeTrue("Команда полностью допустима - она должна быть применена");
 
-        var (actualIndex, actualTerm, actualSnapshot) = node.Persistence.SnapshotStorage.ReadAllDataTest();
+        var (actualIndex, actualTerm, actualSnapshot) = node.Persistence.Snapshot.ReadAllDataTest();
 
         actualIndex.Should()
                    .Be(expectedLastIndex,

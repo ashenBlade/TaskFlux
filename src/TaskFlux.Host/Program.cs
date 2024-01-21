@@ -120,47 +120,22 @@ return 0;
 // TODO: когда приложение закрывается, то нужно прекращать подключаться к узлам (Cancellation Token не работает)
 FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
 {
-    // TODO: блокировать (Lock) файлы после открытия
-    var dataDirectory = GetDataDirectory(options);
+    var dataDirPath = GetDataDirectory(options);
 
     var fs = new FileSystem();
-    var consensusDirectory = CreateConsensusDirectory();
-
-    var tempDirectory = CreateTemporaryDirectory();
-
+    var dataDirectory = CreateDataDirectory();
+    var dataDirectoryInfo = new DirectoryInfoWrapper(fs, dataDirectory);
     var fileLogStorage = CreateFileLogStorage();
     var metadataStorage = CreateMetadataStorage();
-    var snapshotStorage = CreateSnapshotStorage();
+    var snapshotStorage = CreateSnapshotStorage(new DirectoryInfoWrapper(fs, dataDirectory));
 
-    // TODO: запустить процесс и посмотреть как изменятся данные
     return new FileSystemPersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage,
         Log.ForContext<FileSystemPersistenceFacade>(),
         maxLogFileSize: options.MaxLogFileSize);
 
-    DirectoryInfo CreateTemporaryDirectory()
+    DirectoryInfo CreateDataDirectory()
     {
-        var temporary = new DirectoryInfo(Path.Combine(consensusDirectory.FullName, "temporary"));
-        if (!temporary.Exists)
-        {
-            Log.Information("Директории для временных файлов не найдено. Создаю новую - {Path}", temporary.FullName);
-            try
-            {
-                temporary.Create();
-                return temporary;
-            }
-            catch (Exception e)
-            {
-                Log.Fatal(e, "Ошибка при создании директории для временных файлов в {Path}", temporary.FullName);
-                throw;
-            }
-        }
-
-        return temporary;
-    }
-
-    DirectoryInfo CreateConsensusDirectory()
-    {
-        var dir = new DirectoryInfo(Path.Combine(dataDirectory, "consensus"));
+        var dir = new DirectoryInfo(Path.Combine(dataDirPath, "data"));
         if (!dir.Exists)
         {
             Log.Information("Директории для хранения данных не существует. Создаю новую - {Path}",
@@ -179,9 +154,9 @@ FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
         return dir;
     }
 
-    SnapshotFile CreateSnapshotStorage()
+    SnapshotFile CreateSnapshotStorage(IDirectoryInfo dataDir)
     {
-        var snapshotFile = new FileInfo(Path.Combine(consensusDirectory.FullName, "raft.snapshot"));
+        var snapshotFile = new FileInfo(Path.Combine(dataDirectory.FullName, "raft.snapshot"));
         if (!snapshotFile.Exists)
         {
             Log.Information("Файл снапшота не обнаружен. Создаю новый - {Path}", snapshotFile.FullName);
@@ -197,16 +172,14 @@ FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
             }
         }
 
-        return new SnapshotFile(new FileInfoWrapper(fs, snapshotFile),
-            new DirectoryInfoWrapper(fs, tempDirectory));
+        return SnapshotFile.Initialize(dataDir);
     }
 
     FileLog CreateFileLogStorage()
     {
         try
         {
-            return FileLog.InitializeFromFileSystem(new DirectoryInfoWrapper(fs, consensusDirectory),
-                new DirectoryInfoWrapper(fs, tempDirectory));
+            return FileLog.Initialize(dataDirectoryInfo);
         }
         catch (Exception e)
         {
@@ -217,37 +190,9 @@ FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
 
     MetadataFile CreateMetadataStorage()
     {
-        var metadataFile = new FileInfo(Path.Combine(consensusDirectory.FullName, "raft.metadata"));
-        FileStream fileStream;
-        if (!metadataFile.Exists)
-        {
-            Log.Information("Файла метаданных не обнаружен. Создаю новый - {Path}", metadataFile.FullName);
-            try
-            {
-                fileStream = metadataFile.Create();
-            }
-            catch (Exception e)
-            {
-                Log.Fatal(e, "Не удалось создать новый файл метаданных -  {Path}", metadataFile.FullName);
-                throw;
-            }
-        }
-        else
-        {
-            try
-            {
-                fileStream = metadataFile.Open(FileMode.Open, FileAccess.ReadWrite);
-            }
-            catch (Exception e)
-            {
-                Log.Fatal(e, "Ошибка при открытии файла метаданных");
-                throw;
-            }
-        }
-
         try
         {
-            return new MetadataFile(fileStream, new Term(1), null);
+            return MetadataFile.Initialize(dataDirectoryInfo);
         }
         catch (InvalidDataException invalidDataException)
         {
@@ -352,9 +297,9 @@ bool TryValidateOptions(ApplicationOptions options)
 void DumpDataState(FileSystemPersistenceFacade persistence)
 {
     Log.Information("Последняя команда состояния: {LastEntry}", persistence.LastEntry);
-    if (persistence.SnapshotStorage.HasSnapshot)
+    if (persistence.TryGetSnapshotLastEntryInfo(out var lastApplied))
     {
-        Log.Information("Последняя запись в снапшоте: {LastSnapshotEntry}", persistence.SnapshotStorage.LastApplied);
+        Log.Information("Последняя запись в снапшоте: {LastSnapshotEntry}", lastApplied);
     }
     else
     {

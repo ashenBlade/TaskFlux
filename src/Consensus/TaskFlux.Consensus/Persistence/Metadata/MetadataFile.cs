@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Abstractions;
 using TaskFlux.Core;
 using TaskFlux.Utils.Serialization;
 
@@ -6,8 +7,10 @@ namespace TaskFlux.Consensus.Persistence.Metadata;
 
 public class MetadataFile
 {
-    // TODO: маркер обновить
-    private const int Marker = Constants.Marker;
+    public static Term DefaultTerm => Term.Start;
+    public static NodeId? DefaultVotedFor => null;
+
+    private const int Marker = 0x5A6EA012;
 
     private const int CurrentVersion = 1;
 
@@ -39,44 +42,11 @@ public class MetadataFile
 
     private readonly Stream _file;
 
-    /// <summary>
-    /// Конструктор по умолчанию для хранилища метаданных.
-    /// Внутри происходит логика инициализации файла и некоторые его проверки.
-    /// </summary>
-    /// <param name="file">Поток файла метаданных. Файл может быть либо пустым, либо сразу инициализированным (фиксированный размер)</param>
-    /// <param name="defaultTerm">Терм, который нужно использовать, если файл был пуст</param>
-    /// <param name="defaultVotedFor">Голос, который нужно использовать по умолчанию, если файл был пуст</param>
-    /// <exception cref="ArgumentException">Переданный поток не поддерживает чтение и/или запись и/или позиционирование</exception>
-    /// <exception cref="InvalidDataException">
-    /// Обнаружены ошибки во время инициализации файла (потока) данных: <br/>
-    ///    - Поток не пуст и при этом его размер меньше минимального (размер заголовка) <br/> 
-    ///    - Полученное магическое число не соответствует требуемому <br/>
-    ///    - Указанная в файле версия несовместима с текущей <br/>\
-    /// </exception>
-    /// <exception cref="IOException">Во время чтения данных произошла ошибка</exception>
-    public MetadataFile(Stream file, Term defaultTerm, NodeId? defaultVotedFor)
+    private MetadataFile(Stream file, Term term, NodeId? votedFor)
     {
-        if (!file.CanRead)
-        {
-            throw new ArgumentException("Переданный поток не поддерживает чтение", nameof(file));
-        }
-
-        if (!file.CanSeek)
-        {
-            throw new ArgumentException("Переданный поток не поддерживает позиционирование", nameof(file));
-        }
-
-        if (!file.CanWrite)
-        {
-            throw new ArgumentException("Переданный поток не поддерживает запись", nameof(file));
-        }
-
         _file = file;
-        InitializeAtStart(defaultTerm, defaultVotedFor);
-
-        // 1. StreamBinaryWriter/Reader
-        // 2. Кэшировать терм и голос
-        // 3. Инициализация сразу в конструкторе
+        VotedFor = votedFor;
+        Term = term;
     }
 
     public void Update(Term term, NodeId? votedFor)
@@ -118,9 +88,38 @@ public class MetadataFile
                                + sizeof(int)  // Терм
                                + sizeof(int); // Голос
 
-    private void InitializeAtStart(Term defaultTerm, NodeId? defaultVotedFor)
+
+    internal (Term, NodeId?) ReadStoredDataTest()
     {
-        if (_file.Length == 0)
+        var reader = new StreamBinaryReader(_file);
+        _file.Seek(0, SeekOrigin.Begin);
+
+        var marker = reader.ReadInt32();
+        if (marker != Marker)
+        {
+            throw new InvalidDataException(
+                $"Прочитанный маркер не равен требуемому. Прочитанный: {marker}. Требуемый: {Marker}");
+        }
+
+        var version = reader.ReadInt32();
+        if (version != CurrentVersion)
+        {
+            throw new InvalidDataException(
+                $"Прочитанная версия не равна текущей. Прочитанная: {version}. Требуемая: {CurrentVersion}");
+        }
+
+        var term = new Term(reader.ReadInt32());
+        var votedFor = ( NodeId? ) ( reader.ReadInt32() switch
+                                     {
+                                         0         => null,
+                                         var value => new NodeId(value)
+                                     } );
+        return ( term, votedFor );
+    }
+
+    private static (Term Term, NodeId? VotedFor) InitializeFile(FileSystemStream file)
+    {
+        if (file.Length == 0)
         {
             Span<byte> span = stackalloc byte[FileSize];
 
@@ -129,33 +128,28 @@ public class MetadataFile
             // потом быстро сбрасываем полученные данные на диск
             writer.Write(Marker);
             writer.Write(CurrentVersion);
-            writer.Write(defaultTerm.Value);
-            writer.Write(defaultVotedFor is {Id: var value}
-                             ? value
-                             : NoVotedFor);
+            writer.Write(DefaultTerm.Value);
+            writer.Write(NoVotedFor); // DefaultVotedFor
 
-            _file.Seek(0, SeekOrigin.Begin);
-            _file.Write(span);
-            _file.Flush();
+            file.Seek(0, SeekOrigin.Begin);
+            file.Write(span);
+            file.Flush(true);
 
-            Term = defaultTerm;
-            VotedFor = defaultVotedFor;
-
-            return;
+            return ( DefaultTerm, DefaultVotedFor );
         }
 
-        if (_file.Length < FileSize)
+        if (file.Length < FileSize)
         {
             // Пока указываю минимальную длину вместо фиксированной.
-            // В будующем, возможно, появятся другие версии.
+            // В будущем, возможно, появятся другие версии.
             // Надо сохранить совместимость.
             throw new InvalidDataException(
-                $"Файл может быть либо пустым, либо не меньше фиксированной длины. Размер файла: {_file.Length}. Минимальный размер: {FileSize}");
+                $"Файл может быть либо пустым, либо не меньше фиксированной длины. Размер файла: {file.Length}. Минимальный размер: {FileSize}");
         }
 
         // Проверяем валидность данных на файле
-        _file.Seek(0, SeekOrigin.Begin);
-        var reader = new StreamBinaryReader(_file);
+        file.Seek(0, SeekOrigin.Begin);
+        var reader = new StreamBinaryReader(file);
         var marker = reader.ReadInt32();
         if (marker != Marker)
         {
@@ -171,10 +165,9 @@ public class MetadataFile
         }
 
         var term = ReadTerm();
-        var readVotedFor = ReadVotedFor();
+        var votedFor = ReadVotedFor();
 
-        Term = term;
-        VotedFor = readVotedFor;
+        return ( term, votedFor );
 
         Term ReadTerm()
         {
@@ -215,31 +208,41 @@ public class MetadataFile
         }
     }
 
-    internal (Term, NodeId?) ReadStoredDataTest()
+    public static MetadataFile Initialize(IDirectoryInfo dataDirectory)
     {
-        var reader = new StreamBinaryReader(_file);
-        _file.Seek(0, SeekOrigin.Begin);
-
-        var marker = reader.ReadInt32();
-        if (marker != Marker)
+        var metadataFile =
+            dataDirectory.FileSystem.FileInfo.New(Path.Combine(dataDirectory.FullName, Constants.MetadataFileName));
+        FileSystemStream fileStream;
+        try
         {
-            throw new InvalidDataException(
-                $"Прочитанный маркер не равен требуемому. Прочитанный: {marker}. Требуемый: {Marker}");
+            fileStream = metadataFile.Open(FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (Exception e)
+        {
+            throw new IOException("Ошибка при открытии файла метаданных", e);
         }
 
-        var version = reader.ReadInt32();
-        if (version != CurrentVersion)
+        try
         {
-            throw new InvalidDataException(
-                $"Прочитанная версия не равна текущей. Прочитанная: {version}. Требуемая: {CurrentVersion}");
+            var (term, votedFor) = InitializeFile(fileStream);
+            return new MetadataFile(fileStream, term, votedFor);
         }
+        catch (Exception)
+        {
+            fileStream.Dispose();
+            throw;
+        }
+    }
 
-        var term = new Term(reader.ReadInt32());
-        var votedFor = ( NodeId? ) ( reader.ReadInt32() switch
-                                     {
-                                         0         => null,
-                                         var value => new NodeId(value)
-                                     } );
-        return ( term, votedFor );
+    internal void SetupMetadataTest(Term initialTerm, NodeId? votedFor)
+    {
+        _file.Seek(DataStartPosition, SeekOrigin.Begin);
+        var writer = new StreamBinaryWriter(_file);
+        writer.Write(initialTerm.Value);
+        writer.Write(votedFor is {Id: var id}
+                         ? id
+                         : NoVotedFor);
+        Term = initialTerm;
+        VotedFor = votedFor;
     }
 }

@@ -2,6 +2,7 @@ using System.Buffers;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Abstractions;
+using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Consensus.Persistence.Snapshot;
@@ -11,69 +12,28 @@ namespace TaskFlux.Consensus.Persistence.Snapshot;
 /// </summary>
 public class SnapshotFile
 {
-    /// <inheritdoc cref="Constants.Marker"/>
-    public const int Marker = Constants.Marker;
-    // TODO: маркер файла снапшота обновить
+    /// <summary>
+    /// Маркер файла
+    /// </summary>
+    private const uint Marker = 0xB6380FC9;
 
     private readonly IFileInfo _snapshotFile;
     private readonly IDirectoryInfo _temporarySnapshotFileDirectory;
 
     public bool HasSnapshot => !LastApplied.IsTomb;
 
-    public SnapshotFile(
+    private SnapshotFile(
         IFileInfo snapshotFile,
-        IDirectoryInfo temporarySnapshotFileDirectory)
+        IDirectoryInfo temporarySnapshotFileDirectory,
+        LogEntryInfo lastApplied,
+        int length)
     {
         ArgumentNullException.ThrowIfNull(snapshotFile);
         ArgumentNullException.ThrowIfNull(temporarySnapshotFileDirectory);
         _snapshotFile = snapshotFile;
         _temporarySnapshotFileDirectory = temporarySnapshotFileDirectory;
-
-        Initialize();
-    }
-
-    private void Initialize()
-    {
-        var fileLength = _snapshotFile.Length;
-        if (!_snapshotFile.Exists || fileLength == 0)
-        {
-            LastApplied = LogEntryInfo.Tomb;
-            return;
-        }
-
-        const int minHeaderSize = sizeof(int)  // Маркер 
-                                + sizeof(int)  // Индекс
-                                + sizeof(int); // Терм
-
-        if (fileLength < minHeaderSize)
-        {
-            throw new InvalidDataException(
-                $"Размер файла не пуст и его размер меньше минимального. Минимальный размер: {minHeaderSize}. Размер файла: {fileLength}");
-        }
-
-        using var fileStream = _snapshotFile.OpenRead();
-        var reader = new StreamBinaryReader(fileStream);
-        // 1. Маркер
-        var marker = reader.ReadInt32();
-        if (marker != Marker)
-        {
-            throw new InvalidDataException(
-                $"Хранившийся в файле маркер не равен требуемому. Прочитано: {marker}. Ожидалось: {Marker}");
-        }
-
-        var index = reader.ReadInt32();
-        if (index < 0)
-        {
-            throw new InvalidDataException($"Индекс команды, хранившийся в снапшоте, - отрицательный. Индекс: {index}");
-        }
-
-        var term = reader.ReadInt32();
-        if (term < Term.StartTerm)
-        {
-            throw new InvalidDataException($"Терм команды, хранившийся в снапшоте, - отрицательный. Терм: {term}");
-        }
-
-        LastApplied = new LogEntryInfo(new Term(term), index);
+        LastApplied = lastApplied;
+        SnapshotLength = length;
     }
 
     public ISnapshotFileWriter CreateTempSnapshotFile()
@@ -85,21 +45,24 @@ public class SnapshotFile
     /// Информация о последней записи лога, которая была применена к снапшоту
     /// </summary>
     /// <remarks><see cref="LogEntryInfo.Tomb"/> - означает отсутствие снапшота</remarks>
-    public LogEntryInfo LastApplied { get; private set; } = LogEntryInfo.Tomb;
+    public LogEntryInfo LastApplied { get; private set; }
 
     /// <summary>
-    /// Получить снапшот, хранящийся в файле на диске
+    /// Размер снапшота
     /// </summary>
-    /// <returns>Объект снапшота</returns>
-    /// <exception cref="InvalidOperationException">Файла снапшота не существует</exception>
-    public ISnapshot GetSnapshot()
+    public int SnapshotLength { get; private set; }
+
+    public bool TryGetSnapshot(out ISnapshot snapshot, out LogEntryInfo lastApplied)
     {
-        if (!_snapshotFile.Exists)
+        lastApplied = LastApplied;
+        if (lastApplied.IsTomb)
         {
-            throw new InvalidOperationException("Файла снапшота не существует");
+            snapshot = default!;
+            return false;
         }
 
-        return new FileSystemSnapshot(_snapshotFile);
+        snapshot = new FileSystemSnapshot(_snapshotFile);
+        return true;
     }
 
     private const long SnapshotDataStartPosition = sizeof(int)  // Маркер
@@ -119,8 +82,6 @@ public class SnapshotFile
 
         public IEnumerable<ReadOnlyMemory<byte>> GetAllChunks(CancellationToken token = default)
         {
-            var logger = Serilog.Log.ForContext("SourceContext", "FileSystemSnapshot");
-            logger.Information("Открываю файл для прочтения");
             using var stream = _snapshotFile.OpenRead();
             stream.Seek(SnapshotDataStartPosition, SeekOrigin.Begin);
             var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
@@ -129,7 +90,6 @@ public class SnapshotFile
                 int read;
                 while (( read = stream.Read(buffer) ) != 0)
                 {
-                    logger.Information("Прочитан очередной чанк данных");
                     yield return buffer.AsMemory(0, read);
                 }
             }
@@ -325,6 +285,125 @@ public class SnapshotFile
         }
     }
 
+    /// <summary>
+    /// Проинициализировать файл и получить информацию о последней включенной в снапшот команде
+    /// </summary>
+    /// <param name="file">Файл снапшота</param>
+    /// <returns>Информация о последней включенной в файл команде</returns>
+    private static (LogEntryInfo LastEntry, int Length) Initialize(IFileInfo file)
+    {
+        if (!file.Exists || file.Length == 0)
+        {
+            return ( LogEntryInfo.Tomb, 0 );
+        }
+
+        using var stream = file.Open(FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        const int minHeaderSize = sizeof(int)  // Маркер 
+                                + sizeof(int)  // Индекс
+                                + sizeof(int); // Терм
+
+        if (stream.Length < minHeaderSize)
+        {
+            throw new InvalidDataException(
+                $"Размер файла не пуст и его размер меньше минимального. Минимальный размер: {minHeaderSize}. Размер файла: {stream.Length}");
+        }
+
+        stream.Seek(0, SeekOrigin.Begin);
+        var reader = new StreamBinaryReader(stream);
+
+        // 1. Маркер
+        var marker = reader.ReadUInt32();
+        if (marker != Marker)
+        {
+            throw new InvalidDataException(
+                $"Хранившийся в файле маркер не равен требуемому. Прочитано: {marker}. Ожидалось: {Marker}");
+        }
+
+        var index = reader.ReadInt32();
+        if (index < 0)
+        {
+            throw new InvalidDataException($"Индекс команды, хранившийся в снапшоте, - отрицательный. Индекс: {index}");
+        }
+
+        var term = reader.ReadInt32();
+        if (term < Term.StartTerm)
+        {
+            throw new InvalidDataException($"Терм команды, хранившийся в снапшоте, - отрицательный. Терм: {term}");
+        }
+
+        var length = reader.ReadInt32();
+        if (length < 0)
+        {
+            throw new InvalidDataException("Длина данных не может быть отрицательной");
+        }
+
+        uint storedCheckSum;
+        if (length == 0)
+        {
+            storedCheckSum = reader.ReadUInt32();
+            if (storedCheckSum != Crc32CheckSum.InitialValue)
+            {
+                throw new InvalidDataException(
+                    $"Снапшот отсутствует, но прочитанная чек-сумма не равна сохраненной. Прочитанная: {storedCheckSum}. Ожидаемая: {Crc32CheckSum.InitialValue}");
+            }
+
+            return ( new LogEntryInfo(term, index), 0 );
+        }
+
+
+        var computedCheckSum = Crc32CheckSum.InitialValue;
+
+        Span<byte> buffer = stackalloc byte[Environment.SystemPageSize];
+        var left = length;
+        do
+        {
+            var span = buffer[..Math.Min(buffer.Length, left)];
+            stream.ReadExactly(span);
+            computedCheckSum = Crc32CheckSum.Compute(computedCheckSum, span);
+            left -= span.Length;
+        } while (left > 0);
+
+        storedCheckSum = reader.ReadUInt32();
+        if (storedCheckSum != computedCheckSum)
+        {
+            throw new InvalidDataException(
+                $"Рассчитанная чек-сумма не равна сохраненной. Рассчитанная: {computedCheckSum}. Сохраненная: {storedCheckSum}");
+        }
+
+        return ( new LogEntryInfo(new Term(term), index), length );
+    }
+
+    public static SnapshotFile Initialize(IDirectoryInfo dataDirectory)
+    {
+        var snapshotFile =
+            dataDirectory.FileSystem.FileInfo.New(Path.Combine(dataDirectory.FullName, Constants.SnapshotFileName));
+        var tempDirectory =
+            dataDirectory.FileSystem.DirectoryInfo.New(Path.Combine(dataDirectory.FullName,
+                Constants.TemporaryDirectoryName));
+
+        if (!tempDirectory.Exists)
+        {
+            try
+            {
+                tempDirectory.Create();
+            }
+            catch (IOException e)
+            {
+                throw new InvalidDataException("Ошибка при создании директории для временных файлов", e);
+            }
+        }
+
+        try
+        {
+            var (lastEntry, length) = Initialize(snapshotFile);
+            return new SnapshotFile(snapshotFile, tempDirectory, lastEntry, length);
+        }
+        catch (EndOfStreamException e)
+        {
+            throw new InvalidDataException("Файл снапшота меньше чем ожидалось", e);
+        }
+    }
+
 
     // Для тестов
     internal (int LastIndex, Term LastTerm, byte[] SnapshotData) ReadAllDataTest()
@@ -332,7 +411,7 @@ public class SnapshotFile
         using var stream = _snapshotFile.OpenRead();
         var reader = new StreamBinaryReader(stream);
 
-        var marker = reader.ReadInt32();
+        var marker = reader.ReadUInt32();
         Debug.Assert(marker == Marker);
 
         var index = reader.ReadInt32();

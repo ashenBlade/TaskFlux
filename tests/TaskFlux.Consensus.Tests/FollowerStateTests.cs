@@ -32,10 +32,11 @@ public class FollowerStateTests
                                ? new ConstantTimerFactory(electionTimer)
                                : Helpers.NullTimerFactory;
         var backgroundJobQueue = jobQueue ?? Helpers.NullBackgroundJobQueue;
-
-        var persistence = new FileSystemPersistenceFacade(new FileLog(fs.Log, fs.TemporaryDirectory),
-            new MetadataFile(fs.Metadata.Open(FileMode.OpenOrCreate), currentTerm, votedFor),
-            new SnapshotFile(fs.Snapshot, fs.TemporaryDirectory), Logger.None);
+        var metadataFile = MetadataFile.Initialize(fs.DataDirectory);
+        metadataFile.SetupMetadataTest(currentTerm, votedFor);
+        var persistence = new FileSystemPersistenceFacade(FileLog.Initialize(fs.DataDirectory),
+            metadataFile,
+            SnapshotFile.Initialize(fs.DataDirectory), Logger.None);
 
         var node = new RaftConsensusModule(NodeId,
             EmptyPeerGroup,
@@ -349,10 +350,10 @@ public class FollowerStateTests
 
         (FileSystemPersistenceFacade, ConsensusFileSystem) CreateStorage()
         {
-            var (_, log, metadata, snapshot, tempDir) = Helpers.CreateFileSystem();
-            var logFile = new FileLog(log, tempDir);
-            var metadataFile = new MetadataFile(metadata.Open(FileMode.OpenOrCreate), new Term(1), null);
-            var snapshotFile = new SnapshotFile(snapshot, tempDir);
+            var (_, _, _, snapshot, _, dataDir) = Helpers.CreateFileSystem();
+            var logFile = FileLog.Initialize(dataDir);
+            var metadataFile = MetadataFile.Initialize(dataDir);
+            var snapshotFile = SnapshotFile.Initialize(dataDir);
             return ( new FileSystemPersistenceFacade(logFile, metadataFile, snapshotFile, Logger.None),
                      new ConsensusFileSystem(snapshot) );
         }
@@ -375,7 +376,7 @@ public class FollowerStateTests
         response.CurrentTerm
                 .Should()
                 .Be(leaderTerm, "отправленный лидером терм больше текущего");
-        var (index, term, data) = persistence.SnapshotStorage.ReadAllDataTest();
+        var (index, term, data) = persistence.Snapshot.ReadAllDataTest();
         Assert.Equal(10, index);
         Assert.Equal(new Term(2), term);
         Assert.Equal(snapshotData, data);
@@ -395,7 +396,7 @@ public class FollowerStateTests
         var response = node.Handle(request);
         Assert.Equal(leaderTerm, response.CurrentTerm);
 
-        var (index, term, data) = persistence.SnapshotStorage.ReadAllDataTest();
+        var (index, term, data) = persistence.Snapshot.ReadAllDataTest();
         Assert.Equal(lastIncludedEntry.Index, index);
         Assert.Equal(lastIncludedEntry.Term, term);
         Assert.Equal(snapshotData, data);
@@ -405,7 +406,7 @@ public class FollowerStateTests
     public void InstallSnapshot__СуществующийФайлСнапшотаДолженПерезаписаться()
     {
         var (node, persistence, _) = CreateFollowerNodeNew();
-        persistence.SnapshotStorage.SetupSnapshotTest(new Term(2), 3,
+        persistence.Snapshot.SetupSnapshotTest(new Term(2), 3,
             new StubSnapshot(new byte[] {9, 5, 234, 1, 6, 2, 44, 2, 7, 45, 52, 97}));
 
         var lastIncludedEntry = new LogEntryInfo(new Term(4), 13);
@@ -419,11 +420,11 @@ public class FollowerStateTests
                 .Should()
                 .Be(leaderTerm, "терм лидера больше текущего");
 
-        var (index, term, data) = persistence.SnapshotStorage.ReadAllDataTest();
+        var (index, term, data) = persistence.Snapshot.ReadAllDataTest();
         Assert.Equal(lastIncludedEntry.Index, index);
         Assert.Equal(lastIncludedEntry.Term, term);
         Assert.Equal(snapshotData, data);
-        Assert.Equal(lastIncludedEntry, persistence.SnapshotStorage.LastApplied);
+        Assert.Equal(lastIncludedEntry, persistence.Snapshot.LastApplied);
     }
 
     [Fact]
@@ -595,12 +596,12 @@ public class FollowerStateTests
         var term = new Term(2);
         var logEntryInfo = new LogEntryInfo(new Term(2), 1000);
         var oldSnapshot = new StubSnapshot(new byte[] {4, 5, 6});
-        storage.SnapshotStorage.SetupSnapshotTest(logEntryInfo.Term, logEntryInfo.Index, oldSnapshot);
+        storage.Snapshot.SetupSnapshotTest(logEntryInfo.Term, logEntryInfo.Index, oldSnapshot);
 
         var request = new InstallSnapshotRequest(term, AnotherNodeId, logEntryInfo, snapshot);
         follower.Handle(request);
 
-        var (lastIndex, lastTerm, snapshotData) = storage.SnapshotStorage.ReadAllDataTest();
+        var (lastIndex, lastTerm, snapshotData) = storage.Snapshot.ReadAllDataTest();
         lastIndex.Should()
                  .Be(logEntryInfo.Index, "индекс записи в снапшоте должна быть такая же как и в запросе");
         lastTerm.Should()

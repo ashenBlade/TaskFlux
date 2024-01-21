@@ -1,4 +1,6 @@
+using System.IO.Abstractions;
 using TaskFlux.Consensus.Persistence.Metadata;
+using TaskFlux.Consensus.Tests.Infrastructure;
 using TaskFlux.Core;
 
 namespace TaskFlux.Consensus.Tests;
@@ -6,51 +8,52 @@ namespace TaskFlux.Consensus.Tests;
 [Trait("Category", "Persistence")]
 public class MetadataFileTests
 {
-    private static MemoryStream CreateStream()
-    {
-        return new MemoryStream(16 + 10);
-    }
-
     private static NodeId? GetNodeId(int? value) => value is null
                                                         ? null
                                                         : new NodeId(value.Value);
 
     private static Term GetTerm(int value) => new Term(value);
 
-    [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(100)]
-    [InlineData(12323)]
-    [InlineData(132323)]
-    public void Term__КогдаЛогБылПуст__ДолженВернутьПереданныйТермПоУмолчанию(int term)
+    /// <summary>
+    /// Директория с файлами данных.
+    /// Инициализируется когда вызывается <see cref="CreateFile"/>
+    /// </summary>
+    private IDirectoryInfo _dataDirectory = null!;
+
+    private MetadataFile CreateFile((Term Term, NodeId? VotedFor)? defaultValues = null)
     {
-        using var memory = CreateStream();
-        var expected = new Term(term);
-        var storage = new MetadataFile(memory, expected, null);
+        var fs = Helpers.CreateFileSystem();
+        var file = MetadataFile.Initialize(fs.DataDirectory);
+        if (defaultValues is var (term, votedFor))
+        {
+            file.SetupMetadataTest(term, votedFor);
+        }
+
+        _dataDirectory = fs.DataDirectory;
+        return file;
+    }
+
+    [Fact]
+    public void Term__КогдаЛогБылПуст__ДолженВернутьТермПоУмолчанию()
+    {
+        var fs = Helpers.CreateFileSystem();
+        var expected = MetadataFile.DefaultTerm;
+        var storage = MetadataFile.Initialize(fs.DataDirectory);
 
         var actual = storage.Term;
+
         Assert.Equal(expected, actual);
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    [InlineData(10)]
-    [InlineData(1240)]
-    public void VotedFor__КогдаЛогПуст__ДолженВернутьЗначениеПоУмолчанию(int? votedFor)
+    [Fact]
+    public void VotedFor__КогдаЛогПуст__ДолженВернутьNull()
     {
-        using var memory = CreateStream();
-        NodeId? expected = votedFor is null
-                               ? null
-                               : new NodeId(votedFor.Value);
-        var storage = new MetadataFile(memory, Term.Start, expected);
+        var fs = Helpers.CreateFileSystem();
+        var storage = MetadataFile.Initialize(fs.DataDirectory);
 
         var actual = storage.VotedFor;
-        Assert.Equal(expected, actual);
+
+        Assert.Null(actual);
     }
 
     [Theory]
@@ -66,21 +69,20 @@ public class MetadataFileTests
                                                               int? defaultVotedFor,
                                                               int? newVotedFor)
     {
-        using var memory = CreateStream();
-        var storage = new MetadataFile(memory, new Term(defaultTerm), ToNodeId(defaultVotedFor));
+        var file = CreateFile(( defaultTerm, ToNodeId(defaultVotedFor) ));
         var expectedTerm = new Term(newTerm);
         var expectedVotedFor = ToNodeId(newVotedFor);
 
-        storage.Update(expectedTerm, expectedVotedFor);
+        file.Update(expectedTerm, expectedVotedFor);
 
         // Проверяем кэширование
-        var actualTerm = storage.Term;
-        var actualVotedFor = storage.VotedFor;
+        var actualTerm = file.Term;
+        var actualVotedFor = file.VotedFor;
         Assert.Equal(expectedTerm, actualTerm);
         Assert.Equal(expectedVotedFor, actualVotedFor);
 
         // Проверяем данные с диска
-        var (readTerm, readVotedFor) = storage.ReadStoredDataTest();
+        var (readTerm, readVotedFor) = file.ReadStoredDataTest();
         Assert.Equal(expectedTerm, readTerm);
         Assert.Equal(expectedVotedFor, readVotedFor);
 
@@ -104,9 +106,9 @@ public class MetadataFileTests
     [InlineData(1, 1)]
     public void Update__КогдаЛогБылПуст__ДолженОбновитьГолос(int? defaultVotedFor, int? newVotedFor)
     {
-        using var memory = CreateStream();
         var expectedVotedFor = GetNodeId(newVotedFor);
-        var storage = new MetadataFile(memory, Term.Start, GetNodeId(defaultVotedFor));
+
+        var storage = CreateFile(( Term.Start, GetNodeId(defaultVotedFor) ));
 
         storage.Update(Term.Start, expectedVotedFor);
 
@@ -115,33 +117,28 @@ public class MetadataFileTests
     }
 
     [Theory]
-    [InlineData(1, 2, 3)]
-    [InlineData(1, 54, 1)]
-    [InlineData(10, 2345, 1)]
-    [InlineData(10, 35347546, 23233)]
-    [InlineData(67, 35347546, 1)]
-    [InlineData(67, int.MaxValue, 1)]
-    [InlineData(1, int.MaxValue, 100)]
-    [InlineData(1, int.MaxValue, int.MaxValue)]
-    [InlineData(int.MaxValue, 1, 435)]
-    [InlineData(int.MaxValue, int.MaxValue - 1, int.MaxValue - 2)]
-    [InlineData(int.MaxValue - 2, int.MaxValue - 1, int.MaxValue)]
-    [InlineData(Term.StartTerm, 2, Term.StartTerm)]
-    [InlineData(Term.StartTerm, 10, Term.StartTerm)]
-    [InlineData(Term.StartTerm, 1243534634, Term.StartTerm)]
-    [InlineData(Term.StartTerm, int.MaxValue, Term.StartTerm)]
-    public void Term__КогдаБылВызыванUpdate__ВНовомЛогеСТемЖеФайломДолженВернутьЗаписанныйТерм(
+    [InlineData(1, 2)]
+    [InlineData(1, 54)]
+    [InlineData(10, 2345)]
+    [InlineData(10, 35347546)]
+    [InlineData(67, 35347546)]
+    [InlineData(67, int.MaxValue)]
+    [InlineData(1, int.MaxValue)]
+    [InlineData(int.MaxValue, 1)]
+    [InlineData(int.MaxValue, int.MaxValue - 1)]
+    [InlineData(int.MaxValue - 2, int.MaxValue - 1)]
+    [InlineData(Term.StartTerm, 10)]
+    [InlineData(Term.StartTerm, 1243534634)]
+    public void Term__КогдаБылВызванUpdate__ВНовомЛогеСТемЖеФайломДолженВернутьЗаписанныйТерм(
         int defaultTerm,
-        int setTerm,
-        int newDefaultTerm)
+        int setTerm)
     {
-        using var memory = CreateStream();
+        var oldFile = CreateFile(( GetTerm(defaultTerm), null ));
         var expectedTerm = GetTerm(setTerm);
-        var oldStorage = new MetadataFile(memory, GetTerm(defaultTerm), null);
 
-        oldStorage.Update(expectedTerm, null);
+        oldFile.Update(expectedTerm, null);
 
-        var newStorage = new MetadataFile(memory, GetTerm(newDefaultTerm), null);
+        var newStorage = MetadataFile.Initialize(_dataDirectory);
 
         var (actualTerm, _) = newStorage.ReadStoredDataTest();
         Assert.Equal(expectedTerm, actualTerm);
