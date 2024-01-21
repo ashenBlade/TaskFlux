@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using Serilog;
+using TaskFlux.Application;
 using TaskFlux.Consensus.Cluster.Network;
 using TaskFlux.Consensus.Cluster.Network.Packets;
 using TaskFlux.Core;
@@ -16,6 +17,7 @@ public class NodeConnectionManager : IDisposable
     private readonly int _port;
     private readonly RaftConsensusModule<Command, Response> _module;
     private readonly TimeSpan _requestTimeout;
+    private readonly IApplicationLifetime _lifetime;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<NodeId, NodeConnectionProcessor> _nodes = new();
     private readonly (Thread WorkerThread, Socket Server, CancellationTokenSource Lifetime)? _workerData;
@@ -24,12 +26,14 @@ public class NodeConnectionManager : IDisposable
                                  int port,
                                  RaftConsensusModule<Command, Response> module,
                                  TimeSpan requestTimeout,
+                                 IApplicationLifetime lifetime,
                                  ILogger logger)
     {
         _host = host;
         _port = port;
         _module = module;
         _requestTimeout = requestTimeout;
+        _lifetime = lifetime;
         _logger = logger;
         _workerData = ( new Thread(ThreadWorker), CreateServerSocket(), new CancellationTokenSource() );
     }
@@ -56,21 +60,29 @@ public class NodeConnectionManager : IDisposable
     {
         Debug.Assert(_workerData is not null, "_workerData is not null",
             "Данные для работы сервера должны быть инициализированы");
-        var (_, server, cts) = _workerData.Value;
-
-        _logger.Information(
-            "Модуль обработки запросов узлов кластера запускается. Начинаю прослушивать входящие запросы узлов");
-        server.Listen(_module.PeerGroup.Peers.Count + 1);
         try
         {
-            while (true)
+            var (_, server, cts) = _workerData.Value;
+
+            _logger.Information(
+                "Модуль обработки запросов узлов кластера запускается. Начинаю прослушивать входящие запросы узлов");
+            server.Listen(_module.PeerGroup.Peers.Count + 1);
+            try
             {
-                var client = server.Accept();
-                _ = ProcessConnectedClientAsync(client, cts);
+                while (true)
+                {
+                    var client = server.Accept();
+                    _ = ProcessConnectedClientAsync(client, cts);
+                }
+            }
+            catch (SocketException se) when (se.SocketErrorCode is SocketError.Interrupted)
+            {
             }
         }
-        catch (SocketException se) when (se.SocketErrorCode is SocketError.Interrupted)
+        catch (Exception e)
         {
+            _logger.Fatal(e, "Поймано необработанное исключение во время обработки подключений узлов кластера");
+            _lifetime.StopAbnormal();
         }
     }
 

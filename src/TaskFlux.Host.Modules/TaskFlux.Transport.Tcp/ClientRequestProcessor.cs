@@ -12,6 +12,7 @@ using TaskFlux.Network.Exceptions;
 using TaskFlux.Network.Packets;
 using TaskFlux.Transport.Tcp.Exceptions;
 using TaskFlux.Transport.Tcp.Mapping;
+using IApplicationLifetime = TaskFlux.Application.IApplicationLifetime;
 
 namespace TaskFlux.Transport.Tcp;
 
@@ -21,12 +22,14 @@ internal class ClientRequestProcessor
     private readonly TcpAdapterOptions _options;
     private readonly IRequestAcceptor _requestAcceptor;
     private readonly IApplicationInfo _applicationInfo;
+    private readonly IApplicationLifetime _lifetime;
     private readonly ILogger _logger;
 
     public ClientRequestProcessor(TcpClient client,
                                   IRequestAcceptor requestAcceptor,
                                   TcpAdapterOptions options,
                                   IApplicationInfo applicationInfo,
+                                  IApplicationLifetime lifetime,
                                   ILogger logger)
     {
         _client = client;
@@ -34,6 +37,7 @@ internal class ClientRequestProcessor
         _options = options;
         _logger = logger;
         _applicationInfo = applicationInfo;
+        _lifetime = lifetime;
     }
 
     public async Task ProcessAsync(CancellationToken token)
@@ -90,6 +94,7 @@ internal class ClientRequestProcessor
         catch (Exception e)
         {
             _logger.Error(e, "Во время обработки клиента произошла неизвестная ошибка");
+            _lifetime.StopAbnormal();
         }
     }
 

@@ -7,14 +7,19 @@ namespace TaskFlux.Application;
 public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposable
 {
     private readonly ILogger _logger;
+    private readonly IApplicationLifetime _lifetime;
     private readonly CancellationTokenSource _cts = new();
 
     private readonly (Thread Thread, BlockingCollection<(IBackgroundJob Job, CancellationToken Token)> Queue)?[]
         _workers;
 
-    public ThreadPerWorkerBackgroundJobQueue(int clusterSize, int currentNodeId, ILogger logger)
+    public ThreadPerWorkerBackgroundJobQueue(int clusterSize,
+                                             int currentNodeId,
+                                             ILogger logger,
+                                             IApplicationLifetime lifetime)
     {
         _logger = logger;
+        _lifetime = lifetime;
         _workers = CreateWorkers(clusterSize, currentNodeId);
     }
 
@@ -104,6 +109,11 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
         }
         catch (OperationCanceledException)
         {
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Во время работы фонового обработчика возникло необработанное исключение");
+            _lifetime.StopAbnormal();
         }
 
         _logger.Debug("Очередь фоновых задач для узла {NodeId} завершает работу", nodeId);

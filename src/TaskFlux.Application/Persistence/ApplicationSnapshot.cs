@@ -1,8 +1,7 @@
-using TaskFlux.Application.Persistence;
 using TaskFlux.Consensus;
 using TaskFlux.Core;
 
-namespace TaskFlux.Application;
+namespace TaskFlux.Application.Persistence;
 
 public class ApplicationSnapshot : ISnapshot
 {

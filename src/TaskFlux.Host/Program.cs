@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Core;
-using Serilog.Events;
 using TaskFlux.Application;
 using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster;
@@ -21,13 +20,16 @@ using TaskFlux.Host;
 using TaskFlux.Host.Configuration;
 using TaskFlux.Host.Infrastructure;
 
-var logLevelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
+var lifetime = new HostApplicationLifetime();
+
+var logLevelSwitch = new LoggingLevelSwitch();
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.ControlledBy(logLevelSwitch)
             .Enrich.FromLogContext()
             .WriteTo.Console(outputTemplate:
                  "[{Timestamp:HH:mm:ss:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
+            .Enrich.WithProperty("SourceContext", "Main") // Это для глобального логера
             .CreateLogger();
 
 try
@@ -50,19 +52,18 @@ try
 
     using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(options.Cluster.ClusterPeers.Length,
         options.Cluster.ClusterNodeId,
-        Log.Logger.ForContext("SourceContext", "BackgroundJobQueue"));
+        Log.Logger.ForContext("SourceContext", "BackgroundJobQueue"), lifetime);
     using var consensusModule = CreateRaftConsensusModule(nodeId, peers, facade, jobQueue);
     using var requestAcceptor =
-        new ExclusiveRequestAcceptor(consensusModule, Log.ForContext("SourceContext", "RequestAcceptor"));
+        new ExclusiveRequestAcceptor(consensusModule, lifetime, Log.ForContext("SourceContext", "RequestAcceptor"));
     using var connectionManager = new NodeConnectionManager(options.Cluster.ClusterListenHost,
         options.Cluster.ClusterListenPort,
-        consensusModule, options.Network.ClientRequestTimeout, Log.ForContext<NodeConnectionManager>());
-    using var applicationLifetimeCts = new CancellationTokenSource();
+        consensusModule, options.Network.ClientRequestTimeout,
+        lifetime, Log.ForContext<NodeConnectionManager>());
 
     Console.CancelKeyPress += (_, args) =>
     {
-        // ReSharper disable once AccessToDisposedClosure
-        applicationLifetimeCts.Cancel();
+        lifetime.Stop();
         args.Cancel = true;
     };
 
@@ -71,51 +72,59 @@ try
 
     await RunNodeAsync(taskFluxHostedService,
         consensusModule,
-        requestAcceptor,
-        applicationLifetimeCts.Token);
+        requestAcceptor);
 
     async Task RunNodeAsync(TaskFluxNodeHostedService node,
                             RaftConsensusModule<Command, Response> module,
-                            IRequestAcceptor acceptor,
-                            CancellationToken token)
+                            IRequestAcceptor acceptor)
     {
-        var host = new HostBuilder()
-                  .ConfigureHostConfiguration(builder =>
-                       builder.AddEnvironmentVariables()
-                              .AddCommandLine(args))
-                  .ConfigureAppConfiguration(builder =>
-                       builder.AddEnvironmentVariables()
-                              .AddCommandLine(args))
-                  .ConfigureLogging(logging => logging.AddSerilog())
-                  .ConfigureServices((_, services) =>
-                   {
-                       services.AddHostedService(_ => node);
+        try
+        {
+            var host = new HostBuilder()
+                      .ConfigureHostConfiguration(builder =>
+                           builder.AddEnvironmentVariables()
+                                  .AddCommandLine(args))
+                      .ConfigureAppConfiguration(builder =>
+                           builder.AddEnvironmentVariables()
+                                  .AddCommandLine(args))
+                      .ConfigureLogging(logging =>
+                           logging.AddSerilog())
+                      .ConfigureServices((_, services) =>
+                       {
+                           services.AddHostedService(_ => node);
 
-                       services.AddSingleton(acceptor);
-                       services.AddSingleton(options);
-                       services.AddSingleton<IApplicationInfo>(sp => new ProxyApplicationInfo(module,
-                           sp.GetRequiredService<ApplicationOptions>().Cluster.ClusterPeers));
+                           services.AddSingleton(acceptor);
+                           services.AddSingleton(options);
+                           services.AddSingleton<IApplicationInfo>(sp => new ProxyApplicationInfo(module,
+                               sp.GetRequiredService<ApplicationOptions>().Cluster.ClusterPeers));
 
-                       services.AddNodeStateObserverHostedService(module);
-                       services.AddTcpRequestModule();
-                       services.AddHttpRequestModule();
-                   })
-                  .Build();
+                           services.AddNodeStateObserverHostedService(module);
+                           services.AddTcpRequestModule(lifetime);
+                           services.AddHttpRequestModule(lifetime);
+                       })
+                      .Build();
 
-        await host.RunAsync(token);
+            await host.RunAsync(lifetime.Token);
+            lifetime.Stop();
+        }
+        catch (Exception e)
+        {
+            Log.Fatal(e, "Во время работы приложения поймано необработанное исключение");
+            lifetime.StopAbnormal();
+        }
     }
 }
 catch (Exception e)
 {
     Log.Fatal(e, "Необработанное исключение во время настройки сервера");
-    return 1;
+    lifetime.StopAbnormal();
 }
 finally
 {
     Log.CloseAndFlush();
 }
 
-return 0;
+return await lifetime.WaitReturnCode();
 
 // TODO: когда приложение закрывается, то нужно прекращать подключаться к узлам (Cancellation Token не работает)
 FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
@@ -231,7 +240,7 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
                                                                  FileSystemPersistenceFacade storage,
                                                                  IBackgroundJobQueue backgroundJobQueue)
 {
-    var logger = Log.Logger.ForContext("SourceContext", "Raft");
+    var logger = Log.Logger.ForContext("SourceContext", "ConsensusModule");
     var deltaExtractor = new TaskFluxDeltaExtractor();
     var peerGroup = new PeerGroup(peers);
     var timerFactory = new ThreadingTimerFactory(lower: TimeSpan.FromMilliseconds(1500),

@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.Extensions.Hosting;
 using Serilog;
+using IApplicationLifetime = TaskFlux.Application.IApplicationLifetime;
 
 namespace TaskFlux.Transport.Http;
 
@@ -8,12 +9,14 @@ public class HttpAdapterBackgroundService : BackgroundService
 {
     private readonly int _port;
     private readonly ILogger _logger;
+    private readonly IApplicationLifetime _lifetime;
     private readonly Dictionary<string, Dictionary<string, IRequestHandler>> _handlers = new();
 
-    public HttpAdapterBackgroundService(int port, ILogger logger)
+    public HttpAdapterBackgroundService(int port, ILogger logger, IApplicationLifetime lifetime)
     {
         _port = port;
         _logger = logger;
+        _lifetime = lifetime;
     }
 
     public void AddHandler(HttpMethod method, string path, IRequestHandler handler)
@@ -50,7 +53,8 @@ public class HttpAdapterBackgroundService : BackgroundService
                 }
                 catch (Exception e)
                 {
-                    _logger.Warning(e, "Во время работы обработчика поймано необработанное исключение");
+                    _logger.Error(e, "Во время работы обработчика поймано необработанное исключение");
+                    _lifetime.StopAbnormal();
                 }
             }
             else

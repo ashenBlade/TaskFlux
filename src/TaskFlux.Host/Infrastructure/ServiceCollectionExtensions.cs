@@ -6,6 +6,7 @@ using TaskFlux.Core.Commands;
 using TaskFlux.Host.Configuration;
 using TaskFlux.Transport.Http;
 using TaskFlux.Transport.Tcp;
+using IApplicationLifetime = TaskFlux.Application.IApplicationLifetime;
 
 namespace TaskFlux.Host.Infrastructure;
 
@@ -19,22 +20,23 @@ public static class ServiceCollectionExtensions
                 Log.ForContext("SourceContext", "StateObserver")));
     }
 
-    public static IServiceCollection AddTcpRequestModule(this IServiceCollection sc)
+    public static IServiceCollection AddTcpRequestModule(this IServiceCollection sc, IApplicationLifetime lifetime)
     {
         return sc.AddHostedService(sp => new TcpAdapterBackgroundService(sp.GetRequiredService<IRequestAcceptor>(),
             sp.GetRequiredService<ApplicationOptions>().TcpModule,
             sp.GetRequiredService<IApplicationInfo>(),
+            lifetime,
             Log.ForContext<TcpAdapterBackgroundService>()));
     }
 
-    public static IServiceCollection AddHttpRequestModule(this IServiceCollection sc)
+    public static IServiceCollection AddHttpRequestModule(this IServiceCollection sc, IApplicationLifetime lifetime)
     {
         return sc.AddHostedService(sp =>
         {
             var options = sp.GetRequiredService<ApplicationOptions>().Http;
             var service =
                 new HttpAdapterBackgroundService(options.HttpAdapterListenPort,
-                    Log.ForContext<HttpAdapterBackgroundService>());
+                    Log.ForContext<HttpAdapterBackgroundService>(), lifetime);
             service.AddHandler(HttpMethod.Post, "/command",
                 new SubmitCommandRequestHandler(sp.GetRequiredService<IRequestAcceptor>(),
                     sp.GetRequiredService<IApplicationInfo>(),

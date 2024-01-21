@@ -3,7 +3,7 @@ using TaskFlux.Consensus.Cluster.Network.Packets;
 
 #pragma warning disable CS8767 // Nullability of reference types in type of parameter doesn't match implicitly implemented member (possibly because of nullability attributes).
 
-namespace TaskFlux.Consensus.Tests;
+namespace TaskFlux.Application.Tests;
 
 public class PacketEqualityComparer : IEqualityComparer<NodePacket>
 {

@@ -8,14 +8,18 @@ namespace TaskFlux.Application;
 public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 {
     private readonly IConsensusModule<Command, Response> _module;
+    private readonly IApplicationLifetime _lifetime;
     private readonly ILogger _logger;
     private readonly BlockingCollection<UserRequest> _channel = new();
     private readonly CancellationTokenSource _cts = new();
     private Thread? _thread;
 
-    public ExclusiveRequestAcceptor(IConsensusModule<Command, Response> module, ILogger logger)
+    public ExclusiveRequestAcceptor(IConsensusModule<Command, Response> module,
+                                    IApplicationLifetime lifetime,
+                                    ILogger logger)
     {
         _module = module;
+        _lifetime = lifetime;
         _logger = logger;
     }
 
@@ -101,7 +105,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
         catch (Exception e)
         {
             _logger.Fatal(e, "Ошибка во время обработки пользовательских запросов");
-            throw;
+            _lifetime.StopAbnormal();
         }
     }
 

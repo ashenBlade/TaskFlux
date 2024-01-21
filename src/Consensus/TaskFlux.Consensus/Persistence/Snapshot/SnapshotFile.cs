@@ -17,23 +17,28 @@ public class SnapshotFile
     /// </summary>
     private const uint Marker = 0xB6380FC9;
 
+    /// <summary>
+    /// Позиция в файле, на которой находится длина данных
+    /// </summary>
+    private const int LengthPosition = sizeof(int)  // Маркер
+                                     + sizeof(int)  // Последний индекс
+                                     + sizeof(int); // Последний терм
+
     private readonly IFileInfo _snapshotFile;
     private readonly IDirectoryInfo _temporarySnapshotFileDirectory;
 
-    public bool HasSnapshot => !LastApplied.IsTomb;
+    public bool HasSnapshot => _snapshotInfo.HasValue;
 
     private SnapshotFile(
         IFileInfo snapshotFile,
         IDirectoryInfo temporarySnapshotFileDirectory,
-        LogEntryInfo lastApplied,
-        int length)
+        (LogEntryInfo LastApplied, int DataLength, uint CheckSum)? snapshotInfo)
     {
         ArgumentNullException.ThrowIfNull(snapshotFile);
         ArgumentNullException.ThrowIfNull(temporarySnapshotFileDirectory);
         _snapshotFile = snapshotFile;
         _temporarySnapshotFileDirectory = temporarySnapshotFileDirectory;
-        LastApplied = lastApplied;
-        SnapshotLength = length;
+        _snapshotInfo = snapshotInfo;
     }
 
     public ISnapshotFileWriter CreateTempSnapshotFile()
@@ -45,52 +50,66 @@ public class SnapshotFile
     /// Информация о последней записи лога, которая была применена к снапшоту
     /// </summary>
     /// <remarks><see cref="LogEntryInfo.Tomb"/> - означает отсутствие снапшота</remarks>
-    public LogEntryInfo LastApplied { get; private set; }
+    public LogEntryInfo LastApplied => _snapshotInfo is var (lastApplied, _, _)
+                                           ? lastApplied
+                                           : LogEntryInfo.Tomb;
 
     /// <summary>
-    /// Размер снапшота
+    /// Данные о файле снапшота.
+    /// Не null, если файл снапшота существует
     /// </summary>
-    public int SnapshotLength { get; private set; }
+    private (LogEntryInfo LastApplied, int DataLength, uint CheckSum)? _snapshotInfo;
 
     public bool TryGetSnapshot(out ISnapshot snapshot, out LogEntryInfo lastApplied)
     {
         lastApplied = LastApplied;
+
         if (lastApplied.IsTomb)
         {
             snapshot = default!;
             return false;
         }
 
-        snapshot = new FileSystemSnapshot(_snapshotFile);
+        snapshot = new FileSystemSnapshot(this);
         return true;
     }
 
     private const long SnapshotDataStartPosition = sizeof(int)  // Маркер
                                                  + sizeof(int)  // Терм
-                                                 + sizeof(int); // Индекс
+                                                 + sizeof(int)  // Индекс
+                                                 + sizeof(int); // Длина данных
+
 
     private class FileSystemSnapshot : ISnapshot
     {
-        private const int BufferSize = 4 * 1024; // 4 Кб (размер страницы)
+        private readonly SnapshotFile _parent;
 
-        private readonly IFileInfo _snapshotFile;
-
-        public FileSystemSnapshot(IFileInfo snapshotFile)
+        public FileSystemSnapshot(SnapshotFile parent)
         {
-            _snapshotFile = snapshotFile;
+            _parent = parent;
         }
 
         public IEnumerable<ReadOnlyMemory<byte>> GetAllChunks(CancellationToken token = default)
         {
-            using var stream = _snapshotFile.OpenRead();
+            if (_parent._snapshotInfo is not var (_, length, _))
+            {
+                yield break;
+            }
+
+            using var stream = _parent._snapshotFile.OpenRead();
+
             stream.Seek(SnapshotDataStartPosition, SeekOrigin.Begin);
-            var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+            var buffer = ArrayPool<byte>.Shared.Rent(Environment.SystemPageSize);
             try
             {
-                int read;
-                while (( read = stream.Read(buffer) ) != 0)
+                var left = length;
+                while (0 < left)
                 {
-                    yield return buffer.AsMemory(0, read);
+                    var currentLength = Math.Min(buffer.Length, left);
+                    var span = buffer.AsSpan(0, currentLength);
+                    stream.ReadExactly(span);
+                    yield return buffer.AsMemory(0, currentLength);
+                    left -= currentLength;
                 }
             }
             finally
@@ -123,6 +142,18 @@ public class SnapshotFile
         /// Для него это все и замутили - ему нужно обновить файл снапшота
         /// </summary>
         private SnapshotFile _parent;
+
+        /// <summary>
+        /// Чек-сумма для сохраняемого снапшота.
+        /// Обновляется с установкой каждого чанка снапшота.
+        /// </summary>
+        private uint _checkSum = Crc32CheckSum.InitialValue;
+
+        /// <summary>
+        /// Длина сохраняемого снапшота.
+        /// Обновляется с каждым записанным чанком.
+        /// </summary>
+        private int _length;
 
         private enum SnapshotFileState
         {
@@ -180,6 +211,9 @@ public class SnapshotFile
             writer.Write(lastIncluded.Index);
             writer.Write(lastIncluded.Term.Value);
 
+            // 4. Пока длина не известна
+            writer.Write(_length); // writer.Write(0);
+
             _writtenLogEntry = lastIncluded;
             _temporarySnapshotFileStream = stream;
             _temporarySnapshotFile = file;
@@ -230,12 +264,17 @@ public class SnapshotFile
             Debug.Assert(_writtenLogEntry is not null,
                 "Объект информации последней команды снапшота не должен быть null");
 
+            var writer = new StreamBinaryWriter(_temporarySnapshotFileStream);
+            writer.Write(_checkSum);
+            _temporarySnapshotFileStream.Seek(LengthPosition, SeekOrigin.Begin);
+            writer.Write(_length);
+
             _temporarySnapshotFileStream.Flush();
             _temporarySnapshotFileStream.Close();
             _temporarySnapshotFileStream.Dispose();
             _temporarySnapshotFile.MoveTo(_parent._snapshotFile.FullName, true);
 
-            _parent.LastApplied = _writtenLogEntry.Value;
+            _parent._snapshotInfo = ( _writtenLogEntry.Value, _length, _checkSum );
 
             _state = SnapshotFileState.Finished;
         }
@@ -282,6 +321,8 @@ public class SnapshotFile
 
             Debug.Assert(_temporarySnapshotFileStream is not null, "Поток файла снапшота не должен быть null");
             _temporarySnapshotFileStream.Write(chunk);
+            _length += chunk.Length;
+            _checkSum = Crc32CheckSum.Compute(_checkSum, chunk);
         }
     }
 
@@ -290,11 +331,11 @@ public class SnapshotFile
     /// </summary>
     /// <param name="file">Файл снапшота</param>
     /// <returns>Информация о последней включенной в файл команде</returns>
-    private static (LogEntryInfo LastEntry, int Length) Initialize(IFileInfo file)
+    private static (LogEntryInfo LastEntry, int Length, uint CheckSum)? Initialize(IFileInfo file)
     {
         if (!file.Exists || file.Length == 0)
         {
-            return ( LogEntryInfo.Tomb, 0 );
+            return null;
         }
 
         using var stream = file.Open(FileMode.Open, FileAccess.ReadWrite, FileShare.None);
@@ -347,7 +388,7 @@ public class SnapshotFile
                     $"Снапшот отсутствует, но прочитанная чек-сумма не равна сохраненной. Прочитанная: {storedCheckSum}. Ожидаемая: {Crc32CheckSum.InitialValue}");
             }
 
-            return ( new LogEntryInfo(term, index), 0 );
+            return ( new LogEntryInfo(term, index), 0, storedCheckSum );
         }
 
 
@@ -370,7 +411,7 @@ public class SnapshotFile
                 $"Рассчитанная чек-сумма не равна сохраненной. Рассчитанная: {computedCheckSum}. Сохраненная: {storedCheckSum}");
         }
 
-        return ( new LogEntryInfo(new Term(term), index), length );
+        return ( new LogEntryInfo(new Term(term), index), length, storedCheckSum );
     }
 
     public static SnapshotFile Initialize(IDirectoryInfo dataDirectory)
@@ -395,8 +436,8 @@ public class SnapshotFile
 
         try
         {
-            var (lastEntry, length) = Initialize(snapshotFile);
-            return new SnapshotFile(snapshotFile, tempDirectory, lastEntry, length);
+            var info = Initialize(snapshotFile);
+            return new SnapshotFile(snapshotFile, tempDirectory, info);
         }
         catch (EndOfStreamException e)
         {
@@ -418,9 +459,16 @@ public class SnapshotFile
         var term = new Term(reader.ReadInt32());
 
         // Читаем до конца
-        var memory = new MemoryStream();
-        stream.CopyTo(memory);
-        return ( index, term, memory.ToArray() );
+        var data = reader.ReadBuffer();
+        var computedCheckSum = Crc32CheckSum.Compute(data);
+        var storedCheckSum = reader.ReadUInt32();
+        if (computedCheckSum != storedCheckSum)
+        {
+            throw new InvalidDataException(
+                $"Прочитанная чек-сумма не равна вычисленной. Прочитанная чек-сумма: {storedCheckSum}. Рассчитанная: {computedCheckSum}");
+        }
+
+        return ( index, term, data );
     }
 
     /// <summary>
@@ -437,11 +485,23 @@ public class SnapshotFile
         writer.Write(Marker);
         writer.Write(lastIndex);
         writer.Write(lastTerm.Value);
-        foreach (var chunk in snapshot.GetAllChunks())
-        {
-            writer.Write(chunk.Span);
-        }
 
-        LastApplied = new LogEntryInfo(lastTerm, lastIndex);
+        var data = ReadSnapshotBytes();
+        writer.WriteBuffer(data);
+        var checkSum = Crc32CheckSum.Compute(data);
+        writer.Write(checkSum);
+
+        _snapshotInfo = ( new LogEntryInfo(lastTerm, lastIndex), data.Length, checkSum );
+
+        byte[] ReadSnapshotBytes()
+        {
+            var memory = new MemoryStream();
+            foreach (var chunk in snapshot.GetAllChunks())
+            {
+                memory.Write(chunk.Span);
+            }
+
+            return memory.ToArray();
+        }
     }
 }

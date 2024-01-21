@@ -27,13 +27,11 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         IDirectoryInfo TemporaryDirectory,
         IDirectoryInfo DataDirectory);
 
-    private static readonly string BaseDirectory = Path.Combine("var", "lib", "taskflux");
-
     private MockDataFileSystem? _createdFs;
 
     public void Dispose()
     {
-        if (_createdFs is not var (logFile, metadataFile, snapshotFile, tempDir, dataDir))
+        if (_createdFs is not var (_, _, _, _, dataDir))
         {
             return;
         }
@@ -66,9 +64,6 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         var fs = Helpers.CreateFileSystem();
         var logStorage = FileLog.Initialize(fs.DataDirectory);
 
-        var term = initialTerm is null
-                       ? DefaultTerm
-                       : new Term(initialTerm.Value);
         var metadataStorage = MetadataFile.Initialize(fs.DataDirectory);
         metadataStorage.SetupMetadataTest(initialTerm ?? MetadataFile.DefaultTerm, votedFor);
 
@@ -1651,6 +1646,18 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         // Измениться должен индекс коммита лога
         Assert.Equal(expectedLogCommitIndex, facade.Log.ReadCommitIndexTest());
         Assert.Equal(expectedLogCommitIndex, facade.Log.CommitIndex);
+    }
+
+    [Fact]
+    public void SaveSnapshot__КогдаСнапшотНеСуществовал__ДолженОставитьФайлВКорректномСостоянии()
+    {
+        var (facade, fs) = CreateFacade();
+        var expected = "hello, world!dfsddfd1284923yt0q984vt"u8.ToArray();
+
+        facade.SaveSnapshot(new StubSnapshot(expected), new LogEntryInfo(1, 0));
+
+        var ex = Record.Exception(() => SnapshotFile.Initialize(fs.DataDirectory));
+        Assert.Null(ex);
     }
 
     private static bool EqualityComparison(LogEntry left, LogEntry right) => Comparer.Equals(left, right);
