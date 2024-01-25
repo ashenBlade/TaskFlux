@@ -182,6 +182,14 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override void Dispose()
     {
+        try
+        {
+            _lifetimeCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
         Array.ForEach(_peerProcessors, static p =>
         {
             p.Timer.Dispose();
@@ -191,7 +199,6 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         // Сначала отменяем токен - после этого очередь должна разгрестись
         try
         {
-            _lifetimeCts.Cancel();
             _lifetimeCts.Dispose();
         }
         catch (ObjectDisposedException)

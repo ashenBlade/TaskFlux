@@ -7,7 +7,7 @@ public class HostApplicationLifetime : IApplicationLifetime
     private readonly TaskCompletionSource<ExitCode> _lifetime = new();
     private readonly CancellationTokenSource _cts = new();
 
-    public enum ExitCode
+    private enum ExitCode
     {
         Normal = 0,
         Abnormal = 1,

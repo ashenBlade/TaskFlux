@@ -3,13 +3,14 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using Serilog;
-using TaskFlux.Application;
+using TaskFlux.Consensus;
+using TaskFlux.Consensus.Cluster;
 using TaskFlux.Consensus.Cluster.Network;
 using TaskFlux.Consensus.Cluster.Network.Packets;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
 
-namespace TaskFlux.Consensus.Cluster;
+namespace TaskFlux.Application.Cluster;
 
 public class NodeConnectionManager : IDisposable
 {
@@ -75,8 +76,11 @@ public class NodeConnectionManager : IDisposable
                     _ = ProcessConnectedClientAsync(client, cts);
                 }
             }
-            catch (SocketException se) when (se.SocketErrorCode is SocketError.Interrupted)
+            catch (SocketException se) when
+                (se.SocketErrorCode is SocketError.Interrupted      // Close() из Dispose()
+                                    or SocketError.InvalidArgument) // Shutdown(Both) из Stop()
             {
+                _logger.Debug("Модуль обработки запросов узлов кластера завершил работу");
             }
         }
         catch (Exception e)
@@ -151,13 +155,18 @@ public class NodeConnectionManager : IDisposable
         client.Socket.NoDelay = true;
 
         var processor = new NodeConnectionProcessor(id, client, _module,
-            _logger.ForContext("SourceContext", $"NodeConnectionProcessor({id.Id})")) {CancellationTokenSource = cts};
+            _logger.ForContext("SourceContext", $"NodeConnectionProcessor({id.Id})"))
+            {
+                CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cts.Token)
+            };
         _nodes.AddOrUpdate(id,
             static (_, p) => p.Processor,
             static (_, old, arg) =>
             {
                 arg.Logger.Information(
                     "В списке соединений уже было соединение с для текущего Id. Закрываю старое соединение");
+                old.CancellationTokenSource.Cancel();
+                old.Stop();
                 old.Dispose();
                 return arg.Processor;
             },
@@ -216,6 +225,11 @@ public class NodeConnectionManager : IDisposable
             // Прекращаем слушать сокет
             server.Shutdown(SocketShutdown.Both);
         }
+
+        foreach (var (_, node) in _nodes)
+        {
+            node.Stop();
+        }
     }
 
     public void Dispose()
@@ -225,6 +239,11 @@ public class NodeConnectionManager : IDisposable
             cts.Dispose();
             server.Dispose();
             thread.Join();
+        }
+
+        foreach (var (_, node) in _nodes)
+        {
+            node.Dispose();
         }
     }
 }

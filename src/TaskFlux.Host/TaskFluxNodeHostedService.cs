@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using TaskFlux.Application;
+using TaskFlux.Application.Cluster;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Cluster;
 using TaskFlux.Core.Commands;
 
 namespace TaskFlux.Host;
@@ -49,12 +49,17 @@ public class TaskFluxNodeHostedService : IHostedService
     {
         _logger.Information("Останавливаю обработчик узлов кластера");
         _connectionManager.Stop();
+
         _logger.Information("Останавливаю обработчик пользовательских запросов");
         _requestAcceptor.Stop();
+
         _logger.Information("Останавливаю потоки обработчики подключений к узлам кластера");
         _backgroundJobQueue.Stop();
+
+        _logger.Information("Завершаю работу модуля консенсуса");
         _module.Dispose();
 
+        _logger.Debug("Остановка узла завершена");
         return Task.CompletedTask;
     }
 }

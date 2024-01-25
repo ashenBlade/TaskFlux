@@ -9,6 +9,7 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
     private readonly ILogger _logger;
     private readonly IApplicationLifetime _lifetime;
     private readonly CancellationTokenSource _cts = new();
+    private volatile bool _disposed = false;
 
     private readonly (Thread Thread, BlockingCollection<(IBackgroundJob Job, CancellationToken Token)> Queue)?[]
         _workers;
@@ -87,14 +88,15 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
         var nodeId = ( int ) o!;
         var collection = _workers[nodeId]!.Value.Queue;
 
-        var backgroundJobQueueToken = _cts.Token;
+
         try
         {
-            _logger.Debug("Очередь фоновых задач для узла {NodeId} запущена", nodeId);
-            foreach (var (job, jobToken) in collection.GetConsumingEnumerable(backgroundJobQueueToken))
+            var token = _cts.Token;
+            _logger.Debug("Очередь фоновых задач для узла {NodeId} запускается", nodeId);
+            foreach (var (job, jobToken) in collection.GetConsumingEnumerable(token))
             {
                 _logger.Debug("Получена задача {Job} для узла {NodeId}", job, nodeId);
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(backgroundJobQueueToken, jobToken);
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(token, jobToken);
                 try
                 {
                     job.Run(cts.Token);
@@ -106,6 +108,9 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
 
                 _logger.Debug("Задача {Job} для узла {NodeId} завершилась", job, nodeId);
             }
+        }
+        catch (ObjectDisposedException) when (_disposed)
+        {
         }
         catch (OperationCanceledException)
         {
@@ -121,20 +126,39 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
 
     public void Dispose()
     {
-        _cts.Dispose();
+        if (_disposed)
+        {
+            return;
+        }
 
+        _disposed = true;
+
+        _cts.Dispose();
         Array.ForEach(_workers, static w =>
         {
             if (w is var (thread, collection))
             {
                 collection.Dispose();
-                thread.Join();
+
+                try
+                {
+                    thread.Join();
+                }
+                catch (ThreadStateException)
+                {
+                    // Возможно потоки еще не были запущены
+                }
             }
         });
     }
 
     public void Stop()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         _cts.Cancel();
         Array.ForEach(_workers, static w =>
         {

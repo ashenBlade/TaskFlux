@@ -12,7 +12,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
     private readonly ILogger _logger;
     private readonly BlockingCollection<UserRequest> _channel = new();
     private readonly CancellationTokenSource _cts = new();
-    private Thread? _thread;
+    private readonly Thread _thread;
 
     public ExclusiveRequestAcceptor(IConsensusModule<Command, Response> module,
                                     IApplicationLifetime lifetime,
@@ -21,6 +21,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
         _module = module;
         _lifetime = lifetime;
         _logger = logger;
+        _thread = new Thread(ThreadWorker);
     }
 
     private record UserRequest(Command Command, CancellationToken Token)
@@ -96,35 +97,44 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
                 }
                 catch (OperationCanceledException)
                 {
+                    _logger.Information("Токен сработал. Заканчиваю работу");
                     request.Cancel();
                 }
             }
-
-            _logger.Information("Заканчиваю читать запросы пользователей");
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (Exception e)
         {
             _logger.Fatal(e, "Ошибка во время обработки пользовательских запросов");
             _lifetime.StopAbnormal();
         }
+
+        _logger.Information("Обработчик пользовательских запросов остановлен");
     }
 
     public void Start()
     {
-        _thread = new Thread(ThreadWorker);
         _logger.Information("Запускаю поток обработки пользовательских запросов");
         _thread.Start();
     }
 
     public void Stop()
     {
-        _cts.Cancel();
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     public void Dispose()
     {
         _cts.Dispose();
         _channel.Dispose();
-        _thread?.Join();
+        _thread.Join();
     }
 }

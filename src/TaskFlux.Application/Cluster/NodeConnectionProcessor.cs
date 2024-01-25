@@ -1,5 +1,7 @@
 using System.Net.Sockets;
 using Serilog;
+using TaskFlux.Consensus;
+using TaskFlux.Consensus.Cluster;
 using TaskFlux.Consensus.Cluster.Network;
 using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Consensus.Cluster.Network.Packets;
@@ -7,7 +9,7 @@ using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
 
-namespace TaskFlux.Consensus.Cluster;
+namespace TaskFlux.Application.Cluster;
 
 public class NodeConnectionProcessor(
     NodeId id,
@@ -21,6 +23,7 @@ public class NodeConnectionProcessor(
     private PacketClient Client { get; } = client;
     private RaftConsensusModule<Command, Response> RaftConsensusModule { get; } = raftConsensusModule;
     private ILogger Logger { get; } = logger;
+    private volatile bool _disposed = false;
 
     public async Task ProcessClientBackground()
     {
@@ -46,7 +49,10 @@ public class NodeConnectionProcessor(
         catch (IOException io)
         {
             Logger.Information(io, "Соединение с узлом потеряно");
-            CloseClient();
+        }
+        catch (SocketException se) when (se.SocketErrorCode is SocketError.Interrupted or SocketError.InvalidArgument)
+        {
+            Logger.Information(se, "Закрываю соединение с узлом");
         }
         catch (SocketException se)
         {
@@ -64,7 +70,7 @@ public class NodeConnectionProcessor(
             Logger.Warning(e, "Во время обработки узла {Node} возникло необработанное исключение", Id);
         }
 
-        CloseClient();
+        // CloseClient();
     }
 
     private async ValueTask<NodePacket?> ReceivePacketAsync(CancellationToken token)
@@ -154,20 +160,26 @@ public class NodeConnectionProcessor(
         return true;
     }
 
-    private void CloseClient()
+    public void Dispose()
     {
-        if (!Socket.Connected)
+        if (_disposed)
         {
             return;
         }
 
-        Logger.Information("Закрываю соединение с узлом");
-        Client.Socket.Disconnect(false);
-        Client.Socket.Close();
+        _disposed = true;
+
+        Socket.Dispose();
+        CancellationTokenSource.Dispose();
     }
 
-    public void Dispose()
+    public void Stop()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         try
         {
             CancellationTokenSource.Cancel();
@@ -176,8 +188,15 @@ public class NodeConnectionProcessor(
         {
         }
 
-        CloseClient();
-        Socket.Dispose();
-        CancellationTokenSource.Dispose();
+        try
+        {
+            Socket.Shutdown(SocketShutdown.Both);
+        }
+        catch (SocketException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 }

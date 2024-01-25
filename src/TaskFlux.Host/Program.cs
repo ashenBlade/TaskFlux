@@ -1,13 +1,14 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.IO.Abstractions;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Core;
 using TaskFlux.Application;
+using TaskFlux.Application.Cluster;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Cluster;
 using TaskFlux.Consensus.Cluster.Network;
 using TaskFlux.Consensus.Persistence;
 using TaskFlux.Consensus.Persistence.Log;
@@ -22,15 +23,39 @@ using TaskFlux.Host.Infrastructure;
 
 var lifetime = new HostApplicationLifetime();
 
+Console.CancelKeyPress += (_, args) =>
+{
+    Log.Information("Получен Ctrl + C. Посылаю сигнал остановки приложения");
+    lifetime.Stop();
+    args.Cancel = true;
+};
+
+
 var logLevelSwitch = new LoggingLevelSwitch();
 
 Log.Logger = new LoggerConfiguration()
             .MinimumLevel.ControlledBy(logLevelSwitch)
             .Enrich.FromLogContext()
-            .WriteTo.Console(outputTemplate:
-                 "[{Timestamp:HH:mm:ss:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
+            .WriteTo.Console()
             .Enrich.WithProperty("SourceContext", "Main") // Это для глобального логера
             .CreateLogger();
+
+PosixSignalRegistration? sigTermRegistration = null;
+try
+{
+    // Стандартный сигнал для завершения работы приложения.
+    // Докер посылает его для остановки
+    sigTermRegistration = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
+    {
+        Log.Information("Получен SIGTERM. Посылаю сигнал остановки приложения");
+        lifetime.Stop();
+        context.Cancel = true;
+    });
+}
+catch (NotSupportedException e)
+{
+    Log.Information(e, "Платформа не поддерживает регистрацию обработчика SIGTERM сигнала");
+}
 
 try
 {
@@ -61,57 +86,48 @@ try
         consensusModule, options.Network.ClientRequestTimeout,
         lifetime, Log.ForContext<NodeConnectionManager>());
 
-    Console.CancelKeyPress += (_, args) =>
-    {
-        lifetime.Stop();
-        args.Cancel = true;
-    };
 
     var taskFluxHostedService = new TaskFluxNodeHostedService(consensusModule, requestAcceptor, jobQueue,
         connectionManager, Log.ForContext<TaskFluxNodeHostedService>());
 
-    await RunNodeAsync(taskFluxHostedService,
-        consensusModule,
-        requestAcceptor);
-
-    async Task RunNodeAsync(TaskFluxNodeHostedService node,
-                            RaftConsensusModule<Command, Response> module,
-                            IRequestAcceptor acceptor)
+    try
     {
-        try
-        {
-            var host = new HostBuilder()
-                      .ConfigureHostConfiguration(builder =>
-                           builder.AddEnvironmentVariables()
-                                  .AddCommandLine(args))
-                      .ConfigureAppConfiguration(builder =>
-                           builder.AddEnvironmentVariables()
-                                  .AddCommandLine(args))
-                      .ConfigureLogging(logging =>
-                           logging.AddSerilog())
-                      .ConfigureServices((_, services) =>
-                       {
-                           services.AddHostedService(_ => node);
+        using var host = BuildHost();
+        Log.Debug("Запускаю хост");
+        await host.RunAsync(lifetime.Token);
+        lifetime.Stop();
+    }
+    catch (Exception e)
+    {
+        Log.Fatal(e, "Во время работы приложения поймано необработанное исключение");
+        lifetime.StopAbnormal();
+    }
 
-                           services.AddSingleton(acceptor);
-                           services.AddSingleton(options);
-                           services.AddSingleton<IApplicationInfo>(sp => new ProxyApplicationInfo(module,
-                               sp.GetRequiredService<ApplicationOptions>().Cluster.ClusterPeers));
 
-                           services.AddNodeStateObserverHostedService(module);
-                           services.AddTcpRequestModule(lifetime);
-                           services.AddHttpRequestModule(lifetime);
-                       })
-                      .Build();
+    IHost BuildHost()
+    {
+        return new HostBuilder()
+              .ConfigureHostConfiguration(builder =>
+                   builder.AddEnvironmentVariables()
+                          .AddCommandLine(args))
+              .ConfigureAppConfiguration(builder =>
+                   builder.AddEnvironmentVariables()
+                          .AddCommandLine(args))
+              .UseSerilog()
+              .ConfigureServices((_, services) =>
+               {
+                   services.AddHostedService(_ => taskFluxHostedService);
 
-            await host.RunAsync(lifetime.Token);
-            lifetime.Stop();
-        }
-        catch (Exception e)
-        {
-            Log.Fatal(e, "Во время работы приложения поймано необработанное исключение");
-            lifetime.StopAbnormal();
-        }
+                   services.AddSingleton<IRequestAcceptor>(requestAcceptor);
+                   services.AddSingleton(options);
+                   services.AddSingleton<IApplicationInfo>(sp => new ProxyApplicationInfo(consensusModule,
+                       sp.GetRequiredService<ApplicationOptions>().Cluster.ClusterPeers));
+
+                   services.AddNodeStateObserverHostedService(consensusModule);
+                   services.AddTcpRequestModule(lifetime);
+                   services.AddHttpRequestModule(lifetime);
+               })
+              .Build();
     }
 }
 catch (Exception e)
@@ -121,12 +137,17 @@ catch (Exception e)
 }
 finally
 {
+    if (sigTermRegistration is not null)
+    {
+        sigTermRegistration.Dispose();
+    }
+
     Log.CloseAndFlush();
 }
 
+Log.Information("Приложение закрывается");
 return await lifetime.WaitReturnCode();
 
-// TODO: когда приложение закрывается, то нужно прекращать подключаться к узлам (Cancellation Token не работает)
 FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
 {
     var dataDirPath = GetDataDirectory(options);
@@ -172,7 +193,7 @@ FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
             try
             {
                 // Сразу закроем
-                using var _ = snapshotFile.Create();
+                using var __ = snapshotFile.Create();
             }
             catch (Exception e)
             {

@@ -83,11 +83,6 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
         catch (OperationCanceledException)
         {
         }
-        catch (Exception e)
-        {
-            _logger.Fatal(e, "Во время работы обработчика возникло необработанное исключение");
-            throw;
-        }
     }
 
     private void ProcessPeer(CancellationToken token)

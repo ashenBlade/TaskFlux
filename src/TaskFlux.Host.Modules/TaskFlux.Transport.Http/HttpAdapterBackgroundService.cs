@@ -92,13 +92,23 @@ public class HttpAdapterBackgroundService : BackgroundService
         {
             while (token.IsCancellationRequested is false)
             {
-                var context = await listener.GetContextAsync();
+                var context = await listener.GetContextAsync().WaitAsync(token);
                 _ = ProcessRequestAsync(context, token);
             }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception e)
+        {
+            _logger.Fatal(e, "Во время принятия HTTP запросов возникло необработанное исключение");
+            _lifetime.StopAbnormal();
         }
         finally
         {
             listener.Stop();
         }
+
+        _logger.Information("Модуль HTTP запросов заканчивает работу");
     }
 }

@@ -30,6 +30,8 @@ public class TcpAdapterBackgroundService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken token)
     {
+        await Task.Yield();
+
         _logger.Information("Модуль TCP запросов запускается");
         var port = _options.TcpAdapterListenPort;
         var listener = new TcpListener(IPAddress.Any, port);
@@ -56,6 +58,7 @@ public class TcpAdapterBackgroundService : BackgroundService
         catch (Exception e)
         {
             _logger.Error(e, "Необработанное исключение во время работы модуля запросов");
+            _lifetime.StopAbnormal();
         }
         finally
         {
