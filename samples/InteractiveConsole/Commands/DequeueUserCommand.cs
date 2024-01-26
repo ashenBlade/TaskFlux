@@ -1,7 +1,7 @@
 using System.Text;
 using TaskFlux.Client;
 using TaskFlux.Client.Exceptions;
-using TaskFlux.Models;
+using TaskFlux.Core;
 
 namespace InteractiveConsole.Commands;
 

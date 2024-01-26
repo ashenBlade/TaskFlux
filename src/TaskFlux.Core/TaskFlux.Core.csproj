@@ -1,15 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net7.0</TargetFramework>
+        <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\TaskFlux.Models\TaskFlux.Models.csproj"/>
         <ProjectReference Include="..\TaskFlux.PriorityQueue\TaskFlux.PriorityQueue.csproj"/>
-        <ProjectReference Include="..\Utils.Serialization\Utils.Serialization.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

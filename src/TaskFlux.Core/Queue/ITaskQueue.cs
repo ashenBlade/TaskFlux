@@ -11,7 +11,7 @@ public interface ITaskQueue : IReadOnlyTaskQueue
     /// <c>true</c> - значение было добавлено в очередь, <br/>
     /// <c>false</c> - в очереди нет места для новых элементов
     /// </returns>
-    public Result Enqueue(long key, byte[] payload);
+    public EnqueueResult Enqueue(long key, byte[] payload);
 
     /// <summary>
     /// Получить элемент из очереди

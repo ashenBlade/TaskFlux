@@ -1,4 +1,4 @@
-using TaskFlux.Models;
+using TaskFlux.Core;
 
 namespace TaskFlux.Network.Responses;
 

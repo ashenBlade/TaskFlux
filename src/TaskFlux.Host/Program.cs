@@ -1,417 +1,234 @@
 ﻿using System.ComponentModel.DataAnnotations;
-using System.IO.Abstractions;
-using Consensus.Application.TaskFlux;
-using Consensus.JobQueue;
-using Consensus.NodeProcessor;
-using Consensus.Peer;
-using Consensus.Raft;
-using Consensus.Raft.Persistence;
-using Consensus.Raft.Persistence.Log;
-using Consensus.Raft.Persistence.Metadata;
-using Consensus.Raft.Persistence.Snapshot;
-using Consensus.Timers;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Serilog;
-using TaskFlux.Commands;
+using Serilog.Core;
+using TaskFlux.Application;
+using TaskFlux.Application.Cluster;
+using TaskFlux.Consensus;
+using TaskFlux.Consensus.Cluster.Network;
+using TaskFlux.Consensus.Persistence;
+using TaskFlux.Consensus.Timers;
 using TaskFlux.Core;
+using TaskFlux.Core.Commands;
 using TaskFlux.Host;
+using TaskFlux.Host.Configuration;
 using TaskFlux.Host.Infrastructure;
-using TaskFlux.Host.Modules;
-using TaskFlux.Host.Modules.HttpRequest;
-using TaskFlux.Host.Modules.SocketRequest;
-using TaskFlux.Host.Options;
-using TaskFlux.Host.RequestAcceptor;
-using TaskFlux.Models;
-using TaskFlux.Node;
-using Utils.Network;
+
+var lifetime = new HostApplicationLifetime();
+
+Console.CancelKeyPress += (_, args) =>
+{
+    Log.Information("Получен Ctrl + C. Посылаю сигнал остановки приложения");
+    lifetime.Stop();
+    args.Cancel = true;
+};
+
+var logLevelSwitch = new LoggingLevelSwitch();
 
 Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Verbose()
+            .MinimumLevel.ControlledBy(logLevelSwitch)
             .Enrich.FromLogContext()
-            .WriteTo.Console(outputTemplate:
-                 "[{Timestamp:HH:mm:ss:ffff} {Level:u3}] ({SourceContext}) {Message}{NewLine}{Exception}")
+            .WriteTo.Console()
+            .Enrich.WithProperty("SourceContext", "Main") // Это для глобального логера
             .CreateLogger();
+
+PosixSignalRegistration? sigTermRegistration = null;
 try
 {
-    var configuration = new ConfigurationBuilder()
-                       .AddEnvironmentVariables()
-                       .AddJsonFile("taskflux.settings.json", optional: true)
-                       .Build();
+    // Стандартный сигнал для завершения работы приложения.
+    // Докер посылает его для остановки
+    sigTermRegistration = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
+    {
+        Log.Information("Получен SIGTERM. Посылаю сигнал остановки приложения");
+        lifetime.Stop();
+        context.Cancel = true;
+    });
+}
+catch (NotSupportedException e)
+{
+    Log.Information(e, "Платформа не поддерживает регистрацию обработчика SIGTERM сигнала");
+}
 
-    var networkOptions = configuration.GetSection("NETWORK") is { } section
-                      && section.Exists()
-                             ? section.Get<NetworkOptions>() ?? NetworkOptions.Default
-                             : NetworkOptions.Default;
+try
+{
+    var options = GetApplicationOptions();
 
-    var serverOptions = configuration.Get<RaftServerOptions>()
-                     ?? throw new Exception("Не найдено настроек сервера");
+    if (!TryValidateOptions(options))
+    {
+        return 1;
+    }
 
-    ValidateOptions(serverOptions);
+    logLevelSwitch.MinimumLevel = options.Logging.LogLevel;
 
-    var nodeId = new NodeId(serverOptions.NodeId);
+    var nodeId = new NodeId(options.Cluster.ClusterNodeId);
 
+    var facade = InitializePersistence(options.Persistence);
+    DumpDataState(facade);
 
-    Log.Logger.Debug("Полученные узлы кластера: {Peers}", serverOptions.Peers);
+    var peers = ExtractPeers(options.Cluster, nodeId, options.Network);
 
-    var facade = CreateStoragePersistenceFacade(serverOptions);
-    var peers = ExtractPeers(serverOptions, nodeId, networkOptions);
-
-    var appInfo = CreateApplicationInfo();
-    var clusterInfo = CreateClusterInfo(serverOptions);
-    var nodeInfo = CreateNodeInfo(serverOptions);
-
-    using var raftConsensusModule = CreateRaftConsensusModule(nodeId, peers, facade, nodeInfo, appInfo, clusterInfo);
-
-    var consensusModule =
-        new InfoUpdaterRaftConsensusModuleDecorator<Command, Response>(raftConsensusModule, clusterInfo, nodeInfo);
-
-    var connectionManager = new NodeConnectionManager(serverOptions.Host, serverOptions.Port, consensusModule,
-        networkOptions.RequestTimeout,
-        Log.Logger.ForContext<NodeConnectionManager>());
-
-    var stateObserver = new NodeStateObserver(consensusModule, Log.Logger.ForContext<NodeStateObserver>());
-
+    using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(options.Cluster.ClusterPeers.Length,
+        options.Cluster.ClusterNodeId, Log.Logger.ForContext("SourceContext", "BackgroundJobQueue"), lifetime);
+    using var consensusModule = CreateRaftConsensusModule(nodeId, peers, facade, jobQueue);
     using var requestAcceptor =
-        new ExclusiveRequestAcceptor(consensusModule, Log.ForContext("{SourceContext}", "RequestQueue"));
+        new ExclusiveRequestAcceptor(consensusModule, lifetime, Log.ForContext("SourceContext", "RequestAcceptor"));
+    using var connectionManager = new NodeConnectionManager(options.Cluster.ClusterListenHost,
+        options.Cluster.ClusterListenPort,
+        consensusModule, options.Network.ClientRequestTimeout,
+        lifetime, Log.ForContext<NodeConnectionManager>());
 
-    var httpModule = CreateHttpRequestModule(configuration);
-    httpModule.AddHandler(HttpMethod.Post, "/command",
-        new SubmitCommandRequestHandler(requestAcceptor, clusterInfo, appInfo,
-            Log.ForContext<SubmitCommandRequestHandler>()));
-
-    var binaryRequestModule = CreateBinaryRequestModule(requestAcceptor, appInfo, clusterInfo, configuration);
-
-    var nodeConnectionThread = new Thread(o =>
-    {
-        var (manager, token) = ( CancellableThreadParameter<NodeConnectionManager> ) o!;
-        manager.Run(token);
-    }) {Priority = ThreadPriority.Highest, Name = "Обработчик подключений узлов",};
-
-    using var cts = new CancellationTokenSource();
-
-    // ReSharper disable once AccessToDisposedClosure
-    Console.CancelKeyPress += (_, args) =>
-    {
-        cts.Cancel();
-        args.Cancel = true;
-    };
+    var taskFluxHostedService = new TaskFluxNodeHostedService(consensusModule, requestAcceptor, jobQueue,
+        connectionManager, Log.ForContext<TaskFluxNodeHostedService>());
 
     try
     {
-        Log.Logger.Information("Запускаю таймер выборов");
-        raftConsensusModule.Start();
-
-        Log.Logger.Information("Запускаю менеджер подключений узлов");
-        nodeConnectionThread.Start(new CancellableThreadParameter<NodeConnectionManager>(connectionManager, cts.Token));
-
-        Log.Logger.Information("Запукаю фоновые задачи");
-        await Task.WhenAll(stateObserver.RunAsync(cts.Token),
-            httpModule.RunAsync(cts.Token),
-            binaryRequestModule.RunAsync(cts.Token),
-            Task.Run(() =>
-            {
-                // ReSharper disable once AccessToDisposedClosure
-                var token = cts.Token;
-                // ReSharper disable once AccessToDisposedClosure
-                requestAcceptor.Start(token);
-            }));
+        using var host = BuildHost();
+        Log.Debug("Запускаю хост");
+        await host.RunAsync(lifetime.Token);
+        lifetime.Stop();
     }
     catch (Exception e)
     {
-        Log.Fatal(e, "Ошибка во время работы сервера");
+        Log.Fatal(e, "Во время работы приложения поймано необработанное исключение");
+        lifetime.StopAbnormal();
     }
-    finally
+
+
+    IHost BuildHost()
     {
-        cts.Cancel();
-        nodeConnectionThread.Join();
+        return new HostBuilder()
+              .ConfigureHostConfiguration(builder =>
+                   builder.AddEnvironmentVariables()
+                          .AddCommandLine(args))
+              .ConfigureAppConfiguration(builder =>
+                   builder.AddEnvironmentVariables()
+                          .AddCommandLine(args))
+              .UseSerilog()
+              .ConfigureServices((_, services) =>
+               {
+                   services.AddHostedService(_ => taskFluxHostedService);
+
+                   services.AddSingleton<IRequestAcceptor>(requestAcceptor);
+                   services.AddSingleton(options);
+                   services.AddSingleton<IApplicationInfo>(sp => new ProxyApplicationInfo(consensusModule,
+                       sp.GetRequiredService<ApplicationOptions>().Cluster.ClusterPeers));
+
+                   services.AddNodeStateObserverHostedService(consensusModule);
+                   services.AddTcpRequestModule(lifetime);
+                   services.AddHttpRequestModule(lifetime);
+               })
+              .Build();
     }
 }
 catch (Exception e)
 {
     Log.Fatal(e, "Необработанное исключение во время настройки сервера");
+    lifetime.StopAbnormal();
 }
 finally
 {
+    if (sigTermRegistration is not null)
+    {
+        sigTermRegistration.Dispose();
+    }
+
     Log.CloseAndFlush();
 }
 
-return;
+Log.Information("Приложение закрывается");
+return await lifetime.WaitReturnCode();
 
-
-SocketRequestModule CreateBinaryRequestModule(IRequestAcceptor requestAcceptor,
-                                              IApplicationInfo applicationInfo,
-                                              IClusterInfo clusterInfo,
-                                              IConfiguration config)
+FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
 {
-    var options = GetOptions();
-
-    try
-    {
-        Validator.ValidateObject(options, new ValidationContext(options), true);
-    }
-    catch (ValidationException ve)
-    {
-        Log.Error(ve, "Ошибка валидации настроек модуля бинарных запросов");
-        throw;
-    }
-
-    return new SocketRequestModule(requestAcceptor,
-        new StaticOptionsMonitor<SocketRequestModuleOptions>(options),
-        clusterInfo,
-        applicationInfo,
-        Log.ForContext<SocketRequestModule>());
-
-    SocketRequestModuleOptions GetOptions()
-    {
-        var section = config.GetSection("BINARY_REQUEST");
-        if (!section.Exists())
-        {
-            return SocketRequestModuleOptions.Default;
-        }
-
-        return section.Get<SocketRequestModuleOptions>()
-            ?? SocketRequestModuleOptions.Default;
-    }
-}
-
-void ValidateOptions(RaftServerOptions serverOptions)
-{
-    var errors = new List<ValidationResult>();
-    if (!Validator.TryValidateObject(serverOptions, new ValidationContext(serverOptions), errors, true))
-    {
-        throw new Exception(
-            $"Найдены ошибки при валидации конфигурации: {string.Join(',', errors.Select(x => x.ErrorMessage))}");
-    }
-}
-
-HttpRequestModule CreateHttpRequestModule(IConfiguration config)
-{
-    var httpModuleOptions = config.GetSection("HTTP")
-                                  .Get<HttpRequestModuleOptions>()
-                         ?? HttpRequestModuleOptions.Default;
-
-    return new HttpRequestModule(httpModuleOptions.Port, Log.ForContext<HttpRequestModule>());
-}
-
-StoragePersistenceFacade CreateStoragePersistenceFacade(RaftServerOptions options)
-{
-    var dataDirectory = GetDataDirectory(options);
-
-    var fs = new FileSystem();
-    var consensusDirectory = CreateConsensusDirectory();
-
-    var tempDirectory = CreateTemporaryDirectory();
-
-    var fileLogStorage = CreateFileLogStorage();
-    var metadataStorage = CreateMetadataStorage();
-    var snapshotStorage = CreateSnapshotStorage();
-
-    return new StoragePersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage,
-        maxLogFileSize: 1024 /* 1 Кб */);
-
-    DirectoryInfo CreateTemporaryDirectory()
-    {
-        var temporary = new DirectoryInfo(Path.Combine(consensusDirectory.FullName, "temporary"));
-        if (!temporary.Exists)
-        {
-            Log.Information("Директории для временных файлов не найдено. Создаю новую - {Path}", temporary.FullName);
-            try
-            {
-                temporary.Create();
-                return temporary;
-            }
-            catch (Exception e)
-            {
-                Log.Fatal(e, "Ошибка при создании директории для временных файлов в {Path}", temporary.FullName);
-                throw;
-            }
-        }
-
-        return temporary;
-    }
-
-    DirectoryInfo CreateConsensusDirectory()
-    {
-        var dir = new DirectoryInfo(Path.Combine(dataDirectory, "consensus"));
-        if (!dir.Exists)
-        {
-            Log.Information("Директории для хранения данных не существует. Создаю новую - {Path}",
-                dir.FullName);
-            try
-            {
-                dir.Create();
-            }
-            catch (IOException e)
-            {
-                Log.Fatal(e, "Невозможно создать директорию для данных");
-                throw;
-            }
-        }
-
-        return dir;
-    }
-
-    FileSystemSnapshotStorage CreateSnapshotStorage()
-    {
-        var snapshotFile = new FileInfo(Path.Combine(consensusDirectory.FullName, "raft.snapshot"));
-        if (!snapshotFile.Exists)
-        {
-            Log.Information("Файл снапшота не обнаружен. Создаю новый - {Path}", snapshotFile.FullName);
-            try
-            {
-                // Сразу закроем
-                using var _ = snapshotFile.Create();
-            }
-            catch (Exception e)
-            {
-                Log.Fatal(e, "Ошибка при создании файла снашпота - {Path}", snapshotFile.FullName);
-                throw;
-            }
-        }
-
-        return new FileSystemSnapshotStorage(new FileInfoWrapper(fs, snapshotFile),
-            new DirectoryInfoWrapper(fs, tempDirectory), Log.ForContext("SourceContext", "SnapshotManager"));
-    }
-
-    FileLogStorage CreateFileLogStorage()
-    {
-        try
-        {
-            return FileLogStorage.InitializeFromFileSystem(new DirectoryInfoWrapper(fs, consensusDirectory),
-                new DirectoryInfoWrapper(fs, tempDirectory));
-        }
-        catch (Exception e)
-        {
-            Log.Fatal(e, "Ошибка во время инициализации файла лога");
-            throw;
-        }
-    }
-
-    FileMetadataStorage CreateMetadataStorage()
-    {
-        var metadataFile = new FileInfo(Path.Combine(consensusDirectory.FullName, "raft.metadata"));
-        FileStream fileStream;
-        if (!metadataFile.Exists)
-        {
-            Log.Information("Файла метаданных не обнаружен. Создаю новый - {Path}", metadataFile.FullName);
-            try
-            {
-                fileStream = metadataFile.Create();
-            }
-            catch (Exception e)
-            {
-                Log.Fatal(e, "Не удалось создать новый файл метаданных -  {Path}", metadataFile.FullName);
-                throw;
-            }
-        }
-        else
-        {
-            try
-            {
-                fileStream = metadataFile.Open(FileMode.Open, FileAccess.ReadWrite);
-            }
-            catch (Exception e)
-            {
-                Log.Fatal(e, "Ошибка при открытии файла метаданных");
-                throw;
-            }
-        }
-
-        try
-        {
-            return new FileMetadataStorage(fileStream, new Term(1), null);
-        }
-        catch (InvalidDataException invalidDataException)
-        {
-            Log.Fatal(invalidDataException, "Переданный файл метаданных был в невалидном состоянии");
-            throw;
-        }
-        catch (Exception e)
-        {
-            Log.Fatal(e, "Ошибка во время инициализации файла метаданных");
-            throw;
-        }
-    }
-
-    string GetDataDirectory(RaftServerOptions raftServerOptions)
-    {
-        string workingDirectory;
-        if (!string.IsNullOrWhiteSpace(raftServerOptions.DataDirectory))
-        {
-            workingDirectory = raftServerOptions.DataDirectory;
-            Log.Information("Указана директория данных: {WorkingDirectory}", workingDirectory);
-        }
-        else
-        {
-            Log.Information("Директория данных не указана. Выставляю в рабочую директорию");
-            workingDirectory = Directory.GetCurrentDirectory();
-        }
-
-        return workingDirectory;
-    }
+    return FileSystemPersistenceFacade.Initialize(options.WorkingDirectory, options.MaxLogFileSize);
 }
 
 RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
                                                                  IPeer[] peers,
-                                                                 StoragePersistenceFacade storage,
-                                                                 INodeInfo nodeInfo,
-                                                                 IApplicationInfo applicationInfo,
-                                                                 IClusterInfo clusterInfo)
+                                                                 FileSystemPersistenceFacade persistence,
+                                                                 IBackgroundJobQueue jobQueue)
 {
-    var jobQueue = new TaskBackgroundJobQueue(Log.ForContext<TaskBackgroundJobQueue>());
-    var logger = Log.Logger.ForContext("SourceContext", "Raft");
-    var commandSerializer = new TaskFluxDeltaExtractor();
+    var logger = Log.Logger.ForContext("SourceContext", "ConsensusModule");
+    var deltaExtractor = new TaskFluxDeltaExtractor();
     var peerGroup = new PeerGroup(peers);
-    var timerFactory =
-        new ThreadingTimerFactory(TimeSpan.FromMilliseconds(1500), TimeSpan.FromMilliseconds(2500),
-            heartbeatTimeout: TimeSpan.FromMilliseconds(1000));
+    var timerFactory = new ThreadingTimerFactory(lower: TimeSpan.FromMilliseconds(1500),
+        upper: TimeSpan.FromMilliseconds(2500),
+        heartbeatTimeout: TimeSpan.FromMilliseconds(1000));
+    var applicationFactory = new TaskFluxApplicationFactory();
 
-    return RaftConsensusModule<Command, Response>.Create(nodeId, peerGroup, logger, timerFactory,
-        jobQueue, storage,
-        commandSerializer, new TaskFluxApplicationFactory(nodeInfo, applicationInfo, clusterInfo));
+    return RaftConsensusModule<Command, Response>.Create(nodeId,
+        peerGroup, logger, timerFactory,
+        jobQueue, persistence,
+        deltaExtractor, applicationFactory);
 }
 
-ApplicationInfo CreateApplicationInfo()
+static IPeer[] ExtractPeers(ClusterOptions serverOptions, NodeId currentNodeId, NetworkOptions networkOptions)
 {
-    return new ApplicationInfo(QueueName.Default);
-}
-
-ClusterInfo CreateClusterInfo(RaftServerOptions options)
-{
-    return new ClusterInfo(new NodeId(options.NodeId), new NodeId(options.NodeId),
-        options.Peers.Select(EndPointHelpers.ParseEndPoint));
-}
-
-NodeInfo CreateNodeInfo(RaftServerOptions options)
-{
-    return new NodeInfo(new NodeId(options.NodeId), NodeRole.Follower);
-}
-
-static IPeer[] ExtractPeers(RaftServerOptions serverOptions, NodeId currentNodeId, NetworkOptions networkOptions)
-{
-    var peers = new IPeer[serverOptions.Peers.Length - 1]; // Все кроме себя
+    var peers = new IPeer[serverOptions.ClusterPeers.Length - 1]; // Все кроме себя
+    var connectionErrorDelay = TimeSpan.FromMilliseconds(100);
 
     // Все до текущего узла
-    for (int i = 0; i < currentNodeId.Id; i++)
+    for (var i = 0; i < currentNodeId.Id; i++)
     {
-        var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
+        var endpoint = serverOptions.ClusterPeers[i];
         var id = new NodeId(i);
-        IPeer peer = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
+        peers[i] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.ClientRequestTimeout,
+            connectionErrorDelay,
             Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
-        peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
-        peers[i] = peer;
     }
 
     // Все после текущего узла
-    for (int i = currentNodeId.Id + 1; i < serverOptions.Peers.Length; i++)
+    for (var i = currentNodeId.Id + 1; i < serverOptions.ClusterPeers.Length; i++)
     {
-        var endpoint = EndPointHelpers.ParseEndPoint(serverOptions.Peers[i]);
+        var endpoint = serverOptions.ClusterPeers[i];
         var id = new NodeId(i);
-        IPeer peer = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.RequestTimeout,
+        peers[i - 1] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.ClientRequestTimeout,
+            connectionErrorDelay,
             Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
-        peer = new NetworkExceptionDelayPeerDecorator(peer, TimeSpan.FromMilliseconds(50));
-        peers[i - 1] = peer;
     }
 
     return peers;
+}
+
+ApplicationOptions GetApplicationOptions()
+{
+    var root = new ConfigurationBuilder()
+              .AddTaskFluxSource(args, "taskflux.settings.json")
+              .Build();
+
+    return ApplicationOptions.FromConfiguration(root);
+}
+
+bool TryValidateOptions(ApplicationOptions options)
+{
+    var results = new List<ValidationResult>();
+    if (Validator.TryValidateObject(options, new ValidationContext(options), results, true))
+    {
+        return true;
+    }
+
+    Log.Fatal("Ошибка валидации конфигурации. Обнаружены ошибки: {Errors}", results.Select(r => r.ErrorMessage));
+    return false;
+}
+
+void DumpDataState(FileSystemPersistenceFacade persistence)
+{
+    Log.Information("Последняя команда состояния: {LastEntry}", persistence.LastEntry);
+    if (persistence.TryGetSnapshotLastEntryInfo(out var lastApplied))
+    {
+        Log.Information("Последняя запись в снапшоте: {LastSnapshotEntry}", lastApplied);
+    }
+    else
+    {
+        Log.Information("Снапшот отсутствует");
+    }
+
+    Log.Information("Количество записей в логе: {LogEntriesCount}", persistence.Log.Count);
+    if (persistence.Log.Count > 0)
+    {
+        Log.Information("Индекс закоммиченной команды: {CommitIndex}", persistence.Log.CommitIndex);
+    }
 }

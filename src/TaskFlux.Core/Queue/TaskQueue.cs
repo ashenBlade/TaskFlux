@@ -1,4 +1,4 @@
-using TaskFlux.Models;
+using TaskFlux.Core.Policies;
 using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
@@ -26,6 +26,9 @@ internal class TaskQueue : ITaskQueue
 
     public TaskQueue(QueueName name, IPriorityQueue queue, QueuePolicy[] policies)
     {
+        ArgumentNullException.ThrowIfNull(queue);
+        ArgumentNullException.ThrowIfNull(policies);
+
         _policies = policies;
         _queue = queue;
         Name = name;
@@ -39,7 +42,7 @@ internal class TaskQueue : ITaskQueue
         return _queue.ReadAllData();
     }
 
-    public Result Enqueue(long key, byte[] payload)
+    public EnqueueResult Enqueue(long key, byte[] payload)
     {
         ArgumentNullException.ThrowIfNull(payload);
 
@@ -47,13 +50,13 @@ internal class TaskQueue : ITaskQueue
         {
             if (!policy.CanEnqueue(key, payload, this))
             {
-                return Result.PolicyViolation(policy);
+                return EnqueueResult.PolicyViolation(policy);
             }
         }
 
         _queue.Enqueue(key, payload);
 
-        return Result.Success();
+        return EnqueueResult.Success();
     }
 
 

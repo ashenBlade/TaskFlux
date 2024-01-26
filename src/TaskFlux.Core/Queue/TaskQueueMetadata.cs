@@ -1,4 +1,3 @@
-using TaskFlux.Models;
 using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
@@ -9,6 +8,7 @@ public class TaskQueueMetadata : ITaskQueueMetadata
 
     public TaskQueueMetadata(ITaskQueue parent)
     {
+        ArgumentNullException.ThrowIfNull(parent);
         _parent = parent;
     }
 

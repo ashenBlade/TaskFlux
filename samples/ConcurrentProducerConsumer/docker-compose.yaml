@@ -1,4 +1,4 @@
-version: '3.0'
+version: '3.8'
 
 services:
   tflux.0:
@@ -8,14 +8,21 @@ services:
     ports:
       - '8080:2602'
     environment:
-      PEERS__0: tflux.0:5000
-      PEERS__1: tflux.1:5000
-      PEERS__2: tflux.2:5000
-      NODE_ID: 0
-      LISTEN_PORT: 5000
-      LISTEN_HOST: tflux.0
-      DATA_DIR:
-      HTTP_PORT: 1606
+      TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000 tflux.1:5000 tflux.2:5000'
+      #      TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000'
+      TASKFLUX_CLUSTER_NODE_ID: 0
+      TASKFLUX_CLUSTER_LISTEN_PORT: 5000
+      TASKFLUX_CLUSTER_LISTEN_HOST: tflux.0
+      TASKFLUX_CLUSTER_DATA_DIRECTORY: '/var/lib/tflux'
+      TASKFLUX_HTTP_ADAPTER_LISTEN_PORT: 1606
+      TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
+      TASKFLUX_LOG_LEVEL: 'Verbose'
+      TASKFLUX_MAX_LOG_FILE_SIZE: 1024
+    volumes:
+      - tflux.0.volume:/var/lib/tflux
+    networks:
+      - tflux-cluster-network
+  
   tflux.1:
     build:
       context: ../../src
@@ -23,14 +30,19 @@ services:
     ports:
       - '8081:2602'
     environment:
-      PEERS__0: tflux.0:5000
-      PEERS__1: tflux.1:5000
-      PEERS__2: tflux.2:5000
-      NODE_ID: 1
-      LISTEN_PORT: 5000
-      LISTEN_HOST: tflux.1
-      DATA_DIR:
-      HTTP_PORT: 1606
+      TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000 tflux.1:5000 tflux.2:5000'
+      TASKFLUX_CLUSTER_NODE_ID: 1
+      TASKFLUX_CLUSTER_LISTEN_PORT: 5000
+      TASKFLUX_CLUSTER_LISTEN_HOST: tflux.1
+      TASKFLUX_CLUSTER_DATA_DIRECTORY: '/var/lib/tflux'
+      TASKFLUX_HTTP_ADAPTER_LISTEN_PORT: 1606
+      TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
+      TASKFLUX_LOG_LEVEL: 'Verbose'
+      TASKFLUX_MAX_LOG_FILE_SIZE: 1024
+    volumes:
+      - tflux.1.volume:/var/lib/tflux
+    networks:
+      - tflux-cluster-network
   
   tflux.2:
     build:
@@ -39,13 +51,27 @@ services:
     ports:
       - '8082:2602'
     environment:
-      PEERS__0: tflux.0:5000
-      PEERS__1: tflux.1:5000
-      PEERS__2: tflux.2:5000
-      NODE_ID: 2
-      LISTEN_PORT: 5000
-      LISTEN_HOST: tflux.2
-      DATA_DIR:
-      HTTP_PORT: 1606
+      TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000 tflux.1:5000 tflux.2:5000'
+      TASKFLUX_CLUSTER_NODE_ID: 2
+      TASKFLUX_CLUSTER_LISTEN_PORT: 5000
+      TASKFLUX_CLUSTER_LISTEN_HOST: tflux.2
+      TASKFLUX_CLUSTER_DATA_DIRECTORY: '/var/lib/tflux'
+      TASKFLUX_HTTP_ADAPTER_LISTEN_PORT: 1606
+      TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
+      TASKFLUX_LOG_LEVEL: 'Verbose'
+      TASKFLUX_MAX_LOG_FILE_SIZE: 1024
+    volumes:
+      - tflux.2.volume:/var/lib/tflux
+    networks:
+      - tflux-cluster-network
+
+volumes:
+  tflux.0.volume:
+  tflux.1.volume:
+  tflux.2.volume:
+
+
+networks:
+  tflux-cluster-network:
+    driver: bridge
     
-  

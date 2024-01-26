@@ -1,6 +1,6 @@
 using System.Buffers;
 using TaskFlux.Network.Authorization;
-using Utils.Serialization;
+using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Network.Packets;
 
@@ -24,7 +24,7 @@ public class AuthorizationRequestPacket : Packet
         {
             var memory = buffer.AsMemory(0, size);
             var writer = new MemoryBinaryWriter(memory);
-            writer.Write(PacketType.AuthorizationRequest);
+            writer.Write(( byte ) PacketType.AuthorizationRequest);
             AuthorizationMethod.Serialize(ref writer);
             await stream.WriteAsync(memory, token);
         }

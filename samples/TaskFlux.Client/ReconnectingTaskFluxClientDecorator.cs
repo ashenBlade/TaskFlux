@@ -1,5 +1,5 @@
 using TaskFlux.Client.Exceptions;
-using TaskFlux.Models;
+using TaskFlux.Core;
 using TaskFlux.Network.Responses;
 
 namespace TaskFlux.Client;

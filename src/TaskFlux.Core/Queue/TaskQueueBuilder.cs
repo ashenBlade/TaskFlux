@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using TaskFlux.Core.Policies;
-using TaskFlux.Models;
 using TaskFlux.PriorityQueue;
 using TaskFlux.PriorityQueue.Heap;
 using TaskFlux.PriorityQueue.QueueArray;
@@ -53,6 +52,8 @@ public class TaskQueueBuilder
 
     public TaskQueueBuilder WithData(IReadOnlyCollection<(long, byte[])> data)
     {
+        ArgumentNullException.ThrowIfNull(data);
+
         _payload = data;
         return this;
     }

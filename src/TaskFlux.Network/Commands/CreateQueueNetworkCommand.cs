@@ -1,27 +1,38 @@
 using System.Buffers;
-using Utils.Serialization;
+using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Network.Commands;
 
 public sealed class CreateQueueNetworkCommand : NetworkCommand
 {
     public string QueueName { get; }
+
+    /// <summary>
+    /// Код реализации очереди
+    /// </summary>
     public int Code { get; }
+
     public int? MaxQueueSize { get; }
-    public int? MaxMessageSize { get; }
+    public int? MaxPayloadSize { get; }
     public (long, long)? PriorityRange { get; }
 
     public CreateQueueNetworkCommand(string queueName,
                                      int code,
                                      int? maxQueueSize,
-                                     int? maxMessageSize,
+                                     int? maxPayloadSize,
                                      (long, long)? priorityRange)
     {
         QueueName = queueName;
         Code = code;
         MaxQueueSize = maxQueueSize;
-        MaxMessageSize = maxMessageSize;
+        MaxPayloadSize = maxPayloadSize;
         PriorityRange = priorityRange;
+    }
+
+    public bool TryGetPriorityRange(out long min, out long max)
+    {
+        ( min, max ) = PriorityRange.GetValueOrDefault();
+        return PriorityRange.HasValue;
     }
 
     public override NetworkCommandType Type => NetworkCommandType.CreateQueue;
@@ -49,7 +60,7 @@ public sealed class CreateQueueNetworkCommand : NetworkCommand
             writer.WriteAsQueueName(QueueName);
             writer.Write(Code);
             writer.Write(MaxQueueSize ?? -1);
-            writer.Write(MaxMessageSize ?? -1);
+            writer.Write(MaxPayloadSize ?? -1);
             if (PriorityRange is var (min, max))
             {
                 writer.Write(true);
@@ -74,7 +85,7 @@ public sealed class CreateQueueNetworkCommand : NetworkCommand
         CancellationToken token)
     {
         var reader = new StreamBinaryReader(stream);
-        var queueName = await reader.ReadRawQueueNameAsync(token);
+        var queueName = await reader.ReadAsQueueNameAsync(token);
         var code = await reader.ReadInt32Async(token);
         int? maxQueueSize = await reader.ReadInt32Async(token);
         if (maxQueueSize == -1)

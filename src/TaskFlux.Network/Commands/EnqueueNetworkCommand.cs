@@ -1,5 +1,5 @@
 using System.Buffers;
-using Utils.Serialization;
+using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Network.Commands;
 
@@ -54,7 +54,7 @@ public sealed class EnqueueNetworkCommand : NetworkCommand
     public new static async ValueTask<EnqueueNetworkCommand> DeserializeAsync(Stream stream, CancellationToken token)
     {
         var reader = new StreamBinaryReader(stream);
-        var queueName = await reader.ReadRawQueueNameAsync(token);
+        var queueName = await reader.ReadAsQueueNameAsync(token);
         var key = await reader.ReadInt64Async(token);
         var message = await reader.ReadBufferAsync(token);
         return new EnqueueNetworkCommand(queueName, key, message);

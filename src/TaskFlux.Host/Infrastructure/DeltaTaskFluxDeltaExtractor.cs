@@ -1,19 +1,23 @@
-using Consensus.Raft;
-using TaskFlux.Commands;
+using TaskFlux.Application.Persistence;
+using TaskFlux.Consensus;
+using TaskFlux.Core.Commands;
 
 namespace TaskFlux.Host.Infrastructure;
 
 public class TaskFluxDeltaExtractor : IDeltaExtractor<Response>
 {
-    public bool TryGetDelta(Response command, out byte[] delta)
+    private readonly DeltaExtractorResponseVisitor _visitor = new();
+
+    public bool TryGetDelta(Response response, out byte[] deltaBytes)
     {
-        if (command.TryGetDelta(out var d))
+        var delta = response.Accept(_visitor);
+        if (delta is null)
         {
-            delta = d.Serialize();
-            return true;
+            deltaBytes = Array.Empty<byte>();
+            return false;
         }
 
-        delta = Array.Empty<byte>();
-        return false;
+        deltaBytes = delta.Serialize();
+        return true;
     }
 }

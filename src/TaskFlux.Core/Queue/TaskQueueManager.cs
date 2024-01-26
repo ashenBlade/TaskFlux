@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using TaskFlux.Models;
 
 namespace TaskFlux.Core.Queue;
 
@@ -39,6 +38,7 @@ public class TaskQueueManager : ITaskQueueManager
 
     public TaskQueueManager(ITaskQueue defaultTaskQueue)
     {
+        ArgumentNullException.ThrowIfNull(defaultTaskQueue);
         _queues = new Dictionary<QueueName, ITaskQueue>(QueueNameEqualityComparer.Instance)
         {
             [defaultTaskQueue.Name] = defaultTaskQueue
