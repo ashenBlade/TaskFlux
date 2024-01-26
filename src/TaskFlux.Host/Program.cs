@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel.DataAnnotations;
-using System.IO.Abstractions;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,9 +10,6 @@ using TaskFlux.Application.Cluster;
 using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster.Network;
 using TaskFlux.Consensus.Persistence;
-using TaskFlux.Consensus.Persistence.Log;
-using TaskFlux.Consensus.Persistence.Metadata;
-using TaskFlux.Consensus.Persistence.Snapshot;
 using TaskFlux.Consensus.Timers;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
@@ -29,7 +25,6 @@ Console.CancelKeyPress += (_, args) =>
     lifetime.Stop();
     args.Cancel = true;
 };
-
 
 var logLevelSwitch = new LoggingLevelSwitch();
 
@@ -76,8 +71,7 @@ try
     var peers = ExtractPeers(options.Cluster, nodeId, options.Network);
 
     using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(options.Cluster.ClusterPeers.Length,
-        options.Cluster.ClusterNodeId,
-        Log.Logger.ForContext("SourceContext", "BackgroundJobQueue"), lifetime);
+        options.Cluster.ClusterNodeId, Log.Logger.ForContext("SourceContext", "BackgroundJobQueue"), lifetime);
     using var consensusModule = CreateRaftConsensusModule(nodeId, peers, facade, jobQueue);
     using var requestAcceptor =
         new ExclusiveRequestAcceptor(consensusModule, lifetime, Log.ForContext("SourceContext", "RequestAcceptor"));
@@ -85,7 +79,6 @@ try
         options.Cluster.ClusterListenPort,
         consensusModule, options.Network.ClientRequestTimeout,
         lifetime, Log.ForContext<NodeConnectionManager>());
-
 
     var taskFluxHostedService = new TaskFluxNodeHostedService(consensusModule, requestAcceptor, jobQueue,
         connectionManager, Log.ForContext<TaskFluxNodeHostedService>());
@@ -150,116 +143,13 @@ return await lifetime.WaitReturnCode();
 
 FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
 {
-    var dataDirPath = GetDataDirectory(options);
-
-    var fs = new FileSystem();
-    var dataDirectory = CreateDataDirectory();
-    var dataDirectoryInfo = new DirectoryInfoWrapper(fs, dataDirectory);
-    var fileLogStorage = CreateFileLogStorage();
-    var metadataStorage = CreateMetadataStorage();
-    var snapshotStorage = CreateSnapshotStorage(new DirectoryInfoWrapper(fs, dataDirectory));
-
-    return new FileSystemPersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage,
-        Log.ForContext<FileSystemPersistenceFacade>(),
-        maxLogFileSize: options.MaxLogFileSize);
-
-    DirectoryInfo CreateDataDirectory()
-    {
-        var dir = new DirectoryInfo(Path.Combine(dataDirPath, "data"));
-        if (!dir.Exists)
-        {
-            Log.Information("Директории для хранения данных не существует. Создаю новую - {Path}",
-                dir.FullName);
-            try
-            {
-                dir.Create();
-            }
-            catch (IOException e)
-            {
-                Log.Fatal(e, "Невозможно создать директорию для данных");
-                throw;
-            }
-        }
-
-        return dir;
-    }
-
-    SnapshotFile CreateSnapshotStorage(IDirectoryInfo dataDir)
-    {
-        var snapshotFile = new FileInfo(Path.Combine(dataDirectory.FullName, "raft.snapshot"));
-        if (!snapshotFile.Exists)
-        {
-            Log.Information("Файл снапшота не обнаружен. Создаю новый - {Path}", snapshotFile.FullName);
-            try
-            {
-                // Сразу закроем
-                using var __ = snapshotFile.Create();
-            }
-            catch (Exception e)
-            {
-                Log.Fatal(e, "Ошибка при создании файла снапшота - {Path}", snapshotFile.FullName);
-                throw;
-            }
-        }
-
-        return SnapshotFile.Initialize(dataDir);
-    }
-
-    FileLog CreateFileLogStorage()
-    {
-        try
-        {
-            return FileLog.Initialize(dataDirectoryInfo);
-        }
-        catch (Exception e)
-        {
-            Log.Fatal(e, "Ошибка во время инициализации файла лога");
-            throw;
-        }
-    }
-
-    MetadataFile CreateMetadataStorage()
-    {
-        try
-        {
-            return MetadataFile.Initialize(dataDirectoryInfo);
-        }
-        catch (InvalidDataException invalidDataException)
-        {
-            Log.Fatal(invalidDataException, "Переданный файл метаданных был в невалидном состоянии");
-            throw;
-        }
-        catch (Exception e)
-        {
-            Log.Fatal(e, "Ошибка во время инициализации файла метаданных");
-            throw;
-        }
-    }
-
-    string GetDataDirectory(PersistenceOptions persistenceOptions)
-    {
-        string workingDirectory;
-        if (!string.IsNullOrWhiteSpace(persistenceOptions.WorkingDirectory))
-        {
-            workingDirectory = persistenceOptions.WorkingDirectory;
-            Log.Debug("Указана рабочая директория: {WorkingDirectory}", workingDirectory);
-        }
-        else
-        {
-            var currentDirectory = Directory.GetCurrentDirectory();
-            Log.Information("Директория данных не указана. Выставляю в рабочую директорию: {CurrentDirectory}",
-                currentDirectory);
-            workingDirectory = currentDirectory;
-        }
-
-        return workingDirectory;
-    }
+    return FileSystemPersistenceFacade.Initialize(options.WorkingDirectory, options.MaxLogFileSize);
 }
 
 RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
                                                                  IPeer[] peers,
-                                                                 FileSystemPersistenceFacade storage,
-                                                                 IBackgroundJobQueue backgroundJobQueue)
+                                                                 FileSystemPersistenceFacade persistence,
+                                                                 IBackgroundJobQueue jobQueue)
 {
     var logger = Log.Logger.ForContext("SourceContext", "ConsensusModule");
     var deltaExtractor = new TaskFluxDeltaExtractor();
@@ -271,7 +161,7 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
 
     return RaftConsensusModule<Command, Response>.Create(nodeId,
         peerGroup, logger, timerFactory,
-        backgroundJobQueue, storage,
+        jobQueue, persistence,
         deltaExtractor, applicationFactory);
 }
 

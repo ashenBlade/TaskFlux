@@ -10,7 +10,7 @@ public class PersistenceOptions
     [Required(ErrorMessage = "Рабочая директория не указана")]
     public string WorkingDirectory { get; set; } = DefaultDataDirectory;
 
-    public const ulong DefaultMaxLogFileSize = 1024 * 1024; /* 1 Мб */
+    public const ulong DefaultMaxLogFileSize = 1024 * 1024 * 16; /* 16 Мб */
 
     [Range(16, int.MaxValue, ErrorMessage = "Размер файла лога должен быть больше 16 байт")]
     public ulong MaxLogFileSize { get; set; } = DefaultMaxLogFileSize;

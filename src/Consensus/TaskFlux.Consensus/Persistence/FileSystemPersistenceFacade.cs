@@ -1,3 +1,4 @@
+using System.IO.Abstractions;
 using System.Runtime.CompilerServices;
 using Serilog;
 using TaskFlux.Consensus.Persistence.Log;
@@ -148,6 +149,113 @@ public class FileSystemPersistenceFacade
         _snapshot = snapshot;
         _logger = logger;
         _sizeChecker = sizeChecker;
+    }
+
+    public static FileSystemPersistenceFacade Initialize(string? dataDirectoryPath, ulong maxFileLogFile)
+    {
+        var logger = Serilog.Log.ForContext<FileSystemPersistenceFacade>();
+        var dataDirPath = GetDataDirectory();
+        var fs = new FileSystem();
+        var dataDirectory = CreateDataDirectory();
+        var dataDirectoryInfo = new DirectoryInfoWrapper(fs, dataDirectory);
+        var fileLogStorage = CreateFileLogStorage();
+        var metadataStorage = CreateMetadataStorage();
+        var snapshotStorage = CreateSnapshotStorage(new DirectoryInfoWrapper(fs, dataDirectory));
+
+        return new FileSystemPersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage,
+            logger, maxLogFileSize: maxFileLogFile);
+
+        DirectoryInfo CreateDataDirectory()
+        {
+            var dir = new DirectoryInfo(Path.Combine(dataDirPath, "data"));
+            if (!dir.Exists)
+            {
+                logger.Information("Директории для хранения данных не существует. Создаю новую - {Path}",
+                    dir.FullName);
+                try
+                {
+                    dir.Create();
+                }
+                catch (IOException e)
+                {
+                    logger.Fatal(e, "Невозможно создать директорию для данных");
+                    throw;
+                }
+            }
+
+            return dir;
+        }
+
+        SnapshotFile CreateSnapshotStorage(IDirectoryInfo dataDir)
+        {
+            var snapshotFile = new FileInfo(Path.Combine(dataDirectory.FullName, "raft.snapshot"));
+            if (!snapshotFile.Exists)
+            {
+                logger.Information("Файл снапшота не обнаружен. Создаю новый - {Path}", snapshotFile.FullName);
+                try
+                {
+                    // Сразу закроем
+                    using var __ = snapshotFile.Create();
+                }
+                catch (Exception e)
+                {
+                    logger.Fatal(e, "Ошибка при создании файла снапшота - {Path}", snapshotFile.FullName);
+                    throw;
+                }
+            }
+
+            return SnapshotFile.Initialize(dataDir);
+        }
+
+        FileLog CreateFileLogStorage()
+        {
+            try
+            {
+                return FileLog.Initialize(dataDirectoryInfo);
+            }
+            catch (Exception e)
+            {
+                logger.Fatal(e, "Ошибка во время инициализации файла лога");
+                throw;
+            }
+        }
+
+        MetadataFile CreateMetadataStorage()
+        {
+            try
+            {
+                return MetadataFile.Initialize(dataDirectoryInfo);
+            }
+            catch (InvalidDataException invalidDataException)
+            {
+                logger.Fatal(invalidDataException, "Переданный файл метаданных был в невалидном состоянии");
+                throw;
+            }
+            catch (Exception e)
+            {
+                logger.Fatal(e, "Ошибка во время инициализации файла метаданных");
+                throw;
+            }
+        }
+
+        string GetDataDirectory()
+        {
+            string workingDirectory;
+            if (!string.IsNullOrWhiteSpace(dataDirectoryPath))
+            {
+                workingDirectory = dataDirectoryPath;
+                logger.Debug("Указана рабочая директория: {WorkingDirectory}", workingDirectory);
+            }
+            else
+            {
+                var currentDirectory = Directory.GetCurrentDirectory();
+                logger.Information("Директория данных не указана. Выставляю в рабочую директорию: {CurrentDirectory}",
+                    currentDirectory);
+                workingDirectory = currentDirectory;
+            }
+
+            return workingDirectory;
+        }
     }
 
     /// <summary>
