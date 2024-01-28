@@ -1,4 +1,4 @@
-namespace TaskFlux.Consensus.Cluster.Network;
+namespace TaskFlux.Application.Cluster.Network;
 
 public enum NodePacketType : byte
 {

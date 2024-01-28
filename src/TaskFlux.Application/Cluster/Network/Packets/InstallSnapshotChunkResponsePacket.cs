@@ -1,4 +1,4 @@
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public class InstallSnapshotChunkResponsePacket : NodePacket
 {

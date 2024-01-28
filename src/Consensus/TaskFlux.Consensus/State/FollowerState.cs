@@ -89,6 +89,11 @@ public class FollowerState<TCommand, TResponse>
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
+        if (request.Entries.Count > 0)
+        {
+            _logger.Debug("Получен AppendEntries запрос");
+        }
+
         using var _ = ElectionTimerScope.BeginScope(_electionTimer);
         if (CurrentTerm < request.Term)
         {

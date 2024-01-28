@@ -1,7 +1,8 @@
-using TaskFlux.Consensus.Cluster.Network;
-using TaskFlux.Consensus.Cluster.Network.Packets;
+using TaskFlux.Application.Cluster.Network;
+using TaskFlux.Application.Cluster.Network.Packets;
+using TaskFlux.Consensus;
 
-namespace TaskFlux.Consensus.Cluster;
+namespace TaskFlux.Application.Cluster;
 
 public class NetworkSnapshot : ISnapshot
 {

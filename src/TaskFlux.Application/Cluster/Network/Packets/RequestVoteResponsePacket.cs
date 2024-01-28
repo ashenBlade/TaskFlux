@@ -2,7 +2,7 @@ using System.Buffers;
 using TaskFlux.Consensus.Commands.RequestVote;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public class RequestVoteResponsePacket : NodePacket
 {
@@ -17,9 +17,9 @@ public class RequestVoteResponsePacket : NodePacket
 
     protected override int EstimatePacketSize()
     {
-        return 1  // Маркер
-             + 1  // Vote Granted
-             + 4; // Current Term
+        return SizeOf.PacketType // Маркер
+             + SizeOf.Bool       // Vote Granted
+             + SizeOf.Term;      // Current Term
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
@@ -30,25 +30,22 @@ public class RequestVoteResponsePacket : NodePacket
         writer.Write(Response.CurrentTerm.Value);
     }
 
+    private const int PayloadSize = SizeOf.Bool
+                                  + SizeOf.Term;
+
     public new static RequestVoteResponsePacket Deserialize(Stream stream)
     {
-        const int packetSize = sizeof(bool) // Success 
-                             + sizeof(int); // Term
-
-        Span<byte> buffer = stackalloc byte[packetSize];
+        Span<byte> buffer = stackalloc byte[PayloadSize];
         stream.ReadExactly(buffer);
         return DeserializePayload(buffer);
     }
 
     public new static async Task<RequestVoteResponsePacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        const int packetSize = sizeof(bool) // Success 
-                             + sizeof(int); // Term
-
-        var buffer = ArrayPool<byte>.Shared.Rent(packetSize);
+        var buffer = ArrayPool<byte>.Shared.Rent(PayloadSize);
         try
         {
-            var memory = buffer.AsMemory(0, packetSize);
+            var memory = buffer.AsMemory(0, PayloadSize);
             await stream.ReadExactlyAsync(memory, token);
             return DeserializePayload(memory.Span);
         }
@@ -62,7 +59,7 @@ public class RequestVoteResponsePacket : NodePacket
     {
         var reader = new SpanBinaryReader(buffer);
         var success = reader.ReadBoolean();
-        var term = reader.ReadInt32();
-        return new RequestVoteResponsePacket(new RequestVoteResponse(new Term(term), success));
+        var term = reader.ReadTerm();
+        return new RequestVoteResponsePacket(new RequestVoteResponse(term, success));
     }
 }

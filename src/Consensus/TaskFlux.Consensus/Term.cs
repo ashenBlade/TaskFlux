@@ -2,16 +2,16 @@ namespace TaskFlux.Consensus;
 
 public readonly record struct Term
 {
-    public const int StartTerm = 1;
+    public const long StartTerm = 1;
     public static Term Start => new(StartTerm);
-    public int Value { get; } = StartTerm;
+    public long Value { get; } = StartTerm;
 
     /// <summary>
     /// Основной конструктор для типа, представляющего терм в рафте.
     /// </summary>
     /// <param name="term">Сырое значение терма</param>
     /// <exception cref="ArgumentOutOfRangeException">Значение терма меньше начального - <see cref="StartTerm"/> (0)</exception>
-    public Term(int term)
+    public Term(long term)
     {
         if (term < StartTerm)
         {
@@ -22,18 +22,12 @@ public readonly record struct Term
         Value = term;
     }
 
-    public static implicit operator Term(int t) => new(t);
-
-    public static explicit operator int(Term term) => term.Value;
+    public static implicit operator Term(long t) => new(t);
+    public static explicit operator long(Term term) => term.Value;
     public static bool operator <(Term left, Term right) => left.Value < right.Value;
     public static bool operator >(Term left, Term right) => left.Value > right.Value;
     public static bool operator <=(Term left, Term right) => left.Value <= right.Value;
     public static bool operator >=(Term left, Term right) => left.Value >= right.Value;
-
-    public bool Equals(Term? other)
-    {
-        return other?.Value == Value;
-    }
 
     public Term Increment() => new(Value + 1);
 

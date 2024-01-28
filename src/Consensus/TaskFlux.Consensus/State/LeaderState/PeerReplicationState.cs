@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 
 namespace TaskFlux.Consensus.State.LeaderState;
@@ -11,9 +12,9 @@ internal class PeerReplicationState
     /// <summary>
     /// Индекс следующей записи в логе, которую необходимо отправить клиенту
     /// </summary>
-    public int NextIndex { get; private set; }
+    public Lsn NextIndex { get; private set; }
 
-    public PeerReplicationState(int nextIndex)
+    public PeerReplicationState(Lsn nextIndex)
     {
         NextIndex = nextIndex;
     }
@@ -36,7 +37,7 @@ internal class PeerReplicationState
     /// Выставить нужное число 
     /// </summary>
     /// <param name="nextIndex">Новый следующий индекс</param>
-    public void Set(int nextIndex)
+    public void Set(Lsn nextIndex)
     {
         Debug.Assert(0 <= nextIndex, "Следующий индекс записи не может быть отрицательным",
             "Нельзя выставлять отрицательный индекс следующей записи. Попытка выставить {0}. Старый следующий индекс: {1}",
@@ -50,7 +51,7 @@ internal class PeerReplicationState
     /// <exception cref="InvalidOperationException"><see cref="NextIndex"/> равен 0</exception>
     public void Decrement()
     {
-        if (NextIndex is 0)
+        if (NextIndex.Value is 0)
         {
             throw new InvalidOperationException("Нельзя откатиться на индекс меньше 0");
         }

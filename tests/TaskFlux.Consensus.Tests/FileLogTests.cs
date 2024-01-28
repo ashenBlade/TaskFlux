@@ -389,7 +389,7 @@ public class FileLogTests : IDisposable
         foreach (var entry in toInsert)
         {
             var appended = log.Append(entry);
-            log.Commit(appended.Index);
+            log.Commit(appended);
         }
 
         var actual = log.ReadAllTest();

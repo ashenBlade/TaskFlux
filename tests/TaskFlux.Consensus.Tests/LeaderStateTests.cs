@@ -436,7 +436,6 @@ public class LeaderStateTests
         peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
             .Returns(new AppendEntriesResponse(term, true))
             .Verifiable();
-        var request = command;
         machine.Setup(x => x.Apply(It.Is<int>(y => y == command)))
                .Returns(expectedResponse)
                .Verifiable();
@@ -446,7 +445,7 @@ public class LeaderStateTests
             application: machine.Object,
             jobQueue: queue);
 
-        var response = node.Handle(request);
+        var response = node.Handle(command);
 
         Assert.Equal(expectedResponse, response.Response);
         var committedEntry = node.Persistence.Log.GetCommittedTest().Single();

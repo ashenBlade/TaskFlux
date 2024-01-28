@@ -1,5 +1,5 @@
-using TaskFlux.Consensus.Cluster.Network;
-using TaskFlux.Consensus.Cluster.Network.Packets;
+using TaskFlux.Application.Cluster.Network;
+using TaskFlux.Application.Cluster.Network.Packets;
 
 #pragma warning disable CS8767 // Nullability of reference types in type of parameter doesn't match implicitly implemented member (possibly because of nullability attributes).
 

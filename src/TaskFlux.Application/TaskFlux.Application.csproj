@@ -16,4 +16,10 @@
         </AssemblyAttribute>
     </ItemGroup>
 
+    <PropertyGroup>
+        <WarningsAsErrors>CS8509</WarningsAsErrors>
+        <NoWarn>1701;1702;CS8524</NoWarn>
+    </PropertyGroup>
+
+
 </Project>

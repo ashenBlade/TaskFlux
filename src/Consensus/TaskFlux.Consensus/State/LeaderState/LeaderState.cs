@@ -252,7 +252,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         // Сигнализируем узлам, чтобы принялись реплицировать
         _logger.Verbose("Начинаю репликацию записанной команды");
-        var success = TryReplicate(appended.Index, out var greaterTerm);
+        var success = TryReplicate(appended, out var greaterTerm);
         if (!success)
         {
             _logger.Verbose("Команду реплицировать не удалось: состояние поменялось");
@@ -287,14 +287,14 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         {
             _logger.Debug("Создаю снапшот");
             var snapshot = _application.GetSnapshot();
-            Persistence.SaveSnapshot(snapshot, appended, token);
+            Persistence.SaveSnapshot(snapshot, new LogEntryInfo(newEntry.Term, appended), token);
         }
 
         // Возвращаем результат
         return SubmitResponse<TResponse>.Success(response, true);
     }
 
-    private bool TryReplicate(int appendedIndex, out Term greaterTerm)
+    private bool TryReplicate(Lsn appendedIndex, out Term greaterTerm)
     {
         if (_peerProcessors.Length == 0)
         {

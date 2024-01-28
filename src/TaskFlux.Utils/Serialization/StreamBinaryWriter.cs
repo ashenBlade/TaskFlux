@@ -66,16 +66,6 @@ public struct StreamBinaryWriter
         Stream.Write(buffer);
     }
 
-    public void Flush()
-    {
-        Stream.Flush();
-    }
-
-    public void Seek(long position, SeekOrigin origin)
-    {
-        Stream.Seek(position, origin);
-    }
-
     /// <summary>
     /// Записать в поток сырые байты
     /// </summary>

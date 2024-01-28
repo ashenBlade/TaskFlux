@@ -1,4 +1,4 @@
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 /// <summary>
 /// Пакет, посылаемый в случае если принимаемая сторона запрашивает переотправку пакета.

@@ -173,7 +173,7 @@ internal class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob,
     /// <exception cref="ApplicationException">
     /// Для репликации нужна запись с определенным индексом, но ее нет ни в логе, ни в снапшоте (маловероятно)
     /// </exception>
-    private Term? ReplicateLogReturnGreaterTerm(int replicationIndex, CancellationToken token)
+    private Term? ReplicateLogReturnGreaterTerm(Lsn replicationIndex, CancellationToken token)
     {
         while (!token.IsCancellationRequested)
         {

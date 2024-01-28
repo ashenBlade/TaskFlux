@@ -41,7 +41,7 @@ public class CandidateStateTests
         return CreateCandidateNode(term.Value, electionTimer, jobQueue, peers, fileSizeChecker, applicationFactory);
     }
 
-    private static RaftConsensusModule CreateCandidateNode(int term,
+    private static RaftConsensusModule CreateCandidateNode(long term,
                                                            ITimer? electionTimer = null,
                                                            IBackgroundJobQueue? jobQueue = null,
                                                            IEnumerable<IPeer>? peers = null,
@@ -322,7 +322,7 @@ public class CandidateStateTests
                                 .Select(_ => RandomDataEntry(term))
                                 .ToArray();
 
-        var request = new AppendEntriesRequest(term, LogEntryInfo.TombIndex, AnotherNodeId, LogEntryInfo.Tomb, entries);
+        var request = new AppendEntriesRequest(term, Lsn.Tomb, AnotherNodeId, LogEntryInfo.Tomb, entries);
         var response = node.Handle(request);
         Assert.True(response.Success);
 
@@ -349,7 +349,7 @@ public class CandidateStateTests
                                       .Select(_ => RandomDataEntry(term))
                                       .ToArray();
         node.Persistence.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted: bufferEntries);
-        var request = new AppendEntriesRequest(term, LogEntryInfo.TombIndex, AnotherNodeId,
+        var request = new AppendEntriesRequest(term, Lsn.Tomb, AnotherNodeId,
             node.Persistence.LastEntry, entries);
         var expectedBuffer = bufferEntries.Concat(entries);
 
@@ -491,7 +491,8 @@ public class CandidateStateTests
 
         var (actualIndex, actualTerm, actualSnapshot) = node.Persistence.Snapshot.ReadAllDataTest();
 
-        actualIndex.Should()
+        actualIndex.Value
+                   .Should()
                    .Be(expectedLastIndex,
                         "Последний индекс команды снапшота должен равняться последнему индексу примененной команды");
         actualTerm.Value

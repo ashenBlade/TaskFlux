@@ -1,7 +1,7 @@
 using System.Runtime.CompilerServices;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public class ConnectResponsePacket : NodePacket
 {
@@ -16,8 +16,8 @@ public class ConnectResponsePacket : NodePacket
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected override int EstimatePacketSize()
     {
-        return sizeof(NodePacketType) // Маркер
-             + sizeof(bool);          // Success
+        return SizeOf.PacketType // Маркер
+             + SizeOf.Bool;      // Success
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
@@ -27,17 +27,18 @@ public class ConnectResponsePacket : NodePacket
         writer.Write(Success);
     }
 
+    public const int PayloadSize = SizeOf.Bool; // Success
+
     public new static ConnectResponsePacket Deserialize(Stream stream)
     {
-        Span<byte> buffer = stackalloc byte[sizeof(bool)]; // Success
+        Span<byte> buffer = stackalloc byte[PayloadSize]; // Success
         stream.ReadExactly(buffer);
         return DeserializePayload(buffer);
     }
 
     public new static async Task<ConnectResponsePacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        const int packetSize = sizeof(bool); // Success
-        using var buffer = Rent(packetSize);
+        using var buffer = Rent(PayloadSize);
         await stream.ReadExactlyAsync(buffer.GetMemory(), token);
         return DeserializePayload(buffer.GetSpan());
     }

@@ -1,9 +1,9 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using TaskFlux.Application.Cluster.Network.Packets;
 using TaskFlux.Consensus.Cluster.Network.Exceptions;
-using TaskFlux.Consensus.Cluster.Network.Packets;
 
-namespace TaskFlux.Consensus.Cluster.Network;
+namespace TaskFlux.Application.Cluster.Network;
 
 public abstract class NodePacket
 {
@@ -49,12 +49,15 @@ public abstract class NodePacket
 
     public static NodePacket Deserialize(Stream stream)
     {
-        Span<byte> buffer = stackalloc byte[1];
-        stream.ReadExactly(buffer);
-        var packetType = ( NodePacketType ) buffer[0];
+        var marker = stream.ReadByte();
+        if (marker == -1)
+        {
+            throw new EndOfStreamException("Соединение было разорвано");
+        }
+
         try
         {
-            return packetType switch
+            return ( NodePacketType ) marker switch
                    {
                        NodePacketType.AppendEntriesRequest  => AppendEntriesRequestPacket.Deserialize(stream),
                        NodePacketType.AppendEntriesResponse => AppendEntriesResponsePacket.Deserialize(stream),
@@ -72,7 +75,7 @@ public abstract class NodePacket
         }
         catch (SwitchExpressionException)
         {
-            throw new UnknownPacketException(buffer[0]);
+            throw new UnknownPacketException(( byte ) marker);
         }
     }
 

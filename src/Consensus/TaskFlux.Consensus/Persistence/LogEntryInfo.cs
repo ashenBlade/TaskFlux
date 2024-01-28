@@ -5,21 +5,14 @@ namespace TaskFlux.Consensus.Persistence;
 /// </summary>
 /// <param name="Term">Терм команды</param>
 /// <param name="Index">Индекс команды</param>
-public readonly record struct LogEntryInfo(Term Term, int Index)
+public readonly record struct LogEntryInfo(Term Term, Lsn Index)
 {
-    /// <summary>
-    /// Используется для указания пустого лога.
-    /// В оригинальной статье используется индексирование с 1.
-    /// Для удобства я использую индексирование с 0.
-    /// </summary>
-    public const int TombIndex = -1;
-
     /// <summary>
     /// Конструктор без параметров лучше не использовать.
     /// Юзай с параметрами, этот только чтобы ошибок было меньше.
     /// Создается Tomb по умолчанию.
     /// </summary>
-    public LogEntryInfo() : this(Term.Start, TombIndex)
+    public LogEntryInfo() : this(Term.Start, Lsn.Tomb)
     {
     }
 
@@ -27,13 +20,13 @@ public readonly record struct LogEntryInfo(Term Term, int Index)
     /// Пустая запись.
     /// Используется когда в логе нет записей, чтобы не вводить <c>null</c>
     /// </summary>
-    public static readonly LogEntryInfo Tomb = new(Term.Start, TombIndex);
+    public static readonly LogEntryInfo Tomb = new(Term.Start, Lsn.Tomb);
 
     /// <summary>
     /// Является ли запись меткой пустого лога.
     /// Такая запись сигнализирует о том, что в логе нет записей
     /// </summary>
-    public bool IsTomb => Index == TombIndex;
+    public bool IsTomb => Index == Lsn.Tomb;
 
     public override string ToString()
     {

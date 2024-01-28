@@ -20,9 +20,14 @@ public class SnapshotFile
     /// <summary>
     /// Позиция в файле, на которой находится длина данных
     /// </summary>
-    private const int LengthPosition = sizeof(int)  // Маркер
-                                     + sizeof(int)  // Последний индекс
-                                     + sizeof(int); // Последний терм
+    private const int LengthPosition = sizeof(uint)  // Маркер
+                                     + sizeof(long)  // Последний индекс
+                                     + sizeof(long); // Последний терм
+
+    /// <summary>
+    /// Позиция в файле, на которой начинаются сами данные
+    /// </summary>
+    private const long SnapshotDataStartPosition = LengthPosition + sizeof(int);
 
     private readonly IFileInfo _snapshotFile;
     private readonly IDirectoryInfo _temporarySnapshotFileDirectory;
@@ -73,11 +78,6 @@ public class SnapshotFile
         snapshot = new FileSystemSnapshot(this);
         return true;
     }
-
-    private const long SnapshotDataStartPosition = sizeof(int)  // Маркер
-                                                 + sizeof(int)  // Терм
-                                                 + sizeof(int)  // Индекс
-                                                 + sizeof(int); // Длина данных
 
 
     private class FileSystemSnapshot : ISnapshot
@@ -130,7 +130,7 @@ public class SnapshotFile
         /// Поток нового файла снапшота.
         /// Создается во время вызова <see cref="Initialize"/>
         /// </summary>
-        private Stream? _temporarySnapshotFileStream;
+        private FileSystemStream? _temporarySnapshotFileStream;
 
         /// <summary>
         /// Значение LogEntry, которое было записано в файл снапшота
@@ -209,10 +209,10 @@ public class SnapshotFile
 
             // 3. Записываем заголовок основной информации
             writer.Write(lastIncluded.Index);
-            writer.Write(lastIncluded.Term.Value);
+            writer.Write(lastIncluded.Term);
 
             // 4. Пока длина не известна
-            writer.Write(_length); // writer.Write(0);
+            writer.Write(_length); // == writer.Write(0);
 
             _writtenLogEntry = lastIncluded;
             _temporarySnapshotFileStream = stream;
@@ -221,7 +221,7 @@ public class SnapshotFile
             _state = SnapshotFileState.Initialized;
         }
 
-        private (IFileInfo File, Stream Stream) CreateAndOpenTemporarySnapshotFile()
+        private (IFileInfo File, FileSystemStream Stream) CreateAndOpenTemporarySnapshotFile()
         {
             var tempDir = _parent._temporarySnapshotFileDirectory;
             while (true)
@@ -269,9 +269,10 @@ public class SnapshotFile
             _temporarySnapshotFileStream.Seek(LengthPosition, SeekOrigin.Begin);
             writer.Write(_length);
 
-            _temporarySnapshotFileStream.Flush();
+            _temporarySnapshotFileStream.Flush(true);
             _temporarySnapshotFileStream.Close();
             _temporarySnapshotFileStream.Dispose();
+
             _temporarySnapshotFile.MoveTo(_parent._snapshotFile.FullName, true);
 
             _parent._snapshotInfo = ( _writtenLogEntry.Value, _length, _checkSum );
@@ -339,9 +340,9 @@ public class SnapshotFile
         }
 
         using var stream = file.Open(FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-        const int minHeaderSize = sizeof(int)  // Маркер 
-                                + sizeof(int)  // Индекс
-                                + sizeof(int); // Терм
+        const int minHeaderSize = sizeof(uint)  // Маркер 
+                                + sizeof(long)  // Индекс
+                                + sizeof(long); // Терм
 
         if (stream.Length < minHeaderSize)
         {
@@ -360,17 +361,8 @@ public class SnapshotFile
                 $"Хранившийся в файле маркер не равен требуемому. Прочитано: {marker}. Ожидалось: {Marker}");
         }
 
-        var index = reader.ReadInt32();
-        if (index < 0)
-        {
-            throw new InvalidDataException($"Индекс команды, хранившийся в снапшоте, - отрицательный. Индекс: {index}");
-        }
-
-        var term = reader.ReadInt32();
-        if (term < Term.StartTerm)
-        {
-            throw new InvalidDataException($"Терм команды, хранившийся в снапшоте, - отрицательный. Терм: {term}");
-        }
+        var index = reader.ReadLsn();
+        var term = reader.ReadTerm();
 
         var length = reader.ReadInt32();
         if (length < 0)
@@ -411,7 +403,7 @@ public class SnapshotFile
                 $"Рассчитанная чек-сумма не равна сохраненной. Рассчитанная: {computedCheckSum}. Сохраненная: {storedCheckSum}");
         }
 
-        return ( new LogEntryInfo(new Term(term), index), length, storedCheckSum );
+        return ( new LogEntryInfo(term, index), length, storedCheckSum );
     }
 
     public static SnapshotFile Initialize(IDirectoryInfo dataDirectory)
@@ -447,16 +439,16 @@ public class SnapshotFile
 
 
     // Для тестов
-    internal (int LastIndex, Term LastTerm, byte[] SnapshotData) ReadAllDataTest()
+    internal (Lsn LastIndex, Term LastTerm, byte[] SnapshotData) ReadAllDataTest()
     {
         using var stream = _snapshotFile.OpenRead();
         var reader = new StreamBinaryReader(stream);
 
         var marker = reader.ReadUInt32();
-        Debug.Assert(marker == Marker);
+        Debug.Assert(marker == Marker, "marker == Marker", "Маркер файла должен равняться константному значению");
 
-        var index = reader.ReadInt32();
-        var term = new Term(reader.ReadInt32());
+        var index = reader.ReadLsn();
+        var term = reader.ReadTerm();
 
         // Читаем до конца
         var data = reader.ReadBuffer();
@@ -477,14 +469,14 @@ public class SnapshotFile
     /// <param name="lastTerm">Терм последней команды снапшота</param>
     /// <param name="lastIndex">Индекс последней команды снапшота</param>
     /// <param name="snapshot">Снапшот, который нужно записать</param>
-    internal void SetupSnapshotTest(Term lastTerm, int lastIndex, ISnapshot snapshot)
+    internal void SetupSnapshotTest(Term lastTerm, Lsn lastIndex, ISnapshot snapshot)
     {
         using var stream = _snapshotFile.OpenWrite();
         var writer = new StreamBinaryWriter(stream);
 
         writer.Write(Marker);
         writer.Write(lastIndex);
-        writer.Write(lastTerm.Value);
+        writer.Write(lastTerm);
 
         var data = ReadSnapshotBytes();
         writer.WriteBuffer(data);
@@ -492,6 +484,7 @@ public class SnapshotFile
         writer.Write(checkSum);
 
         _snapshotInfo = ( new LogEntryInfo(lastTerm, lastIndex), data.Length, checkSum );
+        return;
 
         byte[] ReadSnapshotBytes()
         {

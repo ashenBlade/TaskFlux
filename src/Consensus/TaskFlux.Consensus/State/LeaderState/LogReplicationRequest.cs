@@ -1,3 +1,5 @@
+using TaskFlux.Consensus.Persistence;
+
 namespace TaskFlux.Consensus.State.LeaderState;
 
 /// <summary>
@@ -21,7 +23,7 @@ public sealed class LogReplicationRequest : IDisposable
     /// Чтобы точно знать какие команды необходимо посылать (когда остановиться),
     /// используется этот индекс
     /// </remarks>
-    public int LogIndex { get; }
+    public Lsn LogIndex { get; }
 
     /// <summary>
     /// Количество отданных успешных ответов/репликаций
@@ -35,7 +37,7 @@ public sealed class LogReplicationRequest : IDisposable
 
     public LogReplicationRequest(
         PeerGroup peers,
-        int logIndex)
+        Lsn logIndex)
     {
         _signal = new ManualResetEvent(false);
         _peers = peers;

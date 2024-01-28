@@ -14,10 +14,17 @@ internal class ReplicationWatcher
     /// </summary>
     private readonly FileSystemPersistenceFacade _persistence;
 
+    /// <summary>
+    /// Последний закоммиченный индекс.
+    /// Используется это значение, вместо того, чтобы постоянно вызывать Commit()
+    /// </summary>
+    private Lsn _lastKnownCommitIndex;
+
     public ReplicationWatcher(PeerReplicationState[] peerInfos, FileSystemPersistenceFacade persistence)
     {
         _peerInfos = peerInfos;
         _persistence = persistence;
+        _lastKnownCommitIndex = persistence.CommitIndex;
     }
 
     /// <summary>
@@ -39,22 +46,23 @@ internal class ReplicationWatcher
         lock (_peerInfos)
         {
             // Надеюсь, никто не захочет создавать кластер из 1024 * 1024 узлов, так что ок
-            Span<int> nextIndexes = stackalloc int[_peerInfos.Length];
+            Span<long> nextIndexes = stackalloc long[_peerInfos.Length];
 
             for (var i = 0; i < _peerInfos.Length; i++)
             {
-                nextIndexes[i] = _peerInfos[i].NextIndex - 1;
+                nextIndexes[i] = ( long ) _peerInfos[i].NextIndex - 1;
             }
 
             nextIndexes.Sort();
 
             var mostReplicatedIndex = nextIndexes[nextIndexes.Length / 2];
-            if (mostReplicatedIndex == LogEntryInfo.TombIndex)
+            if (mostReplicatedIndex == Lsn.TombIndex || mostReplicatedIndex <= _lastKnownCommitIndex)
             {
                 return;
             }
 
             _persistence.Commit(mostReplicatedIndex);
+            _lastKnownCommitIndex = mostReplicatedIndex;
         }
     }
 }

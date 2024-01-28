@@ -2,12 +2,12 @@ using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public class InstallSnapshotChunkRequestPacket : NodePacket
 {
-    internal const int DataStartPosition = 1  // Маркер
-                                         + 4; // Размер чанка
+    internal const int DataStartPosition = SizeOf.PacketType   // Маркер
+                                         + SizeOf.ArrayLength; // Размер чанка
 
     public ReadOnlyMemory<byte> Chunk { get; }
     public override NodePacketType PacketType => NodePacketType.InstallSnapshotChunkRequest;
@@ -19,10 +19,9 @@ public class InstallSnapshotChunkRequestPacket : NodePacket
 
     protected override int EstimatePacketSize()
     {
-        return sizeof(NodePacketType) // Маркер
-             + sizeof(int)            // Размер
-             + Chunk.Length           // Данные
-             + sizeof(uint);          // Чек-сумма
+        return sizeof(NodePacketType)    // Маркер
+             + SizeOf.Buffer(this.Chunk) // Данные
+             + sizeof(uint);             // Чек-сумма
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)

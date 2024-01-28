@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Abstractions;
 using TaskFlux.Core;
+using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Consensus.Persistence.Metadata;
@@ -19,16 +20,11 @@ public class MetadataFile
     /// </summary>
     private const long DataStartPosition = sizeof(int) + sizeof(int);
 
-    private const long HeaderSize = DataStartPosition;
-
-    private const long TermPosition = DataStartPosition + 0;
-    private const long VotedForPosition = TermPosition + sizeof(int);
-
     /// <summary>
     /// Флаг указывающий на то, что голоса отдано не было.
     /// Записывается на месте Id узла
     /// </summary>
-    private const int NoVotedFor = 0;
+    private const int NoVotedFor = -1;
 
     /// <summary>
     /// Терм, чтобы использовать, если файл не был изначально инициализирован
@@ -40,9 +36,9 @@ public class MetadataFile
     /// </summary>
     public NodeId? VotedFor { get; private set; }
 
-    private readonly Stream _file;
+    private readonly FileSystemStream _file;
 
-    private MetadataFile(Stream file, Term term, NodeId? votedFor)
+    private MetadataFile(FileSystemStream file, Term term, NodeId? votedFor)
     {
         _file = file;
         VotedFor = votedFor;
@@ -53,26 +49,12 @@ public class MetadataFile
     {
         Debug.Assert(_file.Length > 0, "Файл должен быть инициализирован на момент вызова Update");
 
-        const int size = sizeof(int)  // Маркер 
-                       + sizeof(int)  // Версия
-                       + sizeof(int)  // Терм
-                       + sizeof(int); // Голос
+        Span<byte> span = stackalloc byte[FileSize];
+        FillFile(term, votedFor, span);
 
-        Span<byte> span = stackalloc byte[size];
-
-        var writer = new SpanBinaryWriter(span);
-        // Сначала записываем во внутренний буфер терм и голос,
-        // потом быстро сбрасываем полученные данные на диск
-        writer.Write(Marker);
-        writer.Write(CurrentVersion);
-        writer.Write(term.Value);
-        writer.Write(votedFor is {Id: var value}
-                         ? value
-                         : NoVotedFor);
-
-        _file.Position = 0;
+        _file.Seek(0, SeekOrigin.Begin);
         _file.Write(span);
-        _file.Flush();
+        _file.Flush(true);
 
         Term = term;
         VotedFor = votedFor;
@@ -83,17 +65,19 @@ public class MetadataFile
     /// Файл может быть либо пустым (размер 0), либо этого размера.
     /// Другие значения указывают на беды с башкой
     /// </summary>
-    private const int FileSize = sizeof(int)  // Маркер 
-                               + sizeof(int)  // Версия
-                               + sizeof(int)  // Терм
-                               + sizeof(int); // Голос
-
+    private const int FileSize = sizeof(int)   // Маркер 
+                               + sizeof(int)   // Версия
+                               + sizeof(long)  // Терм
+                               + sizeof(int)   // Голос
+                               + sizeof(uint); // CRC
 
     internal (Term, NodeId?) ReadStoredDataTest()
     {
-        var reader = new StreamBinaryReader(_file);
+        Span<byte> span = stackalloc byte[FileSize];
         _file.Seek(0, SeekOrigin.Begin);
+        _file.ReadExactly(span);
 
+        var reader = new SpanBinaryReader(span);
         var marker = reader.ReadInt32();
         if (marker != Marker)
         {
@@ -108,12 +92,20 @@ public class MetadataFile
                 $"Прочитанная версия не равна текущей. Прочитанная: {version}. Требуемая: {CurrentVersion}");
         }
 
-        var term = new Term(reader.ReadInt32());
+        var term = new Term(reader.ReadInt64());
         var votedFor = ( NodeId? ) ( reader.ReadInt32() switch
                                      {
-                                         0         => null,
-                                         var value => new NodeId(value)
+                                         NoVotedFor => null,
+                                         var value  => new NodeId(value)
                                      } );
+        var storedCheckSum = reader.ReadUInt32();
+        var computedCheckSum = Crc32CheckSum.Compute(span[sizeof(int)..^sizeof(uint)]);
+        if (storedCheckSum != computedCheckSum)
+        {
+            throw new InvalidDataException(
+                $"Прочитанная чек-сумма не равна рассчитанная. Рассчитанная: {computedCheckSum}. Прочитанная: {storedCheckSum}");
+        }
+
         return ( term, votedFor );
     }
 
@@ -122,15 +114,7 @@ public class MetadataFile
         if (file.Length == 0)
         {
             Span<byte> span = stackalloc byte[FileSize];
-
-            var writer = new SpanBinaryWriter(span);
-            // Сначала записываем во внутренний буфер терм и голос,
-            // потом быстро сбрасываем полученные данные на диск
-            writer.Write(Marker);
-            writer.Write(CurrentVersion);
-            writer.Write(DefaultTerm.Value);
-            writer.Write(NoVotedFor); // DefaultVotedFor
-
+            FillFile(DefaultTerm, null, span);
             file.Seek(0, SeekOrigin.Begin);
             file.Write(span);
             file.Flush(true);
@@ -147,9 +131,12 @@ public class MetadataFile
                 $"Файл может быть либо пустым, либо не меньше фиксированной длины. Размер файла: {file.Length}. Минимальный размер: {FileSize}");
         }
 
-        // Проверяем валидность данных на файле
+        Span<byte> buffer = stackalloc byte[FileSize];
         file.Seek(0, SeekOrigin.Begin);
-        var reader = new StreamBinaryReader(file);
+        file.ReadExactly(buffer);
+
+        // Проверяем валидность данных на файле
+        var reader = new SpanBinaryReader(buffer);
         var marker = reader.ReadInt32();
         if (marker != Marker)
         {
@@ -164,17 +151,24 @@ public class MetadataFile
                 $"Хранившаяся в файле версия больше текущей. Считанная версия: {version}. Текущая версия: {CurrentVersion}");
         }
 
-        var term = ReadTerm();
-        var votedFor = ReadVotedFor();
+        var term = ReadTerm(ref reader);
+        var votedFor = ReadVotedFor(ref reader);
+        var storedCheckSum = reader.ReadUInt32();
+        var computedCheckSum = Crc32CheckSum.Compute(buffer[sizeof(int)..^sizeof(uint)]);
+        if (storedCheckSum != computedCheckSum)
+        {
+            throw new InvalidDataException(
+                $"Прочитанная чек-сумма не равна вычисленной. Вычисленная: {computedCheckSum}. Прочитанная: {storedCheckSum}");
+        }
 
         return ( term, votedFor );
 
-        Term ReadTerm()
+        static Term ReadTerm(ref SpanBinaryReader r)
         {
-            int? value = null;
+            long? value = null;
             try
             {
-                var termValue = reader.ReadInt32();
+                var termValue = r.ReadInt64();
                 value = termValue;
                 return new Term(termValue);
             }
@@ -186,17 +180,17 @@ public class MetadataFile
             }
         }
 
-        NodeId? ReadVotedFor()
+        static NodeId? ReadVotedFor(ref SpanBinaryReader r)
         {
             int? value = null;
             try
             {
-                var read = reader.ReadInt32();
+                var read = r.ReadInt32();
                 value = read;
                 return read switch
                        {
-                           0     => null,
-                           var v => new NodeId(v)
+                           NoVotedFor => null,
+                           _          => new NodeId(read)
                        };
             }
             catch (ArgumentOutOfRangeException e)
@@ -234,14 +228,24 @@ public class MetadataFile
         }
     }
 
+    private static void FillFile(Term term, NodeId? votedFor, Span<byte> span)
+    {
+        var writer = new SpanBinaryWriter(span);
+        writer.Write(Marker);
+        writer.Write(CurrentVersion);
+        writer.Write(term.Value);
+        writer.Write(votedFor?.Id ?? NoVotedFor);
+        var checkSum = Crc32CheckSum.Compute(span[sizeof(int)..^sizeof(uint)]);
+        writer.Write(checkSum);
+    }
+
     internal void SetupMetadataTest(Term initialTerm, NodeId? votedFor)
     {
-        _file.Seek(DataStartPosition, SeekOrigin.Begin);
-        var writer = new StreamBinaryWriter(_file);
-        writer.Write(initialTerm.Value);
-        writer.Write(votedFor is {Id: var id}
-                         ? id
-                         : NoVotedFor);
+        Span<byte> span = stackalloc byte[FileSize];
+        FillFile(initialTerm, votedFor, span);
+        _file.Seek(0, SeekOrigin.Begin);
+        _file.Write(span);
+
         Term = initialTerm;
         VotedFor = votedFor;
     }

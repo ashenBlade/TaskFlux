@@ -76,7 +76,7 @@ public class FileSystemPersistenceFacade
     /// <summary>
     /// Индекс последней закоммиченной записи
     /// </summary>
-    public int CommitIndex
+    public Lsn CommitIndex
     {
         get
         {
@@ -297,7 +297,7 @@ public class FileSystemPersistenceFacade
     /// </summary>
     /// <param name="entries">Записи, которые необходимо добавить</param>
     /// <param name="startIndex">Индекс, начиная с которого необходимо добавить записи (включительно)</param>
-    public void InsertRange(IReadOnlyList<LogEntry> entries, int startIndex)
+    public void InsertRange(IReadOnlyList<LogEntry> entries, Lsn startIndex)
     {
         if (startIndex < 0)
         {
@@ -325,20 +325,20 @@ public class FileSystemPersistenceFacade
     /// Добавить в лог одну запись
     /// </summary>
     /// <param name="entry">Запись лога</param>
-    /// <returns>Информация о добавленной записи</returns>
-    public LogEntryInfo Append(LogEntry entry)
+    /// <returns>Индекс добавленной записи</returns>
+    public Lsn Append(LogEntry entry)
     {
         lock (_lock)
         {
             _logger.Verbose("Добавляю запись {Entry} в лог", entry);
             var logInfo = _log.Append(entry);
-            return logInfo with {Index = CalculateGlobalIndex(_snapshot.LastApplied.Index, logInfo.Index)};
+            return CalculateGlobalIndex(_snapshot.LastApplied.Index, logInfo);
         }
     }
 
-    private static int CalculateGlobalIndex(int snapshotIndex, int logIndex)
+    private static Lsn CalculateGlobalIndex(Lsn snapshotIndex, Lsn logIndex)
     {
-        if (snapshotIndex == LogEntryInfo.TombIndex)
+        if (snapshotIndex.IsTomb)
         {
             return logIndex;
         }
@@ -392,7 +392,7 @@ public class FileSystemPersistenceFacade
         return false;
     }
 
-    private LogEntryInfo GetLogEntryInfoAtIndex(int globalIndex)
+    private LogEntryInfo GetLogEntryInfoAtIndex(Lsn globalIndex)
     {
         var localIndex = CalculateLogIndex(globalIndex);
         if (localIndex < -1)
@@ -415,7 +415,7 @@ public class FileSystemPersistenceFacade
     /// <param name="entries">Хранившиеся записи, начиная с указанного индекса</param>
     /// <returns>Список записей из лога</returns>
     /// <remarks>При выходе за границы, может вернуть пустой массив</remarks>
-    public bool TryGetFrom(int globalIndex, out IReadOnlyList<LogEntry> entries)
+    public bool TryGetFrom(Lsn globalIndex, out IReadOnlyList<LogEntry> entries)
     {
         lock (_lock)
         {
@@ -441,7 +441,7 @@ public class FileSystemPersistenceFacade
     /// - -1 - это индекс последней команды в снапшоте
     /// - Отрицательное число - команда заходит за пределы снапшота (внутрь)
     /// </returns>
-    private int CalculateLogIndex(int globalIndex)
+    private long CalculateLogIndex(long globalIndex)
     {
         /*
          * Я разделяю индекс на 2 типа: локальный и глобальный.
@@ -464,7 +464,7 @@ public class FileSystemPersistenceFacade
 
         // Если снапшота нет, то -(-1) - 1 = 0 - ничего не изменятся (индекс лога == индекс глобальный)
         // Если снапшот есть, то из переданного globalIndex вычитается кол-во записей в снапшоте = -(LastAppliedIndex + 1) 
-        return globalIndex - ( Snapshot.LastApplied.Index + 1 );
+        return globalIndex - ( ( long ) Snapshot.LastApplied.Index + 1 );
     }
 
     /// <summary>
@@ -472,18 +472,17 @@ public class FileSystemPersistenceFacade
     /// </summary>
     /// <param name="index">Индекс новой закоммиченной записи</param>
     /// <returns>Результат коммита лога</returns>
-    public void Commit(int index)
+    public void Commit(Lsn index)
     {
-        if (index < 0)
+        if (index.IsTomb)
         {
-            throw new ArgumentOutOfRangeException(nameof(index), index,
-                "Индекс лога не может быть отрицательным при коммите");
+            throw new ArgumentOutOfRangeException(nameof(index), index, "Нельзя закоммитить Tomb индекс");
         }
 
         lock (_lock)
         {
             var logIndex = CalculateLogIndex(index);
-            if (logIndex == -1)
+            if (logIndex == Lsn.TombIndex)
             {
                 // Этот индекс указывает на последний индекс из снапшота
                 // Такое возможно, когда снапшот только создался и лидер прислал Heartbeat
@@ -507,17 +506,12 @@ public class FileSystemPersistenceFacade
     /// <param name="index">Индекс записи</param>
     /// <returns>Информация о записи для которой нужно получить информацию</returns>
     /// <exception cref="NotImplementedException"></exception>
-    public LogEntryInfo GetEntryInfo(int index)
+    public LogEntryInfo GetEntryInfo(Lsn index)
     {
-        if (index < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(index), index, "Индекс записи не может быть отрицательным");
-        }
-
         lock (_lock)
         {
             var localIndex = CalculateLogIndex(index);
-            if (localIndex == -1)
+            if (localIndex == Lsn.TombIndex)
             {
                 return Snapshot.LastApplied;
             }
@@ -539,14 +533,8 @@ public class FileSystemPersistenceFacade
     /// <param name="nextIndex">Индекс следующей записи</param>
     /// <returns>Информацию о следующей записи в логе</returns>
     /// <remarks>Если указанный индекс 0, то вернется <see cref="LogEntryInfo.Tomb"/></remarks>
-    public LogEntryInfo GetPrecedingEntryInfo(int nextIndex)
+    public LogEntryInfo GetPrecedingEntryInfo(Lsn nextIndex)
     {
-        if (nextIndex < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(nextIndex), nextIndex,
-                "Следующий индекс лога не может быть отрицательным");
-        }
-
         if (nextIndex == 0)
         {
             return LogEntryInfo.Tomb;
@@ -597,12 +585,12 @@ public class FileSystemPersistenceFacade
 
     private class FileSystemSnapshotInstaller : ISnapshotInstaller
     {
-        private readonly int _lastIncludedLocalIndex;
+        private readonly Lsn _lastIncludedLocalIndex;
         private readonly ISnapshotFileWriter _snapshotFileWriter;
         private readonly FileSystemPersistenceFacade _parent;
 
         public FileSystemSnapshotInstaller(
-            int lastIncludedLocalIndex,
+            Lsn lastIncludedLocalIndex,
             ISnapshotFileWriter snapshotFileWriter,
             FileSystemPersistenceFacade parent)
         {

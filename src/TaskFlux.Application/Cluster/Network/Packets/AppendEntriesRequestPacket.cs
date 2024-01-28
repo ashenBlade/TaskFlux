@@ -2,11 +2,10 @@ using System.Buffers;
 using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Persistence;
-using TaskFlux.Core;
 using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public class AppendEntriesRequestPacket : NodePacket
 {
@@ -14,55 +13,47 @@ public class AppendEntriesRequestPacket : NodePacket
     /// Позиция с которой начинаются сами данные.
     /// Нужно для тестов
     /// </summary>
-    internal const int DataStartPosition = 1  // Маркер
-                                         + 4  // Размер
-                                         + 4  // Leader Id
-                                         + 4  // LeaderCommit 
-                                         + 4  // Term
-                                         + 4  // PrevLogEntry Term
-                                         + 4  // PrevLogEntry Index
-                                         + 4; // Entries Count
+    internal const int DataStartPosition = BasePacketSize - SizeOf.CheckSum;
 
     public override NodePacketType PacketType => NodePacketType.AppendEntriesRequest;
 
+    private const int BasePacketSize = SizeOf.PacketType  // Маркер
+                                     + SizeOf.Int32       // Размер
+                                     + SizeOf.NodeId      // ID узла лидера
+                                     + SizeOf.Lsn         // Коммит лидера
+                                     + SizeOf.Term        // Терм лидера
+                                     + SizeOf.Term        // Терм предыдущей записи
+                                     + SizeOf.Lsn         // LSN предыдущей записи
+                                     + SizeOf.ArrayLength // Количество записей в массиве
+                                     + SizeOf.CheckSum;   // Чек-сумма 
+
     protected override int EstimatePacketSize()
     {
-        const int baseSize = 1  // Маркер
-                           + 4  // Размер
-                           + 4  // Leader Id
-                           + 4  // LeaderCommit 
-                           + 4  // Term
-                           + 4  // PrevLogEntry Term
-                           + 4  // PrevLogEntry Index
-                           + 4  // Entries Count
-                           + 4; // Чек-сумма
-
         var entries = Request.Entries;
         if (entries.Count == 0)
         {
-            return baseSize;
+            return BasePacketSize;
         }
 
-        return baseSize
-             + entries.Sum(entry => 4 // Term
-                                  + 4 // Размер
-                                  + entry.Data.Length);
+        return BasePacketSize
+             + entries.Sum(entry => SizeOf.Term                 // Терм записи
+                                  + SizeOf.Buffer(entry.Data)); // Размер буфера с данными включая длину
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.AppendEntriesRequest);
-        writer.Write(buffer.Length
-                   - (
-                         sizeof(NodePacketType) // Packet Type 
-                       + sizeof(int)            // Length
-                     ));
+        writer.Write(NodePacketType.AppendEntriesRequest);
 
-        writer.Write(Request.Term.Value);
-        writer.Write(Request.LeaderId.Id);
+        // Буфер, который нам передали должен занимать ровно столько сколько сказали,
+        // поэтому размер нагрузки равен размеру буфера за исключением размера маркера пакета и самого поля длины
+        var packetPayloadLength = buffer.Length - ( SizeOf.PacketType + SizeOf.ArrayLength );
+        writer.Write(packetPayloadLength);
+
+        writer.Write(Request.Term);
+        writer.Write(Request.LeaderId);
         writer.Write(Request.LeaderCommit);
-        writer.Write(Request.PrevLogEntryInfo.Term.Value);
+        writer.Write(Request.PrevLogEntryInfo.Term);
         writer.Write(Request.PrevLogEntryInfo.Index);
         writer.Write(Request.Entries.Count);
 
@@ -71,7 +62,7 @@ public class AppendEntriesRequestPacket : NodePacket
         {
             foreach (var entry in Request.Entries)
             {
-                writer.Write(entry.Term.Value);
+                writer.Write(entry.Term);
                 writer.WriteBuffer(entry.Data);
             }
         }
@@ -94,9 +85,8 @@ public class AppendEntriesRequestPacket : NodePacket
     internal int GetDataEndPosition()
     {
         return DataStartPosition
-             + Request.Entries.Sum(entry => 4 // Term
-                                          + 4 // Размер
-                                          + entry.Data.Length);
+             + Request.Entries.Sum(entry => SizeOf.Term                 // Терм записи
+                                          + SizeOf.Buffer(entry.Data)); // Данные записи
     }
 
     public new static AppendEntriesRequestPacket Deserialize(Stream stream)
@@ -106,7 +96,13 @@ public class AppendEntriesRequestPacket : NodePacket
         var streamReader = new StreamBinaryReader(stream);
         var payloadSize = streamReader.ReadInt32();
 
-        // Запишем все байты и десериализуем пакет
+        if (payloadSize < 1024) // 1 Кб
+        {
+            Span<byte> span = stackalloc byte[payloadSize];
+            stream.ReadExactly(span);
+            return DeserializePacketVerifyCheckSum(span);
+        }
+
         var buffer = ArrayPool<byte>.Shared.Rent(payloadSize);
         try
         {
@@ -126,8 +122,6 @@ public class AppendEntriesRequestPacket : NodePacket
         // ReSharper disable once RedundantAssignment
         var streamReader = new StreamBinaryReader(stream);
         var payloadSize = await streamReader.ReadInt32Async(token);
-
-        // Запишем все байты и десериализуем пакет
         var buffer = ArrayPool<byte>.Shared.Rent(payloadSize);
         try
         {
@@ -148,11 +142,11 @@ public class AppendEntriesRequestPacket : NodePacket
 
         var reader = new SpanBinaryReader(buffer);
 
-        var term = reader.ReadInt32();
-        var leaderId = reader.ReadInt32();
-        var leaderCommit = reader.ReadInt32();
-        var entryTerm = reader.ReadInt32();
-        var entryIndex = reader.ReadInt32();
+        var term = reader.ReadTerm();
+        var leaderId = reader.ReadNodeId();
+        var leaderCommit = reader.ReadLsn();
+        var lastEntryTerm = reader.ReadTerm();
+        var lastEntryIndex = reader.ReadLsn();
         var entriesCount = reader.ReadInt32();
 
         IReadOnlyList<LogEntry> entries;
@@ -165,27 +159,27 @@ public class AppendEntriesRequestPacket : NodePacket
             var list = new List<LogEntry>();
             for (int i = 0; i < entriesCount; i++)
             {
-                var logEntryTerm = reader.ReadInt32();
+                var logEntryTerm = reader.ReadTerm();
                 var payload = reader.ReadBuffer();
-                list.Add(new LogEntry(new Term(logEntryTerm), payload));
+                list.Add(new LogEntry(logEntryTerm, payload));
             }
 
             entries = list;
         }
 
-        return new AppendEntriesRequestPacket(new AppendEntriesRequest(new Term(term), leaderCommit,
-            new NodeId(leaderId), new LogEntryInfo(new Term(entryTerm), entryIndex), entries));
+        return new AppendEntriesRequestPacket(new AppendEntriesRequest(term, leaderCommit, leaderId,
+            new LogEntryInfo(lastEntryTerm, lastEntryIndex), entries));
 
         static void ValidateCheckSum(Span<byte> buffer)
         {
             var crcReader = new SpanBinaryReader(buffer[^4..]);
             var storedCrc = crcReader.ReadUInt32();
-            const int dataStartPosition = 4  // Терм  
-                                        + 4  // Id лидера  
-                                        + 4  // Коммит лидера
-                                        + 4  // Терм последней записи
-                                        + 4  // Индекс последней записи
-                                        + 4; // Количество записей
+            const int dataStartPosition = SizeOf.Term         // Терм  
+                                        + SizeOf.NodeId       // Id лидера  
+                                        + SizeOf.Lsn          // Коммит лидера
+                                        + SizeOf.Term         // Терм последней записи
+                                        + SizeOf.Lsn          // Индекс последней записи
+                                        + SizeOf.ArrayLength; // Количество записей
             var calculatedCrc = Crc32CheckSum.Compute(buffer[dataStartPosition..^4]);
             if (storedCrc != calculatedCrc)
             {

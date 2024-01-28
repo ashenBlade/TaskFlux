@@ -3,10 +3,9 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using Serilog;
+using TaskFlux.Application.Cluster.Network;
+using TaskFlux.Application.Cluster.Network.Packets;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Cluster;
-using TaskFlux.Consensus.Cluster.Network;
-using TaskFlux.Consensus.Cluster.Network.Packets;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
 

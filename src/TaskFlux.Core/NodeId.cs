@@ -21,11 +21,6 @@ public readonly struct NodeId : IEquatable<NodeId>
 
     public const int StartId = 0;
 
-    public NodeId()
-    {
-        Id = StartId;
-    }
-
     public static explicit operator int(NodeId id) => id.Id;
 
     public static NodeId Start => new(StartId);

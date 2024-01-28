@@ -58,7 +58,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     /// </summary>
     /// <remarks>Создаваемые файлы пустые</remarks>
     private (FileSystemPersistenceFacade Facade, MockDataFileSystem Fs) CreateFacade(
-        int? initialTerm = null,
+        Term? initialTerm = null,
         NodeId? votedFor = null)
     {
         var fs = Helpers.CreateFileSystem();
@@ -107,7 +107,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
             committed: Enumerable.Range(0, committedCount).Select(_ => RandomDataEntry(2)).ToArray(),
             uncommitted: Enumerable.Range(0, uncommittedCount).Select(_ => RandomDataEntry(2)).ToArray());
 
-        var expected = new LogEntryInfo(new Term(2), lastSnapshotIndex + committedCount + uncommittedCount + 1);
+        var expected = new Lsn(lastSnapshotIndex + committedCount + uncommittedCount + 1);
 
         var actual = facade.Append(new LogEntry(new Term(2), Array.Empty<byte>()));
 
@@ -118,7 +118,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     public void Append__КогдаЛогПуст__ДолженДобавитьЗаписьКакНеЗакоммиченную()
     {
         var (facade, _) = CreateFacade();
-        var entry = new LogEntry(new Term(2), Array.Empty<byte>());
+        var entry = new LogEntry(2, Array.Empty<byte>());
 
         facade.Append(entry);
 
@@ -132,7 +132,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         var (facade, _) = CreateFacade();
 
         // Индексирование начинается с 0
-        var expected = new LogEntryInfo(entry.Term, 0);
+        var expected = new Lsn(0);
 
         var actual = facade.Append(entry);
 
@@ -140,26 +140,27 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     }
 
     [Fact]
-    public void Append__КогдаЕстьНезакоммиченныеЭлементы__ДолженВернутьПравильнуюЗапись()
+    public void Append__КогдаЕстьНезакоммиченныеЭлементы__ДолженВернутьПравильныйИндекс()
     {
         var (facade, _) = CreateFacade(2);
         var uncommitted = new List<LogEntry>()
         {
-            new(new Term(1), new byte[] {1, 2, 3}), new(new Term(2), new byte[] {4, 5, 6}),
+            new(new Term(1), new byte[] {1, 2, 3}), // 0 
+            new(new Term(2), new byte[] {4, 5, 6}), // 1
         };
         facade.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted);
         var entry = new LogEntry(new Term(3), new byte[] {7, 8, 9});
-        var expected = new LogEntryInfo(entry.Term, 2);
+        var expected = new Lsn(2);
 
         var actual = facade.Append(entry);
 
         Assert.Equal(expected, actual);
-        Assert.Equal(expected, facade.LastEntry);
+        Assert.Equal(expected, facade.LastEntry.Index);
     }
 
-    private static LogEntry Entry(int term, params byte[] data) => new LogEntry(new Term(term), data);
+    private static LogEntry Entry(long term, params byte[] data) => new LogEntry(new Term(term), data);
 
-    private static LogEntry Entry(int term, string data = "") =>
+    private static LogEntry Entry(long term, string data = "") =>
         new(new Term(term), Encoding.UTF8.GetBytes(data));
 
     [Fact]
@@ -175,11 +176,11 @@ public class FileSystemPersistenceFacadeTests : IDisposable
             uncommitted: Array.Empty<LogEntry>());
         // Должен вернуть индекс 3
         var entry = Entry(2, "data");
-        var expected = new LogEntryInfo(entry.Term, 3);
+        var expected = new Lsn(3);
 
         var actual = facade.Append(entry);
 
-        Assert.Equal(expected, actual, InfoComparer);
+        Assert.Equal(expected, actual);
     }
 
     [Fact]
@@ -197,11 +198,11 @@ public class FileSystemPersistenceFacadeTests : IDisposable
             uncommitted: Array.Empty<LogEntry>());
         // Должен вернуть индекс 14
         var entry = Entry(2, "data");
-        var expected = new LogEntryInfo(entry.Term, 14);
+        var expected = new Lsn(14);
 
         var actual = facade.Append(entry);
 
-        Assert.Equal(expected, actual, InfoComparer);
+        Assert.Equal(expected, actual);
     }
 
     [Fact]
@@ -221,7 +222,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
             });
 
         var entry = Entry(4, "data");
-        var expected = new LogEntryInfo(entry.Term, 4);
+        var expected = new Lsn(4);
 
         var actual = facade.Append(entry);
 
@@ -289,12 +290,14 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Assert.Equal(expected, actual, InfoComparer);
     }
 
-    private static LogEntry RandomDataEntry(int term)
+    private static LogEntry RandomDataEntry(Term term)
     {
         var buffer = new byte[Random.Shared.Next(0, 32)];
         Random.Shared.NextBytes(buffer);
-        return new LogEntry(new Term(term), buffer);
+        return new LogEntry(term, buffer);
     }
+
+    private static LogEntry RandomDataEntry(int term) => RandomDataEntry(new Term(term));
 
     private static (T[] Left, T[] Right) Split<T>(IReadOnlyList<T> array, int index)
     {
@@ -352,16 +355,16 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     [InlineData(10, 5, 11)]
     [InlineData(10, 5, 15)]
     public void Commit__КогдаСнапшотЕсть__ДолженЗакоммититьЗаписиПоУказанномуИндексу(
-        int snapshotIndex,
+        long snapshotIndex,
         int uncommittedCount,
-        int commitIndex)
+        long commitIndex)
     {
         var (facade, _) = CreateFacade(uncommittedCount);
         var uncommitted = Enumerable.Range(1, uncommittedCount)
                                     .Select(i => Entry(i, i.ToString()))
                                     .ToList();
 
-        var (expectedCommitted, expectedUncommitted) = Split(uncommitted, commitIndex - snapshotIndex - 1);
+        var (expectedCommitted, expectedUncommitted) = Split(uncommitted, ( int ) ( commitIndex - snapshotIndex - 1 ));
         facade.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted);
         facade.Snapshot.SetupSnapshotTest(new Term(10), snapshotIndex, new StubSnapshot(Array.Empty<byte>()));
 
@@ -369,7 +372,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
 
         Assert.Equal(expectedUncommitted, facade.Log.GetUncommittedTest(), Comparer);
         Assert.Equal(expectedCommitted, facade.Log.GetCommittedTest(), Comparer);
-        Assert.Equal(commitIndex, facade.CommitIndex);
+        Assert.Equal(new Lsn(commitIndex), facade.CommitIndex);
     }
 
     [Fact]
@@ -409,19 +412,19 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     [InlineData(10, 9, 5)] // Все в файле, читаем с середины
     public void TryGetFrom__КогдаЧастьЗаписейВБуфереЧастьВФайле__ДолженВернутьТребуемыеЗаписи(
         int entriesCount,
-        int logEndIndex,
-        int index)
+        long logEndIndex,
+        long index)
     {
         var entries = Enumerable.Range(1, entriesCount)
                                 .Select(RandomDataEntry)
                                 .ToArray();
-        var (committed, uncommitted) = Split(entries, logEndIndex);
+        var (committed, uncommitted) = Split(entries, ( int ) logEndIndex);
         var (facade, _) = CreateFacade(entriesCount);
 
         facade.Log.SetupLogTest(committed, uncommitted);
 
         // Глобальный и локальный индексы совпадают, если снапшота еще нет
-        var expected = entries[index..];
+        var expected = entries[( int ) index..];
 
         var success = facade.TryGetFrom(index, out var actual);
 
@@ -711,7 +714,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
                                    .ToArray();
         var snapshotData = RandomBytes(100);
         facade.Log.SetupLogTest(logEntries, Array.Empty<LogEntry>());
-        var expectedLogEntries = logEntries.Skip(lastSnapshotEntry.Index + 1)
+        var expectedLogEntries = logEntries.Skip(( int ) ( lastSnapshotEntry.Index + 1 ))
                                            .ToArray();
         var writer = facade.CreateSnapshot(lastSnapshotEntry);
 
@@ -859,11 +862,11 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         // Должен удалить предшествующие записи в логе
         var (facade, _) = CreateFacade();
 
-        var lastLogEntry = new LogEntryInfo(new Term(1), 10);
+        var lastLogEntry = new LogEntryInfo(1, 10);
         var snapshotData = RandomBytes(123);
 
-        var writer = facade.CreateSnapshot(lastLogEntry);
         var stubSnapshot = new StubSnapshot(snapshotData);
+        var writer = facade.CreateSnapshot(lastLogEntry);
         foreach (var chunk in stubSnapshot.GetAllChunks())
         {
             writer.InstallChunk(chunk.Span, CancellationToken.None);
@@ -1063,10 +1066,10 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         var lastTerm = new Term(5);
         var exisingLogData = new[]
         {
-            RandomDataEntry(3),              // 4
-            RandomDataEntry(3),              // 5
-            RandomDataEntry(4),              // 6
-            RandomDataEntry(lastTerm.Value), // 7
+            RandomDataEntry(3),        // 4
+            RandomDataEntry(3),        // 5
+            RandomDataEntry(4),        // 6
+            RandomDataEntry(lastTerm), // 7
         };
         facade.Log.SetupLogTest(exisingLogData, Array.Empty<LogEntry>());
         // Все команды применены из лога
@@ -1179,7 +1182,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         int bufferCommandsCount)
     {
         var term = new Term(1);
-        var (facade, _) = CreateFacade(term.Value);
+        var (facade, _) = CreateFacade(term);
         var fileEntries = Enumerable.Range(0, fileCommandsCount)
                                     .Select(_ => RandomDataEntry(term.Value))
                                     .ToArray();
@@ -1502,7 +1505,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         var (actualIndex, actualTerm, actualData) = facade.Snapshot.ReadAllDataTest();
         actualIndex
            .Should()
-           .Be(12, "последний примененный индекс - 12");
+           .Be(new Lsn(12), "последний примененный индекс - 12");
         actualTerm
            .Should()
            .Be(new Term(3), "терм последней примененной команды - 3");
@@ -1563,9 +1566,9 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     [InlineData(10, 20, 8)]
     public void
         SaveSnapshot__КогдаСнапшотаНеБылоИЕстьЗакоммиченныеКомандыИИндексСнапшотаМеньшеЗакоммиченногоИндекса__ДолженКорректноОбновитьИндексыКоммита(
-        int snapshotIndex,
+        long snapshotIndex,
         int committedCount,
-        int expectedLocalCommitIndex)
+        long expectedLocalCommitIndex)
     {
         var (facade, _) = CreateFacade();
         var snapshotData = new StubSnapshot(RandomBytes(90));
@@ -1573,7 +1576,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
                                                      .Select(i => Entry(2, i.ToString()))
                                                      .ToArray(),
             uncommitted: Array.Empty<LogEntry>());
-        var initialCommitIndex = committedCount - 1;
+        var initialCommitIndex = new Lsn(committedCount - 1);
 
         facade.SaveSnapshot(snapshotData, new LogEntryInfo(2, snapshotIndex));
 
@@ -1581,8 +1584,8 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Assert.Equal(initialCommitIndex, facade.CommitIndex);
 
         // Измениться должен индекс коммита лога
-        Assert.Equal(expectedLocalCommitIndex, facade.Log.ReadCommitIndexTest());
-        Assert.Equal(expectedLocalCommitIndex, facade.Log.CommitIndex);
+        Assert.Equal(new Lsn(expectedLocalCommitIndex), facade.Log.ReadCommitIndexTest());
+        Assert.Equal(new Lsn(expectedLocalCommitIndex), facade.Log.CommitIndex);
     }
 
     [Theory]
@@ -1594,10 +1597,10 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     [InlineData(10, 14, 9, 4)]
     public void
         SaveSnapshot__КогдаСнапшотБылИЕстьЗакоммиченныеЗаписиИИндексСнапшотаМеньшеЗакоммиченногоИндекса__ДолженКорректноОбновитьИндексыКоммита(
-        int oldSnapshotIndex,
-        int newSnapshotIndex,
+        long oldSnapshotIndex,
+        long newSnapshotIndex,
         int committedCount,
-        int expectedLocalCommitIndex)
+        long expectedLocalCommitIndex)
     {
         var (facade, _) = CreateFacade();
         var snapshotData = new StubSnapshot(RandomBytes(90));
@@ -1614,8 +1617,8 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Assert.Equal(initialCommitIndex, facade.CommitIndex);
 
         // Измениться должен индекс коммита лога
-        Assert.Equal(expectedLocalCommitIndex, facade.Log.ReadCommitIndexTest());
-        Assert.Equal(expectedLocalCommitIndex, facade.Log.CommitIndex);
+        Assert.Equal(( Lsn ) expectedLocalCommitIndex, facade.Log.ReadCommitIndexTest());
+        Assert.Equal(( Lsn ) expectedLocalCommitIndex, facade.Log.CommitIndex);
     }
 
     [Theory]

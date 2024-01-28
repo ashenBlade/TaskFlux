@@ -472,7 +472,7 @@ public class FollowerStateTests
         // Причем, еще ничего не закоммичено
         var node = CreateFollowerNode(term, null);
 
-        var request = new AppendEntriesRequest(term, LogEntryInfo.TombIndex, AnotherNodeId, LogEntryInfo.Tomb, entries);
+        var request = new AppendEntriesRequest(term, Lsn.Tomb, AnotherNodeId, LogEntryInfo.Tomb, entries);
 
         var response = node.Handle(request);
 

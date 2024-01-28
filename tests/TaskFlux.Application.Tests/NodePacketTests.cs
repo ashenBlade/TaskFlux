@@ -1,9 +1,9 @@
 using System.Text;
 using FluentAssertions;
+using TaskFlux.Application.Cluster.Network;
+using TaskFlux.Application.Cluster.Network.Packets;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Cluster.Network;
 using TaskFlux.Consensus.Cluster.Network.Exceptions;
-using TaskFlux.Consensus.Cluster.Network.Packets;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.RequestVote;
 using TaskFlux.Consensus.Persistence;
@@ -14,7 +14,7 @@ namespace TaskFlux.Application.Tests;
 [Trait("Category", "Serialization")]
 public class NodePacketTests
 {
-    private static LogEntry Entry(int term, string data) => new(new Term(term), Encoding.UTF8.GetBytes(data));
+    private static LogEntry Entry(Term term, string data) => new(term, Encoding.UTF8.GetBytes(data));
 
     private static void AssertBase(NodePacket expected)
     {
@@ -76,19 +76,20 @@ public class NodePacketTests
     }
 
     [Theory]
+    [InlineData(NodeId.StartId, Term.StartTerm, Term.StartTerm, Lsn.TombIndex)]
     [InlineData(1, 1, 1, 1)]
     [InlineData(1, 2, 1, 4)]
-    [InlineData(int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue)]
-    [InlineData(87654, 123123, 123, int.MaxValue)]
+    [InlineData(int.MaxValue, long.MaxValue, long.MaxValue, long.MaxValue)]
+    [InlineData(87654, 123123, 123, long.MaxValue)]
     [InlineData(345724, 53, 1, 0)]
     [InlineData(2, 3523, 222, 0)]
     [InlineData(1, 23, 20, 0)]
     [InlineData(3, 1234, 45, 90)]
     public void RequestVoteRequest__ДолженДесериализоватьИдентичныйОбъект(
         int peerId,
-        int term,
-        int logTerm,
-        int index)
+        long term,
+        long logTerm,
+        long index)
     {
         var requestVote = new RequestVoteRequest(CandidateId: new NodeId(peerId), CandidateTerm: new Term(term),
             LastLogEntryInfo: new LogEntryInfo(new Term(logTerm), index));
@@ -98,32 +99,32 @@ public class NodePacketTests
     [Theory]
     [InlineData(1, 1, 1, 1, 1)]
     [InlineData(1, 2, 3, 4, 0)]
-    [InlineData(int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue)]
-    [InlineData(1, int.MaxValue, int.MaxValue, int.MaxValue, int.MinValue)]
-    [InlineData(321, 1364, 76, 3673, 7754)]
+    [InlineData(long.MaxValue, int.MaxValue, long.MaxValue, long.MaxValue, long.MaxValue)]
+    [InlineData(1, int.MaxValue, long.MaxValue, long.MaxValue, long.MaxValue - 1)]
+    [InlineData(321, 1364, Lsn.TombIndex, Term.StartTerm, Lsn.TombIndex + 1)]
     [InlineData(76, 222222, 1, 333, 35624)]
-    [InlineData(134, 987654, 1, 3, 1)]
+    [InlineData(Term.StartTerm, NodeId.StartId, Lsn.TombIndex, Term.StartTerm, Lsn.TombIndex)]
     [InlineData(98765, 1234, 45, 90, 124)]
     public void AppendEntriesRequest__СПустымМассивомКоманд__ДолженДесериализоватьИдентичныйОбъект(
-        int term,
+        long term,
         int leaderId,
-        int leaderCommit,
-        int logTerm,
-        int logIndex)
+        long leaderCommit,
+        long logTerm,
+        long logIndex)
     {
         var appendEntries = AppendEntriesRequest.Heartbeat(new Term(term), leaderCommit, new NodeId(leaderId),
             new LogEntryInfo(new Term(logTerm), logIndex));
         AssertBase(new AppendEntriesRequestPacket(appendEntries));
     }
 
-    public static IEnumerable<object[]> IntWithBoolPairwise =>
-        new[] {1, 123, int.MaxValue, 123, 1 << 8, 1 << 8 + 1, 1 << 15, 1 << 30}.SelectMany(i =>
-            new[] {new object[] {i, true}, new object[] {i, false}});
+    public static IEnumerable<object[]> LongWithBoolPairwise =>
+        new long[] {1, 123, long.MaxValue, 123, 1 << 8, 1 << 8 + 1, 1 << 15, 1 << 30, ( 1L << 54 ) + 54}
+           .SelectMany(i => new[] {new object[] {i, true}, new object[] {i, false}});
 
     [Theory]
-    [MemberData(nameof(IntWithBoolPairwise))]
+    [MemberData(nameof(LongWithBoolPairwise))]
     public void RequestVoteResponse__ДолженДесериализоватьИдентичныйОбъект(
-        int term,
+        long term,
         bool voteGranted)
     {
         var response = new RequestVoteResponse(CurrentTerm: new Term(term), VoteGranted: voteGranted);
@@ -132,13 +133,10 @@ public class NodePacketTests
 
 
     [Theory]
-    [MemberData(nameof(IntWithBoolPairwise))]
-    public void AppendEntriesResponse__ДолженДесериализоватьИдентичныйОбъект(
-        int term,
-        bool success)
+    [MemberData(nameof(LongWithBoolPairwise))]
+    public void AppendEntriesResponse__ДолженДесериализоватьИдентичныйОбъект(long term, bool success)
     {
-        var response = new AppendEntriesResponse(new Term(term), success);
-        AssertBase(new AppendEntriesResponsePacket(response));
+        AssertBase(new AppendEntriesResponsePacket(new AppendEntriesResponse(new Term(term), success)));
     }
 
     [Theory]
@@ -147,12 +145,12 @@ public class NodePacketTests
     [InlineData(3, 2, 22, 3, 2, 3, "                 ")]
     [InlineData(50, 2, 30, 3, 30, 2, "\n\n")]
     public void AppendEntriesRequest__СОднойКомандой__ДолженДесериализоватьОбъектСОднимLogEntry(
-        int term,
+        long term,
         int leaderId,
-        int leaderCommit,
-        int logTerm,
-        int logIndex,
-        int logEntryTerm,
+        long leaderCommit,
+        long logTerm,
+        long logIndex,
+        long logEntryTerm,
         string command)
     {
         var appendEntries = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId),
@@ -167,12 +165,12 @@ public class NodePacketTests
     [InlineData(50, 2, 30, 3, 30, 2, "\n\n")]
     [InlineData(50, 12, 40, 30, 30, 4, "вызвать компьютерного мастера")]
     public void AppendEntriesRequest__СОднойКомандой__ДолженДесериализоватьLogEntryСТемиЖеДанными(
-        int term,
+        long term,
         int leaderId,
-        int leaderCommit,
-        int logTerm,
-        int logIndex,
-        int logEntryTerm,
+        long leaderCommit,
+        long logTerm,
+        long logIndex,
+        long logEntryTerm,
         string command)
     {
         var expected = Entry(logEntryTerm, command);
@@ -195,11 +193,11 @@ public class NodePacketTests
     [Theory]
     [MemberData(nameof(СериализацияAppendEntriesСНесколькимиКомандами))]
     public void AppendEntriesRequest__СНесколькимиКомандами__ДолженДесериализоватьТакоеЖеКоличествоКоманд(
-        int term,
+        long term,
         int leaderId,
-        int leaderCommit,
-        int logTerm,
-        int logIndex,
+        long leaderCommit,
+        long logTerm,
+        long logIndex,
         LogEntry[] entries)
     {
         var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId),
@@ -210,11 +208,11 @@ public class NodePacketTests
     [Theory]
     [MemberData(nameof(СериализацияAppendEntriesСНесколькимиКомандами))]
     public void AppendEntriesRequest__СНесколькимиКомандами__ДолженДесериализоватьКомандыСТемиЖеСамымиДанными(
-        int term,
+        long term,
         int leaderId,
-        int leaderCommit,
-        int logTerm,
-        int logIndex,
+        long leaderCommit,
+        long logTerm,
+        long logIndex,
         LogEntry[] entries)
     {
         var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId),
@@ -249,10 +247,10 @@ public class NodePacketTests
     [InlineData(333, 2324621, 745, 4365346)]
     [InlineData(63456, int.MaxValue, -1, 4365346)]
     public void InstallSnapshotRequest__ДолженДесериализоватьТакуюЖеКоманду(
-        int term,
+        long term,
         int leaderId,
-        int lastIndex,
-        int lastTerm)
+        long lastIndex,
+        long lastTerm)
     {
         AssertBase(new InstallSnapshotRequestPacket(new Term(term), new NodeId(leaderId),
             new LogEntryInfo(new Term(lastTerm), lastIndex)));
@@ -280,7 +278,7 @@ public class NodePacketTests
     [InlineData(int.MaxValue)]
     [InlineData(int.MaxValue - 1)]
     [InlineData(666)]
-    public void InstallSnapshotResponse__ДолженДесериализоватьТакуюЖеКоманду(int term)
+    public void InstallSnapshotResponse__ДолженДесериализоватьТакуюЖеКоманду(long term)
     {
         AssertBase(new InstallSnapshotResponsePacket(new Term(term)));
     }
