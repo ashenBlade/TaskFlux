@@ -454,6 +454,48 @@ public class LeaderStateTests
         machine.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void SubmitRequest__ПослеУспешнойРепликации__ДолженВыставитьИндексКоммитаВИндексДобавленнойЗаписи(
+        int peersCount)
+    {
+        var term = new Term(1);
+        var peers = Enumerable.Range(0, peersCount)
+                              .Select((_, _) => CreateDefaultPeer()
+                                  .Apply(m =>
+                                   {
+                                       m.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(),
+                                             It.IsAny<CancellationToken>()))
+                                        .Returns(AppendEntriesResponse.Ok(term));
+                                   }))
+                              .ToArray(peersCount);
+        var alreadyCommittedEntries = new LogEntry[]
+        {
+            new(2, "hello, world"u8.ToArray()), // 0
+            new(2, "asdfasdf"u8.ToArray()),     // 1
+            new(2, "324234"u8.ToArray()),       // 2
+            new(2, "qwtqebrqe"u8.ToArray()),    // 3
+        };
+        var expectedCommittedIndex = 4; // Добавленная запись будет иметь следующий индекс - 3 + 1 = 4
+        using var queue = new TaskBackgroundJobQueue();
+        using var node = CreateLeaderNode(term, null,
+            peers: peers.Select(x => x.Object),
+            jobQueue: queue,
+            logEntries: alreadyCommittedEntries);
+
+        var request = 123;
+        _ = node.Handle(request);
+
+        var actual = node.Persistence.CommitIndex;
+        Assert.Equal(expectedCommittedIndex, actual);
+    }
+
     private static Mock<IPeer> CreateDefaultPeer()
     {
         return new Mock<IPeer>(MockBehavior.Strict).Apply(m =>

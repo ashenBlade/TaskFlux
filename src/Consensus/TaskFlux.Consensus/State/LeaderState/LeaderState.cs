@@ -92,11 +92,21 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     {
         var peers = PeerGroup.Peers;
         var processors = new (PeerProcessorBackgroundJob<TCommand, TResponse>, ITimer)[peers.Count];
+        var replicationStates = new PeerReplicationState[peers.Count];
+        var lastEntryIndex = Persistence.LastEntry.Index + 1;
+        for (var i = 0; i < replicationStates.Length; i++)
+        {
+            replicationStates[i] = new PeerReplicationState(lastEntryIndex);
+        }
+
+        var replicationWatcher = new ReplicationWatcher(replicationStates, Persistence);
         for (var i = 0; i < processors.Length; i++)
         {
             var peer = peers[i];
+            var info = replicationStates[i];
             var processor = new PeerProcessorBackgroundJob<TCommand, TResponse>(peer,
-                _logger.ForContext("SourceContext", $"PeerProcessor({peer.Id.Id})"), CurrentTerm, this);
+                _logger.ForContext("SourceContext", $"PeerProcessor({peer.Id.Id})"), CurrentTerm, info,
+                replicationWatcher, this);
             var timer = _timerFactory.CreateHeartbeatTimer();
             processors[i] = ( processor, timer );
         }
@@ -225,7 +235,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     {
         Debug.Assert(_application is not null, "_application is not null",
             "Приложение не было инициализировано на момент обработки запроса");
-        _logger.Information("Получил новую команду: {Command}", command);
+        _logger.Debug("Получил новую команду: {Command}", command);
 
         var response = _application.Apply(command);
         if (!_deltaExtractor.TryGetDelta(response, out var delta))
@@ -273,18 +283,6 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             return SubmitResponse<TResponse>.NotLeader;
         }
 
-        // Применяем команду к приложению.
-        // Лучше сначала применить и, если что не так, упасть,
-        // чем закоммитить, а потом каждый раз валиться при восстановлении
-
-        _logger.Verbose("Коммичу команду с индексом {Index}", appended.Index);
-        Persistence.Commit(appended.Index);
-
-        /*
-         * На этом моменте Heartbeat не отправляю,
-         * т.к. он отправится по таймеру (он должен вызываться часто).
-         * Либо придет новый запрос и он отправится вместе с AppendEntries
-         */
         if (Persistence.ShouldCreateSnapshot())
         {
             _logger.Debug("Создаю снапшот");
@@ -300,7 +298,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     {
         if (_peerProcessors.Length == 0)
         {
-            // Кроме нас в кластере никого нет
+            Persistence.Commit(appendedIndex);
             greaterTerm = Term.Start;
             return true;
         }
