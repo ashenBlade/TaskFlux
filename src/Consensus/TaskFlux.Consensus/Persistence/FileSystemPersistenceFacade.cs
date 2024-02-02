@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Abstractions;
 using System.Runtime.CompilerServices;
 using Serilog;
@@ -46,84 +47,22 @@ public class FileSystemPersistenceFacade
     /// <summary>
     /// Последняя запись в логе, включая незакоммиченные записи и запись в снапшоте.
     /// </summary>
-    public LogEntryInfo LastEntry
-    {
-        get
-        {
-            lock (_lock)
-            {
-                if (_snapshot.HasSnapshot)
-                {
-                    if (_log.TryGetLastLogEntry(out var logLastEntry))
-                    {
-                        return logLastEntry with
-                        {
-                            Index = logLastEntry.Index
-                                  + _snapshot.LastApplied.Index
-                                  + 1
-                        };
-                    }
-
-                    return _snapshot.LastApplied;
-                }
-
-
-                return _log.GetLastLogEntry();
-            }
-        }
-    }
+    public LogEntryInfo LastEntry => _log.GetLastLogEntry();
 
     /// <summary>
     /// Индекс последней закоммиченной записи
     /// </summary>
-    public Lsn CommitIndex
-    {
-        get
-        {
-            lock (_lock)
-            {
-                if (Snapshot.HasSnapshot)
-                {
-                    if (_log.TryGetCommitIndex(out var logCommitIndex))
-                    {
-                        return Snapshot.LastApplied.Index + logCommitIndex + 1;
-                    }
-
-                    return Snapshot.LastApplied.Index;
-                }
-
-                return _log.CommitIndex;
-            }
-        }
-    }
+    public Lsn CommitIndex { get; private set; }
 
     /// <summary>
     /// Терм, сохраненный в файле метаданных
     /// </summary>
-    public Term CurrentTerm
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _metadata.Term;
-            }
-        }
-    }
+    public Term CurrentTerm => _metadata.Term;
 
     /// <summary>
     /// Отданный голос, сохраненный в файле метаданных
     /// </summary>
-    public NodeId? VotedFor
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _metadata.VotedFor;
-            }
-        }
-    }
+    public NodeId? VotedFor => _metadata.VotedFor;
 
     public SnapshotFile Snapshot => _snapshot;
     public FileLog Log => _log;
@@ -149,10 +88,16 @@ public class FileSystemPersistenceFacade
         _snapshot = snapshot;
         _logger = logger;
         _sizeChecker = sizeChecker;
+
+        // То, что уже есть в снапшоте обратно откоммичено быть не может
+        CommitIndex = _snapshot.TryGetIncludedIndex(out var i)
+                          ? i
+                          : Lsn.Tomb;
     }
 
     public static FileSystemPersistenceFacade Initialize(string? dataDirectoryPath, ulong maxFileLogFile)
     {
+        // TODO: инициализировать корректно индекс последней записи
         var logger = Serilog.Log.ForContext<FileSystemPersistenceFacade>();
         var dataDirPath = GetDataDirectory();
         var fs = new FileSystem();
@@ -162,8 +107,11 @@ public class FileSystemPersistenceFacade
         var metadataStorage = CreateMetadataStorage();
         var snapshotStorage = CreateSnapshotStorage(new DirectoryInfoWrapper(fs, dataDirectory));
 
-        return new FileSystemPersistenceFacade(fileLogStorage, metadataStorage, snapshotStorage,
-            logger, maxLogFileSize: maxFileLogFile);
+        return new FileSystemPersistenceFacade(fileLogStorage,
+            metadataStorage,
+            snapshotStorage,
+            logger,
+            maxFileLogFile);
 
         DirectoryInfo CreateDataDirectory()
         {
@@ -259,19 +207,19 @@ public class FileSystemPersistenceFacade
     }
 
     /// <summary>
-    /// Конфликтует ли текущий лог с переданным (используется префикс)
+    /// Проверить, что переданный лог (префикс) находится в не менее актуальном состоянии чем наш 
     /// </summary>
     /// <param name="prefix">Последний элемент сравниваемого лога</param>
-    /// <returns><c>true</c> - конфликтует, <c>false</c> - иначе</returns>
+    /// <returns><c>true</c> - лог в нормальном состоянии, <c>false</c> - переданный лог отстает</returns>
     /// <remarks>Вызывается в RequestVote для проверки актуальности лога</remarks>
-    public bool Conflicts(LogEntryInfo prefix)
+    public bool IsUpToDate(LogEntryInfo prefix)
     {
+        // ссылка на etcd: https://github.com/etcd-io/raft/blob/main/log.go#L435
         // Неважно на каком индексе последний элемент.
         // Если он последний, то наши старые могут быть заменены
 
-        // Наш:      | 1 | 1 | 2 | 3 |
-        // Другой 1: | 1 | 1 | 2 | 3 | 4 | 5 |
-        // Другой 2: | 1 | 5 | 
+        // Наш:    | 1 | 1 | 2 | 3 |
+        // Другой: | 1 | 1 | 2 | 3 | 4 | 5 |
         if (LastEntry.Term < prefix.Term)
         {
             return true;
@@ -285,10 +233,10 @@ public class FileSystemPersistenceFacade
         // Другой 2: | 1 | 1 | 2 | 3 |
         if (prefix.Term == LastEntry.Term && LastEntry.Index <= prefix.Index)
         {
-            return false;
+            return true;
         }
 
-        return true;
+        return false;
     }
 
     /// <summary>
@@ -299,25 +247,16 @@ public class FileSystemPersistenceFacade
     /// <param name="startIndex">Индекс, начиная с которого необходимо добавить записи (включительно)</param>
     public void InsertRange(IReadOnlyList<LogEntry> entries, Lsn startIndex)
     {
-        if (startIndex < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(startIndex), startIndex,
-                "Индекс лога не может быть отрицательным");
-        }
-
         if (entries.Count == 0)
         {
             return;
         }
 
+        _logger.Verbose("Записываю {Count} записей по индексу {GlobalIndex}", entries.Count, startIndex);
+
         lock (_lock)
         {
-            // Индекс, с которого начинаются записи в логе
-            var logIndex = CalculateLogIndex(startIndex);
-            _logger.Verbose("Записываю {Count} записей по индексу {GlobalIndex}/{LogIndex}", entries.Count, startIndex,
-                logIndex);
-            // Добавляем записи в файл
-            _log.InsertRangeOverwrite(entries, logIndex);
+            _log.InsertRangeOverwrite(entries, startIndex);
         }
     }
 
@@ -331,22 +270,8 @@ public class FileSystemPersistenceFacade
         lock (_lock)
         {
             _logger.Verbose("Добавляю запись {Entry} в лог", entry);
-            var logInfo = _log.Append(entry);
-            return CalculateGlobalIndex(_snapshot.LastApplied.Index, logInfo);
+            return _log.Append(entry);
         }
-    }
-
-    private static Lsn CalculateGlobalIndex(Lsn snapshotIndex, Lsn logIndex)
-    {
-        if (snapshotIndex.IsTomb)
-        {
-            return logIndex;
-        }
-
-        // Индекс лога не нужно проверять на Tomb, т.к. даже если он и Tomb, то +1 его поглотит
-        return snapshotIndex
-             + logIndex
-             + 1;
     }
 
     /// <summary>
@@ -357,114 +282,50 @@ public class FileSystemPersistenceFacade
     /// <remarks>Вызывается в AppendEntries для проверки возможности добавления новых записей</remarks>
     public bool PrefixMatch(LogEntryInfo prefix)
     {
+        if (_log.TryGetLogEntryInfo(prefix.Index, out var storedLogEntry))
+        {
+            return storedLogEntry.Term == prefix.Term;
+        }
+
         if (prefix.IsTomb)
         {
-            // Лог отправителя был изначально пуст
-            return true;
-        }
-
-        var localIndex = CalculateLogIndex(prefix.Index);
-
-        if (localIndex < -1)
-        {
             /*
-             * Префикс указывает на запись, которая находится в нашем снапшоте.
-             * Так как это снапшот, то все записи были закоммичены и последняя включенная запись,
-             * должна иметь терм не меньше терма переданного префикса.
-             * Это единственное предположение.
+             * Эта ситуация может возникнуть, когда:
+             * 1. Лог пуст (кластер только что запущен)
+             * 2. Лидер отправил AppendEntries и индекс предыдущей записи равен -1 (Tomb)
              */
-            return prefix.Term <= Snapshot.LastApplied.Term;
+            return _log.StartIndex == 0;
         }
 
-        if (localIndex == -1)
-        {
-            // Префикс указывает на последнюю запись в снапшоте
-            return prefix.Term == Snapshot.LastApplied.Term;
-        }
-
-        if (_log.TryGetLogEntryInfo(localIndex, out var entryInfo))
-        {
-            // Префикс указывает на запись, которая хранится в логе
-            return entryInfo.Term == prefix.Term;
-        }
-
-        // Префикса с указанной записью у нас нет
         return false;
-    }
-
-    private LogEntryInfo GetLogEntryInfoAtIndex(Lsn globalIndex)
-    {
-        var localIndex = CalculateLogIndex(globalIndex);
-        if (localIndex < -1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(globalIndex), globalIndex, "В логе нет указанного индекса");
-        }
-
-        if (localIndex == -1)
-        {
-            return Snapshot.LastApplied;
-        }
-
-        return _log.GetInfoAt(localIndex) with {Index = globalIndex};
     }
 
     /// <summary>
     /// Получить все записи, начиная с указанного индекса
     /// </summary>
-    /// <param name="globalIndex">Индекс, начиная с которого нужно вернуть записи</param>
+    /// <param name="index">Индекс, начиная с которого нужно вернуть записи</param>
     /// <param name="entries">Хранившиеся записи, начиная с указанного индекса</param>
     /// <returns>Список записей из лога</returns>
     /// <remarks>При выходе за границы, может вернуть пустой массив</remarks>
-    public bool TryGetFrom(Lsn globalIndex, out IReadOnlyList<LogEntry> entries)
+    public bool TryGetFrom(Lsn index, out IReadOnlyList<LogEntry> entries)
     {
         lock (_lock)
         {
-            var localIndex = CalculateLogIndex(globalIndex);
-
-            if (localIndex < 0)
+            if (Snapshot.TryGetIncludedIndex(out var snapshotIndex) && index <= snapshotIndex)
             {
+                /*
+                 * Даже если в логе есть эти записи с указанного индекса, все равно скажем "нет", т.к.:
+                 * 1. В любой момент может заработать ротатор сегментов, который удалит активные сегменты;
+                 * 2. Кол-во записей, которые нужно будет отправить, возможно будет непостижимо огромным (сотня сегментов по 64 Мб например);
+                 */
+
                 entries = Array.Empty<LogEntry>();
                 return false;
             }
 
-            entries = _log.GetFrom(localIndex);
+            entries = _log.GetFrom(index);
             return true;
         }
-    }
-
-    /// <summary>
-    /// Рассчитать локальный индекс по переданному глобальному
-    /// </summary>
-    /// <param name="globalIndex">Глобальный индекс</param>
-    /// <returns>
-    /// - Неотрицательное (>= 0) - индекс записи в логе (локальный)
-    /// - -1 - это индекс последней команды в снапшоте
-    /// - Отрицательное число - команда заходит за пределы снапшота (внутрь)
-    /// </returns>
-    private long CalculateLogIndex(long globalIndex)
-    {
-        /*
-         * Я разделяю индекс на 2 типа: локальный и глобальный.
-         * - Глобальный индекс - индекс среди ВСЕХ записей
-         * - Локальный индекс - индекс для поиска записей среди лога и буфера
-         *
-         * Последний индекс в снапшоте является стартовым индексом для локального индекса.
-         * Чтобы получить локальный индекс нужно из глобального индекса вычесть последний индекс снапшота и 1:
-         * localIndex = globalIndex - Snapshot.LastIncludedIndex - 1
-         * Последняя единица вычитается, т.к. индексация начинается с 0:
-         *
-         * Примеры:
-         * Глобальный индекс: 10, Индекс снапшота: 3, Локальный индекс: 6
-         * Глобальный - | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
-         *              |Данные снапшота|
-         * Локальный  -                 | 0 | 1 | 2 | 3 | 4 | 5 | 6  | 7  |
-         *
-         * Снапшота еще нет, то локальный и глобальный индексы совпадают
-         */
-
-        // Если снапшота нет, то -(-1) - 1 = 0 - ничего не изменятся (индекс лога == индекс глобальный)
-        // Если снапшот есть, то из переданного globalIndex вычитается кол-во записей в снапшоте = -(LastAppliedIndex + 1) 
-        return globalIndex - ( ( long ) Snapshot.LastApplied.Index + 1 );
     }
 
     /// <summary>
@@ -476,28 +337,96 @@ public class FileSystemPersistenceFacade
     {
         if (index.IsTomb)
         {
+            if (CommitIndex.IsTomb)
+            {
+                // Ну ок
+                return;
+            }
+
             throw new ArgumentOutOfRangeException(nameof(index), index, "Нельзя закоммитить Tomb индекс");
+        }
+
+        if (_log.LastIndex < index)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), index,
+                $"Указанный индекс коммита превышает индекс последней записи в логе. Индекс последней записи: {_log.LastIndex}");
         }
 
         lock (_lock)
         {
-            var logIndex = CalculateLogIndex(index);
-            if (logIndex == Lsn.TombIndex)
-            {
-                // Этот индекс указывает на последний индекс из снапшота
-                // Такое возможно, когда снапшот только создался и лидер прислал Heartbeat
-                return;
-            }
-
-            if (logIndex < -1)
-            {
-                throw new InvalidOperationException(
-                    $"Указанный индекс коммита меньше последней команды в снапшоте. Переданный индекс: {index}. Последний индекс снапшота: {Snapshot.LastApplied}");
-            }
-
-            _logger.Verbose("Коммичу индекс {GlobalIndex}/{LogIndex}", index, logIndex);
-            _log.Commit(logIndex);
+            var commit = Math.Max(CommitIndex, index);
+            CommitIndex = commit;
         }
+    }
+
+    /// <summary>
+    /// Установить индекс коммита в указанное значение
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Указанный индекс либо меньше индекса из снапшота, либо больше последнего индекса в логе</exception>
+    internal void SetCommitTest(Lsn commit)
+    {
+        if (commit < _snapshot.LastApplied.Index)
+        {
+            throw new ArgumentOutOfRangeException(nameof(commit), commit,
+                "Нельзя выставить индекс коммита меньше чем последний индекс в снапшоте");
+        }
+
+        if (_log.LastIndex < commit)
+        {
+            throw new ArgumentOutOfRangeException(nameof(commit), commit,
+                "Нельзя выставить индекс коммита больше, чем индекс последней записи в логе");
+        }
+
+        CommitIndex = commit;
+    }
+
+    /// <summary>
+    /// Выставить в файле снапшота указанные данные
+    /// </summary>
+    /// <param name="term">Терм последней записи</param>
+    /// <param name="lastIncludedIndex">Индекс последней записи</param>
+    /// <param name="snapshot">Содержимое снапшота</param>
+    private void SetupSnapshotTest(Term term, Lsn lastIncludedIndex, ISnapshot snapshot)
+    {
+        _snapshot.SetupSnapshotTest(term, lastIncludedIndex, snapshot);
+    }
+
+    /// <summary>
+    /// Установить состояние данных в указанное.
+    /// Вызывать нужно этот метод для корректной установки состояния с обновлением нужных полей
+    /// </summary>
+    /// <param name="logEntries">Записи в логе</param>
+    /// <param name="snapshotData">Данные для снапшота</param>
+    /// <param name="commitIndex">Индекс коммита</param>
+    internal void SetupTest(IReadOnlyList<LogEntry>? logEntries = null,
+                            (Term term, Lsn lastIncludedIndex, ISnapshot snapshot)? snapshotData = null,
+                            int? commitIndex = null)
+    {
+        if (logEntries is not null)
+        {
+            SetupLogTest(logEntries);
+        }
+
+        if (snapshotData is var (term, index, snapshot))
+        {
+            SetupSnapshotTest(term, index, snapshot);
+        }
+
+        if (commitIndex is { } ci)
+        {
+            SetCommitTest(ci);
+        }
+    }
+
+    private void SetupLogTest(IReadOnlyList<LogEntry> logEntries)
+    {
+        if (_snapshot.TryGetIncludedIndex(out var snapshotIndex))
+        {
+            Debug.Assert(snapshotIndex < logEntries.Count, "snapshotIndex < logEntries.Count",
+                "Количество записей в логе не может быть меньше индекса последней команды в снапшоте");
+        }
+
+        _log.SetupLogTest(logEntries);
     }
 
     /// <summary>
@@ -510,44 +439,16 @@ public class FileSystemPersistenceFacade
     {
         lock (_lock)
         {
-            var localIndex = CalculateLogIndex(index);
-            if (localIndex == Lsn.TombIndex)
+            if (index == Snapshot.LastApplied.Index)
             {
                 return Snapshot.LastApplied;
             }
 
-            var logEntryInfo = _log.GetInfoAt(localIndex);
-
-            if (Snapshot.LastApplied.IsTomb)
-            {
-                return logEntryInfo;
-            }
-
-            return logEntryInfo with {Index = logEntryInfo.Index + Snapshot.LastApplied.Index};
-        }
-    }
-
-    /// <summary>
-    /// Получить информацию о записи, предшествующей указанной
-    /// </summary>
-    /// <param name="nextIndex">Индекс следующей записи</param>
-    /// <returns>Информацию о следующей записи в логе</returns>
-    /// <remarks>Если указанный индекс 0, то вернется <see cref="LogEntryInfo.Tomb"/></remarks>
-    public LogEntryInfo GetPrecedingEntryInfo(Lsn nextIndex)
-    {
-        if (nextIndex == 0)
-        {
-            return LogEntryInfo.Tomb;
-        }
-
-        lock (_lock)
-        {
-            if (_snapshot.LastApplied.Index + 1 == nextIndex)
-            {
-                return _snapshot.LastApplied;
-            }
-
-            return GetLogEntryInfoAtIndex(nextIndex - 1);
+            /*
+             * Проверку на то, что переданный индекс меньше индекса снапшота не делаем, т.к.
+             * в логе все еще может находиться эта запись - снапшот создан, но лог еще не очищен до этого индекса
+             */
+            return _log.GetInfoAt(index);
         }
     }
 
@@ -566,7 +467,6 @@ public class FileSystemPersistenceFacade
     {
         // Вся работа будет весить через временный файл снапшота.
         // Для записи в этом файл будет использоваться обертка/фасад
-        var lastLocalIndex = CalculateLogIndex(lastIncludedSnapshotEntry.Index);
         var snapshotTempFile = _snapshot.CreateTempSnapshotFile();
         try
         {
@@ -580,21 +480,17 @@ public class FileSystemPersistenceFacade
             throw;
         }
 
-        return new FileSystemSnapshotInstaller(lastLocalIndex, snapshotTempFile, this);
+        return new FileSystemSnapshotInstaller(snapshotTempFile, this);
     }
 
     private class FileSystemSnapshotInstaller : ISnapshotInstaller
     {
-        private readonly Lsn _lastIncludedLocalIndex;
         private readonly ISnapshotFileWriter _snapshotFileWriter;
         private readonly FileSystemPersistenceFacade _parent;
 
-        public FileSystemSnapshotInstaller(
-            Lsn lastIncludedLocalIndex,
-            ISnapshotFileWriter snapshotFileWriter,
-            FileSystemPersistenceFacade parent)
+        public FileSystemSnapshotInstaller(ISnapshotFileWriter snapshotFileWriter,
+                                           FileSystemPersistenceFacade parent)
         {
-            _lastIncludedLocalIndex = lastIncludedLocalIndex;
             _snapshotFileWriter = snapshotFileWriter;
             _parent = parent;
         }
@@ -609,18 +505,6 @@ public class FileSystemPersistenceFacade
             _parent._logger.Verbose("Сохраняю файл снапшота");
             // 1. Обновляем файл снапшота
             _snapshotFileWriter.Save();
-
-            // 2. Очищаем лог
-            if (_lastIncludedLocalIndex >= 0)
-            {
-                _parent._logger.Verbose("Очищаю лог до индекса {LogIndex}", _lastIncludedLocalIndex);
-                _parent.Log.TruncateUntil(_lastIncludedLocalIndex);
-            }
-            else
-            {
-                _parent._logger.Verbose("Очищаю лог полностью");
-                _parent.Log.Clear();
-            }
         }
 
         public void Discard()
@@ -638,10 +522,11 @@ public class FileSystemPersistenceFacade
     /// <remarks>
     /// Таймер (выборов) не обновляется
     /// </remarks>
+    // TODO: удалить и сделать единый CreateSnapshot вызов - поддерживать меньше
     public void SaveSnapshot(ISnapshot snapshot, LogEntryInfo lastIncludedEntry, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
-        var oldLocalIndex = CalculateLogIndex(lastIncludedEntry.Index);
+
         // 1. Создать временный файл
         var snapshotTempFile = _snapshot.CreateTempSnapshotFile();
 
@@ -686,17 +571,6 @@ public class FileSystemPersistenceFacade
             {
                 snapshotTempFile.Discard();
                 throw;
-            }
-
-            if (oldLocalIndex >= 0)
-            {
-                _logger.Verbose("Очищаю файл лога до индекса {LogIndex}", oldLocalIndex);
-                _log.TruncateUntil(oldLocalIndex);
-            }
-            else
-            {
-                _logger.Verbose("Очищаю файл лога полностью");
-                _log.Clear();
             }
         }
     }
@@ -745,7 +619,29 @@ public class FileSystemPersistenceFacade
     {
         lock (_lock)
         {
-            foreach (var bytes in _log.ReadCommittedData())
+            if (CommitIndex.IsTomb)
+            {
+                yield break;
+            }
+
+            var start = Snapshot.TryGetIncludedIndex(out var s)
+                            ? s + 1
+                            : _log.StartIndex;
+
+            var end = CommitIndex;
+
+            if (end < start)
+            {
+                // Такое может случиться?
+                yield break;
+            }
+
+            if (start < _log.StartIndex)
+            {
+                yield break;
+            }
+
+            foreach (var bytes in _log.ReadDataRange(start, end))
             {
                 yield return bytes;
             }

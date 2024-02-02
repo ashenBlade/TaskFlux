@@ -50,8 +50,8 @@ public class FollowerState<TCommand, TResponse>
             VotedFor == request.CandidateId;
 
         // Отдать свободный голос можем только за кандидата 
-        var logConflicts = Persistence.Conflicts(request.LastLogEntryInfo);
-        if (canVote && !logConflicts)
+        var isUpToDate = Persistence.IsUpToDate(request.LastLogEntryInfo);
+        if (canVote && isUpToDate)
         {
             _logger.Debug(
                 "Получен RequestVote от узла за которого можем проголосовать. Id узла {NodeId}, Терм узла {Term}. Обновляю состояние",
@@ -64,7 +64,7 @@ public class FollowerState<TCommand, TResponse>
 
         if (CurrentTerm < request.CandidateTerm)
         {
-            if (logConflicts)
+            if (!isUpToDate)
             {
                 _logger.Debug(
                     "Терм кандидата больше, но лог конфликтует: обновляю только терм. Кандидат: {CandidateId}. Моя последняя запись: {MyLastEntry}. Его последняя запись: {CandidateLastEntry}",
@@ -124,8 +124,18 @@ public class FollowerState<TCommand, TResponse>
         }
 
         // Дополнительная проверка того, что не выходим за кол-во записей у себя же
-        var commitIndex = Math.Min(request.LeaderCommit, Persistence.LastEntry.Index);
-        Persistence.Commit(commitIndex);
+        if (Persistence.CommitIndex < request.LeaderCommit)
+        {
+            var commitIndex = Math.Min(request.LeaderCommit, Persistence.LastEntry.Index);
+            _logger.Information("Коммичу запись по индексу {CommitIndex}", commitIndex);
+            Persistence.Commit(commitIndex);
+        }
+        else if (request.LeaderCommit < Persistence.CommitIndex)
+        {
+            _logger.Warning(
+                "Лидер передал индекс коммита меньше, чем у меня. Индекс коммита лидера: {LeaderCommitIndex}. Текущий индекс коммита: {CommitIndex}",
+                request.LeaderCommit, Persistence.CommitIndex);
+        }
 
         if (Persistence.ShouldCreateSnapshot())
         {
@@ -136,6 +146,7 @@ public class FollowerState<TCommand, TResponse>
             var deltas = Persistence.ReadCommittedDelta();
             var newSnapshot = ApplicationFactory.CreateSnapshot(oldSnapshot, deltas);
             var lastIncludedEntry = Persistence.GetEntryInfo(Persistence.CommitIndex);
+
             try
             {
                 Persistence.SaveSnapshot(newSnapshot, lastIncludedEntry);

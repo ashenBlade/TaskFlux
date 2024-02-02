@@ -147,7 +147,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
         }
 
-        var logConflicts = Persistence.Conflicts(request.LastLogEntryInfo);
+        var isUpToDate = Persistence.IsUpToDate(request.LastLogEntryInfo);
 
         if (CurrentTerm < request.CandidateTerm)
         {
@@ -156,7 +156,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             if (ConsensusModule.TryUpdateState(followerState, this))
             {
                 ConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
-                return new RequestVoteResponse(CurrentTerm, !logConflicts);
+                return new RequestVoteResponse(CurrentTerm, isUpToDate);
             }
 
             // Уже есть новое состояние - пусть оно ответит
@@ -172,8 +172,8 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         // Отдать свободный голос можем только за кандидата 
         if (canVote
-         &&                // За которого можем проголосовать и
-            !logConflicts) // У которого лог не хуже нашего
+&&                      // За которого можем проголосовать и
+            isUpToDate) // У которого лог не хуже нашего
         {
             var followerState = ConsensusModule.CreateFollowerState();
             if (ConsensusModule.TryUpdateState(followerState, this))

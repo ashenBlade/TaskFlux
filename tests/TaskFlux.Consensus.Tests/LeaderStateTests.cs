@@ -12,6 +12,7 @@ using TaskFlux.Consensus.Tests.Infrastructure;
 using TaskFlux.Consensus.Tests.Stubs;
 using TaskFlux.Core;
 using IApplication = TaskFlux.Consensus.Tests.Infrastructure.IApplication;
+using TaskCompletionSource = System.Threading.Tasks.TaskCompletionSource;
 
 namespace TaskFlux.Consensus.Tests;
 
@@ -53,7 +54,7 @@ public class LeaderStateTests
         var facade = CreateFacade();
         if (logEntries is not null)
         {
-            facade.Log.SetupLogTest(committed: logEntries, uncommitted: Array.Empty<LogEntry>());
+            facade.SetupTest(logEntries);
         }
 
         var factory = new Mock<IApplicationFactory<int, int>>().Apply(m =>
@@ -121,32 +122,150 @@ public class LeaderStateTests
     }
 
     [Fact]
-    public void RequestVote__КогдаТермБольшеНоЛогКонфликтует__НеДолженОтдатьГолос()
+    public void RequestVote__КогдаТермБольшеНоЛогОтстает__НеДолженОтдатьГолос()
     {
         var term = new Term(1);
         var existingLog = new[]
         {
-            IntDataEntry(term), // 0
-            IntDataEntry(term), // 1
-            IntDataEntry(term), // 2
-            IntDataEntry(term), // 3
+            IntLogEntry(term), // 0
+            IntLogEntry(term), // 1
+            IntLogEntry(term), // 2
+            IntLogEntry(term), // 3
         };
 
         using var node = CreateLeaderNode(term, null, logEntries: existingLog);
         var greaterTerm = term.Increment();
+
         // Конфликт на 2 индексе - термы расходятся
-        var request = new RequestVoteRequest(AnotherNodeId, greaterTerm, new LogEntryInfo(greaterTerm, 2));
+        var request = new RequestVoteRequest(AnotherNodeId, greaterTerm, new LogEntryInfo(term, 2));
         var response = node.Handle(request);
 
         response.VoteGranted
                 .Should()
                 .BeFalse("Лог конфликтует - голос не может быть отдан");
+    }
+
+    [Fact]
+    public void RequestVote__КогдаТермБольшеНоЛогОтстает__ДолженОбновитьТерм()
+    {
+        var term = new Term(1);
+        var existingLog = new[]
+        {
+            IntLogEntry(term), // 0
+            IntLogEntry(term), // 1
+            IntLogEntry(term), // 2
+            IntLogEntry(term), // 3
+        };
+
+        using var node = CreateLeaderNode(term, null, logEntries: existingLog);
+        var greaterTerm = term.Increment();
+
+        // Конфликт на 2 индексе - термы расходятся
+        var request = new RequestVoteRequest(AnotherNodeId, greaterTerm, new LogEntryInfo(term, 2));
+        _ = node.Handle(request);
+
         node.CurrentTerm
             .Should()
-            .Be(greaterTerm, "Терм в запросе был больше, надо обновить");
+            .Be(greaterTerm, "терм в запросе был больше");
+    }
+
+    [Fact]
+    public void RequestVote__КогдаТермБольшеНоЛогОтстает__ДолженСтатьПоследователем()
+    {
+        var term = new Term(1);
+        var existingLog = new[]
+        {
+            IntLogEntry(term), // 0
+            IntLogEntry(term), // 1
+            IntLogEntry(term), // 2
+            IntLogEntry(term), // 3
+        };
+
+        using var node = CreateLeaderNode(term, null, logEntries: existingLog);
+        var greaterTerm = term.Increment();
+
+        // Конфликт на 2 индексе - термы расходятся
+        var request = new RequestVoteRequest(AnotherNodeId, greaterTerm, new LogEntryInfo(term, 2));
+        _ = node.Handle(request);
+
         node.CurrentRole
             .Should()
             .Be(NodeRole.Follower, "При получении большего терма нужно стать последователем");
+    }
+
+    [Fact]
+    public void RequestVote__КогдаТермБольшеИЛогБолееАктуальный__ДолженСтатьПоследователем()
+    {
+        var term = new Term(1);
+        var existingLog = new[]
+        {
+            IntLogEntry(term), // 0
+            IntLogEntry(term), // 1
+            IntLogEntry(term), // 2
+            IntLogEntry(term), // 3
+        };
+
+        using var node = CreateLeaderNode(term, null, logEntries: existingLog);
+        var greaterTerm = term.Increment();
+
+        // Добавлена 1 новая запись - после всех моих записей в конце лога с новым термом
+        var request = new RequestVoteRequest(AnotherNodeId, greaterTerm, new LogEntryInfo(greaterTerm, 4));
+        _ = node.Handle(request);
+
+        node.CurrentRole
+            .Should()
+            .Be(NodeRole.Follower, "При получении большего терма нужно стать последователем");
+    }
+
+    [Fact]
+    public void RequestVote__КогдаТермБольшеИЛогБолееАктуальный__ДолженОтдатьГолос()
+    {
+        var term = new Term(1);
+        var existingLog = new[]
+        {
+            IntLogEntry(term), // 0
+            IntLogEntry(term), // 1
+            IntLogEntry(term), // 2
+            IntLogEntry(term), // 3
+        };
+
+        using var node = CreateLeaderNode(term, null, logEntries: existingLog);
+        var greaterTerm = term.Increment();
+
+        // Добавлена 1 новая запись - после всех моих записей в конце лога с новым термом
+        var request = new RequestVoteRequest(AnotherNodeId, greaterTerm, new LogEntryInfo(greaterTerm, 4));
+        var response = node.Handle(request);
+
+        response.VoteGranted
+                .Should()
+                .BeTrue("лог не кофликтует и терм больше");
+    }
+
+    [Fact]
+    public void RequestVote__КогдаТермБольшеИЛогБолееАктуальный__ДолженОбновитьТерм()
+    {
+        var term = new Term(1);
+        var existingLog = new[]
+        {
+            IntLogEntry(term), // 0
+            IntLogEntry(term), // 1
+            IntLogEntry(term), // 2
+            IntLogEntry(term), // 3
+        };
+
+        using var node = CreateLeaderNode(term, null, logEntries: existingLog);
+        var greaterTerm = term.Increment();
+
+        // Добавлена 1 новая запись - после всех моих записей в конце лога с новым термом
+        var request = new RequestVoteRequest(AnotherNodeId, greaterTerm, new LogEntryInfo(greaterTerm, 4));
+        var response = node.Handle(request);
+
+        response.CurrentTerm
+                .Should()
+                .Be(greaterTerm, "терм в ответе должен быть уже обновленным");
+        node.CurrentTerm
+            .Should()
+            .Be(greaterTerm, "терм в запросе больше текущего");
     }
 
     [Theory]
@@ -174,7 +293,7 @@ public class LeaderStateTests
     }
 
     [Fact]
-    public void AppendEntries__СБолееВысокимТермом__ДолженСтатьFollower()
+    public void AppendEntries__КогдаПереданныйТермБольше__ДолженСтатьFollower()
     {
         var term = new Term(1);
         using var node = CreateLeaderNode(term, null);
@@ -191,7 +310,7 @@ public class LeaderStateTests
     }
 
     [Fact]
-    public void ПриОтправкеHeartbeat__КогдаУзелОтветилОтрицательноИЕгоТермБольше__ДолженПерейтиВFollower()
+    public void AppendEntries__КогдаУзелОтветилОтрицательноИЕгоТермБольше__ДолженПерейтиВFollower()
     {
         var term = new Term(1);
         var heartbeatTimer = new Mock<ITimer>().Apply(t =>
@@ -217,7 +336,7 @@ public class LeaderStateTests
     }
 
     [Fact]
-    public void ПриОтправкеHeartbeat__КогдаУзелБылПуст__ДолженСинхронизироватьЛогПриСтарте()
+    public void AppendEntries__КогдаЛогУзлаБылПуст__ДолженСинхронизироватьЛогПриСтарте()
     {
         var term = new Term(4);
         var heartbeatTimer = new Mock<ITimer>().Apply(m =>
@@ -229,7 +348,7 @@ public class LeaderStateTests
         });
 
         // В логе изначально было 4 записи
-        var committed = new[] {IntDataEntry(1), IntDataEntry(1), IntDataEntry(2), IntDataEntry(3),};
+        var committed = new[] {IntLogEntry(1), IntLogEntry(1), IntLogEntry(2), IntLogEntry(3),};
 
         var peer = CreateDefaultPeer();
 
@@ -260,19 +379,19 @@ public class LeaderStateTests
             jobQueue: queue);
 
         // Выставляем изначальный лог в 4 команды
-        node.Persistence.Log.SetupLogTest(committed, uncommitted: Array.Empty<LogEntry>());
+        node.Persistence.Log.SetupLogTest(committed);
 
         heartbeatTimer.Raise(x => x.Timeout += null);
 
         beginReached.Should()
                     .BeTrue("Окончание репликации должно быть закончено, когда достигнуто начало лога");
         sentEntries.Should()
-                   .BeEquivalentTo(committed, options => options.Using(LogEntryComparer),
+                   .BeEquivalentTo(committed, options => options.Using(Comparer),
                         "Отправленные записи должны полностью соответствовать логу");
     }
 
     [Fact]
-    public void ПриОтправкеHeartbeat__КогдаУзелБылНеПолностьюПуст__ДолженСинхронизироватьЛог()
+    public void AppendEntries__НаСтартеПриложенияКогдаУзел1ИБылНеПолностьюПуст__ДолженСинхронизироватьЛог()
     {
         var term = new Term(4);
         var heartbeatTimer = new Mock<ITimer>().Apply(m =>
@@ -284,11 +403,17 @@ public class LeaderStateTests
         });
 
         // В логе изначально было 4 записи
-        var existingFileEntries = new[] {IntDataEntry(1), IntDataEntry(1), IntDataEntry(2), IntDataEntry(3),};
+        var existingLogEntries = new[]
+        {
+            IntLogEntry(1), // 0
+            IntLogEntry(1), // 1
+            IntLogEntry(2), // 2
+            IntLogEntry(3), // 3
+        };
         // В логе узла есть все записи до 2 (индекс = 1)
         var storedEntriesIndex = 1;
 
-        var expectedSent = existingFileEntries
+        var expectedSent = existingLogEntries
                           .Skip(storedEntriesIndex + 1)
                           .ToArray();
 
@@ -298,8 +423,7 @@ public class LeaderStateTests
         var beginReached = false;
         // Отправленные записи при достижении
         var sentEntries = Array.Empty<LogEntry>();
-        peer.Setup(x =>
-                 x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
+        peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
             .Returns((AppendEntriesRequest request, CancellationToken _) =>
              {
                  // Откатываемся до момента начала лога (полностью пуст)
@@ -319,83 +443,221 @@ public class LeaderStateTests
              });
         using var queue = new TaskBackgroundJobQueue();
         using var node = CreateLeaderNode(term, null,
-            heartbeatTimer: heartbeatTimer.Object, peers: new[] {peer.Object},
-            logEntries: existingFileEntries, jobQueue: queue);
+            heartbeatTimer: heartbeatTimer.Object,
+            peers: new[] {peer.Object},
+            logEntries: existingLogEntries,
+            jobQueue: queue);
 
         heartbeatTimer.Raise(x => x.Timeout += null);
 
         beginReached.Should()
                     .BeTrue("Окончание репликации должно быть закончено, когда достигнуто начало лога");
         sentEntries.Should()
-                   .BeEquivalentTo(expectedSent, options => options.Using(LogEntryComparer),
+                   .BeEquivalentTo(expectedSent, options => options.Using(Comparer),
                         "Отправленные записи должны полностью соответствовать логу");
     }
 
-    private static LogEntry IntDataEntry(Term term)
+    [Fact]
+    public void ПриСтарте__КогдаЕстьДругойУзелКластераИОнПуст__ДолженСинхронизироватьЛогУзла()
+    {
+        var term = new Term(4);
+        var heartbeatTimer = new Mock<ITimer>().Apply(m =>
+        {
+            m.Setup(x => x.Schedule())
+             .Verifiable();
+            m.Setup(x => x.Stop())
+             .Verifiable();
+        });
+
+        // В логе изначально было 4 записи
+        var existingLogEntries = new[]
+        {
+            IntLogEntry(1), // 0
+            IntLogEntry(1), // 1
+            IntLogEntry(2), // 2
+            IntLogEntry(3), // 3
+        };
+        // В логе узла есть все записи до 2 (индекс = 1)
+        var storedEntriesIndex = -1;
+
+        var expectedSent = existingLogEntries;
+
+        var peer = CreateDefaultPeer();
+
+        // Достигнуто ли начало лога
+        var beginReached = false;
+        // Отправленные записи при достижении
+        var sentEntries = Array.Empty<LogEntry>();
+        peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((AppendEntriesRequest request, CancellationToken _) =>
+             {
+                 // Откатываемся до момента начала лога (полностью пуст)
+                 if (request.PrevLogEntryInfo.Index == storedEntriesIndex)
+                 {
+                     if (beginReached)
+                     {
+                         throw new InvalidOperationException("Уже был отправлен запрос с требуемым логом");
+                     }
+
+                     beginReached = true;
+                     sentEntries = request.Entries.ToArray();
+                     return AppendEntriesResponse.Ok(request.Term);
+                 }
+
+                 // Откатываемся до момента, пока не получим -1 (самое начало лога)
+                 return AppendEntriesResponse.Fail(request.Term);
+             });
+        using var queue = new TaskBackgroundJobQueue();
+        using var node = CreateLeaderNode(term, null,
+            heartbeatTimer: heartbeatTimer.Object,
+            peers: new[] {peer.Object},
+            logEntries: existingLogEntries,
+            jobQueue: queue);
+
+        heartbeatTimer.Raise(x => x.Timeout += null);
+
+        beginReached.Should()
+                    .BeTrue("Окончание репликации должно быть закончено, когда достигнуто начало лога");
+        sentEntries.Should()
+                   .BeEquivalentTo(expectedSent, options => options.Using(Comparer),
+                        "Отправленные записи должны полностью соответствовать логу");
+    }
+
+    [Fact(Timeout = 1000 * 5)]
+    public async Task
+        ПриСтарте__КогдаЕстьКластерИз3УзловИЧастьУзловНеДоКонцаРеплицирована__ДолженСинхронизироватьЛогиУзлов()
+    {
+        var term = new Term(4);
+        var heartbeatTimer = new Mock<ITimer>().Apply(m =>
+        {
+            m.Setup(x => x.Schedule())
+             .Verifiable();
+            m.Setup(x => x.Stop())
+             .Verifiable();
+        });
+
+        // В логе изначально было 4 записи
+        var existingLogEntries = new[]
+        {
+            IntLogEntry(1), // 0
+            IntLogEntry(1), // 1
+            IntLogEntry(2), // 2
+            IntLogEntry(3), // 3
+            IntLogEntry(4), // 4
+            IntLogEntry(4), // 5
+        };
+
+        // Лог первого узла полностью пуст
+        var (first, firstTcs) = CreateStubPeer(-1, existingLogEntries);
+        // Второй узел реплицирован до 2 индекса включительно
+        var (second, secondTcs) = CreateStubPeer(2, existingLogEntries.Skip(3));
+
+        using var queue = new TaskBackgroundJobQueue();
+        using var node = CreateLeaderNode(term, null,
+            heartbeatTimer: heartbeatTimer.Object,
+            peers: new[] {first.Object, second.Object},
+            logEntries: existingLogEntries,
+            jobQueue: queue);
+
+        heartbeatTimer.Raise(x => x.Timeout += null);
+
+        await Task.WhenAll(firstTcs.Task, secondTcs.Task);
+
+        return;
+
+        static (Mock<IPeer> Peer, TaskCompletionSource ReplicationEndTcs) CreateStubPeer(
+            int logStartIndex,
+            IEnumerable<LogEntry> expectedEntries)
+        {
+            var completed = false;
+            var peer = CreateDefaultPeer();
+            var nodeCompletionTcs = new TaskCompletionSource();
+            peer.Setup(x => x.SendAppendEntries(It.IsAny<AppendEntriesRequest>(), It.IsAny<CancellationToken>()))
+                .Returns((AppendEntriesRequest request, CancellationToken _) =>
+                 {
+                     // Откатываемся до момента начала лога (полностью пуст)
+                     if (request.PrevLogEntryInfo.Index == logStartIndex)
+                     {
+                         if (completed)
+                         {
+                             throw new InvalidOperationException("Уже был отправлен запрос с требуемым логом");
+                         }
+
+                         completed = true;
+                         var sentEntries = request.Entries.ToArray();
+                         if (!sentEntries.SequenceEqual(expectedEntries, Comparer))
+                         {
+                             nodeCompletionTcs.TrySetException(
+                                 new InvalidDataException("Отправленные записи не равны ожидаемым"));
+                         }
+                         else
+                         {
+                             nodeCompletionTcs.TrySetResult();
+                         }
+
+                         return AppendEntriesResponse.Ok(request.Term);
+                     }
+
+                     // Откатываемся до момента, пока не получим -1 (самое начало лога)
+                     return AppendEntriesResponse.Fail(request.Term);
+                 });
+            return ( peer, nodeCompletionTcs );
+        }
+    }
+
+    private static LogEntry IntLogEntry(Term term)
     {
         var data = new byte[Random.Shared.Next(0, 128)];
         Random.Shared.NextBytes(data);
         return new LogEntry(term, data);
     }
 
-    private static LogEntry IntDataEntry(int term) => IntDataEntry(new Term(term));
-
     [Fact]
-    public void AppendEntries__КогдаТермБольше__ДолженДобавитьЗаписиВЛог()
+    public void AppendEntries__КогдаЛогБылПустИТермБольше__ДолженДобавитьЗаписиВЛог()
     {
         var term = new Term(3);
         using var node = CreateLeaderNode(term, null);
         var expectedTerm = term.Increment();
-        var entries = new[] {IntDataEntry(1), IntDataEntry(2), IntDataEntry(2), IntDataEntry(3),};
-        var request = new AppendEntriesRequest(expectedTerm, LogEntryInfo.Tomb.Index, AnotherNodeId, LogEntryInfo.Tomb,
-            entries);
+        var requestEntries = new[] {IntLogEntry(1), IntLogEntry(2), IntLogEntry(2), IntLogEntry(3),};
+        var request =
+            new AppendEntriesRequest(expectedTerm, Lsn.Tomb, AnotherNodeId, LogEntryInfo.Tomb, requestEntries);
         var response = node.Handle(request);
 
         Assert.True(response.Success);
         Assert.Equal(expectedTerm, node.CurrentTerm);
-
-        var actualEntries = node.Persistence.Log.GetUncommittedTest();
-        Assert.Equal(entries, actualEntries, LogEntryComparer);
+        Assert.Equal(requestEntries, node.Persistence.Log.ReadAllTest(), Comparer);
     }
 
-    private static readonly LogEntryEqualityComparer LogEntryComparer = LogEntryEqualityComparer.Instance;
-
-    private static LogEntry IntLogEntry(Term term)
-    {
-        var buffer = new byte[4];
-        Random.Shared.NextBytes(buffer);
-        return new LogEntry(term, buffer);
-    }
+    private static readonly LogEntryEqualityComparer Comparer = LogEntryEqualityComparer.Instance;
 
     [Theory]
-    [InlineData(1, 0)]
-    [InlineData(2, 0)]
-    [InlineData(5, 0)]
-    [InlineData(5, 1)]
-    [InlineData(5, 2)]
-    [InlineData(5, 3)]
-    [InlineData(5, 4)]
-    public void AppendEntries__КогдаТермБольше__ДолженЗакоммититьЗаписи(int uncommittedCount, int commitIndex)
+    [InlineData(0, 1)]
+    [InlineData(0, 2)]
+    [InlineData(0, 5)]
+    [InlineData(1, 5)]
+    [InlineData(1, 10000)]
+    [InlineData(-1, 0)]
+    [InlineData(-1, 123)]
+    public void AppendEntries__КогдаИндексКоммитаБольше__ДолженОбновитьИндексКоммита(
+        int oldCommitIndex,
+        int newCommitIndex)
     {
         var term = new Term(3);
         var expectedTerm = term.Increment();
-        var uncommitted = Enumerable.Range(1, uncommittedCount)
-                                    .Select(i => IntLogEntry(i))
-                                    .ToArray();
-        var (expectedCommitted, expectedUncommitted) = uncommitted.Split(commitIndex);
+        var logEntries = Enumerable.Range(1, newCommitIndex + 1) // Размер лога ровно сколько нужно будет закоммитить
+                                   .Select(i => IntLogEntry(i))
+                                   .ToArray();
         using var node = CreateLeaderNode(term, null);
-        node.Persistence.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted);
-        var request = new AppendEntriesRequest(expectedTerm, commitIndex, AnotherNodeId, LogEntryInfo.Tomb,
-            Array.Empty<LogEntry>());
+        node.Persistence.SetupTest(logEntries: logEntries,
+            commitIndex: oldCommitIndex);
 
+        var request = new AppendEntriesRequest(expectedTerm, newCommitIndex, AnotherNodeId, LogEntryInfo.Tomb,
+            Array.Empty<LogEntry>());
         var response = node.Handle(request);
 
         Assert.True(response.Success);
         Assert.Equal(expectedTerm, response.Term);
-        var actualCommitted = node.Persistence.Log.GetCommittedTest();
-        Assert.Equal(expectedCommitted, actualCommitted, LogEntryComparer);
-        var actualUncommitted = node.Persistence.Log.GetUncommittedTest();
-        Assert.Equal(expectedUncommitted, actualUncommitted, LogEntryComparer);
+        Assert.Equal(newCommitIndex, node.Persistence.CommitIndex);
     }
 
     [Fact]
@@ -414,7 +676,7 @@ public class LeaderStateTests
         var response = node.Handle(request);
 
         Assert.Equal(expectedResponse, response.Response);
-        var committedEntry = node.Persistence.Log.GetCommittedTest().Single();
+        var committedEntry = node.Persistence.Log.GetAllEntriesTest().Single();
         AssertCommandEqual(committedEntry, expectedResponse);
         mock.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }
@@ -448,7 +710,7 @@ public class LeaderStateTests
         var response = node.Handle(command);
 
         Assert.Equal(expectedResponse, response.Response);
-        var committedEntry = node.Persistence.Log.GetCommittedTest().Single();
+        var committedEntry = node.Persistence.Log.GetAllEntriesTest().Single();
         AssertCommandEqual(committedEntry, expectedResponse);
         machine.Verify(x => x.Apply(It.Is<int>(y => y == command)), Times.Once());
     }

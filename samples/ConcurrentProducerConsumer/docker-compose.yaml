@@ -9,7 +9,6 @@ services:
       - '8080:2602'
     environment:
       TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000 tflux.1:5000 tflux.2:5000'
-      #      TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000'
       TASKFLUX_CLUSTER_NODE_ID: 0
       TASKFLUX_CLUSTER_LISTEN_PORT: 5000
       TASKFLUX_CLUSTER_LISTEN_HOST: tflux.0

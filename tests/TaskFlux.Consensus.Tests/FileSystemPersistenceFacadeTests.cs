@@ -18,7 +18,6 @@ namespace TaskFlux.Consensus.Tests;
 public class FileSystemPersistenceFacadeTests : IDisposable
 {
     private static LogEntry EmptyEntry(int term) => new(new Term(term), Array.Empty<byte>());
-    private static readonly LogEntryInfoEqualityComparer InfoComparer = new();
 
     private record MockDataFileSystem(
         IFileInfo LogFile,
@@ -80,34 +79,26 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     public void Append__СПустымЛогом__НеДолженКоммититьЗапись()
     {
         var (facade, _) = CreateFacade();
+        var oldCommitIndex = facade.CommitIndex;
         var entry = new LogEntry(new Term(2), Array.Empty<byte>());
 
         facade.Append(entry);
 
-        var actual = facade.Log.GetUncommittedTest().Single();
-        Assert.Equal(entry, actual, Comparer);
+        var actualCommitIndex = facade.CommitIndex;
+        Assert.Equal(oldCommitIndex, actualCommitIndex);
     }
 
-    [Theory]
-    [InlineData(0, 0)]
-    [InlineData(1, 0)]
-    [InlineData(0, 1)]
-    [InlineData(2, 2)]
-    [InlineData(3, 0)]
-    [InlineData(0, 3)]
-    [InlineData(3, 3)]
-    [InlineData(5, 5)]
-    public void Append__КогдаЕстьСнапшот__ДолженВернутьПравильныйНовыйИндекс(int committedCount, int uncommittedCount)
+    [Fact]
+    public void Append__КогдаЕстьСнапшот__ДолженВернутьПравильныйНовыйИндекс()
     {
         var (facade, _) = CreateFacade();
-        var lastSnapshotIndex = 10;
-        facade.Snapshot.SetupSnapshotTest(new Term(2), lastSnapshotIndex,
-            new StubSnapshot(Array.Empty<byte>()));
-        facade.Log.SetupLogTest(
-            committed: Enumerable.Range(0, committedCount).Select(_ => RandomDataEntry(2)).ToArray(),
-            uncommitted: Enumerable.Range(0, uncommittedCount).Select(_ => RandomDataEntry(2)).ToArray());
-
-        var expected = new Lsn(lastSnapshotIndex + committedCount + uncommittedCount + 1);
+        const int lastSnapshotIndex = 10;
+        const int logSize = 20;
+        facade.SetupTest(logEntries: Enumerable.Range(0, logSize)
+                                               .Select(_ => RandomDataEntry(2))
+                                               .ToArray(),
+            snapshotData: ( new Term(2), lastSnapshotIndex, new StubSnapshot(Array.Empty<byte>()) ));
+        var expected = new Lsn(logSize);
 
         var actual = facade.Append(new LogEntry(new Term(2), Array.Empty<byte>()));
 
@@ -115,14 +106,15 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     }
 
     [Fact]
-    public void Append__КогдаЛогПуст__ДолженДобавитьЗаписьКакНеЗакоммиченную()
+    public void Append__КогдаЛогПустИНичегоНеЗакоммичено__ДолженНеДолженКоммититьЗапись()
     {
         var (facade, _) = CreateFacade();
         var entry = new LogEntry(2, Array.Empty<byte>());
+        var expectedCommitIndex = Lsn.Tomb;
 
         facade.Append(entry);
 
-        Assert.Single(facade.Log.ReadAllTest());
+        Assert.Equal(expectedCommitIndex, facade.CommitIndex);
     }
 
     [Fact]
@@ -140,40 +132,60 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     }
 
     [Fact]
-    public void Append__КогдаЕстьНезакоммиченныеЭлементы__ДолженВернутьПравильныйИндекс()
+    public void Append__КогдаЕстьНезакоммиченныеЭлементыИНетСнапшота__ДолженВернутьПравильныйИндекс()
     {
         var (facade, _) = CreateFacade(2);
-        var uncommitted = new List<LogEntry>()
+        var logEntries = new List<LogEntry>()
         {
-            new(new Term(1), new byte[] {1, 2, 3}), // 0 
-            new(new Term(2), new byte[] {4, 5, 6}), // 1
+            Entry(1, "asdf"),    // 0
+            Entry(2, "argdnnn"), // 1
         };
-        facade.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted);
-        var entry = new LogEntry(new Term(3), new byte[] {7, 8, 9});
+        facade.Log.SetupLogTest(logEntries);
+        facade.SetCommitTest(0);
         var expected = new Lsn(2);
+        var toAppend = Entry(3, "hhhhhhh");
 
-        var actual = facade.Append(entry);
+        var actual = facade.Append(toAppend);
 
         Assert.Equal(expected, actual);
         Assert.Equal(expected, facade.LastEntry.Index);
     }
 
-    private static LogEntry Entry(long term, params byte[] data) => new LogEntry(new Term(term), data);
+    [Fact]
+    public void Append__КогдаЕстьНезакоммиченныеЭлементыИНетСнапшота__ДолженОбновитьИнформациюОПоследнемЭлементе()
+    {
+        var (facade, _) = CreateFacade(2);
+        var logEntries = new List<LogEntry>()
+        {
+            Entry(1, "asdf"),    // 0
+            Entry(2, "argdnnn"), // 1
+        };
+        facade.SetupTest(logEntries);
+        facade.SetCommitTest(0);
+        var expected = new LogEntryInfo(3, 2);
+        var toAppend = Entry(3, "hhhhhhh");
+
+        facade.Append(toAppend);
+
+        Assert.Equal(expected, facade.LastEntry);
+    }
+
+    private static LogEntry Entry(long term, params byte[] data) => new(term, data);
 
     private static LogEntry Entry(long term, string data = "") =>
         new(new Term(term), Encoding.UTF8.GetBytes(data));
 
     [Fact]
-    public void Append__КогдаВЛогНеПустойИНетСнапшота__ДолженВернутьЗаписьСПравильнымИндексом()
+    public void Append__КогдаЛогНеПустойИНетСнапшота__ДолженВернутьЗаписьСПравильнымИндексом()
     {
         var (facade, _) = CreateFacade(2);
-        facade.Log.SetupLogTest(committed: new[]
-            {
-                Entry(1, 99, 76, 33), // 0
-                Entry(1, 9),          // 1
-                Entry(2, 94, 22, 48)  // 2
-            },
-            uncommitted: Array.Empty<LogEntry>());
+        facade.Log.SetupLogTest(entries: new[]
+        {
+            Entry(1, 99, 76, 33), // 0
+            Entry(1, 9),          // 1
+            Entry(2, 94, 22, 48)  // 2
+        });
+
         // Должен вернуть индекс 3
         var entry = Entry(2, "data");
         var expected = new Lsn(3);
@@ -184,21 +196,14 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     }
 
     [Fact]
-    public void Append__КогдаВЛогНеПустИСнапшотЕсть__ДолженВернутьЗаписьСПравильнымИндексом()
+    public void Append__КогдаЛогНеПустИСнапшотЕсть__ДолженВернутьЗаписьСПравильнымИндексом()
     {
         var (facade, _) = CreateFacade(2);
-        facade.Snapshot
-              .SetupSnapshotTest(1, 10, new StubSnapshot(Array.Empty<byte>()));
-        facade.Log.SetupLogTest(committed: new[]
-            {
-                Entry(1, 99, 76, 33), // 11
-                Entry(1, 9),          // 12
-                Entry(2, 94, 22, 48)  // 13
-            },
-            uncommitted: Array.Empty<LogEntry>());
-        // Должен вернуть индекс 14
+        const int logSize = 30;
+        facade.SetupTest(logEntries: Enumerable.Range(0, logSize).Select(i => Entry(1, i.ToString())).ToArray(),
+            snapshotData: ( 1, 10, new StubSnapshot(Array.Empty<byte>()) ));
         var entry = Entry(2, "data");
-        var expected = new Lsn(14);
+        var expected = new Lsn(logSize);
 
         var actual = facade.Append(entry);
 
@@ -210,17 +215,14 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Append__КогдаВЛогеЕстьЗакоммиченныеИНеЗакоммиченныеЗаписи__ДолженВернутьПравильныйИндексДобавленнойЗаписи()
     {
         var (facade, _) = CreateFacade(3);
-        facade.Log.SetupLogTest(committed: new[]
-            {
-                Entry(1, "adfasfas"),   // 0
-                Entry(2, "aaaa"),       // 1
-                Entry(2, "aegqer89987") // 2
-            },
-            uncommitted: new List<LogEntry>()
-            {
-                Entry(3, "asdf"), // 3
-            });
-
+        facade.Log.SetupLogTest(entries: new[]
+        {
+            Entry(1, "adfasfas"),    // 0
+            Entry(2, "aaaa"),        // 1
+            Entry(2, "aegqer89987"), // 2
+            Entry(3, "asdf"),        // 3 - не закоммичен
+        });
+        facade.SetCommitTest(2);
         var entry = Entry(4, "data");
         var expected = new Lsn(4);
 
@@ -229,67 +231,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Assert.Equal(expected, actual);
     }
 
-    [Fact]
-    public void LastEntry__КогдаНетСнапшотаИЛогПуст__ДолженВернутьTomb()
-    {
-        var (facade, _) = CreateFacade();
-        var expected = LogEntryInfo.Tomb;
-
-        var actual = facade.LastEntry;
-
-        Assert.Equal(expected, actual, InfoComparer);
-    }
-
-    [Fact]
-    public void LastEntry__КогдаНетСнапшотаИЕстьЗаписиВЛоге__ДолженВернутьЗначениеИзЛога()
-    {
-        var (facade, _) = CreateFacade();
-        var committed = new[]
-        {
-            Entry(1, "hello"), // 0
-            Entry(2, "world"), // 1
-        };
-        facade.Log.SetupLogTest(committed, Array.Empty<LogEntry>());
-        var expected = new LogEntryInfo(new Term(2), 1);
-
-        var actual = facade.LastEntry;
-
-        Assert.Equal(expected, actual, InfoComparer);
-    }
-
-    [Fact]
-    public void LastEntry__КогдаЕстьСнапшотИЛогПуст__ДолженВернутьЗначениеИзСнапшота()
-    {
-        var (facade, _) = CreateFacade();
-        var expected = new LogEntryInfo(new Term(123), 9999);
-        facade.Snapshot.SetupSnapshotTest(expected.Term, expected.Index, new StubSnapshot(Array.Empty<byte>()));
-
-        var actual = facade.LastEntry;
-
-        Assert.Equal(expected, actual, InfoComparer);
-    }
-
-    [Fact]
-    public void LastEntry__КогдаЕстьСнапшотИЛогНеПуст__ДолженВернутьЗначениеСКорректнымГлобальнымИндексом()
-    {
-        var (facade, _) = CreateFacade();
-        facade.Snapshot.SetupSnapshotTest(new Term(10), 123, new StubSnapshot(Array.Empty<byte>()));
-        facade.Log.SetupLogTest(committed: new[]
-            {
-                Entry(11, "first"),  // 124
-                Entry(12, "second"), // 125
-            },
-            uncommitted: new[]
-            {
-                Entry(13, "asdfasdfasdfasdf") // 126
-            });
-        var expected = new LogEntryInfo(new Term(13), 126);
-
-        var actual = facade.LastEntry;
-
-        Assert.Equal(expected, actual, InfoComparer);
-    }
-
+    // TODO: тесты на то, что LastEntry обновляется
     private static LogEntry RandomDataEntry(Term term)
     {
         var buffer = new byte[Random.Shared.Next(0, 32)];
@@ -323,64 +265,54 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     [InlineData(1, 0)]
     [InlineData(2, 0)]
     [InlineData(2, 1)]
-    [InlineData(5, 2)]
-    [InlineData(5, 0)]
-    [InlineData(5, 4)]
-    [InlineData(10, 0)]
-    [InlineData(10, 5)]
-    [InlineData(10, 9)]
-    public void Commit__КогдаСнапшотаНет__ДолженЗакоммититьЗаписиПоУказанномуИндексу(
-        int uncommittedCount,
+    [InlineData(3, 1)]
+    [InlineData(10, 6)]
+    [InlineData(1230, 1229)]
+    public void Commit__КогдаНичегоНеБылоЗакоммичено__ДолженОбновитьИндексКоммита(
+        int logSize,
         int commitIndex)
     {
-        var (facade, _) = CreateFacade(uncommittedCount);
-        var uncommitted = Enumerable.Range(1, uncommittedCount)
-                                    .Select(RandomDataEntry)
-                                    .ToList();
-
-        var (expectedCommitted, expectedUncommitted) = Split(uncommitted, commitIndex);
-        facade.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted);
+        var logEntries = Enumerable.Range(1, logSize)
+                                   .Select(_ => Entry(1, "hello"))
+                                   .ToArray();
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(logEntries);
 
         facade.Commit(commitIndex);
 
-        Assert.Equal(expectedUncommitted, facade.Log.GetUncommittedTest(), Comparer);
-        Assert.Equal(expectedCommitted, facade.Log.GetCommittedTest(), Comparer);
         Assert.Equal(commitIndex, facade.CommitIndex);
     }
 
     [Theory]
-    [InlineData(0, 10, 1)]
-    [InlineData(0, 10, 5)]
-    [InlineData(0, 10, 10)]
-    [InlineData(10, 5, 11)]
-    [InlineData(10, 5, 15)]
-    public void Commit__КогдаСнапшотЕсть__ДолженЗакоммититьЗаписиПоУказанномуИндексу(
-        long snapshotIndex,
-        int uncommittedCount,
-        long commitIndex)
+    [InlineData(2, 0, 1)]
+    [InlineData(3, 0, 2)]
+    [InlineData(3, 0, 1)]
+    [InlineData(10, 6, 9)]
+    [InlineData(1230, 0, 1229)]
+    public void Commit__КогдаЧастьЗаписейЗакоммичена__ДолженОбновитьИндексКоммита(
+        int logSize,
+        int oldCommitIndex,
+        int commitIndex)
     {
-        var (facade, _) = CreateFacade(uncommittedCount);
-        var uncommitted = Enumerable.Range(1, uncommittedCount)
-                                    .Select(i => Entry(i, i.ToString()))
-                                    .ToList();
-
-        var (expectedCommitted, expectedUncommitted) = Split(uncommitted, ( int ) ( commitIndex - snapshotIndex - 1 ));
-        facade.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted);
-        facade.Snapshot.SetupSnapshotTest(new Term(10), snapshotIndex, new StubSnapshot(Array.Empty<byte>()));
+        var logEntries = Enumerable.Range(1, logSize)
+                                   .Select(_ => Entry(1, "hello"))
+                                   .ToArray();
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(logEntries);
+        facade.SetCommitTest(oldCommitIndex);
 
         facade.Commit(commitIndex);
 
-        Assert.Equal(expectedUncommitted, facade.Log.GetUncommittedTest(), Comparer);
-        Assert.Equal(expectedCommitted, facade.Log.GetCommittedTest(), Comparer);
-        Assert.Equal(new Lsn(commitIndex), facade.CommitIndex);
+        Assert.Equal(commitIndex, facade.CommitIndex);
     }
 
     [Fact]
-    public void TryGetFrom__КогдаЗаписиВПамяти__ДолженВернутьТребуемыеЗаписи()
+    public void TryGetFrom__КогдаИндексРавенПервомуВЛоге__ДолженВернутьТребуемыеЗаписи()
     {
         var (facade, _) = CreateFacade(5);
+
         // 4 записи в буфере с указанными индексами
-        var uncommitted = new[]
+        var logEntries = new[]
         {
             RandomDataEntry(1), // 0
             RandomDataEntry(2), // 1
@@ -388,10 +320,9 @@ public class FileSystemPersistenceFacadeTests : IDisposable
             RandomDataEntry(4), // 3
         };
 
-        facade.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted);
-
+        facade.SetupTest(logEntries);
         var index = 2;
-        var expected = uncommitted[index..];
+        var expected = logEntries[index..];
 
         var success = facade.TryGetFrom(index, out var actual);
 
@@ -400,30 +331,23 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     }
 
     [Theory]
-    [InlineData(10, 5, 4)] // Часть в файле, часть в памяти
-    [InlineData(10, 5, 6)] // Все из памяти
-    [InlineData(5, 1, 2)]
-    [InlineData(1, 0, 0)]  // Все записи в файле
-    [InlineData(2, 0, 0)]  // Одна в файле, одна в памяти, нужны все
-    [InlineData(2, 0, 1)]  // Одна в файле, одна в памяти, нужна только из памяти
-    [InlineData(5, 1, 4)]  // Только последняя из памяти
-    [InlineData(10, 9, 9)] // Все в файле, только 1 запись нужна
-    [InlineData(10, 9, 0)] // Все в файле, все записи нужны
-    [InlineData(10, 9, 5)] // Все в файле, читаем с середины
-    public void TryGetFrom__КогдаЧастьЗаписейВБуфереЧастьВФайле__ДолженВернутьТребуемыеЗаписи(
+    [InlineData(1, 0)]
+    [InlineData(2, 0)]
+    [InlineData(10, 0)]
+    [InlineData(10, 3)]
+    [InlineData(10, 4)]
+    [InlineData(10, 9)]
+    [InlineData(20, 4)]
+    public void TryGetFrom__КогдаИндексВнутриЛога__ДолженВернутьТребуемыеЗаписи(
         int entriesCount,
-        long logEndIndex,
         long index)
     {
         var entries = Enumerable.Range(1, entriesCount)
                                 .Select(RandomDataEntry)
                                 .ToArray();
-        var (committed, uncommitted) = Split(entries, ( int ) logEndIndex);
         var (facade, _) = CreateFacade(entriesCount);
+        facade.SetupTest(entries);
 
-        facade.Log.SetupLogTest(committed, uncommitted);
-
-        // Глобальный и локальный индексы совпадают, если снапшота еще нет
         var expected = entries[( int ) index..];
 
         var success = facade.TryGetFrom(index, out var actual);
@@ -433,105 +357,23 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     }
 
     [Theory]
-    [InlineData(10, 10)] // Последняя запись
-    [InlineData(2, 2)]
-    [InlineData(1, 1)]
-    [InlineData(10, 1)] // Первая запись
-    [InlineData(5, 1)]
-    [InlineData(10, 9)] // Предпоследняя запись
-    [InlineData(2, 1)]
-    [InlineData(5, 4)]
-    [InlineData(10, 5)] // Запись где-то в середине
-    [InlineData(5, 3)]
-    public void GetPrecedingEntryInfo__КогдаЗаписиВБуфере__ДолженВернутьТребуемуюЗапись(int bufferSize, int entryIndex)
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(10)]
+    [InlineData(50)]
+    public void TryGetFrom__КогдаИндексСледующийПослеПоследнего__ДолженВернутьПустойМассив(
+        int entriesCount)
     {
-        var (facade, _) = CreateFacade(bufferSize + 1);
-        var uncommitted = Enumerable.Range(1, bufferSize)
-                                    .Select(RandomDataEntry)
-                                    .ToArray();
-        facade.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted);
-        var expected = GetExpected();
-
-        var actual = facade.GetPrecedingEntryInfo(entryIndex);
-
-        Assert.Equal(expected, actual);
-
-        LogEntryInfo GetExpected()
-        {
-            var e = uncommitted[entryIndex - 1];
-            return new LogEntryInfo(e.Term, entryIndex - 1);
-        }
-    }
-
-    [Theory]
-    [InlineData(10, 10)] // Последняя запись
-    [InlineData(2, 2)]
-    [InlineData(1, 1)]
-    [InlineData(10, 1)] // Первая запись
-    [InlineData(5, 1)]
-    [InlineData(10, 9)] // Предпоследняя запись
-    [InlineData(2, 1)]
-    [InlineData(5, 4)]
-    [InlineData(10, 5)] // Запись где-то в середине
-    [InlineData(5, 3)]
-    public void GetPrecedingEntryInfo__КогдаВсеЗаписиВХранилище__ДолженВернутьТребуемуюЗапись(
-        int logSize,
-        int entryIndex)
-    {
-        var (facade, _) = CreateFacade(logSize + 1);
-        var entries = Enumerable.Range(1, logSize)
-                                .Select(RandomDataEntry)
-                                .ToArray();
-
-        facade.Log.AppendRange(entries);
-        var expected = GetExpected();
-
-        var actual = facade.GetPrecedingEntryInfo(entryIndex);
-
-        Assert.Equal(expected, actual);
-
-        LogEntryInfo GetExpected()
-        {
-            var e = entries[entryIndex - 1];
-            return new LogEntryInfo(e.Term, entryIndex - 1);
-        }
-    }
-
-    [Theory]
-    [InlineData(10, 5, 10)]
-    [InlineData(10, 5, 5)]
-    [InlineData(10, 5, 4)]
-    [InlineData(10, 5, 1)]
-    [InlineData(2, 0, 2)]
-    [InlineData(2, 0, 1)]
-    [InlineData(5, 3, 3)]
-    [InlineData(5, 3, 2)]
-    [InlineData(5, 3, 5)]
-    [InlineData(5, 3, 1)]
-    public void GetPrecedingEntryInfo__КогдаЗаписиВФайлеИБуфере__ДолженВернутьТребуемуюЗапись(
-        int entriesCount,
-        int logEndIndex,
-        int entryIndex)
-    {
-        var (facade, _) = CreateFacade(entriesCount + 1);
         var entries = Enumerable.Range(1, entriesCount)
                                 .Select(RandomDataEntry)
                                 .ToArray();
-        var (committed, uncommitted) = Split(entries, logEndIndex);
+        var (facade, _) = CreateFacade(entriesCount);
+        facade.SetupTest(entries);
 
-        facade.Log.SetupLogTest(committed, uncommitted);
+        var success = facade.TryGetFrom(entriesCount, out var actual);
 
-        var expected = GetExpected();
-
-        var actual = facade.GetPrecedingEntryInfo(entryIndex);
-
-        Assert.Equal(expected, actual);
-
-        LogEntryInfo GetExpected()
-        {
-            var e = entries[entryIndex - 1];
-            return new LogEntryInfo(e.Term, entryIndex - 1);
-        }
+        Assert.True(success);
+        Assert.Empty(actual);
     }
 
     [Theory]
@@ -548,29 +390,66 @@ public class FileSystemPersistenceFacadeTests : IDisposable
 
         facade.InsertRange(entries, 0);
 
-        Assert.Equal(entries, facade.Log.GetUncommittedTest(), Comparer);
+        var actual = facade.Log.GetAllEntriesTest();
+        Assert.Equal(entries, actual, Comparer);
     }
 
     [Theory]
-    [InlineData(1, 5)]
-    [InlineData(10, 1)]
-    [InlineData(100, 2)]
-    [InlineData(1435, 10)]
-    public void InsertRange__КогдаСнапшотЕстьИЛогПустИИндексСледующийПослеИндексаСнапшота__ДолженВставитьЗаписиВКонец(
-        int snapshotLastIndex,
-        int elementsCount)
+    [InlineData(1, 2, 2)]
+    [InlineData(1, 1, 1)]
+    [InlineData(2, 1, 2)]
+    [InlineData(10, 1, 10)]
+    [InlineData(10, 10, 19)]
+    public void InsertRange__КогдаЗаписиБылиДобавленыВКонец__ДолженОбновитьLastEntry(
+        int logSize,
+        int insertCount,
+        int expectedLsn)
     {
-        var (facade, _) = CreateFacade(elementsCount + 1);
-        facade.Snapshot.SetupSnapshotTest(new Term(2), snapshotLastIndex,
-            new Stubs.StubSnapshot(Array.Empty<byte>()));
-        var entries = Enumerable.Range(1, elementsCount)
-                                .Select(i => Entry(i, i.ToString()))
-                                .ToArray();
+        var (facade, _) = CreateFacade(2);
+        var existingEntries = Enumerable.Range(1, logSize)
+                                        .Select(i => Entry(1, i.ToString()))
+                                        .ToArray();
+        facade.SetupTest(existingEntries);
+        var toInsert = Enumerable.Range(logSize, insertCount)
+                                 .Select(i => Entry(2, i.ToString()))
+                                 .ToArray();
+        var expected = new LogEntryInfo(2, expectedLsn);
 
-        facade.InsertRange(entries, snapshotLastIndex + 1);
+        facade.InsertRange(toInsert, logSize);
 
-        Assert.Equal(entries, facade.Log.GetUncommittedTest(), Comparer);
+        Assert.Equal(expected, facade.LastEntry);
     }
+
+    [Theory]
+    [InlineData(10, 1, 7, 7)]
+    [InlineData(10, 2, 7, 8)]
+    [InlineData(10, 3, 7, 9)]
+    [InlineData(10, 4, 7, 10)]
+    [InlineData(10, 5, 7, 11)]
+    [InlineData(10, 6, 7, 12)]
+    public void InsertRange__КогдаЧастьДанныхБылаПерезаписана__ДолженОбновитьLastEntry(
+        int logSize,
+        int insertCount,
+        int insertIndex,
+        int expectedLsn)
+    {
+        var (facade, _) = CreateFacade(2);
+        var existingEntries = Enumerable.Range(1, logSize)
+                                        .Select(i => Entry(1, i.ToString()))
+                                        .ToArray();
+        facade.SetupTest(existingEntries);
+        var toInsert = Enumerable.Range(logSize, insertCount)
+                                 .Select(i => Entry(2, i.ToString()))
+                                 .ToArray();
+        var expected = new LogEntryInfo(2, expectedLsn);
+
+        facade.InsertRange(toInsert, insertIndex);
+
+        Assert.Equal(expected, facade.LastEntry);
+    }
+
+    // TODO: когда будет сегментированный лог сделать тест на то, что снапшот есть, но файл лога не имеет нужных записей,
+    // т.е. последний индекс из лога меньше индекса в снапшоте
 
     [Theory]
     [InlineData(1, 1)]
@@ -581,27 +460,25 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     [InlineData(3, 3)]
     [InlineData(5, 1)]
     [InlineData(5, 5)]
-    public void InsertRange__ВКонецЛогаСНеПустымБуфером__ДолженДобавитьЗаписиВБуфер(int bufferSize, int toInsertSize)
+    public void InsertRange__КогдаЛогНеПустИИндексРавенСледующемуПослеПоследнего__ДолженДобавитьЗаписиВКонец(
+        int logSize,
+        int insertCount)
     {
-        var uncommitted = Enumerable.Range(1, bufferSize)
-                                    .Select(RandomDataEntry)
-                                    .ToList();
-
-        var toInsert = Enumerable.Range(bufferSize + 1, toInsertSize)
-                                 .Select(RandomDataEntry)
+        var logEntries = Enumerable.Range(1, logSize)
+                                   .Select(RandomDataEntry)
+                                   .ToList();
+        var insert = Enumerable.Range(logSize + 1, insertCount)
+                               .Select(RandomDataEntry)
+                               .ToList();
+        var expected = logEntries.Concat(insert)
                                  .ToList();
+        var (facade, _) = CreateFacade(logSize + insertCount + 1);
+        facade.SetupTest(logEntries);
 
-        var expected = uncommitted.Concat(toInsert)
-                                  .ToList();
+        facade.InsertRange(insert, logSize);
 
-        var (facade, _) = CreateFacade(bufferSize + toInsertSize + 1);
-        facade.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted);
-
-        facade.InsertRange(toInsert, bufferSize);
-
-        var actual = facade.Log.GetUncommittedTest();
+        var actual = facade.Log.ReadAllTest();
         Assert.Equal(expected, actual, Comparer);
-        Assert.Empty(facade.Log.GetCommittedTest());
     }
 
     [Theory]
@@ -618,32 +495,27 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     [InlineData(6, 4, 0)]
     [InlineData(6, 4, 5)]
     [InlineData(10, 4, 5)]
-    public void InsertRange__СИндексомВнутриНеПустогоБуфера__ДолженВставитьИЗатеретьСтарыеЗаписи(
-        int bufferCount,
+    public void InsertRange__КогдаЛогНеПустИИндексВнутриЛога__ДолженПерезаписатьЛог(
+        int logSize,
         int toInsertCount,
         int insertIndex)
     {
-        var uncommitted = Enumerable.Range(1, bufferCount)
-                                    .Select(EmptyEntry)
-                                    .ToList();
-
-        var toInsert = Enumerable.Range(bufferCount + 1, toInsertCount)
+        var logEntries = Enumerable.Range(1, logSize)
+                                   .Select(EmptyEntry)
+                                   .ToList();
+        var toInsert = Enumerable.Range(logSize + 1, toInsertCount)
                                  .Select(EmptyEntry)
                                  .ToList();
-
-        var expected = uncommitted.Take(insertIndex)
-                                  .Concat(toInsert)
-                                  .ToList();
-
-        var (facade, _) = CreateFacade(bufferCount + toInsertCount + 1);
-        facade.Log.SetupLogTest(committed: Array.Empty<LogEntry>(), uncommitted);
+        var expected = logEntries.Take(insertIndex)
+                                 .Concat(toInsert)
+                                 .ToList();
+        var (facade, _) = CreateFacade(logSize + toInsertCount + 1);
+        facade.Log.SetupLogTest(logEntries);
 
         facade.InsertRange(toInsert, insertIndex);
 
-        var actual = facade.Log.GetUncommittedTest();
-
+        var actual = facade.Log.ReadAllTest();
         Assert.Equal(expected, actual, Comparer);
-        Assert.Empty(facade.Log.GetCommittedTest());
     }
 
     [Fact]
@@ -658,23 +530,23 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         };
         var (facade, fs) = CreateFacade();
         var expectedLastEntry = new LogEntryInfo(new Term(6), 3);
-        var data = new byte[] {1, 2, 3};
-        facade.Log.SetupLogTest(logEntries, Array.Empty<LogEntry>());
+        var snapshotData = new byte[] {1, 2, 3};
+        facade.SetupTest(logEntries);
 
-        facade.SaveSnapshot(new StubSnapshot(data), new LogEntryInfo(6, 3));
+        facade.SaveSnapshot(new StubSnapshot(snapshotData), new LogEntryInfo(6, 3));
 
         var (actualIndex, actualTerm, actualData) = facade.Snapshot.ReadAllDataTest();
         Assert.True(fs.SnapshotFile.Exists);
         Assert.Equal(expectedLastEntry.Index, actualIndex);
         Assert.Equal(expectedLastEntry.Term, actualTerm);
-        Assert.Equal(data, actualData);
+        Assert.Equal(snapshotData, actualData);
         Assert.Equal(expectedLastEntry, facade.Snapshot.LastApplied);
     }
 
     [Fact]
     public void SaveSnapshot__КогдаФайлСнапшотаСуществовалПустой__ДолженПерезаписатьСтарыйФайл()
     {
-        var committed = new[]
+        var logEntries = new[]
         {
             RandomDataEntry(1), // 0
             RandomDataEntry(2), // 1
@@ -686,7 +558,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Random.Shared.NextBytes(data);
 
         var (facade, _) = CreateFacade();
-        facade.Log.SetupLogTest(committed, Array.Empty<LogEntry>());
+        facade.Log.SetupLogTest(logEntries);
 
         var snapshotEntry = new LogEntryInfo(new Term(3), 4);
         facade.SaveSnapshot(new StubSnapshot(data), snapshotEntry);
@@ -699,74 +571,9 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     }
 
     [Fact]
-    public void CreateSnapshot__КогдаВЛогеБылиЗаписи__ДолженУдалитьВключенныеВСнапшотКоманды()
-    {
-        /*
-         * Снапшота нет.
-         * Индексы в логе начинаются с 0.
-         * Включенный в снапшот индекс - 50.
-         * В логе - 100 записей.
-         */
-        var (facade, _) = CreateFacade();
-        var lastSnapshotEntry = new LogEntryInfo(new Term(7), 50);
-        var logEntries = Enumerable.Range(1, 100)
-                                   .Select(i => Entry(i, i.ToString()))
-                                   .ToArray();
-        var snapshotData = RandomBytes(100);
-        facade.Log.SetupLogTest(logEntries, Array.Empty<LogEntry>());
-        var expectedLogEntries = logEntries.Skip(( int ) ( lastSnapshotEntry.Index + 1 ))
-                                           .ToArray();
-        var writer = facade.CreateSnapshot(lastSnapshotEntry);
-
-        var stubSnapshot = new StubSnapshot(snapshotData);
-        foreach (var chunk in stubSnapshot.GetAllChunks())
-        {
-            writer.InstallChunk(chunk.Span, CancellationToken.None);
-        }
-
-        writer.Commit();
-
-        var actualCommittedLog = facade.Log.GetCommittedTest();
-        Assert.Equal(expectedLogEntries, actualCommittedLog, Comparer);
-    }
-
-    [Fact]
-    public void
-        CreateSnapshot__КогдаСнапшотБылИИндексНовогоСнапшотаРавенИндексуПоследнейЗакоммиченнойЗаписи__ДолженКорректноОбновитьИндексыКоммита()
-    {
-        var (facade, _) = CreateFacade();
-        var oldSnapshotEntry = new LogEntryInfo(10, 120);
-        var newSnapshotEntry = new LogEntryInfo(12, 140);
-        var committed = Enumerable.Range(1, 40)
-                                  .Select(i => Entry(12, i.ToString()))
-                                  .ToArray();
-        var newSnapshotData = RandomBytes(100);
-        var oldSnapshotData = RandomBytes(123);
-        facade.Log.SetupLogTest(committed, Array.Empty<LogEntry>());
-        facade.Snapshot.SetupSnapshotTest(oldSnapshotEntry.Term, oldSnapshotEntry.Index,
-            new StubSnapshot(oldSnapshotData));
-        var expectedLogEntries = committed[20..];
-        var expectedLogCommitIndex = 19;
-
-        var writer = facade.CreateSnapshot(newSnapshotEntry);
-        var stubSnapshot = new StubSnapshot(newSnapshotData);
-        foreach (var chunk in stubSnapshot.GetAllChunks())
-        {
-            writer.InstallChunk(chunk.Span, CancellationToken.None);
-        }
-
-        writer.Commit();
-
-        var actualLogEntries = facade.Log.ReadAllTest();
-        Assert.Equal(expectedLogEntries, actualLogEntries, Comparer);
-        var actualLogCommitIndex = facade.Log.CommitIndex;
-        Assert.Equal(expectedLogCommitIndex, actualLogCommitIndex);
-    }
-
-    [Fact]
     public void CreateSnapshot__КогдаСнапшотаНеБылоИЛогПуст__ДолженСоздатьНовыйСнапшот()
     {
-        var (facade, _) = CreateFacade();
+        var (facade, fs) = CreateFacade();
         var lastSnapshotEntry = new LogEntryInfo(new Term(7), 10);
         var snapshotData = RandomBytes(100);
 
@@ -780,9 +587,37 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         writer.Commit();
 
         var (actualLastIndex, actualLastTerm, actualData) = facade.Snapshot.ReadAllDataTest();
+        Assert.True(fs.SnapshotFile.Exists);
         Assert.Equal(snapshotData, actualData);
         Assert.Equal(lastSnapshotEntry.Term, actualLastTerm);
         Assert.Equal(lastSnapshotEntry.Index, actualLastIndex);
+    }
+
+    [Fact]
+    public void LastEntry__КогдаЛогПуст__ДолженВернутьTomb()
+    {
+        var (facade, _) = CreateFacade();
+
+        var actual = facade.LastEntry;
+
+        Assert.Equal(LogEntryInfo.Tomb, actual);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(10)]
+    [InlineData(100)]
+    public void LastEntry__КогдаВЛогеЕстьЭлементы__ДолженВернутьПоследнийЭлементИзЛога(int logSize)
+    {
+        var (facade, _) = CreateFacade();
+        var logEntries = Enumerable.Range(1, logSize).Select(i => Entry(i, i.ToString())).ToArray();
+        var expected = new LogEntryInfo(logEntries[^1].Term, logSize - 1);
+        facade.SetupTest(logEntries);
+
+        var actual = facade.LastEntry;
+
+        Assert.Equal(expected, actual);
     }
 
     [Fact]
@@ -818,30 +653,17 @@ public class FileSystemPersistenceFacadeTests : IDisposable
               .Be(lastLogEntry, "свойство должно быть равным такому же как и в снапшоте");
     }
 
-    [Theory]
-    [InlineData(1, 2, 2)]
-    [InlineData(10, 8, 8)]
-    [InlineData(10, 8, 7)]
-    [InlineData(643, 543, 123)]
+    [Fact]
     public void
-        CreateSnapshot__КогдаСнапшотаНетИИндексВСнапшотеМеньшеКоличестваЭлементовВЛоге__ДолженУдалитьЗаписиИзЛогаДоУказанногоИндекса(
-        int lastSnapshotIndex,
-        int committedCount,
-        int uncommittedCount)
+        CreateSnapshot__КогдаСнапшотаНетИИндексВСнапшотеМеньшеКоличестваЭлементовВЛоге__ДолженИзменятьЛог()
     {
         var (facade, _) = CreateFacade();
-
         var snapshotData = RandomBytes(123);
-
-        var committed = Enumerable.Range(1, committedCount)
-                                  .Select(i => Entry(i, i.ToString()))
-                                  .ToArray();
-        var uncommitted = Enumerable.Range(1 + committedCount, uncommittedCount)
-                                    .Select(i => Entry(i, i.ToString()))
-                                    .ToArray();
-        facade.Log.SetupLogTest(committed, uncommitted);
-        var lastSnapshotEntry = new LogEntryInfo(new Term(5), lastSnapshotIndex);
-        var expected = committed.Concat(uncommitted).Skip(lastSnapshotIndex + 1).ToArray();
+        var logEntries = Enumerable.Range(1, 10)
+                                   .Select(i => Entry(i, i.ToString()))
+                                   .ToArray();
+        facade.Log.SetupLogTest(logEntries);
+        var lastSnapshotEntry = new LogEntryInfo(new Term(5), 4);
 
         var writer = facade.CreateSnapshot(lastSnapshotEntry);
         var stubSnapshot = new StubSnapshot(snapshotData);
@@ -853,7 +675,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         writer.Commit();
 
         var actual = facade.Log.ReadAllTest();
-        Assert.Equal(expected, actual, Comparer);
+        Assert.Equal(logEntries, actual, Comparer);
     }
 
     [Fact]
@@ -890,158 +712,6 @@ public class FileSystemPersistenceFacadeTests : IDisposable
               .Be(lastLogEntry, "свойство должно быть равным такому же как и в снапшоте");
     }
 
-    [Fact]
-    public void InstallSnapshot__КогдаВФайлеЛогаБылиПересекающиесяКоманды__ДолженОчиститьЛогДоУказанныхВСнапшотеКоманд()
-    {
-        // Должен удалить предшествующие записи в логе
-        var (facade, _) = CreateFacade();
-
-        var snapshotData = RandomBytes(123);
-
-        // Снапшота нет, поэтому индексирование с 0
-        var existingLog = new[]
-        {
-            RandomDataEntry(1), // 0
-            RandomDataEntry(2), // 1
-            RandomDataEntry(3), // 2
-            RandomDataEntry(3), // 3
-            RandomDataEntry(3), // 4
-        };
-        facade.Log.SetupLogTest(existingLog, Array.Empty<LogEntry>());
-        // В снапшоте - все команды до 4-ой (индекс 3)
-        var lastLogEntry = new LogEntryInfo(new Term(3), 3);
-        var expectedLog = existingLog[4..];
-
-        var writer = facade.CreateSnapshot(lastLogEntry);
-        var stubSnapshot = new StubSnapshot(snapshotData);
-        foreach (var chunk in stubSnapshot.GetAllChunks())
-        {
-            writer.InstallChunk(chunk.Span, CancellationToken.None);
-        }
-
-        writer.Commit();
-
-        // Проверка корректности общей работы
-        var (actualLastIndex, actualLastTerm, actualData) = facade.Snapshot.ReadAllDataTest();
-        actualLastIndex
-           .Should()
-           .Be(lastLogEntry.Index, "указанный индекс должен сохраниться в файл снапшота");
-        actualLastTerm
-           .Should()
-           .Be(lastLogEntry.Term, "указанный терм должен сохранитсья в файл снапшота");
-        actualData
-           .Should()
-           .Equal(snapshotData, "записанные данные должны быть равны передаваемым");
-        facade.Snapshot.LastApplied
-              .Should()
-              .Be(lastLogEntry, "свойство должно быть равным такому же как и в снапшоте");
-
-        // Проверка корректности обновления лога
-        var actualLog = facade.Log.GetCommittedTest();
-        actualLog
-           .Should()
-           .Equal(expectedLog, LogEntryComparisonFunc, "файл лога должен очиститься, до указанной команды");
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(4)]
-    [InlineData(5)]
-    [InlineData(8)]
-    [InlineData(9)]
-    public void
-        CreateSnapshot__КогдаСнапшотаНетИИндексНовогоСнапшотаБольшеПервогоИндексаВЛоге__ДолженОчиститьЛогДоУказанногоИндекса(
-        int lastSnapshotIndex)
-    {
-        var (facade, _) = CreateFacade();
-
-        var snapshotData = RandomBytes(123);
-
-        var committed = new[]
-        {
-            RandomDataEntry(1), // 0
-            RandomDataEntry(2), // 1
-            RandomDataEntry(3), // 2
-            RandomDataEntry(3), // 3
-            RandomDataEntry(3), // 4
-        };
-
-        var uncommitted = new[]
-        {
-            RandomDataEntry(3), // 5
-            RandomDataEntry(4), // 6
-            RandomDataEntry(5), // 7
-            RandomDataEntry(5), // 8
-            RandomDataEntry(5), // 9
-        };
-        facade.Log.SetupLogTest(committed, uncommitted);
-
-        var lastSnapshotEntry = new LogEntryInfo(new Term(5), lastSnapshotIndex);
-        var expectedLog = committed.Concat(uncommitted)
-                                   .Skip(lastSnapshotIndex + 1)
-                                   .ToArray();
-
-        var writer = facade.CreateSnapshot(lastSnapshotEntry);
-        var stubSnapshot = new StubSnapshot(snapshotData);
-        foreach (var chunk in stubSnapshot.GetAllChunks())
-        {
-            writer.InstallChunk(chunk.Span, CancellationToken.None);
-        }
-
-        writer.Commit();
-
-        // Проверка корректности обновления лога
-        var actualLog = facade.Log.ReadAllTest();
-        Assert.Equal(expectedLog, actualLog, Comparer);
-    }
-
-    [Theory]
-    [InlineData(10)]
-    [InlineData(11)]
-    public void CreateSnapshot__КогдаИндексВСнапшотеБольшеПоследнегоИндексаВЛоге__ДолженОчиститьЛог(
-        int lastSnapshotIndex)
-    {
-        // Должен удалить предшествующие записи в логе
-        var (facade, _) = CreateFacade();
-
-        var snapshotData = RandomBytes(123);
-
-        var committed = new[]
-        {
-            RandomDataEntry(1), // 0
-            RandomDataEntry(2), // 1
-            RandomDataEntry(3), // 2
-            RandomDataEntry(3), // 3
-            RandomDataEntry(3), // 4
-        };
-
-        var uncommitted = new[]
-        {
-            RandomDataEntry(3), // 5
-            RandomDataEntry(4), // 6
-            RandomDataEntry(5), // 7
-            RandomDataEntry(5), // 8
-            RandomDataEntry(5), // 9
-        };
-        facade.Log.SetupLogTest(committed, uncommitted);
-
-        var lastSnapshotEntry = new LogEntryInfo(new Term(5), lastSnapshotIndex);
-
-        var writer = facade.CreateSnapshot(lastSnapshotEntry);
-        var stubSnapshot = new StubSnapshot(snapshotData);
-        foreach (var chunk in stubSnapshot.GetAllChunks())
-        {
-            writer.InstallChunk(chunk.Span, CancellationToken.None);
-        }
-
-        writer.Commit();
-
-        // Проверка корректности обновления лога
-        var actualLog = facade.Log.ReadAllTest();
-        Assert.Empty(actualLog);
-    }
-
     private static byte[] RandomBytes(int size)
     {
         var bytes = new byte[size];
@@ -1050,8 +720,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     }
 
     [Fact]
-    public void
-        SaveSnapshot__КогдаФайлСнапшотаСуществовалНеПустойИИндексПримененнойКомандыПоследний__ДолженПерезаписатьСтарыйФайл()
+    public void SaveSnapshot__КогдаФайлСнапшотаСуществовал__ДолженПерезаписатьСтарыйФайл()
     {
         var newSnapshotData = new byte[128];
         Random.Shared.NextBytes(newSnapshotData);
@@ -1064,14 +733,14 @@ public class FileSystemPersistenceFacadeTests : IDisposable
 
         // У нас в логе 4 команды, причем применены все
         var lastTerm = new Term(5);
-        var exisingLogData = new[]
+        var logEntries = new[]
         {
             RandomDataEntry(3),        // 4
             RandomDataEntry(3),        // 5
             RandomDataEntry(4),        // 6
             RandomDataEntry(lastTerm), // 7
         };
-        facade.Log.SetupLogTest(exisingLogData, Array.Empty<LogEntry>());
+        facade.Log.SetupLogTest(logEntries);
         // Все команды применены из лога
 
         var snapshotLastEntry = new LogEntryInfo(4, 7);
@@ -1084,184 +753,65 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Assert.Equal(snapshotLastEntry, facade.Snapshot.LastApplied);
     }
 
-
-    [Fact]
-    public void
-        SaveSnapshot__КогдаФайлСнапшотаСуществовалНеПустойИИндексПримененнойКомандыВСерединеЛога__ДолженПерезаписатьСтарыйФайл()
-    {
-        var newSnapshotData = new byte[128];
-        Random.Shared.NextBytes(newSnapshotData);
-
-        var (facade, _) = CreateFacade();
-        var currentTerm = new Term(5);
-        // Cуществует старый файл снапшота 
-        var oldData = new byte[164];
-        Random.Shared.NextBytes(oldData);
-        facade.Snapshot.SetupSnapshotTest(new Term(2), 3, new StubSnapshot(oldData));
-        facade.UpdateState(currentTerm, null);
-
-        // У нас в логе 4 команды, причем применены все
-        var exisingLogData = new[]
-        {
-            RandomDataEntry(3), // 4
-            RandomDataEntry(3), // 5
-            RandomDataEntry(4), // 6
-            RandomDataEntry(5), // 7
-        };
-        facade.Log.SetupLogTest(exisingLogData, Array.Empty<LogEntry>());
-        // Все команды применены из лога
-
-        facade.SaveSnapshot(new StubSnapshot(newSnapshotData), new LogEntryInfo(3, 5));
-
-        var (actualIndex, actualTerm, actualData) = facade.Snapshot.ReadAllDataTest();
-        var expectedIndex = 5;
-        var expectedTerm = new Term(3);
-        Assert.Equal(expectedIndex, actualIndex);
-        Assert.Equal(expectedTerm, actualTerm);
-        Assert.Equal(newSnapshotData, actualData);
-        Assert.Equal(new LogEntryInfo(expectedTerm, expectedIndex), facade.Snapshot.LastApplied);
-    }
-
     [Theory]
-    [InlineData(1, 1, 1)]
-    [InlineData(1, 1, 2)]
-    [InlineData(5, 5, 1)]
-    [InlineData(5, 5, 5)]
-    [InlineData(10, 10, 1)]
-    [InlineData(10, 10, 5)]
-    [InlineData(10, 10, 9)]
-    [InlineData(10, 10, 10)]
-    [InlineData(10, 10, 11)]
-    [InlineData(10, 10, 15)]
-    [InlineData(10, 10, 21)]
-    public void TryGetFrom__КогдаИндексСнапшота0__ДолженВернутьПравильныеЗаписи(
-        int fileCommandsCount,
-        int bufferCommandsCount,
-        int globalIndex)
-    {
-        TryGetFromBaseTest(0, fileCommandsCount, bufferCommandsCount, globalIndex);
-    }
-
-
-    [Theory]
-    [InlineData(1, 1, 2)]
-    [InlineData(1, 1, 3)]
-    [InlineData(1, 1, 4)]
-    [InlineData(5, 5, 2)]
-    [InlineData(5, 5, 5)]
-    [InlineData(10, 10, 2)]
-    [InlineData(10, 10, 5)]
-    [InlineData(10, 10, 9)]
-    [InlineData(10, 10, 10)]
-    [InlineData(10, 10, 11)]
-    [InlineData(10, 10, 15)]
-    [InlineData(10, 10, 21)]
-    [InlineData(10, 10, 22)]
-    public void TryGetFrom__КогдаИндексСнапшота1__ДолженВернутьПравильныеЗаписи(
-        int fileCommandsCount,
-        int bufferCommandsCount,
-        int globalIndex)
-    {
-        TryGetFromBaseTest(1, fileCommandsCount, bufferCommandsCount, globalIndex);
-    }
-
-    [Theory]
-    [InlineData(10, 10, 10)]
-    [InlineData(0, 0, 0)]
-    [InlineData(1, 0, 0)]
-    [InlineData(2, 0, 0)]
-    [InlineData(100, 0, 0)]
-    [InlineData(50, 1, 1)]
-    [InlineData(50, 1, 0)]
-    [InlineData(50, 0, 1)]
-    [InlineData(50, 2, 1)]
-    [InlineData(50, 1, 2)]
-    public void TryGetFrom__КогдаУказанныйИндексЯвляетсяСледующимПослеПоследнего__ДолженУспешноВернутьПустойМассив(
-        int snapshotLastIndex,
-        int fileCommandsCount,
-        int bufferCommandsCount)
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(10)]
+    [InlineData(100)]
+    public void TryGetFrom__КогдаУказанныйИндексЯвляетсяСледующимПослеПоследнего__ДолженВернутьПустойМассив(
+        int logSize)
     {
         var term = new Term(1);
         var (facade, _) = CreateFacade(term);
-        var fileEntries = Enumerable.Range(0, fileCommandsCount)
-                                    .Select(_ => RandomDataEntry(term.Value))
-                                    .ToArray();
+        var logEntries = Enumerable.Range(0, logSize)
+                                   .Select(_ => RandomDataEntry(term.Value))
+                                   .ToArray();
 
-        var bufferEntries = Enumerable.Range(0, bufferCommandsCount)
-                                      .Select(_ => RandomDataEntry(term.Value))
-                                      .ToArray();
+        facade.Log.SetupLogTest(logEntries);
 
-        facade.Snapshot.SetupSnapshotTest(term,
-            snapshotLastIndex,
-            new StubSnapshot(Array.Empty<byte>()));
+        var success = facade.TryGetFrom(logSize, out var actual);
 
-        facade.Log.SetupLogTest(fileEntries, bufferEntries);
+        Assert.True(success);
+        Assert.Empty(actual);
+    }
 
-        var success = facade.TryGetFrom(snapshotLastIndex + fileCommandsCount + bufferCommandsCount + 1,
-            out var actual);
+    [Fact]
+    public void TryGetFrom__КогдаЛогПустИИндексРавен0__ДолженВернутьПустойМассив()
+    {
+        var term = new Term(1);
+        var (facade, _) = CreateFacade(term);
+
+        var success = facade.TryGetFrom(0, out var actual);
 
         Assert.True(success);
         Assert.Empty(actual);
     }
 
     [Theory]
-    [InlineData(100, 1, 1, 101)]
-    [InlineData(100, 1, 1, 102)]
-    [InlineData(123, 5, 5, 124)]
-    [InlineData(999, 5, 5, 1004)]
-    [InlineData(120000, 10, 10, 120001)]
-    [InlineData(456362312, 10, 10, 456362332)]
-    [InlineData(3253, 10, 10, 3260)]
-    [InlineData(987654, 10, 10, 987664)]
-    [InlineData(1423673, 110, 10, 1423784)]
-    [InlineData(543546, 10, 10, 543557)]
-    [InlineData(2147483000, 10, 10, 2147483001)]
-    public void TryGetFrom__КогдаИндексСнапшотаБольшой__ДолженВернутьПравильныеЗаписи(
-        int snapshotLastIndex,
-        int fileCommandsCount,
-        int bufferCommandsCount,
-        int globalIndex)
-    {
-        TryGetFromBaseTest(snapshotLastIndex, fileCommandsCount, bufferCommandsCount, globalIndex);
-    }
-
-    private void TryGetFromBaseTest(
-        int snapshotLastIndex,
-        int fileCommandsCount,
-        int bufferCommandsCount,
-        int globalIndex)
+    [InlineData(10, 0)]
+    [InlineData(10, 3)]
+    [InlineData(10, 9)]
+    [InlineData(100, 2)]
+    [InlineData(100, 69)]
+    public void TryGetFrom__КогдаИндексВнутриЛога__ДолженВернутьЗаписиСУказаннойПозиции(
+        int logSize,
+        int index)
     {
         var term = new Term(1);
-        var (facade, _) = CreateFacade(term.Value);
-        var fileEntries = Enumerable.Range(0, fileCommandsCount)
-                                    .Select(_ => RandomDataEntry(term.Value))
-                                    .ToArray();
+        var (facade, _) = CreateFacade(term);
+        var logEntries = Enumerable.Range(0, logSize)
+                                   .Select(_ => RandomDataEntry(term))
+                                   .ToArray();
+        var expected = logEntries.Skip(index).ToArray();
+        facade.SetupTest(logEntries);
 
-        var bufferEntries = Enumerable.Range(0, bufferCommandsCount)
-                                      .Select(_ => RandomDataEntry(term.Value))
-                                      .ToArray();
-
-        facade.Snapshot.SetupSnapshotTest(term,
-            snapshotLastIndex,
-            new StubSnapshot(Array.Empty<byte>()));
-
-        facade.Log.SetupLogTest(fileEntries, bufferEntries);
-
-        var expected = fileEntries
-                      .Concat(bufferEntries)
-                      .Skip(globalIndex - snapshotLastIndex - 1)
-                      .ToArray();
-
-        var success = facade.TryGetFrom(globalIndex, out var actual);
+        var success = facade.TryGetFrom(index, out var actual);
 
         Assert.True(success);
         Assert.Equal(expected, actual, Comparer);
     }
 
     private static readonly ISnapshot NullSnapshot = new StubSnapshot(Array.Empty<byte>());
-
-    private static readonly Func<LogEntry, LogEntry, bool> LogEntryComparisonFunc = (entry, logEntry) =>
-        Comparer.Equals(entry, logEntry);
 
     [Theory]
     [InlineData(0, 0)] // Только 1 запись в снапшоте
@@ -1281,374 +831,33 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         int index)
     {
         var (facade, _) = CreateFacade();
-        facade.Snapshot.SetupSnapshotTest(new Term(1), snapshotLastIndex, NullSnapshot);
+        facade.SetupTest(logEntries: null, snapshotData: ( new Term(1), snapshotLastIndex, NullSnapshot ));
 
         var success = facade.TryGetFrom(index, out _);
         Assert.False(success);
     }
 
-    [Fact]
-    public void
-        GetPrecedingEntryInfo__КогдаСуществуетСнапшот_ИндексРавенПервомуВЛоге__ДолженВернутьВхождениеИзСнапшота()
-    {
-        var (facade, _) = CreateFacade();
-        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
-        facade.Snapshot.SetupSnapshotTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
-
-        var actual = facade.GetPrecedingEntryInfo(snapshotLastEntry.Index + 1);
-
-        Assert.Equal(snapshotLastEntry, actual);
-    }
-
-    [Fact]
-    public void
-        GetPrecedingEntryInfo__КогдаСуществуетСнапшот_ИндексНаходитсяВПределахЛога__ДолженВернутьВхождениеИзЛога()
-    {
-        var (facade, _) = CreateFacade();
-        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
-        facade.Snapshot.SetupSnapshotTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
-        var committed = new[]
-        {
-            RandomDataEntry(2), // 11
-            RandomDataEntry(2), // 12
-            RandomDataEntry(3), // 13
-        };
-        facade.Log.SetupLogTest(committed, uncommitted: Array.Empty<LogEntry>());
-        var expected = new LogEntryInfo(new Term(2), 12);
-
-        var actual = facade.GetPrecedingEntryInfo(13);
-
-        Assert.Equal(expected, actual);
-    }
-
-    [Fact]
-    public void GetPrecedingEntryInfo__КогдаСуществуетСнапшот_ИндексПервыйИзБуфера__ДолженВернутьВхождениеИзЛога()
-    {
-        var (facade, _) = CreateFacade();
-        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
-        facade.Snapshot.SetupSnapshotTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
-        var committed = new[]
-        {
-            RandomDataEntry(2), // 11
-            RandomDataEntry(2), // 12
-            RandomDataEntry(3), // 13
-        };
-        facade.Log.SetupLogTest(committed, uncommitted: Array.Empty<LogEntry>());
-        var expected = new LogEntryInfo(new Term(3), 13);
-
-        var actual = facade.GetPrecedingEntryInfo(14);
-
-        Assert.Equal(expected, actual);
-    }
-
-    [Fact]
-    public void GetPrecedingEntryInfo__КогдаСуществуетСнапшот_ИндексВПределахБуфера__ДолженВернутьВхождениеИзБуфера()
-    {
-        var (facade, _) = CreateFacade();
-        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
-        facade.Snapshot.SetupSnapshotTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
-        var committed = new[]
-        {
-            RandomDataEntry(2), // 11
-            RandomDataEntry(2), // 12
-            RandomDataEntry(3), // 13
-        };
-        var uncommitted = new[]
-        {
-            RandomDataEntry(3), // 14
-            RandomDataEntry(3), // 15
-            RandomDataEntry(4), // 16
-        };
-
-        facade.Log.SetupLogTest(committed, uncommitted);
-        var expected = new LogEntryInfo(new Term(3), 15);
-
-        var actual = facade.GetPrecedingEntryInfo(16);
-
-        Assert.Equal(expected, actual);
-    }
-
-    [Fact]
-    public void
-        GetPrecedingEntryInfo__КогдаСуществуетСнапшот_ИндексПослеПоследнегоВБуфере__ДолженВернутьВхождениеИзБуфера()
-    {
-        var (facade, _) = CreateFacade();
-        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
-        facade.Snapshot.SetupSnapshotTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
-        var committed = new[]
-        {
-            RandomDataEntry(2), // 11
-            RandomDataEntry(2), // 12
-            RandomDataEntry(3), // 13
-        };
-        var uncommitted = new[]
-        {
-            RandomDataEntry(3), // 14
-            RandomDataEntry(3), // 15
-            RandomDataEntry(4), // 16
-        };
-
-        facade.Log.SetupLogTest(committed, uncommitted);
-        var expected = new LogEntryInfo(new Term(4), 16);
-
-        var actual = facade.GetPrecedingEntryInfo(17);
-
-        Assert.Equal(expected, actual);
-    }
-
-    [Fact]
-    public void GetPrecedingEntryInfo__КогдаИндексРавенСледующемуИзСнапшота__ДолженВернутьДанныеЗаписьИзСнапшота()
-    {
-        var (facade, _) = CreateFacade();
-        var snapshotLastEntry = new LogEntryInfo(new Term(2), 10);
-        facade.Snapshot.SetupSnapshotTest(snapshotLastEntry.Term, snapshotLastEntry.Index, NullSnapshot);
-        var uncommitted = new[]
-        {
-            RandomDataEntry(2), // 11
-            RandomDataEntry(2), // 12
-            RandomDataEntry(3), // 13
-        };
-        facade.Log.SetupLogTest(committed: Array.Empty<LogEntry>(),
-            uncommitted);
-        var expected = new LogEntryInfo(new Term(2), 10);
-
-        var actual = facade.GetPrecedingEntryInfo(11);
-
-        Assert.Equal(expected, actual);
-    }
-
     [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(5)]
-    public void InsertRange__КогдаЕстьСнапшотИИндексПоследнийВЛоге__ДолженДобавитьЗаписиВКонец(int uncommittedCount)
+    [InlineData(12)]
+    [InlineData(13)]
+    [InlineData(20)]
+    [InlineData(100)]
+    public void InsertRange__КогдаЕстьСнапшотИИндексПоследнийВЛоге__ДолженДобавитьЗаписиВКонец(int logSize)
     {
         var (facade, _) = CreateFacade();
         var snapshotLastIndex = 11;
-        facade.Snapshot.SetupSnapshotTest(new Term(3), snapshotLastIndex,
-            new StubSnapshot(Array.Empty<byte>()));
-        var uncommitted = Enumerable.Range(0, uncommittedCount)
-                                    .Select(_ => RandomDataEntry(3))
-                                    .ToArray();
-        facade.Log.SetupLogTest(Array.Empty<LogEntry>(), uncommitted);
+        var logEntries = Enumerable.Range(0, logSize)
+                                   .Select(_ => RandomDataEntry(3))
+                                   .ToArray();
+        facade.SetupTest(logEntries: logEntries,
+            snapshotData: ( new Term(3), snapshotLastIndex, new StubSnapshot(Array.Empty<byte>()) ));
+
         var toInsert = new[] {RandomDataEntry(3), RandomDataEntry(3),};
-        var expected = uncommitted.Concat(toInsert).ToArray();
+        var expected = logEntries.Concat(toInsert).ToArray();
 
-        facade.InsertRange(toInsert, snapshotLastIndex + uncommittedCount + 1);
+        facade.InsertRange(toInsert, logSize);
 
-        var actual = facade.Log.GetUncommittedTest();
-
-        actual.Should()
-              .Equal(expected, LogEntryComparisonFunc, "записи должны сконкатенироваться");
-    }
-
-    [Fact]
-    public void InsertRange__КогдаЕстьСнапшот__ДолженПерезаписатьНезакоммиченныеЗаписи()
-    {
-        var (facade, _) = CreateFacade();
-        facade.Snapshot.SetupSnapshotTest(new Term(3), 11,
-            new StubSnapshot(Array.Empty<byte>()));
-        var uncommittedEntries = new[]
-        {
-            RandomDataEntry(3), // 12
-            RandomDataEntry(4), // 13
-            RandomDataEntry(4), // 14
-            RandomDataEntry(4), // 15
-        };
-        facade.Log.SetupLogTest(Array.Empty<LogEntry>(), uncommittedEntries);
-        var toInsert = new[] {RandomDataEntry(3), RandomDataEntry(3),};
-        var expected = uncommittedEntries.Take(1).Concat(toInsert).ToArray();
-
-        facade.InsertRange(toInsert, 13);
-
-        var actual = facade.Log.GetUncommittedTest();
-        Assert.Equal(expected, actual, Comparer);
-    }
-
-    [Fact]
-    public void InsertRange__КогдаЕстьСнапшотИИндексСледующийПослеПоследнего__ДолженДобавитьЗаписиВКонецЛога()
-    {
-        var (facade, _) = CreateFacade();
-        facade.Snapshot.SetupSnapshotTest(new Term(2), 630,
-            new StubSnapshot(Array.Empty<byte>()));
-        var committed = new[]
-        {
-            RandomDataEntry(2), // 631
-            RandomDataEntry(2), // 632
-        };
-        facade.Log.SetupLogTest(committed, Array.Empty<LogEntry>());
-        var toInsert = new[] {RandomDataEntry(2),};
-        var expected = toInsert;
-
-        facade.InsertRange(toInsert, 633);
-
-        var actual = facade.Log.GetUncommittedTest();
-        Assert.Equal(expected, actual, Comparer);
-    }
-
-    [Fact]
-    public void SaveSnapshot__КогдаСнапшотУжеСуществовал__ДолженПерезаписатьФайл()
-    {
-        var (facade, _) = CreateFacade();
-        var oldSnapshot = new StubSnapshot(RandomBytes(100));
-        var newSnapshot = new StubSnapshot(RandomBytes(90));
-        facade.Snapshot.SetupSnapshotTest(new Term(2), 10, oldSnapshot);
-        facade.Log.SetupLogTest(committed: new[]
-            {
-                RandomDataEntry(2), // 11
-                RandomDataEntry(3), // 12
-            },
-            uncommitted: Array.Empty<LogEntry>());
-
-        facade.SaveSnapshot(newSnapshot, new LogEntryInfo(3, 12));
-
-        var (actualIndex, actualTerm, actualData) = facade.Snapshot.ReadAllDataTest();
-        actualIndex
-           .Should()
-           .Be(new Lsn(12), "последний примененный индекс - 12");
-        actualTerm
-           .Should()
-           .Be(new Term(3), "терм последней примененной команды - 3");
-        actualData
-           .Should()
-           .Equal(newSnapshot.Data, "данные должны быть перезаписаны");
-    }
-
-    [Fact]
-    public void SaveSnapshot__КогдаИндексПримененнойКомандыРавенПоследнемуЗакоммиченному__ДолженОчиститьЛог()
-    {
-        var (facade, _) = CreateFacade();
-        var oldSnapshot = new StubSnapshot(RandomBytes(100));
-        var newSnapshot = new StubSnapshot(RandomBytes(90));
-        facade.Snapshot.SetupSnapshotTest(new Term(2), 10, oldSnapshot);
-        facade.Log.SetupLogTest(new[]
-        {
-            RandomDataEntry(2), // 11
-            RandomDataEntry(3), // 12
-        }, uncommitted: Array.Empty<LogEntry>());
-
-        facade.SaveSnapshot(newSnapshot, new LogEntryInfo(3, 12));
-
-        var actualLogFile = facade.Log.GetCommittedTest();
-        actualLogFile.Should()
-                     .BeEmpty("последний примененный индекс равен последнему индексу в логе");
-    }
-
-    [Fact]
-    public void
-        SaveSnapshot__КогдаИндексПримененнойКомандыМеньшеПоследнейЗакоммиченной__ДолженОчиститьЛогДоУказанногоИндекса()
-    {
-        var (facade, _) = CreateFacade();
-        var oldSnapshot = new StubSnapshot(RandomBytes(100));
-        var newSnapshot = new StubSnapshot(RandomBytes(90));
-        facade.Snapshot.SetupSnapshotTest(new Term(2), 10, oldSnapshot);
-        var lastLogEntry = RandomDataEntry(3);
-        var expected = new[] {lastLogEntry};
-        facade.Log.SetupLogTest(new[]
-        {
-            RandomDataEntry(2), // 11
-            RandomDataEntry(2), // 12
-            RandomDataEntry(3), // 13
-            lastLogEntry,       // 14
-        }, uncommitted: Array.Empty<LogEntry>());
-
-        facade.SaveSnapshot(newSnapshot, new LogEntryInfo(3, 13));
-
-        var actualLogFile = facade.Log.GetCommittedTest();
-        actualLogFile.Should()
-                     .Equal(expected, EqualityComparison,
-                          "последняя примененная запись имеет предпоследний индекс в логе");
-    }
-
-    [Theory]
-    [InlineData(5, 6, -1)]
-    [InlineData(5, 7, 0)]
-    [InlineData(10, 20, 8)]
-    public void
-        SaveSnapshot__КогдаСнапшотаНеБылоИЕстьЗакоммиченныеКомандыИИндексСнапшотаМеньшеЗакоммиченногоИндекса__ДолженКорректноОбновитьИндексыКоммита(
-        long snapshotIndex,
-        int committedCount,
-        long expectedLocalCommitIndex)
-    {
-        var (facade, _) = CreateFacade();
-        var snapshotData = new StubSnapshot(RandomBytes(90));
-        facade.Log.SetupLogTest(committed: Enumerable.Range(1, committedCount)
-                                                     .Select(i => Entry(2, i.ToString()))
-                                                     .ToArray(),
-            uncommitted: Array.Empty<LogEntry>());
-        var initialCommitIndex = new Lsn(committedCount - 1);
-
-        facade.SaveSnapshot(snapshotData, new LogEntryInfo(2, snapshotIndex));
-
-        // Изначальный индекс коммита поменяться не должен
-        Assert.Equal(initialCommitIndex, facade.CommitIndex);
-
-        // Измениться должен индекс коммита лога
-        Assert.Equal(new Lsn(expectedLocalCommitIndex), facade.Log.ReadCommitIndexTest());
-        Assert.Equal(new Lsn(expectedLocalCommitIndex), facade.Log.CommitIndex);
-    }
-
-    [Theory]
-    [InlineData(10, 18, 8, -1)]
-    [InlineData(10, 17, 8, 0)]
-    [InlineData(10, 16, 8, 1)]
-    [InlineData(10, 15, 8, 2)]
-    [InlineData(10, 14, 8, 3)]
-    [InlineData(10, 14, 9, 4)]
-    public void
-        SaveSnapshot__КогдаСнапшотБылИЕстьЗакоммиченныеЗаписиИИндексСнапшотаМеньшеЗакоммиченногоИндекса__ДолженКорректноОбновитьИндексыКоммита(
-        long oldSnapshotIndex,
-        long newSnapshotIndex,
-        int committedCount,
-        long expectedLocalCommitIndex)
-    {
-        var (facade, _) = CreateFacade();
-        var snapshotData = new StubSnapshot(RandomBytes(90));
-        facade.Snapshot.SetupSnapshotTest(new Term(2), oldSnapshotIndex, new StubSnapshot(Array.Empty<byte>()));
-        facade.Log.SetupLogTest(committed: Enumerable.Range(1, committedCount)
-                                                     .Select(i => Entry(2, i.ToString()))
-                                                     .ToArray(),
-            uncommitted: Array.Empty<LogEntry>());
-        var initialCommitIndex = facade.CommitIndex;
-
-        facade.SaveSnapshot(snapshotData, new LogEntryInfo(2, newSnapshotIndex));
-
-        // Изначальный индекс коммита поменяться не должен
-        Assert.Equal(initialCommitIndex, facade.CommitIndex);
-
-        // Измениться должен индекс коммита лога
-        Assert.Equal(( Lsn ) expectedLocalCommitIndex, facade.Log.ReadCommitIndexTest());
-        Assert.Equal(( Lsn ) expectedLocalCommitIndex, facade.Log.CommitIndex);
-    }
-
-    [Theory]
-    [InlineData(10, 18, 8)]
-    [InlineData(10, 19, 8)]
-    [InlineData(10, 20, 8)]
-    public void
-        SaveSnapshot__КогдаСнапшотаБылИЕстьЗакоммиченныеКомандыИИндексСнапшотаБольшеЗакоммиченногоИндекса__ДолженКорректноОбновитьИндексКоммита(
-        int oldSnapshotIndex,
-        int newSnapshotIndex,
-        int committedCount)
-    {
-        var (facade, _) = CreateFacade();
-        var snapshotData = new StubSnapshot(RandomBytes(90));
-        facade.Snapshot.SetupSnapshotTest(new Term(2), oldSnapshotIndex, new StubSnapshot(Array.Empty<byte>()));
-        facade.Log.SetupLogTest(committed: Enumerable.Range(1, committedCount)
-                                                     .Select(i => Entry(2, i.ToString()))
-                                                     .ToArray(),
-            uncommitted: Array.Empty<LogEntry>());
-        var expectedLogCommitIndex = -1; // Все закоммиченные записи были затерты
-        var expectedCommitIndex = newSnapshotIndex;
-
-        facade.SaveSnapshot(snapshotData, new LogEntryInfo(2, newSnapshotIndex));
-
-        // Изначальный индекс коммита поменяться не должен
-        Assert.Equal(expectedCommitIndex, facade.CommitIndex);
-
-        // Измениться должен индекс коммита лога
-        Assert.Equal(expectedLogCommitIndex, facade.Log.ReadCommitIndexTest());
-        Assert.Equal(expectedLogCommitIndex, facade.Log.CommitIndex);
+        Assert.Equal(expected, facade.Log.ReadAllTest(), Comparer);
     }
 
     [Fact]
@@ -1663,5 +872,285 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Assert.Null(ex);
     }
 
-    private static bool EqualityComparison(LogEntry left, LogEntry right) => Comparer.Equals(left, right);
+    [Fact]
+    public void PrefixMatch__КогдаЛогПустИПереданTomb__ДолженВернутьTrue()
+    {
+        var (facade, _) = CreateFacade();
+
+        var match = facade.PrefixMatch(LogEntryInfo.Tomb);
+
+        Assert.True(match);
+    }
+
+    [Fact]
+    public void PrefixMatch__КогдаЛогНеПустИПереданTomb__ДолженВернутьTrue()
+    {
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(logEntries: new[] {Entry(1, "asdf"), Entry(2, "vdfgra"),});
+
+        var match = facade.PrefixMatch(LogEntryInfo.Tomb);
+
+        Assert.True(match);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void PrefixMatch__КогдаПередаютсяДанныеОПоследнейЗаписиВЭтомЛоге__ДолженВернутьTrue(int logSize)
+    {
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(logEntries: Enumerable.Range(1, logSize).Select(i => Entry(i, i.ToString())).ToArray());
+        var lastEntryInfo = new LogEntryInfo(logSize, logSize - 1);
+
+        var match = facade.PrefixMatch(lastEntryInfo);
+
+        Assert.True(match);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void PrefixMatch__КогдаПередаютсяДанныеОПредпоследнейЗаписиВЭтомЛоге__ДолженВернутьTrue(int logSize)
+    {
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(Enumerable.Range(1, logSize).Select(i => Entry(i, i.ToString())).ToArray());
+        var lastEntryInfo = new LogEntryInfo(logSize - 1, logSize - 2);
+
+        var match = facade.PrefixMatch(lastEntryInfo);
+
+        Assert.True(match);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(5)]
+    [InlineData(10)]
+    [InlineData(20)]
+    public void PrefixMatch__КогдаИндексРавенПоследнемуНоТермБольше__ДолженВернутьFalse(int logSize)
+    {
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(Enumerable.Range(1, logSize).Select(i => Entry(i, i.ToString())).ToArray());
+        var lastEntryInfo = new LogEntryInfo(logSize + 1, logSize - 1);
+
+        var match = facade.PrefixMatch(lastEntryInfo);
+
+        Assert.False(match);
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(2, 0)]
+    [InlineData(4, 2)]
+    [InlineData(5, 2)]
+    public void PrefixMatch__КогдаИндексВнутриЛогаНоТермБольше__ДолженВернутьFalse(int logSize, int index)
+    {
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(logEntries: Enumerable.Range(1, logSize).Select(i => Entry(i, i.ToString())).ToArray());
+        var lastEntryInfo = new LogEntryInfo(index + 2, index);
+
+        var match = facade.PrefixMatch(lastEntryInfo);
+
+        Assert.False(match);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void PrefixMatch__КогдаИндексРавенПоследнемуВЛогеНоТермМеньше__ДолженВернутьFalse(int logSize)
+    {
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(logEntries: Enumerable.Range(1, logSize).Select(i => Entry(i, i.ToString())).ToArray());
+        var lastEntryInfo = new LogEntryInfo(logSize - 1, logSize);
+
+        var match = facade.PrefixMatch(lastEntryInfo);
+
+        Assert.False(match);
+    }
+
+    [Fact]
+    public void PrefixMatch__КогдаЕстьСнапшотИДанныеРавныЗаписиИзСнапшота__ДолженВернутьTrue()
+    {
+        var snapshotLastEntry = new LogEntryInfo(30, 29);
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(
+            logEntries: Enumerable.Range(1, ( int ) ( snapshotLastEntry.Index + 10 ))
+                                  .Select(i => Entry(i, i.ToString()))
+                                  .ToArray(),
+            snapshotData: ( snapshotLastEntry.Term, snapshotLastEntry.Index, new StubSnapshot(Array.Empty<byte>()) ));
+
+        var match = facade.PrefixMatch(snapshotLastEntry);
+
+        Assert.True(match);
+    }
+
+    [Fact]
+    public void PrefixMatch__КогдаЕстьСнапшотИДанныеОЗаписиРавныПоследнейВЛоге__ДолженВернутьTrue()
+    {
+        var snapshotLastEntry = new LogEntryInfo(30, 29);
+        var (facade, _) = CreateFacade();
+        var logEntries = Enumerable.Range(1, ( int ) ( snapshotLastEntry.Index + 10 ))
+                                   .Select(i => Entry(i, i.ToString()))
+                                   .ToArray();
+        facade.SetupTest(logEntries: logEntries.ToArray(),
+            snapshotData: ( snapshotLastEntry.Term, snapshotLastEntry.Index, new StubSnapshot(Array.Empty<byte>()) ));
+        var logEntryInfo = new LogEntryInfo(logEntries[^1].Term, logEntries.Length - 1);
+
+        var match = facade.PrefixMatch(logEntryInfo);
+
+        Assert.True(match);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 1)]
+    [InlineData(10, 10)]
+    [InlineData(10, 11)]
+    [InlineData(10, 20)]
+    [InlineData(1000, 1000)]
+    public void PrefixMatch__КогдаИндексБольшеРазмераЛога__ДолженВернутьFalse(int logSize, int index)
+    {
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(Enumerable.Range(1, logSize).Select(i => Entry(i, i.ToString())).ToArray());
+        var lastEntryInfo = new LogEntryInfo(logSize + 1, index);
+
+        var match = facade.PrefixMatch(lastEntryInfo);
+
+        Assert.False(match);
+    }
+
+    [Fact]
+    public void IsUpToDate__КогдаПереданаПоследняяЗаписьИзЛога__ДолженВернутьTrue()
+    {
+        var (facade, _) = CreateFacade();
+        var entries = new LogEntry[]
+        {
+            Entry(1, "helo"),      // 0
+            Entry(2, "aasaadsdf"), // 1
+            Entry(2, "45uwhr"),    // 2
+        };
+        facade.SetupTest(entries);
+        var last = new LogEntryInfo(2, 2);
+
+        var actual = facade.IsUpToDate(last);
+
+        Assert.True(actual);
+    }
+
+    [Fact]
+    public void IsUpToDate__КогдаПереданаПредпоследняяЗаписьИзЛога__ДолженВернутьFalse()
+    {
+        var (facade, _) = CreateFacade();
+        var entries = new LogEntry[]
+        {
+            Entry(1, "helo"),      // 0
+            Entry(2, "aasaadsdf"), // 1
+            Entry(2, "45uwhr"),    // 2
+        };
+        facade.SetupTest(entries);
+        var last = new LogEntryInfo(2, 1);
+
+        var actual = facade.IsUpToDate(last);
+
+        Assert.False(actual);
+    }
+
+    [Fact]
+    public void IsUpToDate__КогдаПереданTombИЛогПуст__ДолженВернутьTrue()
+    {
+        var (facade, _) = CreateFacade();
+
+        var actual = facade.IsUpToDate(LogEntryInfo.Tomb);
+
+        Assert.True(actual);
+    }
+
+    [Fact]
+    public void IsUpToDate__КогдаПереданаЗаписьСПоследнимИндексомНоБольшимТермом__ДолженВернутьTrue()
+    {
+        var (facade, _) = CreateFacade();
+        var entries = new LogEntry[]
+        {
+            Entry(1, "helo"),      // 0
+            Entry(2, "aasaadsdf"), // 1
+            Entry(2, "45uwhr"),    // 2
+        };
+        facade.SetupTest(entries);
+        var last = new LogEntryInfo(3, 2);
+
+        var actual = facade.IsUpToDate(last);
+
+        Assert.True(actual);
+    }
+
+    [Fact]
+    public void IsUpToDate__КогдаПереданаЗаписьСМеньшимИндексомИБольшимТермом__ДолженВернутьTrue()
+    {
+        var (facade, _) = CreateFacade();
+        var entries = new LogEntry[]
+        {
+            Entry(1, "helo"),      // 0
+            Entry(2, "aasaadsdf"), // 1
+            Entry(2, "45uwhr"),    // 2
+        };
+        facade.SetupTest(entries);
+        var last = new LogEntryInfo(3, 1);
+
+        var actual = facade.IsUpToDate(last);
+
+        Assert.True(actual);
+    }
+
+    [Fact]
+    public void IsUpToDate__КогдаПереданаЗаписьСБольшимИндексомИМеньшимТермом__ДолженВернутьFalse()
+    {
+        var (facade, _) = CreateFacade();
+        var entries = new LogEntry[]
+        {
+            Entry(1, "helo"),      // 0
+            Entry(2, "aasaadsdf"), // 1
+            Entry(2, "45uwhr"),    // 2
+        };
+        facade.SetupTest(entries);
+        var last = new LogEntryInfo(1, 3);
+
+        var actual = facade.IsUpToDate(last);
+
+        Assert.False(actual);
+    }
+
+    [Fact]
+    public void IsUpToDate__КогдаПереданTombИЛогНеПуст__ДолженВернутьFalse()
+    {
+        var (facade, _) = CreateFacade();
+        var entries = new LogEntry[]
+        {
+            Entry(1, "helo"),      // 0
+            Entry(2, "aasaadsdf"), // 1
+            Entry(2, "45uwhr"),    // 2
+        };
+        facade.SetupTest(entries);
+
+        var actual = facade.IsUpToDate(LogEntryInfo.Tomb);
+
+        Assert.False(actual);
+    }
+
+    [Fact]
+    public void IsUpToDate__КогдаПереданНеTombИЛогПуст__ДолженВернутьTrue()
+    {
+        var (facade, _) = CreateFacade();
+        var notTomb = new LogEntryInfo(2, 2);
+
+        var actual = facade.IsUpToDate(notTomb);
+
+        Assert.True(actual);
+    }
 }

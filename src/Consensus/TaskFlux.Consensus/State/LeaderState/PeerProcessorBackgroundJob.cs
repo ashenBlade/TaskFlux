@@ -216,7 +216,9 @@ internal class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob,
                 appendEntriesRequest = new AppendEntriesRequest(Term: SavedTerm,
                     LeaderCommit: Persistence.CommitIndex,
                     LeaderId: ConsensusModule.Id,
-                    PrevLogEntryInfo: Persistence.GetPrecedingEntryInfo(_replicationState.NextIndex),
+                    PrevLogEntryInfo: _replicationState.NextIndex == 0
+                                          ? LogEntryInfo.Tomb
+                                          : Persistence.GetEntryInfo(_replicationState.NextIndex - 1),
                     Entries: entries);
             }
             catch (ArgumentOutOfRangeException)

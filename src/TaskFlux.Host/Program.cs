@@ -227,8 +227,8 @@ void DumpDataState(FileSystemPersistenceFacade persistence)
     }
 
     Log.Information("Количество записей в логе: {LogEntriesCount}", persistence.Log.Count);
-    if (persistence.Log.Count > 0)
+    if (!persistence.CommitIndex.IsTomb)
     {
-        Log.Information("Индекс закоммиченной команды: {CommitIndex}", persistence.Log.CommitIndex);
+        Log.Information("Индекс закоммиченной команды: {CommitIndex}", persistence.CommitIndex);
     }
 }

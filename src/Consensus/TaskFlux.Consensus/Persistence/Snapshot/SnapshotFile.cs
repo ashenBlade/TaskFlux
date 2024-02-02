@@ -79,6 +79,29 @@ public class SnapshotFile
         return true;
     }
 
+    public bool TryGetIncludedIndex(out Lsn lastIncluded)
+    {
+        if (HasSnapshot)
+        {
+            lastIncluded = LastApplied.Index;
+            return true;
+        }
+
+        lastIncluded = default;
+        return false;
+    }
+
+    public bool TryGetLastEntryInfo(out LogEntryInfo lastIncludedEntryInfo)
+    {
+        if (HasSnapshot)
+        {
+            lastIncludedEntryInfo = LastApplied;
+            return true;
+        }
+
+        lastIncludedEntryInfo = LogEntryInfo.Tomb;
+        return false;
+    }
 
     private class FileSystemSnapshot : ISnapshot
     {

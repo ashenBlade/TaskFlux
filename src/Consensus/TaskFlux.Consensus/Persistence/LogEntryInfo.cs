@@ -8,15 +8,6 @@ namespace TaskFlux.Consensus.Persistence;
 public readonly record struct LogEntryInfo(Term Term, Lsn Index)
 {
     /// <summary>
-    /// Конструктор без параметров лучше не использовать.
-    /// Юзай с параметрами, этот только чтобы ошибок было меньше.
-    /// Создается Tomb по умолчанию.
-    /// </summary>
-    public LogEntryInfo() : this(Term.Start, Lsn.Tomb)
-    {
-    }
-
-    /// <summary>
     /// Пустая запись.
     /// Используется когда в логе нет записей, чтобы не вводить <c>null</c>
     /// </summary>
@@ -26,7 +17,7 @@ public readonly record struct LogEntryInfo(Term Term, Lsn Index)
     /// Является ли запись меткой пустого лога.
     /// Такая запись сигнализирует о том, что в логе нет записей
     /// </summary>
-    public bool IsTomb => Index == Lsn.Tomb;
+    public bool IsTomb => Index.IsTomb;
 
     public override string ToString()
     {

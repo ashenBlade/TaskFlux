@@ -561,32 +561,6 @@ public class FollowerStateTests
     }
 
     [Fact]
-    public void InstallSnapshot__ДолженОчиститьЛогИБуфер()
-    {
-        var (node, persistence, fs) = CreateFollowerNodeNew();
-        fs.SnapshotFile.Delete();
-
-        var lastSnapshotEntry = new LogEntryInfo(new Term(2), 10);
-        var snapshotData = new byte[] {1, 2, 3};
-        var leaderTerm = new Term(2);
-
-        var response = node.Handle(new InstallSnapshotRequest(leaderTerm,
-            new NodeId(1),
-            lastSnapshotEntry,
-            new StubSnapshot(snapshotData)));
-
-        response.CurrentTerm
-                .Should()
-                .Be(leaderTerm, "отправленный лидером терм больше текущего");
-        persistence.Log.GetUncommittedTest()
-                   .Should()
-                   .BeEmpty("лог должен быть очищен после установки нового снапшота");
-        persistence.Log.GetCommittedTest()
-                   .Should()
-                   .BeEmpty("лог должен быть очищен после установки нового снапшота");
-    }
-
-    [Fact]
     public void InstallSnapshot__КогдаИндексСнапшотаРавенТекущемуИндексу__ДолженУстановитьСнапшот()
     {
         // Такое может случиться, когда на лидера большая нагрузка идет и отправляется тот же самый снапшот
