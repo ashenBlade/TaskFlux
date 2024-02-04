@@ -3,7 +3,6 @@ using System.IO.Abstractions;
 using System.Runtime.CompilerServices;
 using Serilog;
 using TaskFlux.Consensus.Persistence.Log;
-using TaskFlux.Consensus.Persistence.LogFileCheckStrategy;
 using TaskFlux.Consensus.Persistence.Metadata;
 using TaskFlux.Consensus.Persistence.Snapshot;
 using TaskFlux.Core;
@@ -26,7 +25,7 @@ public class FileSystemPersistenceFacade
     /// <summary>
     /// Файл лога команд - `consensus/raft.log`
     /// </summary>
-    private readonly FileLog _log;
+    private readonly SegmentedFileLog _log;
 
     /// <summary>
     /// Файл метаданных - `consensus/raft.metadata`
@@ -39,12 +38,6 @@ public class FileSystemPersistenceFacade
     private readonly SnapshotFile _snapshot;
 
     /// <summary>
-    /// Метод для проверки превышения размера файла лога.
-    /// Подобная логика нужна для тестов
-    /// </summary>
-    private readonly ILogFileSizeChecker _sizeChecker;
-
-    /// <summary>
     /// Последняя запись в логе, включая незакоммиченные записи и запись в снапшоте.
     /// </summary>
     public LogEntryInfo LastEntry => _log.GetLastLogEntry();
@@ -52,7 +45,7 @@ public class FileSystemPersistenceFacade
     /// <summary>
     /// Индекс последней закоммиченной записи
     /// </summary>
-    public Lsn CommitIndex { get; private set; }
+    public Lsn CommitIndex => _log.CommitIndex;
 
     /// <summary>
     /// Терм, сохраненный в файле метаданных
@@ -65,34 +58,18 @@ public class FileSystemPersistenceFacade
     public NodeId? VotedFor => _metadata.VotedFor;
 
     public SnapshotFile Snapshot => _snapshot;
-    public FileLog Log => _log;
+    public SegmentedFileLog Log => _log;
     public MetadataFile Metadata => _metadata;
 
-    public FileSystemPersistenceFacade(FileLog log,
-                                       MetadataFile metadata,
-                                       SnapshotFile snapshot,
-                                       ILogger logger,
-                                       ulong maxLogFileSize = Constants.MaxLogFileSize)
-        : this(log, metadata, snapshot, logger, new SizeLogFileSizeChecker(maxLogFileSize))
-    {
-    }
-
-    internal FileSystemPersistenceFacade(FileLog log,
+    internal FileSystemPersistenceFacade(SegmentedFileLog log,
                                          MetadataFile metadata,
                                          SnapshotFile snapshot,
-                                         ILogger logger,
-                                         ILogFileSizeChecker sizeChecker)
+                                         ILogger logger)
     {
         _log = log;
         _metadata = metadata;
         _snapshot = snapshot;
         _logger = logger;
-        _sizeChecker = sizeChecker;
-
-        // То, что уже есть в снапшоте обратно откоммичено быть не может
-        CommitIndex = _snapshot.TryGetIncludedIndex(out var i)
-                          ? i
-                          : Lsn.Tomb;
     }
 
     public static FileSystemPersistenceFacade Initialize(string? dataDirectoryPath, ulong maxFileLogFile)
@@ -110,8 +87,7 @@ public class FileSystemPersistenceFacade
         return new FileSystemPersistenceFacade(fileLogStorage,
             metadataStorage,
             snapshotStorage,
-            logger,
-            maxFileLogFile);
+            logger);
 
         DirectoryInfo CreateDataDirectory()
         {
@@ -155,11 +131,12 @@ public class FileSystemPersistenceFacade
             return SnapshotFile.Initialize(dataDir);
         }
 
-        FileLog CreateFileLogStorage()
+        SegmentedFileLog CreateFileLogStorage()
         {
             try
             {
-                return FileLog.Initialize(dataDirectoryInfo);
+                // ReSharper disable once ContextualLoggerProblem
+                return SegmentedFileLog.Initialize(dataDirectoryInfo, logger.ForContext<SegmentedFileLog>());
             }
             catch (Exception e)
             {
@@ -309,23 +286,7 @@ public class FileSystemPersistenceFacade
     /// <remarks>При выходе за границы, может вернуть пустой массив</remarks>
     public bool TryGetFrom(Lsn index, out IReadOnlyList<LogEntry> entries)
     {
-        lock (_lock)
-        {
-            if (Snapshot.TryGetIncludedIndex(out var snapshotIndex) && index <= snapshotIndex)
-            {
-                /*
-                 * Даже если в логе есть эти записи с указанного индекса, все равно скажем "нет", т.к.:
-                 * 1. В любой момент может заработать ротатор сегментов, который удалит активные сегменты;
-                 * 2. Кол-во записей, которые нужно будет отправить, возможно будет непостижимо огромным (сотня сегментов по 64 Мб например);
-                 */
-
-                entries = Array.Empty<LogEntry>();
-                return false;
-            }
-
-            entries = _log.GetFrom(index);
-            return true;
-        }
+        return _log.TryGetFrom(index, out entries);
     }
 
     /// <summary>
@@ -335,28 +296,7 @@ public class FileSystemPersistenceFacade
     /// <returns>Результат коммита лога</returns>
     public void Commit(Lsn index)
     {
-        if (index.IsTomb)
-        {
-            if (CommitIndex.IsTomb)
-            {
-                // Ну ок
-                return;
-            }
-
-            throw new ArgumentOutOfRangeException(nameof(index), index, "Нельзя закоммитить Tomb индекс");
-        }
-
-        if (_log.LastIndex < index)
-        {
-            throw new ArgumentOutOfRangeException(nameof(index), index,
-                $"Указанный индекс коммита превышает индекс последней записи в логе. Индекс последней записи: {_log.LastIndex}");
-        }
-
-        lock (_lock)
-        {
-            var commit = Math.Max(CommitIndex, index);
-            CommitIndex = commit;
-        }
+        _log.Commit(index);
     }
 
     /// <summary>
@@ -365,19 +305,7 @@ public class FileSystemPersistenceFacade
     /// <exception cref="ArgumentOutOfRangeException">Указанный индекс либо меньше индекса из снапшота, либо больше последнего индекса в логе</exception>
     internal void SetCommitTest(Lsn commit)
     {
-        if (commit < _snapshot.LastApplied.Index)
-        {
-            throw new ArgumentOutOfRangeException(nameof(commit), commit,
-                "Нельзя выставить индекс коммита меньше чем последний индекс в снапшоте");
-        }
-
-        if (_log.LastIndex < commit)
-        {
-            throw new ArgumentOutOfRangeException(nameof(commit), commit,
-                "Нельзя выставить индекс коммита больше, чем индекс последней записи в логе");
-        }
-
-        CommitIndex = commit;
+        _log.SetCommitIndexTest(commit);
     }
 
     /// <summary>
@@ -437,19 +365,7 @@ public class FileSystemPersistenceFacade
     /// <exception cref="NotImplementedException"></exception>
     public LogEntryInfo GetEntryInfo(Lsn index)
     {
-        lock (_lock)
-        {
-            if (index == Snapshot.LastApplied.Index)
-            {
-                return Snapshot.LastApplied;
-            }
-
-            /*
-             * Проверку на то, что переданный индекс меньше индекса снапшота не делаем, т.к.
-             * в логе все еще может находиться эта запись - снапшот создан, но лог еще не очищен до этого индекса
-             */
-            return _log.GetInfoAt(index);
-        }
+        return _log.GetEntryInfoAt(index);
     }
 
     public bool TryGetSnapshotLastEntryInfo(out LogEntryInfo entryInfo)
@@ -602,14 +518,14 @@ public class FileSystemPersistenceFacade
         }
     }
 
-    /// <summary>
-    /// Проверить превышает файл лога максимальный размер
-    /// </summary>
-    /// <returns><c>true</c> - размер превышен, <c>false</c> - иначе</returns>
-    public bool ShouldCreateSnapshot()
-    {
-        return _sizeChecker.IsLogFileSizeExceeded(_log.FileSize);
-    }
+    // /// <summary>
+    // /// Проверить превышает файл лога максимальный размер
+    // /// </summary>
+    // /// <returns><c>true</c> - размер превышен, <c>false</c> - иначе</returns>
+    // public bool ShouldCreateSnapshot()
+    // {
+    //     return _sizeChecker.IsLogFileSizeExceeded(_log.FileSize);
+    // }
 
     /// <summary>
     /// Прочитать из лога все закоммиченные команды.

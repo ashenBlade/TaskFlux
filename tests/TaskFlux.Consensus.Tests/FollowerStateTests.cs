@@ -34,7 +34,7 @@ public class FollowerStateTests
         var backgroundJobQueue = jobQueue ?? Helpers.NullBackgroundJobQueue;
         var metadataFile = MetadataFile.Initialize(fs.DataDirectory);
         metadataFile.SetupMetadataTest(currentTerm, votedFor);
-        var persistence = new FileSystemPersistenceFacade(FileLog.Initialize(fs.DataDirectory),
+        var persistence = new FileSystemPersistenceFacade(SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None),
             metadataFile,
             SnapshotFile.Initialize(fs.DataDirectory), Logger.None);
 
@@ -351,7 +351,7 @@ public class FollowerStateTests
         (FileSystemPersistenceFacade, ConsensusFileSystem) CreateStorage()
         {
             var (_, _, _, snapshot, _, dataDir) = Helpers.CreateFileSystem();
-            var logFile = FileLog.Initialize(dataDir);
+            var logFile = SegmentedFileLog.Initialize(dataDir, Logger.None);
             var metadataFile = MetadataFile.Initialize(dataDir);
             var snapshotFile = SnapshotFile.Initialize(dataDir);
             return ( new FileSystemPersistenceFacade(logFile, metadataFile, snapshotFile, Logger.None),
@@ -480,31 +480,48 @@ public class FollowerStateTests
     }
 
     [Fact]
+    public void AppendEntries__КогдаВЛогеЕстьЗаписиНоПереданныйПрефиксНеСовпадает__ДолженВернутьFalse()
+    {
+        var term = new Term(2);
+        var entries = Enumerable.Range(1, 10)
+                                .Select(i => new LogEntry(term, new[] {( byte ) i}))
+                                .ToArray();
+
+        // Лог изначально был пуст и у нас, и у лидера
+        // Причем, еще ничего не закоммичено
+        var node = CreateFollowerNode(term, null);
+
+        var response = node.Handle(new AppendEntriesRequest(term, Lsn.Tomb, AnotherNodeId,
+            new LogEntryInfo(term.Increment(), entries.Length - 1), entries));
+
+        Assert.False(response.Success);
+    }
+
+    [Fact]
     public void AppendEntries__КогдаЕстьКонфликтующиеЗаписи__ДолженПерезатеретьНеЗакомиченные()
     {
         var term = new Term(2);
         var node = CreateFollowerNode(term, null);
 
         // 3 закоммиченные записи с индексами
-        var committedEntries = new LogEntry[] {new(new(1), [1]), new(new(2), [2]), new(new(2), [3]),};
+        var logEntries = new LogEntry[] {new(new(1), [1]), new(new(2), [2]), new(new(2), [3]),};
 
-        node.Persistence.Log.AppendRange(committedEntries);
+        node.Persistence.SetupTest(logEntries: logEntries);
 
         // Добавляем 2 незакоммиченные записи
-        node.Persistence.InsertRange(new LogEntry[] {new(new(3), new byte[] {4}), new(new(3), new byte[] {5}),},
-            3);
+        node.Persistence.InsertRange(new LogEntry[] {new(new(3), new byte[] {4}), new(new(3), new byte[] {5}),}, 3);
 
         // В запросе передается 1 запись (идет сразу после наших закоммиченных) 
         var leaderCommit = 2;
         var newEntries = new LogEntry[] {new(new(3), new byte[] {6}), new(new(3), new byte[] {7}),};
-        var prevLogEntryInfo = new LogEntryInfo(committedEntries[^1].Term, committedEntries.Length - 1);
+        var prevLogEntryInfo = new LogEntryInfo(logEntries[^1].Term, logEntries.Length - 1);
         var request = new AppendEntriesRequest(term, leaderCommit, AnotherNodeId, prevLogEntryInfo, newEntries);
 
         var response = node.Handle(request);
 
         Assert.True(response.Success);
         var actualEntries = node.Persistence.Log.ReadAllTest();
-        Assert.Equal(committedEntries.Concat(newEntries), actualEntries, LogEntryEqualityComparer.Instance);
+        Assert.Equal(logEntries.Concat(newEntries), actualEntries, LogEntryEqualityComparer.Instance);
         Assert.Equal(request.Term, response.Term);
         Assert.Equal(node.CurrentTerm, response.Term);
     }

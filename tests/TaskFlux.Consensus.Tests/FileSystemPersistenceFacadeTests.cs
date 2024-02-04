@@ -20,7 +20,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     private static LogEntry EmptyEntry(int term) => new(new Term(term), Array.Empty<byte>());
 
     private record MockDataFileSystem(
-        IFileInfo LogFile,
+        IDirectoryInfo LogFile,
         IFileInfo MetadataFile,
         IFileInfo SnapshotFile,
         IDirectoryInfo TemporaryDirectory,
@@ -35,7 +35,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
             return;
         }
 
-        var logFileCreation = () => FileLog.Initialize(dataDir);
+        var logFileCreation = () => SegmentedFileLog.Initialize(dataDir, Logger.None);
         logFileCreation
            .Should()
            .NotThrow("файл лога должен остаться в корректном состоянии");
@@ -58,10 +58,13 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     /// <remarks>Создаваемые файлы пустые</remarks>
     private (FileSystemPersistenceFacade Facade, MockDataFileSystem Fs) CreateFacade(
         Term? initialTerm = null,
-        NodeId? votedFor = null)
+        NodeId? votedFor = null,
+        Lsn? startLsn = null,
+        IReadOnlyList<LogEntry>? tailEntries = null,
+        IReadOnlyList<IReadOnlyList<LogEntry>>? segmentEntries = null)
     {
         var fs = Helpers.CreateFileSystem();
-        var logStorage = FileLog.Initialize(fs.DataDirectory);
+        var logStorage = SegmentedFileLog.InitializeTest(fs.Log, startLsn ?? 0, tailEntries, segmentEntries);
 
         var metadataStorage = MetadataFile.Initialize(fs.DataDirectory);
         metadataStorage.SetupMetadataTest(initialTerm ?? MetadataFile.DefaultTerm, votedFor);
@@ -179,7 +182,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     public void Append__КогдаЛогНеПустойИНетСнапшота__ДолженВернутьЗаписьСПравильнымИндексом()
     {
         var (facade, _) = CreateFacade(2);
-        facade.Log.SetupLogTest(entries: new[]
+        facade.Log.SetupLogTest(tailEntries: new[]
         {
             Entry(1, 99, 76, 33), // 0
             Entry(1, 9),          // 1
@@ -215,7 +218,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Append__КогдаВЛогеЕстьЗакоммиченныеИНеЗакоммиченныеЗаписи__ДолженВернутьПравильныйИндексДобавленнойЗаписи()
     {
         var (facade, _) = CreateFacade(3);
-        facade.Log.SetupLogTest(entries: new[]
+        facade.Log.SetupLogTest(tailEntries: new[]
         {
             Entry(1, "adfasfas"),    // 0
             Entry(2, "aaaa"),        // 1
@@ -811,30 +814,59 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Assert.Equal(expected, actual, Comparer);
     }
 
-    private static readonly ISnapshot NullSnapshot = new StubSnapshot(Array.Empty<byte>());
+    [Theory]
+    [InlineData(1, 100)]
+    [InlineData(2, 1231)]
+    [InlineData(10, 233)]
+    [InlineData(128, 666)]
+    [InlineData(346234562, 4574)]
+    public void TryGetFrom__КогдаИндексМеньшеНачальногоИзЛога__ДолженВернутьFalse(int startLsn, int logSize)
+    {
+        var tail = Enumerable.Range(1, logSize)
+                             .Select(i => Entry(1, i.ToString()))
+                             .ToArray();
+        var (facade, _) = CreateFacade(1, startLsn: startLsn, tailEntries: tail);
+
+        var success = facade.TryGetFrom(startLsn - 1, out _);
+
+        Assert.False(success);
+    }
 
     [Theory]
-    [InlineData(0, 0)] // Только 1 запись в снапшоте
-    [InlineData(5, 0)] // Нужно с самого начала
-    [InlineData(10, 0)]
-    [InlineData(5, 5)] // Попадаем на последний индекс в снапшоте
-    [InlineData(10, 10)]
-    [InlineData(2, 2)]
-    [InlineData(5, 3)] // Где-то внутри снапшота
-    [InlineData(5, 2)]
-    [InlineData(10, 7)]
-    [InlineData(10, 9)] // Предпоследняя запись
-    [InlineData(5, 4)]
-    [InlineData(2, 1)]
-    public void TryGetFrom__КогдаПереданныйИндексВходитВГраницыСнапшота__ДолженВернутьFalse(
-        int snapshotLastIndex,
-        int index)
+    [InlineData(1, 100)]
+    [InlineData(2, 1231)]
+    [InlineData(10, 233)]
+    [InlineData(128, 666)]
+    [InlineData(346234562, 4574)]
+    public void TryGetFrom__КогдаИндексРавенНачальному__ДолженВернутьTrue(int startLsn, int logSize)
     {
-        var (facade, _) = CreateFacade();
-        facade.SetupTest(logEntries: null, snapshotData: ( new Term(1), snapshotLastIndex, NullSnapshot ));
+        var tail = Enumerable.Range(1, logSize)
+                             .Select(i => Entry(1, i.ToString()))
+                             .ToArray();
+        var (facade, _) = CreateFacade(1, startLsn: startLsn, tailEntries: tail);
 
-        var success = facade.TryGetFrom(index, out _);
-        Assert.False(success);
+        var success = facade.TryGetFrom(startLsn, out _);
+
+        Assert.True(success);
+    }
+
+    [Theory]
+    [InlineData(1, 100)]
+    [InlineData(2, 1231)]
+    [InlineData(10, 233)]
+    [InlineData(128, 666)]
+    [InlineData(346234562, 4574)]
+    public void TryGetFrom__КогдаИндексРавенНачальному__ДолженВернутьВсеЗаписиИзЛога(int startLsn, int logSize)
+    {
+        var tail = Enumerable.Range(1, logSize)
+                             .Select(i => Entry(1, i.ToString()))
+                             .ToArray();
+        var (facade, _) = CreateFacade(1, startLsn: startLsn, tailEntries: tail);
+
+        var success = facade.TryGetFrom(startLsn, out var entries);
+
+        Assert.True(success);
+        Assert.Equal(tail, entries);
     }
 
     [Theory]
@@ -980,10 +1012,9 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     {
         var snapshotLastEntry = new LogEntryInfo(30, 29);
         var (facade, _) = CreateFacade();
-        facade.SetupTest(
-            logEntries: Enumerable.Range(1, ( int ) ( snapshotLastEntry.Index + 10 ))
-                                  .Select(i => Entry(i, i.ToString()))
-                                  .ToArray(),
+        facade.SetupTest(logEntries: Enumerable.Range(1, ( int ) ( snapshotLastEntry.Index + 10 ))
+                                               .Select(i => Entry(i, i.ToString()))
+                                               .ToArray(),
             snapshotData: ( snapshotLastEntry.Term, snapshotLastEntry.Index, new StubSnapshot(Array.Empty<byte>()) ));
 
         var match = facade.PrefixMatch(snapshotLastEntry);
@@ -1022,6 +1053,19 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         var lastEntryInfo = new LogEntryInfo(logSize + 1, index);
 
         var match = facade.PrefixMatch(lastEntryInfo);
+
+        Assert.False(match);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(100)]
+    [InlineData(56734)]
+    public void PrefixMatch__КогдаПередаетсяИндексМеньшеНачального__ДолженВернутьFalse(int startIndex)
+    {
+        var (facade, _) = CreateFacade(startLsn: startIndex, tailEntries: new[] {Entry(1, "asdf")});
+
+        var match = facade.PrefixMatch(new LogEntryInfo(1, startIndex - 1));
 
         Assert.False(match);
     }

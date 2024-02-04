@@ -1,4 +1,3 @@
-using FluentAssertions;
 using Moq;
 using Serilog.Core;
 using TaskFlux.Consensus.Commands.AppendEntries;
@@ -67,7 +66,7 @@ public class CandidateStateTests
         FileSystemPersistenceFacade CreateStoragePersistenceFacade()
         {
             var fs = Helpers.CreateFileSystem();
-            var logStorage = FileLog.Initialize(fs.DataDirectory);
+            var logStorage = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
             var metadataStorage = MetadataFile.Initialize(fs.DataDirectory);
             var snapshotStorage = SnapshotFile.Initialize(fs.DataDirectory);
             if (fileSizeChecker is null)
@@ -75,8 +74,7 @@ public class CandidateStateTests
                 return new FileSystemPersistenceFacade(logStorage, metadataStorage, snapshotStorage, Logger.None);
             }
 
-            return new FileSystemPersistenceFacade(logStorage, metadataStorage, snapshotStorage, Logger.None,
-                fileSizeChecker);
+            return new FileSystemPersistenceFacade(logStorage, metadataStorage, snapshotStorage, Logger.None);
         }
     }
 
@@ -325,13 +323,18 @@ public class CandidateStateTests
         var requestEntries = Enumerable.Range(0, entriesCount)
                                        .Select(_ => RandomDataEntry(term))
                                        .ToArray();
-        node.Persistence.SetupTest(new[] {RandomDataEntry(1), RandomDataEntry(1), RandomDataEntry(2),});
+        node.Persistence.SetupTest(new[]
+        {
+            RandomDataEntry(1), // 0
+            RandomDataEntry(1), // 1
+            RandomDataEntry(2), // 2
+        });
         node.Persistence.SetCommitTest(oldCommitIndex);
 
-        var request = new AppendEntriesRequest(term, oldCommitIndex, AnotherNodeId, LogEntryInfo.Tomb, requestEntries);
-        var response = node.Handle(request);
-        Assert.True(response.Success);
+        var response = node.Handle(new AppendEntriesRequest(term, oldCommitIndex, AnotherNodeId,
+            node.Persistence.LastEntry, requestEntries));
 
+        Assert.True(response.Success);
         var actualCommitIndex = node.Persistence.CommitIndex;
         Assert.Equal(oldCommitIndex, actualCommitIndex);
     }
@@ -457,57 +460,6 @@ public class CandidateStateTests
 
         Assert.False(response.Success);
         Assert.Equal(log, node.Persistence.Log.ReadAllTest(), LogEntryComparer);
-    }
-
-    [Fact]
-    public void AppendEntries__КогдаРазмерЛогаПревысилМаксимальный__ДолженСоздатьСнапшот()
-    {
-        var term = new Term(5);
-        var logEntries = new[]
-        {
-            RandomDataEntry(1), // 0
-            RandomDataEntry(2), // 1
-            RandomDataEntry(2), // 2
-            RandomDataEntry(3), // 3
-            RandomDataEntry(5), // 4
-        };
-
-        var newSnapshot = new byte[100].Apply(arr => Random.Shared.NextBytes(arr));
-        var applicationFactory = new Mock<IApplicationFactory>(MockBehavior.Strict).Apply(m =>
-        {
-            // Для последователя мы должны создать новый снапшот из предыдущего, а не целого приложения
-            m.Setup(f => f.CreateSnapshot(It.IsAny<ISnapshot?>(), It.IsAny<IEnumerable<byte[]>>()))
-             .Returns(new StubSnapshot(newSnapshot));
-        });
-        using var node = CreateCandidateNode(term, fileSizeChecker: StubFileSizeChecker.Exceeded,
-            applicationFactory: applicationFactory.Object);
-        node.Persistence.SetupTest(logEntries);
-        var expectedLastIndex = 4;
-        var expectedLastTerm = 5;
-        // Этим запросом закоммитим сразу все записи
-        var request = new AppendEntriesRequest(term, 4, AnotherNodeId, node.Persistence.LastEntry,
-            Array.Empty<LogEntry>());
-
-        var response = node.Handle(request);
-
-        response.Success
-                .Should()
-                .BeTrue("конфликтов лога и терма нет");
-
-        var (actualIndex, actualTerm, actualSnapshot) = node.Persistence.Snapshot.ReadAllDataTest();
-
-        actualIndex.Value
-                   .Should()
-                   .Be(expectedLastIndex,
-                        "Последний индекс команды снапшота должен равняться последнему индексу примененной команды");
-        actualTerm.Value
-                  .Should()
-                  .Be(expectedLastTerm,
-                       "Последний терм команды снапшота должен равняться последнему терму примененной команды");
-
-        actualSnapshot.Should()
-                      .BeEquivalentTo(newSnapshot,
-                           "Данные из файла снапшота должны быть идентичны тем, что передает снапшот");
     }
 
     private LogEntry RandomDataEntry(int term) => RandomDataEntry(new Term(term));

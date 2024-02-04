@@ -8,9 +8,9 @@ public class Constants
     public const string MetadataFileName = "tflux.metadata";
 
     /// <summary>
-    /// Название файла лога команд
+    /// Название директории для сегментов лога
     /// </summary>
-    public const string LogFileName = "tflux.log";
+    public const string LogDirectoryName = "log";
 
     /// <summary>
     /// Название файла снапшота

@@ -216,6 +216,7 @@ internal class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob,
                 appendEntriesRequest = new AppendEntriesRequest(Term: SavedTerm,
                     LeaderCommit: Persistence.CommitIndex,
                     LeaderId: ConsensusModule.Id,
+                    // TODO: тесты на то, что этой записи уже нет и проверять не с NextIndex == 0 а по другому как-то
                     PrevLogEntryInfo: _replicationState.NextIndex == 0
                                           ? LogEntryInfo.Tomb
                                           : Persistence.GetEntryInfo(_replicationState.NextIndex - 1),

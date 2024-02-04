@@ -172,7 +172,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         // Отдать свободный голос можем только за кандидата 
         if (canVote
-&&                      // За которого можем проголосовать и
+         &&             // За которого можем проголосовать и
             isUpToDate) // У которого лог не хуже нашего
         {
             var followerState = ConsensusModule.CreateFollowerState();
@@ -233,6 +233,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default)
     {
+        // TODO: сначала реплицировать, а только потом применять
         Debug.Assert(_application is not null, "_application is not null",
             "Приложение не было инициализировано на момент обработки запроса");
         _logger.Debug("Получил новую команду: {Command}", command);
@@ -283,12 +284,12 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             return SubmitResponse<TResponse>.NotLeader;
         }
 
-        if (Persistence.ShouldCreateSnapshot())
-        {
-            _logger.Debug("Создаю снапшот");
-            var snapshot = _application.GetSnapshot();
-            Persistence.SaveSnapshot(snapshot, new LogEntryInfo(newEntry.Term, appended), token);
-        }
+        // if (Persistence.ShouldCreateSnapshot())
+        // {
+        //     _logger.Debug("Создаю снапшот");
+        //     var snapshot = _application.GetSnapshot();
+        //     Persistence.SaveSnapshot(snapshot, new LogEntryInfo(newEntry.Term, appended), token);
+        // }
 
         // Возвращаем результат
         return SubmitResponse<TResponse>.Success(response, true);

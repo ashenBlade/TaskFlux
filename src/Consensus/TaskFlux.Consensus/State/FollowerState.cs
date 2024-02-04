@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Serilog;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
@@ -114,7 +115,10 @@ public class FollowerState<TCommand, TResponse>
 
         if (0 < request.Entries.Count)
         {
-            Persistence.InsertRange(request.Entries, request.PrevLogEntryInfo.Index + 1);
+            var insertIndex = request.PrevLogEntryInfo.Index + 1;
+            Debug.Assert(Persistence.CommitIndex < insertIndex, "Persistence.CommitIndex < insertIndex",
+                "Нельзя перезаписать закоммиченные записи");
+            Persistence.InsertRange(request.Entries, insertIndex);
         }
 
         if (Persistence.CommitIndex == request.LeaderCommit)
@@ -135,29 +139,6 @@ public class FollowerState<TCommand, TResponse>
             _logger.Warning(
                 "Лидер передал индекс коммита меньше, чем у меня. Индекс коммита лидера: {LeaderCommitIndex}. Текущий индекс коммита: {CommitIndex}",
                 request.LeaderCommit, Persistence.CommitIndex);
-        }
-
-        if (Persistence.ShouldCreateSnapshot())
-        {
-            _logger.Information("Создаю снапшот приложения");
-            var oldSnapshot = Persistence.TryGetSnapshot(out var s, out var _)
-                                  ? s
-                                  : null;
-            var deltas = Persistence.ReadCommittedDelta();
-            var newSnapshot = ApplicationFactory.CreateSnapshot(oldSnapshot, deltas);
-            var lastIncludedEntry = Persistence.GetEntryInfo(Persistence.CommitIndex);
-
-            try
-            {
-                Persistence.SaveSnapshot(newSnapshot, lastIncludedEntry);
-            }
-            catch (Exception e)
-            {
-                _logger.Error(e,
-                    "Ошибка во время сохранения снапшота. Последний {LastEntry}. Коммит лидера: {LeaderCommit}",
-                    lastIncludedEntry, request.LeaderCommit);
-                throw;
-            }
         }
 
         _leaderId = request.LeaderId;
