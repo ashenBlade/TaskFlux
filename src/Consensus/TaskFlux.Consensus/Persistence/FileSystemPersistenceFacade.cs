@@ -74,6 +74,7 @@ public class FileSystemPersistenceFacade
 
     public static FileSystemPersistenceFacade Initialize(string? dataDirectoryPath, ulong maxFileLogFile)
     {
+        // TODO: пробрасывать настройки в аргументах Initialize 
         // TODO: инициализировать корректно индекс последней записи
         var logger = Serilog.Log.ForContext<FileSystemPersistenceFacade>();
         var dataDirPath = GetDataDirectory();
@@ -396,18 +397,21 @@ public class FileSystemPersistenceFacade
             throw;
         }
 
-        return new FileSystemSnapshotInstaller(snapshotTempFile, this);
+        return new FileSystemSnapshotInstaller(snapshotTempFile, lastIncludedSnapshotEntry.Index, this);
     }
 
     private class FileSystemSnapshotInstaller : ISnapshotInstaller
     {
         private readonly ISnapshotFileWriter _snapshotFileWriter;
+        private readonly Lsn _lastIndex;
         private readonly FileSystemPersistenceFacade _parent;
 
         public FileSystemSnapshotInstaller(ISnapshotFileWriter snapshotFileWriter,
+                                           Lsn lastIndex,
                                            FileSystemPersistenceFacade parent)
         {
             _snapshotFileWriter = snapshotFileWriter;
+            _lastIndex = lastIndex;
             _parent = parent;
         }
 
@@ -419,75 +423,17 @@ public class FileSystemPersistenceFacade
         public void Commit()
         {
             _parent._logger.Verbose("Сохраняю файл снапшота");
+
             // 1. Обновляем файл снапшота
             _snapshotFileWriter.Save();
+
+            // 2. Освобождаем лог 
+            _parent._log.DeleteUntil(_lastIndex);
         }
 
         public void Discard()
         {
             _snapshotFileWriter.Discard();
-        }
-    }
-
-    /// <summary>
-    /// Метод для создания нового снапшота из существующего состояния при превышении максимального размера лога.
-    /// </summary>
-    /// <param name="snapshot">Слепок текущего состояния приложения</param>
-    /// <param name="lastIncludedEntry">Последняя включенная в снапшот запись</param>
-    /// <param name="token">Токен отмены</param>
-    /// <remarks>
-    /// Таймер (выборов) не обновляется
-    /// </remarks>
-    // TODO: удалить и сделать единый CreateSnapshot вызов - поддерживать меньше
-    public void SaveSnapshot(ISnapshot snapshot, LogEntryInfo lastIncludedEntry, CancellationToken token = default)
-    {
-        token.ThrowIfCancellationRequested();
-
-        // 1. Создать временный файл
-        var snapshotTempFile = _snapshot.CreateTempSnapshotFile();
-
-        try
-        {
-            snapshotTempFile.Initialize(lastIncludedEntry);
-        }
-        catch (Exception)
-        {
-            snapshotTempFile.Discard();
-            throw;
-        }
-
-        // 3. Записываем сами данные на диск
-        foreach (var chunk in snapshot.GetAllChunks(token))
-        {
-            try
-            {
-                snapshotTempFile.WriteSnapshotChunk(chunk.Span, token);
-            }
-            catch (OperationCanceledException)
-            {
-                snapshotTempFile.Discard();
-                return;
-            }
-            catch (Exception)
-            {
-                snapshotTempFile.Discard();
-                throw;
-            }
-        }
-
-        // 4. Обновляем данные
-        lock (_lock)
-        {
-            try
-            {
-                _logger.Verbose("Обновляю файл снапшота");
-                snapshotTempFile.Save();
-            }
-            catch (Exception)
-            {
-                snapshotTempFile.Discard();
-                throw;
-            }
         }
     }
 
@@ -518,20 +464,31 @@ public class FileSystemPersistenceFacade
         }
     }
 
-    // /// <summary>
-    // /// Проверить превышает файл лога максимальный размер
-    // /// </summary>
-    // /// <returns><c>true</c> - размер превышен, <c>false</c> - иначе</returns>
-    // public bool ShouldCreateSnapshot()
-    // {
-    //     return _sizeChecker.IsLogFileSizeExceeded(_log.FileSize);
-    // }
+    /// <summary>
+    /// Следует ли создавать новый снапшот приложения
+    /// </summary>
+    public bool ShouldCreateSnapshot()
+    {
+        /*
+         * Новый снапшот следует создавать в случае, если количество сегментов между
+         * - тем, что содержит индекс снапшота
+         * - и тем, в котором находится индекс коммита
+         * превышает определенное количество.
+         *
+         * Мы учитываем общее количество сегментов, т.к. после создания снапшота сегменты, покрываемые снапшотом удаляются.
+         */
+
+        var uncoveredSegments = _log.GetSegmentsBefore(_log.CommitIndex);
+        return _snapshot.Options.SegmentsBeforeSnapshot <= uncoveredSegments;
+    }
+
 
     /// <summary>
-    /// Прочитать из лога все закоммиченные команды.
+    /// Прочитать из лога все закоммиченные команды, начиная с первой, включенной в снапшот.
+    /// Вызывается, когда 
     /// </summary>
-    /// <returns>Список из всех закоммиченных команд</returns>
-    public IEnumerable<byte[]> ReadCommittedDelta()
+    /// <returns>Перечисление закоммиченных команд, начиная с команды после снапшота до индекса коммита</returns>
+    public IEnumerable<byte[]> ReadCommittedDeltaFromPreviousSnapshot()
     {
         lock (_lock)
         {
@@ -540,24 +497,25 @@ public class FileSystemPersistenceFacade
                 yield break;
             }
 
-            var start = Snapshot.TryGetIncludedIndex(out var s)
-                            ? s + 1
-                            : _log.StartIndex;
+            var startIndex = Snapshot.TryGetIncludedIndex(out var s)
+                                 ? s + 1
+                                 : _log.StartIndex;
 
-            var end = CommitIndex;
+            var endIndex = CommitIndex;
 
-            if (end < start)
+            if (endIndex < startIndex)
             {
-                // Такое может случиться?
+                /*
+                 * Вообще, такого в нормально состоянии случиться не может, но возможная ситуация:
+                 * - Приложение только запустилось
+                 * - Снапшот есть
+                 * - Лог есть, но его индекс начала меньше индекса снапшота
+                 * - Индекс коммита равен первому в логе
+                 */
                 yield break;
             }
 
-            if (start < _log.StartIndex)
-            {
-                yield break;
-            }
-
-            foreach (var bytes in _log.ReadDataRange(start, end))
+            foreach (var bytes in _log.ReadDataRange(startIndex, endIndex))
             {
                 yield return bytes;
             }

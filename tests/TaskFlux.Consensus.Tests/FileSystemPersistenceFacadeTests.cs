@@ -244,26 +244,6 @@ public class FileSystemPersistenceFacadeTests : IDisposable
 
     private static LogEntry RandomDataEntry(int term) => RandomDataEntry(new Term(term));
 
-    private static (T[] Left, T[] Right) Split<T>(IReadOnlyList<T> array, int index)
-    {
-        var leftLength = index + 1;
-        var left = new T[leftLength];
-        var rightLength = array.Count - index - 1;
-
-        var right = new T[rightLength];
-        for (int i = 0; i <= index; i++)
-        {
-            left[i] = array[i];
-        }
-
-        for (int i = index + 1, j = 0; i < array.Count; i++, j++)
-        {
-            right[j] = array[i];
-        }
-
-        return ( left, right );
-    }
-
     [Theory]
     [InlineData(1, 0)]
     [InlineData(2, 0)]
@@ -588,6 +568,124 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         }
 
         writer.Commit();
+
+        var (actualLastIndex, actualLastTerm, actualData) = facade.Snapshot.ReadAllDataTest();
+        Assert.True(fs.SnapshotFile.Exists);
+        Assert.Equal(snapshotData, actualData);
+        Assert.Equal(lastSnapshotEntry.Term, actualLastTerm);
+        Assert.Equal(lastSnapshotEntry.Index, actualLastIndex);
+    }
+
+    [Fact]
+    public void
+        CreateSnapshot__КогдаИндексСнапшотаУказываетНаЗаписьВСегментеВСередине__ДолженУдалитьИзЛогаПокрываемыеСегменты()
+    {
+        const int segmentsCount = 10;
+        const int segmentSize = 100;
+
+        var segmentEntries = Enumerable.Range(0, segmentsCount)
+                                       .Select(i => Enumerable.Range(0, segmentSize)
+                                                              .Select(s => Entry(1, ( s + i * segmentSize ).ToString()))
+                                                              .ToArray())
+                                       .ToArray();
+        var tailEntries = Enumerable.Range(0, 10)
+                                    .Select(i => Entry(1, i.ToString()))
+                                    .ToArray();
+
+        var (facade, fs) = CreateFacade(segmentEntries: segmentEntries, tailEntries: tailEntries);
+        var middleSegmentIndex = segmentSize * 4 + 1;
+        var lastSnapshotEntry = new LogEntryInfo(1, middleSegmentIndex);
+        var snapshotData = RandomBytes(100);
+        var expectedSegmentsCount = 6 + 1; // Удаляются все до 5-ого (осталось 6) + хвост 
+
+        var writer = facade.CreateSnapshot(lastSnapshotEntry);
+        var stubSnapshot = new StubSnapshot(snapshotData);
+        foreach (var chunk in stubSnapshot.GetAllChunks())
+        {
+            writer.InstallChunk(chunk.Span, CancellationToken.None);
+        }
+
+        writer.Commit();
+
+        Assert.Equal(expectedSegmentsCount, facade.Log.GetSegmentsCountTest());
+
+        var (actualLastIndex, actualLastTerm, actualData) = facade.Snapshot.ReadAllDataTest();
+        Assert.True(fs.SnapshotFile.Exists);
+        Assert.Equal(snapshotData, actualData);
+        Assert.Equal(lastSnapshotEntry.Term, actualLastTerm);
+        Assert.Equal(lastSnapshotEntry.Index, actualLastIndex);
+    }
+
+    [Fact]
+    public void CreateSnapshot__КогдаИндексУказывалНаИндексВнутриХвоста__ДолженУдалитьВсеЗакрытыеСегменты()
+    {
+        const int segmentsCount = 10;
+        const int segmentSize = 100;
+
+        var segmentEntries = Enumerable.Range(0, segmentsCount)
+                                       .Select(i => Enumerable.Range(0, segmentSize)
+                                                              .Select(s => Entry(1, ( s + i * segmentSize ).ToString()))
+                                                              .ToArray())
+                                       .ToArray();
+        var tailEntries = Enumerable.Range(0, 10)
+                                    .Select(i => Entry(1, i.ToString()))
+                                    .ToArray();
+
+        var (facade, fs) = CreateFacade(segmentEntries: segmentEntries, tailEntries: tailEntries);
+        var tailIndex = segmentSize * segmentsCount + 1;
+        var lastSnapshotEntry = new LogEntryInfo(1, tailIndex);
+        var snapshotData = RandomBytes(100);
+
+        var writer = facade.CreateSnapshot(lastSnapshotEntry);
+        var stubSnapshot = new StubSnapshot(snapshotData);
+        foreach (var chunk in stubSnapshot.GetAllChunks())
+        {
+            writer.InstallChunk(chunk.Span, CancellationToken.None);
+        }
+
+        writer.Commit();
+
+        Assert.Equal(1, facade.Log.GetSegmentsCountTest());
+
+        var (actualLastIndex, actualLastTerm, actualData) = facade.Snapshot.ReadAllDataTest();
+        Assert.True(fs.SnapshotFile.Exists);
+        Assert.Equal(snapshotData, actualData);
+        Assert.Equal(lastSnapshotEntry.Term, actualLastTerm);
+        Assert.Equal(lastSnapshotEntry.Index, actualLastIndex);
+    }
+
+    [Fact]
+    public void CreateSnapshot__КогдаИндексБольшеПоследнего__ДолженНачатьНовыйЛог()
+    {
+        const int segmentsCount = 10;
+        const int segmentSize = 100;
+
+        var segmentEntries = Enumerable.Range(0, segmentsCount)
+                                       .Select(i => Enumerable.Range(0, segmentSize)
+                                                              .Select(s => Entry(1, ( s + i * segmentSize ).ToString()))
+                                                              .ToArray())
+                                       .ToArray();
+        var tailEntries = Enumerable.Range(0, 10)
+                                    .Select(i => Entry(1, i.ToString()))
+                                    .ToArray();
+
+        var (facade, fs) = CreateFacade(segmentEntries: segmentEntries, tailEntries: tailEntries);
+        var middleSegmentIndex = segmentSize * segmentsCount + tailEntries.Length + 1;
+        var lastSnapshotEntry = new LogEntryInfo(1, middleSegmentIndex);
+        var snapshotData = RandomBytes(100);
+
+        var writer = facade.CreateSnapshot(lastSnapshotEntry);
+        var stubSnapshot = new StubSnapshot(snapshotData);
+        foreach (var chunk in stubSnapshot.GetAllChunks())
+        {
+            writer.InstallChunk(chunk.Span, CancellationToken.None);
+        }
+
+        writer.Commit();
+
+        Assert.Equal(1, facade.Log.GetSegmentsCountTest());
+        Assert.Empty(facade.Log.ReadAllTest());
+        Assert.Equal(lastSnapshotEntry.Index, facade.Log.StartIndex);
 
         var (actualLastIndex, actualLastTerm, actualData) = facade.Snapshot.ReadAllDataTest();
         Assert.True(fs.SnapshotFile.Exists);
@@ -1074,7 +1172,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     public void IsUpToDate__КогдаПереданаПоследняяЗаписьИзЛога__ДолженВернутьTrue()
     {
         var (facade, _) = CreateFacade();
-        var entries = new LogEntry[]
+        var entries = new[]
         {
             Entry(1, "helo"),      // 0
             Entry(2, "aasaadsdf"), // 1
@@ -1092,7 +1190,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     public void IsUpToDate__КогдаПереданаПредпоследняяЗаписьИзЛога__ДолженВернутьFalse()
     {
         var (facade, _) = CreateFacade();
-        var entries = new LogEntry[]
+        var entries = new[]
         {
             Entry(1, "helo"),      // 0
             Entry(2, "aasaadsdf"), // 1
@@ -1120,7 +1218,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     public void IsUpToDate__КогдаПереданаЗаписьСПоследнимИндексомНоБольшимТермом__ДолженВернутьTrue()
     {
         var (facade, _) = CreateFacade();
-        var entries = new LogEntry[]
+        var entries = new[]
         {
             Entry(1, "helo"),      // 0
             Entry(2, "aasaadsdf"), // 1
@@ -1138,7 +1236,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     public void IsUpToDate__КогдаПереданаЗаписьСМеньшимИндексомИБольшимТермом__ДолженВернутьTrue()
     {
         var (facade, _) = CreateFacade();
-        var entries = new LogEntry[]
+        var entries = new[]
         {
             Entry(1, "helo"),      // 0
             Entry(2, "aasaadsdf"), // 1
@@ -1156,7 +1254,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     public void IsUpToDate__КогдаПереданаЗаписьСБольшимИндексомИМеньшимТермом__ДолженВернутьFalse()
     {
         var (facade, _) = CreateFacade();
-        var entries = new LogEntry[]
+        var entries = new[]
         {
             Entry(1, "helo"),      // 0
             Entry(2, "aasaadsdf"), // 1
@@ -1174,7 +1272,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     public void IsUpToDate__КогдаПереданTombИЛогНеПуст__ДолженВернутьFalse()
     {
         var (facade, _) = CreateFacade();
-        var entries = new LogEntry[]
+        var entries = new[]
         {
             Entry(1, "helo"),      // 0
             Entry(2, "aasaadsdf"), // 1

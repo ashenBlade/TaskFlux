@@ -3,6 +3,7 @@ using Serilog;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
+using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 
 namespace TaskFlux.Consensus.State;
@@ -139,6 +140,18 @@ public class FollowerState<TCommand, TResponse>
             _logger.Warning(
                 "Лидер передал индекс коммита меньше, чем у меня. Индекс коммита лидера: {LeaderCommitIndex}. Текущий индекс коммита: {CommitIndex}",
                 request.LeaderCommit, Persistence.CommitIndex);
+        }
+
+        if (Persistence.ShouldCreateSnapshot())
+        {
+            _logger.Information("Создаю снапшот приложения");
+            var oldSnapshot = Persistence.TryGetSnapshot(out var s, out var _)
+                                  ? s
+                                  : null;
+            var deltas = Persistence.ReadCommittedDeltaFromPreviousSnapshot();
+            var newSnapshot = ApplicationFactory.CreateSnapshot(oldSnapshot, deltas);
+            var lastIncludedEntry = Persistence.GetEntryInfo(Persistence.CommitIndex);
+            Persistence.SaveSnapshot(newSnapshot, lastIncludedEntry);
         }
 
         _leaderId = request.LeaderId;

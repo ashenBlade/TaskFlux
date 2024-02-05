@@ -48,7 +48,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
                               : null;
 
         _logger.Information("Восстанавливаю предыдущее состояние");
-        var deltas = Persistence.ReadCommittedDelta();
+        var deltas = Persistence.ReadCommittedDeltaFromPreviousSnapshot();
         _application = ApplicationFactory.Restore(oldSnapshot, deltas);
         Array.ForEach(_peerProcessors, p =>
         {
@@ -284,12 +284,12 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             return SubmitResponse<TResponse>.NotLeader;
         }
 
-        // if (Persistence.ShouldCreateSnapshot())
-        // {
-        //     _logger.Debug("Создаю снапшот");
-        //     var snapshot = _application.GetSnapshot();
-        //     Persistence.SaveSnapshot(snapshot, new LogEntryInfo(newEntry.Term, appended), token);
-        // }
+        if (Persistence.ShouldCreateSnapshot())
+        {
+            _logger.Debug("Создаю снапшот");
+            var snapshot = _application.GetSnapshot();
+            Persistence.SaveSnapshot(snapshot, new LogEntryInfo(newEntry.Term, appended), token);
+        }
 
         // Возвращаем результат
         return SubmitResponse<TResponse>.Success(response, true);

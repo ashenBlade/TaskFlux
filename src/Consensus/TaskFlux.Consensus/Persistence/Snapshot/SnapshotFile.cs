@@ -13,6 +13,11 @@ namespace TaskFlux.Consensus.Persistence.Snapshot;
 public class SnapshotFile
 {
     /// <summary>
+    /// Настройки менеджера снапшотов
+    /// </summary>
+    public SnapshotOptions Options { get; }
+
+    /// <summary>
     /// Маркер файла
     /// </summary>
     private const uint Marker = 0xB6380FC9;
@@ -37,10 +42,14 @@ public class SnapshotFile
     private SnapshotFile(
         IFileInfo snapshotFile,
         IDirectoryInfo temporarySnapshotFileDirectory,
-        (LogEntryInfo LastApplied, int DataLength, uint CheckSum)? snapshotInfo)
+        (LogEntryInfo LastApplied, int DataLength, uint CheckSum)? snapshotInfo,
+        SnapshotOptions options)
     {
         ArgumentNullException.ThrowIfNull(snapshotFile);
         ArgumentNullException.ThrowIfNull(temporarySnapshotFileDirectory);
+        ArgumentNullException.ThrowIfNull(options);
+
+        Options = options;
         _snapshotFile = snapshotFile;
         _temporarySnapshotFileDirectory = temporarySnapshotFileDirectory;
         _snapshotInfo = snapshotInfo;
@@ -429,13 +438,12 @@ public class SnapshotFile
         return ( new LogEntryInfo(term, index), length, storedCheckSum );
     }
 
-    public static SnapshotFile Initialize(IDirectoryInfo dataDirectory)
+    public static SnapshotFile Initialize(IDirectoryInfo dataDirectory, SnapshotOptions? options = null)
     {
         var snapshotFile =
             dataDirectory.FileSystem.FileInfo.New(Path.Combine(dataDirectory.FullName, Constants.SnapshotFileName));
-        var tempDirectory =
-            dataDirectory.FileSystem.DirectoryInfo.New(Path.Combine(dataDirectory.FullName,
-                Constants.TemporaryDirectoryName));
+        var tempDirectory = dataDirectory.FileSystem.DirectoryInfo.New(Path.Combine(dataDirectory.FullName,
+            Constants.TemporaryDirectoryName));
 
         if (!tempDirectory.Exists)
         {
@@ -452,7 +460,7 @@ public class SnapshotFile
         try
         {
             var info = Initialize(snapshotFile);
-            return new SnapshotFile(snapshotFile, tempDirectory, info);
+            return new SnapshotFile(snapshotFile, tempDirectory, info, options ?? SnapshotOptions.Default);
         }
         catch (EndOfStreamException e)
         {

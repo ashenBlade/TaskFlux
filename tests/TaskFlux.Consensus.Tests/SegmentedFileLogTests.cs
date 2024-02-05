@@ -975,4 +975,175 @@ public class SegmentedFileLogTests : IDisposable
             return obj.Sum(b => b);
         }
     }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void
+        DeleteUntil__КогдаВЛогеЕстьНесколькоЗакрытыхСегментовИИндексРавенНачальномуВХвосте__ДолженУдалитьВсеЗакрытыеСегменты(
+        int sealedSegmentsCount)
+    {
+        const int segmentSize = 1024;
+        const int tailSize = 10;
+        var sealedSegmentsEntries = Enumerable.Range(0, sealedSegmentsCount)
+                                              .Select(s => Enumerable.Range(0, segmentSize)
+                                                                     .Select(i => Entry(1,
+                                                                          ( i + s * segmentSize ).ToString()))
+                                                                     .ToArray())
+                                              .ToArray();
+        var tailEntries = Enumerable.Range(0, tailSize)
+                                    .Select(i => Entry(1, i.ToString()))
+                                    .ToArray();
+        var (facade, _) = CreateLog(0, tailEntries: tailEntries, segmentEntries: sealedSegmentsEntries);
+        var startSegmentIndex = segmentSize * sealedSegmentsCount;
+
+        facade.DeleteUntil(startSegmentIndex);
+
+        Assert.Equal(1, facade.GetSegmentsCountTest());
+    }
+
+    [Fact]
+    public void DeleteUntil__КогдаИндексУказываетНаСегментВСередине__ДолженУдалитьСегментыДоЭтогоСегмента()
+    {
+        const int segmentSize = 1024;
+        const int sealedSegmentsCount = 10;
+        const int tailSize = 10;
+        var sealedSegmentsEntries = Enumerable.Range(0, sealedSegmentsCount)
+                                              .Select(s => Enumerable.Range(0, segmentSize)
+                                                                     .Select(i => Entry(1,
+                                                                          ( i + s * segmentSize ).ToString()))
+                                                                     .ToArray())
+                                              .ToArray();
+        var tailEntries = Enumerable.Range(0, tailSize)
+                                    .Select(i => Entry(1, i.ToString()))
+                                    .ToArray();
+        var (facade, _) = CreateLog(0, tailEntries: tailEntries, segmentEntries: sealedSegmentsEntries);
+        var startSegmentIndex = segmentSize * 4 + 1; // Индекс внутри 5-ого сегмента 
+        var expectedSegmentsCount = 6 + 1;           // Удалили 4 сегмента (10 - 4) и хвост  
+
+        facade.DeleteUntil(startSegmentIndex);
+
+        Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCountTest());
+    }
+
+    [Fact]
+    public void DeleteUntil__КогдаИндексРавенНачальному__НеДолженУдалятьСегменты()
+    {
+        const int segmentSize = 1024;
+        const int sealedSegmentsCount = 10;
+        const int tailSize = 10;
+        var sealedSegmentsEntries = Enumerable.Range(0, sealedSegmentsCount)
+                                              .Select(s => Enumerable.Range(0, segmentSize)
+                                                                     .Select(i => Entry(1,
+                                                                          ( i + s * segmentSize ).ToString()))
+                                                                     .ToArray())
+                                              .ToArray();
+        var tailEntries = Enumerable.Range(0, tailSize)
+                                    .Select(i => Entry(1, i.ToString()))
+                                    .ToArray();
+        var (facade, _) = CreateLog(0, tailEntries: tailEntries, segmentEntries: sealedSegmentsEntries);
+        var startSegmentIndex = 0;
+        var expectedSegmentsCount = sealedSegmentsCount + 1; // Все сегменты + хвост   
+
+        facade.DeleteUntil(startSegmentIndex);
+
+        Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCountTest());
+    }
+
+    [Fact]
+    public void DeleteUntil__КогдаБылиУдаленыСегменты__ДолженОбновитьНачальныйИндекс()
+    {
+        const int segmentSize = 1024;
+        const int sealedSegmentsCount = 10;
+        const int tailSize = 10;
+        var sealedSegmentsEntries = Enumerable.Range(0, sealedSegmentsCount)
+                                              .Select(s => Enumerable.Range(0, segmentSize)
+                                                                     .Select(i => Entry(1,
+                                                                          ( i + s * segmentSize ).ToString()))
+                                                                     .ToArray())
+                                              .ToArray();
+        var tailEntries = Enumerable.Range(0, tailSize)
+                                    .Select(i => Entry(1, i.ToString()))
+                                    .ToArray();
+        var (facade, _) = CreateLog(0, tailEntries: tailEntries, segmentEntries: sealedSegmentsEntries);
+        var startSegmentIndex = segmentSize * 5 + segmentSize / 2; // Указывает на середину 6 сегмента     
+        var expectedStartIndex = segmentSize * 5;
+
+        facade.DeleteUntil(startSegmentIndex);
+
+        Assert.Equal(expectedStartIndex, facade.StartIndex);
+    }
+
+    [Fact]
+    public void DeleteUntil__КогдаИндексБольшеПоследнего__ДолженУдалитьВсеСегменты()
+    {
+        const int segmentSize = 1024;
+        const int sealedSegmentsCount = 10;
+        const int tailSize = 10;
+        const int deleteIndex = segmentSize * sealedSegmentsCount + tailSize + 1;
+        var sealedSegmentsEntries = Enumerable.Range(0, sealedSegmentsCount)
+                                              .Select(s => Enumerable.Range(0, segmentSize)
+                                                                     .Select(i => Entry(1,
+                                                                          ( i + s * segmentSize ).ToString()))
+                                                                     .ToArray())
+                                              .ToArray();
+        var tailEntries = Enumerable.Range(0, tailSize)
+                                    .Select(i => Entry(1, i.ToString()))
+                                    .ToArray();
+        var (facade, _) = CreateLog(0, tailEntries: tailEntries, segmentEntries: sealedSegmentsEntries);
+
+        facade.DeleteUntil(deleteIndex);
+
+        Assert.Equal(1, facade.GetSegmentsCountTest());
+        Assert.Empty(facade.ReadAllTest());
+    }
+
+    [Fact]
+    public void DeleteUntil__КогдаИндексБольшеПоследнего__ДолженОбновитьНачальныйИндекс()
+    {
+        const int segmentSize = 1024;
+        const int sealedSegmentsCount = 10;
+        const int tailSize = 10;
+        const int deleteIndex = segmentSize * sealedSegmentsCount + tailSize + 1;
+        var sealedSegmentsEntries = Enumerable.Range(0, sealedSegmentsCount)
+                                              .Select(s => Enumerable.Range(0, segmentSize)
+                                                                     .Select(i => Entry(1,
+                                                                          ( i + s * segmentSize ).ToString()))
+                                                                     .ToArray())
+                                              .ToArray();
+        var tailEntries = Enumerable.Range(0, tailSize)
+                                    .Select(i => Entry(1, i.ToString()))
+                                    .ToArray();
+        var (facade, _) = CreateLog(0, tailEntries: tailEntries, segmentEntries: sealedSegmentsEntries);
+
+        facade.DeleteUntil(deleteIndex);
+
+        Assert.Equal(deleteIndex, facade.StartIndex);
+    }
+
+    [Fact]
+    public void DeleteUntil__КогдаИндексУказываетНаЗаписьВнутриПервогоЗакрытогоСегмента__НеДолженУдалятьСегменты()
+    {
+        const int segmentSize = 1024;
+        const int sealedSegmentsCount = 10;
+        const int tailSize = 10;
+        var sealedSegmentsEntries = Enumerable.Range(0, sealedSegmentsCount)
+                                              .Select(s => Enumerable.Range(0, segmentSize)
+                                                                     .Select(i => Entry(1,
+                                                                          ( i + s * segmentSize ).ToString()))
+                                                                     .ToArray())
+                                              .ToArray();
+        var tailEntries = Enumerable.Range(0, tailSize)
+                                    .Select(i => Entry(1, i.ToString()))
+                                    .ToArray();
+        var (facade, _) = CreateLog(0, tailEntries: tailEntries, segmentEntries: sealedSegmentsEntries);
+        var expectedSegmentsCount = sealedSegmentsCount + 1;
+        var deleteIndex = segmentSize / 2;
+
+        facade.DeleteUntil(deleteIndex);
+
+        Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCountTest());
+    }
 }

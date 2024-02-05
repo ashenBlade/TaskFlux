@@ -89,8 +89,10 @@ public class SegmentedFileLog : IDisposable
         private LogSegment(SegmentFileName fileName,
                            IFileInfo file,
                            List<LogRecord> records,
-                           FileSystemStream? writeStream)
+                           FileSystemStream? writeStream,
+                           ILogger logger)
         {
+            _logger = logger;
             FileName = fileName;
             File = file;
             Records = records;
@@ -125,15 +127,17 @@ public class SegmentedFileLog : IDisposable
 
         /// <summary>
         /// Последний индекс из лога.
-        /// Указывает на реальный индекс лога и может быть меньше <see cref="LastIndex"/> если лог пуст -
+        /// Указывает на реальный индекс лога и может быть меньше <see cref="LastRecordIndex"/> если лог пуст -
         /// это помогает обрабатывать ситуации, когда сегмент единственный (тогда индекс равен Tomb), когда есть несколько сегментов и т.д.
         /// </summary>
-        public Lsn LastIndex => StartIndex + Records.Count - 1;
+        public Lsn LastRecordIndex => LogStartIndex + Records.Count - 1;
+
+        private readonly ILogger _logger;
 
         /// <summary>
         /// Индекс, начиная с которого хранятся записи
         /// </summary>
-        public Lsn StartIndex => FileName.StartLsn;
+        public Lsn LogStartIndex => FileName.StartLsn;
 
         /// <summary>
         /// Поток файла для записи.
@@ -170,7 +174,7 @@ public class SegmentedFileLog : IDisposable
             var count = entries.Count - startIndex;
             Debug.Assert(count > 0, "count > 0", "Зачем передавать пустой диапазон записей?");
 
-            if (LastIndex + 1 < recordIndex)
+            if (LastRecordIndex + 1 < recordIndex)
             {
                 throw new ArgumentOutOfRangeException(nameof(recordIndex), recordIndex,
                     $"Индекс записи превышает размер сегмента. Текущий размер сегмента: {Records.Count}");
@@ -182,7 +186,7 @@ public class SegmentedFileLog : IDisposable
              * 2. Перезаписать существующие записи - index < _index.Count
              */
 
-            if (recordIndex == LastIndex + 1)
+            if (recordIndex == LastRecordIndex + 1)
             {
                 /*
                  * Указан индекс следующий после последнего - нужно добавить в конец файла.
@@ -193,7 +197,7 @@ public class SegmentedFileLog : IDisposable
 
             // В противном случае, индекс указывает куда-то внутрь лога.
             // Нужно найти позицию, с которой необходимо произвести перезапись
-            var localIndex = ( long ) ( recordIndex - StartIndex );
+            var localIndex = ( long ) ( recordIndex - LogStartIndex );
 
             var (fileStream, bufferedStream) = WriteStreamData.Value;
             // Лог точно не пуст, т.к. если он пуст, то единственное доступное решение - добавить запись в конец (выше)
@@ -231,7 +235,7 @@ public class SegmentedFileLog : IDisposable
 
         public bool Contains(Lsn index)
         {
-            return Records.Count > 0 && StartIndex <= index && index <= LastIndex;
+            return LogStartIndex <= index && index <= LastRecordIndex;
         }
 
         /// <summary>
@@ -258,7 +262,7 @@ public class SegmentedFileLog : IDisposable
             Records.Add(new LogRecord(entry.Term, entry.GetCheckSum(), entry.Data, entry.Data.Length,
                 savedAppendPosition));
 
-            return StartIndex + Records.Count - 1;
+            return LogStartIndex + Records.Count - 1;
         }
 
         /// <summary>
@@ -287,7 +291,7 @@ public class SegmentedFileLog : IDisposable
         /// <returns>Информация о требуемой записи</returns>
         public LogEntryInfo GetInfoAt(Lsn index)
         {
-            var localIndex = ( int ) ( index - StartIndex );
+            var localIndex = ( int ) ( index - LogStartIndex );
             var record = Records[localIndex];
             return new LogEntryInfo(record.Term, index);
         }
@@ -298,7 +302,7 @@ public class SegmentedFileLog : IDisposable
             {
                 var index = Records.Count - 1;
                 var last = Records[index];
-                lastEntryInfo = new LogEntryInfo(last.Term, StartIndex + index);
+                lastEntryInfo = new LogEntryInfo(last.Term, LogStartIndex + index);
                 return true;
             }
 
@@ -373,8 +377,8 @@ public class SegmentedFileLog : IDisposable
         /// <returns></returns>
         public IReadOnlyList<LogEntry> ReadRange(Lsn start, Lsn end)
         {
-            var localStart = ( int ) ( start - StartIndex );
-            var localEnd = ( int ) ( end - StartIndex );
+            var localStart = ( int ) ( start - LogStartIndex );
+            var localEnd = ( int ) ( end - LogStartIndex );
 
             if (localStart < 0)
             {
@@ -421,7 +425,7 @@ public class SegmentedFileLog : IDisposable
 
         public IReadOnlyList<LogEntry> ReadFrom(Lsn start)
         {
-            return ReadRange(start, LastIndex);
+            return ReadRange(start, LastRecordIndex);
         }
 
         public IReadOnlyList<LogEntry> ReadAll()
@@ -431,7 +435,7 @@ public class SegmentedFileLog : IDisposable
                 return Array.Empty<LogEntry>();
             }
 
-            return ReadRange(StartIndex, LastIndex);
+            return ReadRange(LogStartIndex, LastRecordIndex);
         }
 
         private static LogSegment InitializeCore(IFileInfo fileInfo,
@@ -463,7 +467,7 @@ public class SegmentedFileLog : IDisposable
                     file = null;
                 }
 
-                return new LogSegment(fileName, fileInfo, new List<LogRecord>(), file);
+                return new LogSegment(fileName, fileInfo, new List<LogRecord>(), file, logger);
             }
 
             file.Seek(0, SeekOrigin.Begin);
@@ -502,7 +506,7 @@ public class SegmentedFileLog : IDisposable
                     file = null;
                 }
 
-                return new LogSegment(fileName, fileInfo, new List<LogRecord>(), file);
+                return new LogSegment(fileName, fileInfo, new List<LogRecord>(), file, logger);
             }
 
             var index = new List<LogRecord>();
@@ -628,7 +632,7 @@ public class SegmentedFileLog : IDisposable
                 file = null;
             }
 
-            return new LogSegment(fileName, fileInfo, index, file);
+            return new LogSegment(fileName, fileInfo, index, file, logger);
         }
 
         /// <summary>
@@ -716,6 +720,7 @@ public class SegmentedFileLog : IDisposable
             if (WriteStreamData is var (stream, buffered))
             {
                 // Закрываем поток файла
+                _logger.Debug("Закрываю файл сегмента {FileName}", File.FullName);
                 buffered.Flush();
                 stream.Close();
 
@@ -723,6 +728,7 @@ public class SegmentedFileLog : IDisposable
                 WriteStreamData = null;
             }
 
+            _logger.Information("Удаляю файл сегмента {FileName}", File.FullName);
             // Удаляем сам файл
             File.Delete();
 
@@ -774,15 +780,15 @@ public class SegmentedFileLog : IDisposable
     /// Индекс последней записи лога.
     /// Может быть Tomb, если лог пуст
     /// </summary>
-    public Lsn LastIndex => _tail.LastIndex;
+    public Lsn LastIndex => _tail.LastRecordIndex;
 
     /// <summary>
     /// Индекс, с которого начинаются все записи в логе.
     /// Записи с этим индексом может и не существовать
     /// </summary>
     public Lsn StartIndex => _sealed.Count > 0
-                                 ? _sealed[0].StartIndex
-                                 : _tail.StartIndex;
+                                 ? _sealed[0].LogStartIndex
+                                 : _tail.LogStartIndex;
 
     private SegmentedFileLog(IDirectoryInfo logDirectory,
                              List<LogSegment> sealedSegments,
@@ -856,7 +862,7 @@ public class SegmentedFileLog : IDisposable
         {
             var (fileInfo, name) = possibleSegmentFiles[i];
             var segmentFile = LogSegment.InitializeSealed(fileInfo, name, logger);
-            if (prevLogSegment is { } pls && pls.LastIndex + 1 != segmentFile.StartIndex)
+            if (prevLogSegment is { } pls && pls.LastRecordIndex + 1 != segmentFile.LogStartIndex)
             {
                 /*
                  * В нормальном состоянии LSN начала и конца образуют непрерывную последовательность.
@@ -986,7 +992,7 @@ public class SegmentedFileLog : IDisposable
                 return lastEntry;
             }
 
-            if (_tail.StartIndex == 0)
+            if (_tail.LogStartIndex == 0)
             {
                 return LogEntryInfo.Tomb;
             }
@@ -1020,12 +1026,12 @@ public class SegmentedFileLog : IDisposable
          * Поэтому более эффективнее - просто последовательно с конца пролистать все сегменты.
          */
 
-        if (_tail.StartIndex <= index)
+        if (_tail.LogStartIndex <= index)
         {
-            if (_tail.LastIndex < index)
+            if (_tail.LastRecordIndex < index)
             {
                 throw new InvalidOperationException(
-                    $"Индекс {index} выходит за пределы находящихся в логе записей. Последний индекс в логе: {_tail.LastIndex}");
+                    $"Индекс {index} выходит за пределы находящихся в логе записей. Последний индекс в логе: {_tail.LastRecordIndex}");
             }
 
             return _tail;
@@ -1034,7 +1040,7 @@ public class SegmentedFileLog : IDisposable
         for (var i = _sealed.Count - 1; i >= 0; i--)
         {
             var s = _sealed[i];
-            if (s.StartIndex <= index)
+            if (s.LogStartIndex <= index)
             {
                 return s;
             }
@@ -1045,9 +1051,9 @@ public class SegmentedFileLog : IDisposable
 
     private bool TryGetSegmentContaining(Lsn index, out LogSegment segment)
     {
-        if (_tail.StartIndex <= index)
+        if (_tail.LogStartIndex <= index)
         {
-            if (_tail.LastIndex < index)
+            if (_tail.LastRecordIndex < index)
             {
                 segment = default!;
                 return false;
@@ -1060,7 +1066,7 @@ public class SegmentedFileLog : IDisposable
         for (var i = _sealed.Count - 1; i >= 0; i--)
         {
             var s = _sealed[i];
-            if (s.StartIndex <= index)
+            if (s.LogStartIndex <= index)
             {
                 segment = s;
                 return true;
@@ -1118,7 +1124,7 @@ public class SegmentedFileLog : IDisposable
         }
 
 
-        if (_tail.StartIndex <= index)
+        if (_tail.LogStartIndex <= index)
         {
             entries = _tail.ReadFrom(index);
             return true;
@@ -1128,9 +1134,9 @@ public class SegmentedFileLog : IDisposable
 
         foreach (var segment in _sealed)
         {
-            if (segment.StartIndex <= index)
+            if (segment.LogStartIndex <= index)
             {
-                result.AddRange(segment.ReadFrom(Math.Min(index, segment.StartIndex)));
+                result.AddRange(segment.ReadFrom(Math.Min(index, segment.LogStartIndex)));
             }
         }
 
@@ -1229,6 +1235,40 @@ public class SegmentedFileLog : IDisposable
     }
 
     /// <summary>
+    /// Получить количество сегментов, которые идут до сегмента с указанным индексом.
+    /// Считаются сегменты, которые полностью покрываются указанным индексом.
+    /// Если указанный индекс меньше первого, то возвращается -1.
+    /// </summary>
+    /// <param name="index">Индекс, до которого нужно читать сегменты</param>
+    /// <returns>Количество сегментов, которые покрываются индексом, или -1 если этих сегментов нет</returns>
+    public int GetSegmentsBefore(Lsn index)
+    {
+        using var _ = BeginReadLock();
+        if (index < StartIndex)
+        {
+            return -1;
+        }
+
+        if (_sealed.Count == 0)
+        {
+            return 0;
+        }
+
+        var count = 0;
+        foreach (var segment in _sealed)
+        {
+            if (segment.LogStartIndex <= index)
+            {
+                break;
+            }
+
+            count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>
     /// Обрезать лог (удалить записи) до указанного индекса.
     /// После выполнения, лог может быть: <br/>
     /// - Не изменен, если индекс меньше начального (т.е. ничего обрезать не надо) <br/>
@@ -1238,7 +1278,7 @@ public class SegmentedFileLog : IDisposable
     /// <exception cref="InvalidOperationException"></exception>
     private void MaybeTruncateUntil(Lsn index)
     {
-        if (_tail.LastIndex + 1 < index)
+        if (_tail.LastRecordIndex + 1 < index)
         {
             // Нужно удалить все сегменты и начать новый с указанного
             // Удаление производим с конца, т.к. в случае чего можно будет восстановить состояние с помощью снапшота
@@ -1260,7 +1300,7 @@ public class SegmentedFileLog : IDisposable
             return;
         }
 
-        if (_tail.StartIndex <= index)
+        if (_tail.LogStartIndex <= index)
         {
             // Просто перезапишем существующие записи - ничего удалять не надо
             return;
@@ -1343,6 +1383,7 @@ public class SegmentedFileLog : IDisposable
     public IEnumerable<byte[]> ReadDataRange(Lsn start, Lsn end)
     {
         using var _ = BeginReadLock();
+
         if (LastIndex < end)
         {
             throw new ArgumentOutOfRangeException(nameof(end), end,
@@ -1357,21 +1398,24 @@ public class SegmentedFileLog : IDisposable
 
         if (_tail.Contains(start))
         {
-            return _tail.ReadRange(start, end).Select(x => x.Data);
-        }
+            foreach (var data in _tail.ReadRange(start, end).Select(x => x.Data))
+            {
+                yield return data;
+            }
 
-        var data = new List<byte[]>();
+            yield break;
+        }
 
         // Вначале пройдемся по всем закрытым сегментам и прочитаем данные оттуда
         foreach (var segment in _sealed.Append(_tail))
         {
-            if (segment.LastIndex < start)
+            if (segment.LastRecordIndex < start)
             {
                 // Еще не дошли до нужного сегмента
                 continue;
             }
 
-            if (end < segment.StartIndex)
+            if (end < segment.LogStartIndex)
             {
                 // Уже прошли нужный отрезок
                 break;
@@ -1387,11 +1431,11 @@ public class SegmentedFileLog : IDisposable
              * Причем, если выполнены 2 или 4, то можно прекратить обработку дальнейших сегментов
              */
             IReadOnlyList<LogEntry> entries;
-            bool shouldStop = false;
+            var shouldStop = false;
 
-            if (start <= segment.StartIndex)
+            if (start <= segment.LogStartIndex)
             {
-                if (segment.LastIndex <= end)
+                if (segment.LastRecordIndex <= end)
                 {
                     // Весь сегмент
                     entries = segment.ReadAll();
@@ -1399,16 +1443,16 @@ public class SegmentedFileLog : IDisposable
                 else
                 {
                     // Начало сегмента
-                    entries = segment.ReadRange(segment.StartIndex, end);
+                    entries = segment.ReadRange(segment.LogStartIndex, end);
                     shouldStop = true;
                 }
             }
             else
             {
-                if (segment.LastIndex <= end)
+                if (segment.LastRecordIndex <= end)
                 {
                     // Последняя часть сегмента 
-                    entries = segment.ReadRange(start, segment.LastIndex);
+                    entries = segment.ReadRange(start, segment.LastRecordIndex);
                 }
                 else
                 {
@@ -1418,14 +1462,16 @@ public class SegmentedFileLog : IDisposable
                 }
             }
 
-            data.AddRange(entries.Select(static e => e.Data));
+            foreach (var bytes in entries.Select(static e => e.Data))
+            {
+                yield return bytes;
+            }
+
             if (shouldStop)
             {
-                break;
+                yield break;
             }
         }
-
-        return data;
     }
 
     /// <summary>
@@ -1490,7 +1536,7 @@ public class SegmentedFileLog : IDisposable
         Debug.Assert(_tail.Count > 0, "_tail.Count > 0", "Зачем создавать новый сегмент для пустого файла сегмента");
 
         // 1. Создаем новый файл сегмента со следующим индексом
-        var nextSegmentFileName = new SegmentFileName(_tail.LastIndex + 1);
+        var nextSegmentFileName = new SegmentFileName(_tail.LastRecordIndex + 1);
         var nextSegmentFileInfo = GetSegmentFileInfo(_logDirectory, nextSegmentFileName);
 
         _logger.Information("Создаю новый файл сегмента {SegmentFileName}", nextSegmentFileInfo.FullName);
@@ -1516,7 +1562,7 @@ public class SegmentedFileLog : IDisposable
          */
 
         var tailSize = _tail.GetEffectiveFileSize();
-        return ( _options.SegmentFileSoftLimit < tailSize && _tail.LastIndex <= CommitIndex )
+        return ( _options.SegmentFileSoftLimit < tailSize && _tail.LastRecordIndex <= CommitIndex )
             || _options.SegmentFileHardLimit < tailSize;
     }
 
@@ -1618,4 +1664,93 @@ public class SegmentedFileLog : IDisposable
     }
 
     // TODO: при создании файлов сразу выделять softLimit байт размера
+    /// <summary>
+    /// Удалить все записи до указанной.
+    /// </summary>
+    /// <param name="index">Индекс, до которого нужно удалить записи</param>
+    /// <remarks>Для сегментированного лога, будут удалены полные покрываемые этим индексом сегменты</remarks>
+    public void DeleteUntil(Lsn index)
+    {
+        using var _ = BeginWriteLock();
+
+        CheckCommitOverwrite(index);
+
+        /*
+         * Возможные ситуации:
+         * - index < StartIndex     - ничего не делаем и уходим
+         * - LastIndex < index      - удаляем все сегменты и начинаем новый
+         * - Tail.Contains(index)   - удаляем все закрытые сегменты
+         * - иначе                  - ищем первый сегмент, который содержит указанный индекс и удаляем все до него
+         */
+
+        if (index < StartIndex)
+        {
+            return;
+        }
+
+        if (LastIndex < index)
+        {
+            DropAllAndStartNewLog(index);
+            return;
+        }
+
+        if (_tail.Contains(index))
+        {
+            DeleteAllSealedSegments();
+            return;
+        }
+
+        var toDelete = _sealed.TakeWhile(s => s.LastRecordIndex < index)
+                              .ToList();
+        toDelete.ForEach(static s => s.Delete());
+        _sealed.RemoveRange(0, toDelete.Count);
+    }
+
+    private void DeleteAllSealedSegments()
+    {
+        foreach (var s in _sealed)
+        {
+            s.Delete();
+        }
+
+        _sealed.Clear();
+    }
+
+    /// <summary>
+    /// Удалить ВООБЩЕ все сегменты и начать новый лог, начиная с указанного индекса.
+    /// Используется, когда нужно удалить все записи и начать работать с указанного индекса после создания/установки снапшота.
+    /// </summary>
+    /// <param name="startIndex">Новый индекс начала</param>
+    /// <remarks>Должен быть вызван, когда все записи устарели и надо быстро "улететь" вперед по индексам.
+    /// Вызывать, когда указанный индекс больше последнего</remarks>
+    private void DropAllAndStartNewLog(Lsn startIndex)
+    {
+        /*
+         * На всякий случай, сначала создадим новый файл сегмента,
+         * и только после начнем удалять старые сегменты.
+         */
+        Debug.Assert(LastIndex < startIndex, "LastIndex < startIndex",
+            "Все удалять и начинать новый надо когда новый индекс больше всех предыдущих");
+        var newSegmentFileName = new SegmentFileName(startIndex);
+        var newSegmentFileInfo = GetSegmentFileInfo(_logDirectory, newSegmentFileName);
+
+        // Вначале создадим файл сегмента и инициализируем его необходимыми данными
+        _logger.Information("Удаляю все сегменты и начинаю новый по индексу {StartIndex}", startIndex);
+
+        // Этот поток станет новым хвостом, поэтому закрывать его не надо
+        var segment = LogSegment.InitializeTail(newSegmentFileInfo, newSegmentFileName, _logger);
+
+        foreach (var s in _sealed)
+        {
+            _logger.Information("Удаляю сегмент {SegmentName}", s.File.FullName);
+            s.Delete();
+        }
+
+        _logger.Information("Удаляю сегмент {SegmentName}", _tail.File.FullName);
+        _tail.Delete();
+
+        _sealed.Clear();
+
+        _tail = segment;
+    }
 }
