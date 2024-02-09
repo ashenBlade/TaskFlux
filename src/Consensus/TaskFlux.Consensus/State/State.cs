@@ -1,7 +1,6 @@
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 
 namespace TaskFlux.Consensus.State;
@@ -15,7 +14,7 @@ namespace TaskFlux.Consensus.State;
 public abstract class State<TCommand, TResponse>
 {
     internal RaftConsensusModule<TCommand, TResponse> ConsensusModule { get; }
-    protected FileSystemPersistenceFacade Persistence => ConsensusModule.Persistence;
+    protected IPersistence Persistence => ConsensusModule.Persistence;
     protected Term CurrentTerm => ConsensusModule.CurrentTerm;
     protected NodeId? VotedFor => ConsensusModule.VotedFor;
     protected NodeId Id => ConsensusModule.Id;

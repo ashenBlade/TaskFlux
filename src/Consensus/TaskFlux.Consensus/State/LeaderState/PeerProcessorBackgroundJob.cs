@@ -32,7 +32,7 @@ internal class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob,
     /// </remarks>
     private Term SavedTerm { get; }
 
-    private FileSystemPersistenceFacade Persistence => ConsensusModule.Persistence;
+    private IPersistence Persistence => ConsensusModule.Persistence;
 
     /// <summary>
     /// Узел, с которым общаемся
@@ -177,7 +177,7 @@ internal class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob,
     {
         while (!token.IsCancellationRequested)
         {
-            if (!Persistence.TryGetFrom(_replicationState.NextIndex, out var entries))
+            if (!Persistence.TryGetFrom(_replicationState.NextIndex, out var entries, out var prevLogEntry))
             {
                 _logger.Debug("В логе не оказалось записей после индекса: {Index}", _replicationState.NextIndex);
                 if (Persistence.TryGetSnapshot(out var snapshot, out var lastEntry))
@@ -210,29 +210,13 @@ internal class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob,
             }
 
             // 1. Отправляем запрос с текущим отслеживаемым индексом узла
-            AppendEntriesRequest appendEntriesRequest;
-            try
-            {
-                appendEntriesRequest = new AppendEntriesRequest(Term: SavedTerm,
+
+            var response = _peer.SendAppendEntries(new AppendEntriesRequest(Term: SavedTerm,
                     LeaderCommit: Persistence.CommitIndex,
                     LeaderId: ConsensusModule.Id,
-                    // TODO: тесты на то, что этой записи уже нет и проверять не с NextIndex == 0 а по другому как-то
-                    PrevLogEntryInfo: _replicationState.NextIndex == 0
-                                          ? LogEntryInfo.Tomb
-                                          : Persistence.GetEntryInfo(_replicationState.NextIndex - 1),
-                    Entries: entries);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                /*
-                 * Между первым TryGetFrom и GetPrecedingEntryInfo прошло много времени
-                 * и был создан новый снапшот, поэтому info.NextIndex уже нет.
-                 * На следующем круге отправим уже снапшот
-                 */
-                continue;
-            }
-
-            var response = _peer.SendAppendEntries(appendEntriesRequest, token);
+                    PrevLogEntryInfo: prevLogEntry,
+                    Entries: entries),
+                token);
 
             // 3. Если ответ успешный 
             if (response.Success)
@@ -243,7 +227,7 @@ internal class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob,
                 }
 
                 // 3.1. Обновить nextIndex = + кол-во Entries в запросе
-                _replicationState.Increment(appendEntriesRequest.Entries.Count);
+                _replicationState.Increment(entries.Count);
                 _watcher.Notify();
 
                 // 3.2. Если лог не до конца был синхронизирован

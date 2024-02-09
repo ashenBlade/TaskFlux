@@ -4,10 +4,6 @@ using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
 using TaskFlux.Consensus.Persistence;
-using TaskFlux.Consensus.Persistence.Log;
-using TaskFlux.Consensus.Persistence.LogFileCheckStrategy;
-using TaskFlux.Consensus.Persistence.Metadata;
-using TaskFlux.Consensus.Persistence.Snapshot;
 using TaskFlux.Consensus.Tests.Infrastructure;
 using TaskFlux.Consensus.Tests.Stubs;
 using TaskFlux.Core;
@@ -30,25 +26,26 @@ public class CandidateStateTests
             })
            .Object;
 
-    private static RaftConsensusModule CreateCandidateNode(Term term,
-                                                           ITimer? electionTimer = null,
-                                                           IBackgroundJobQueue? jobQueue = null,
-                                                           IEnumerable<IPeer>? peers = null,
-                                                           ILogFileSizeChecker? fileSizeChecker = null,
-                                                           IApplicationFactory? applicationFactory = null)
-    {
-        return CreateCandidateNode(term.Value, electionTimer, jobQueue, peers, fileSizeChecker, applicationFactory);
-    }
 
-    private static RaftConsensusModule CreateCandidateNode(long term,
-                                                           ITimer? electionTimer = null,
-                                                           IBackgroundJobQueue? jobQueue = null,
-                                                           IEnumerable<IPeer>? peers = null,
-                                                           ILogFileSizeChecker? fileSizeChecker = null,
-                                                           IApplicationFactory? applicationFactory = null)
+    private Mock<IPersistence> _mockPersistence;
+
+    private RaftConsensusModule CreateCandidateNode(Term term,
+                                                    ITimer? electionTimer = null,
+                                                    IBackgroundJobQueue? jobQueue = null,
+                                                    IEnumerable<IPeer>? peers = null,
+                                                    IApplicationFactory? applicationFactory = null,
+                                                    Action<Mock<IPersistence>>? persistenceFactory = null)
     {
-        var facade = CreateStoragePersistenceFacade();
-        facade.Metadata.SetupMetadataTest(term, null);
+        var mp = new Mock<IPersistence>(MockBehavior.Strict)
+           .Apply(m =>
+            {
+                m.SetupGet(p => p.CurrentTerm).Returns(term);
+
+                // Выставляем это дополнительно, т.к. при инициализации выставляется в обработчиках узлов
+                m.SetupGet(p => p.LastEntry).Returns(LogEntryInfo.Tomb);
+                persistenceFactory?.Invoke(m);
+            });
+        _mockPersistence = mp;
         electionTimer ??= Mock.Of<ITimer>();
         var timerFactory = electionTimer is null
                                ? Helpers.NullTimerFactory
@@ -59,23 +56,10 @@ public class CandidateStateTests
                             : EmptyPeerGroup;
         var node = new RaftConsensusModule(NodeId, peerGroup,
             Logger.None, timerFactory, jobQueue,
-            facade, NullDeltaExtractor, applicationFactory ?? Helpers.NullApplicationFactory);
+            mp.Object,
+            NullDeltaExtractor, applicationFactory ?? Helpers.NullApplicationFactory);
         node.SetStateTest(node.CreateCandidateState());
         return node;
-
-        FileSystemPersistenceFacade CreateStoragePersistenceFacade()
-        {
-            var fs = Helpers.CreateFileSystem();
-            var logStorage = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
-            var metadataStorage = MetadataFile.Initialize(fs.DataDirectory);
-            var snapshotStorage = SnapshotFile.Initialize(fs.DataDirectory);
-            if (fileSizeChecker is null)
-            {
-                return new FileSystemPersistenceFacade(logStorage, metadataStorage, snapshotStorage, Logger.None);
-            }
-
-            return new FileSystemPersistenceFacade(logStorage, metadataStorage, snapshotStorage, Logger.None);
-        }
     }
 
     private const int DefaultTerm = 1;
@@ -87,40 +71,87 @@ public class CandidateStateTests
         electionTimer.SetupAdd(x => x.Timeout += null);
         var currentTerm = new Term(1);
         var expectedTerm = currentTerm.Increment();
-        var node = CreateCandidateNode(DefaultTerm, electionTimer.Object);
+        var node = CreateCandidateNode(currentTerm, electionTimer.Object, persistenceFactory: m =>
+        {
+            m.Setup(p => p.CommitIndex).Returns(Lsn.Tomb);
+            m.Setup(p => p.UpdateState(It.Is<Term>(t => t == expectedTerm), It.Is<NodeId?>(id => id == NodeId)))
+             .Verifiable();
+            ISnapshot s = null;
+            var lei = LogEntryInfo.Tomb;
+            m.Setup(p => p.TryGetSnapshot(out s, out lei)).Returns(false);
+            m.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
+        });
 
         electionTimer.Raise(x => x.Timeout += null);
 
-        Assert.Equal(expectedTerm, node.CurrentTerm);
         Assert.Equal(NodeRole.Leader, node.CurrentRole);
+        _mockPersistence.Verify(
+            p => p.UpdateState(It.Is<Term>(t => t == expectedTerm), It.Is<NodeId?>(id => id == NodeId)), Times.Once());
     }
 
-    [Fact]
-    public void ElectionTimeout__КогдаНиктоНеОтдалГолос__ДолженПерейтиВСледующийТермИОстатьсяКандидатом()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void ElectionTimeout__КогдаНиктоНеОтдалГолос__ДолженПерейтиВСледующийТермИОстатьсяКандидатом(int peersCount)
     {
         var electionTimer = new Mock<ITimer>();
         electionTimer.SetupAdd(x => x.Timeout += null);
         var currentTerm = new Term(1);
         var expectedTerm = currentTerm.Increment();
         var stubJobQueue = Helpers.NullBackgroundJobQueue;
-        var node = CreateCandidateNode(DefaultTerm, electionTimer.Object, jobQueue: stubJobQueue);
+        var peers = Enumerable.Range(0, peersCount)
+                              .Select(_ => new StubQuorumPeer(currentTerm, false))
+                              .ToArray();
+        using var node = CreateCandidateNode(DefaultTerm, electionTimer.Object, jobQueue: stubJobQueue, peers: peers,
+            persistenceFactory:
+            m =>
+            {
+                m.Setup(p => p.CommitIndex).Returns(Lsn.Tomb);
+                m.Setup(p => p.LastEntry).Returns(LogEntryInfo.Tomb);
+                ISnapshot s = null!;
+                var slei = LogEntryInfo.Tomb;
+                m.Setup(p => p.TryGetSnapshot(out s, out slei)).Returns(false);
+                m.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
+                m.Setup(p => p.UpdateState(It.Is<Term>(t => t == expectedTerm), It.Is<NodeId?>(id => id == NodeId)))
+                 .Verifiable();
+            });
 
         electionTimer.Raise(x => x.Timeout += null);
 
-        Assert.Equal(expectedTerm, node.CurrentTerm);
-        Assert.Equal(NodeRole.Leader, node.CurrentRole);
+        Assert.Equal(NodeRole.Candidate, node.CurrentRole);
+
+        _mockPersistence.Verify(
+            p => p.UpdateState(It.Is<Term>(t => t == expectedTerm), It.Is<NodeId?>(id => id == NodeId)), Times.Once());
     }
 
     [Fact]
-    public void КогдаДругихУзловНет__ДолженСтатьЛидеромПоТаймауту()
+    public void ElectionTimeout__КогдаДругихУзловНет__ДолженСтатьЛидеромПоТаймауту()
     {
         var oldTerm = new Term(1);
-        var timer = new Mock<ITimer>();
-        using var node = CreateCandidateNode(oldTerm.Value, electionTimer: timer.Object);
+        var nextTerm = oldTerm.Increment();
+        var timer = new Mock<ITimer>().Apply(m =>
+        {
+            m.SetupAdd(t => t.Timeout += null);
+        });
+        using var node = CreateCandidateNode(oldTerm.Value, electionTimer: timer.Object, persistenceFactory: m =>
+        {
+            m.Setup(p => p.UpdateState(It.Is<Term>(t => t == nextTerm), It.Is<NodeId?>(id => id == NodeId)))
+             .Verifiable();
+            ISnapshot s = null;
+            var lei = LogEntryInfo.Tomb;
+            m.Setup(p => p.TryGetSnapshot(out s, out lei)).Returns(false);
+            m.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
+            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+        });
 
         timer.Raise(t => t.Timeout += null);
 
         Assert.Equal(NodeRole.Leader, node.CurrentRole);
+        _mockPersistence.Verify(p => p.UpdateState(It.Is<Term>(t => t == nextTerm), It.Is<NodeId?>(id => id == NodeId)),
+            Times.Once());
     }
 
     [Fact]
@@ -185,8 +216,41 @@ public class CandidateStateTests
         int grantedVotesCount,
         int nonGrantedVotesCount)
     {
-        // Кворум достигается только если было получено n/2 согласий (округление в нижнюю сторону),
-        // где n - кол-во других узлов (без нас)
+        var term = new Term(2);
+        var peers = Enumerable.Range(0, grantedVotesCount)
+                              .Select(_ => new StubQuorumPeer(term, true))
+                              .Concat(Enumerable.Range(0, nonGrantedVotesCount)
+                                                .Select(_ => new StubQuorumPeer(term, false)));
+
+        var queue = new AwaitingTaskBackgroundJobQueue();
+        using var node = CreateCandidateNode(term, jobQueue: queue, peers: peers, persistenceFactory: m =>
+        {
+            ISnapshot x = null!;
+            var lei = LogEntryInfo.Tomb;
+            m.Setup(p => p.TryGetSnapshot(out x, out lei)).Returns(false);
+            m.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
+            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+        });
+
+        queue.RunWait();
+
+        Assert.Equal(NodeRole.Leader, node.CurrentRole);
+    }
+
+    [Theory(Timeout = 1000 * 2)]
+    [InlineData(0, 1)]
+    [InlineData(0, 2)]
+    [InlineData(1, 2)]
+    [InlineData(1, 3)]
+    [InlineData(2, 3)]
+    [InlineData(4, 5)]
+    [InlineData(1, 4)]
+    [InlineData(2, 4)]
+    [InlineData(3, 4)]
+    public async Task Кворум__СНесколькимиУзлами__ДолженОстатьсяКандидатомЕслиНеСобралКворум(
+        int grantedVotesCount,
+        int nonGrantedVotesCount)
+    {
         var term = new Term(2);
         var peers = Enumerable.Range(0, grantedVotesCount)
                               .Select(_ => new StubQuorumPeer(term, true))
@@ -198,34 +262,6 @@ public class CandidateStateTests
 
         queue.RunWait();
 
-        Assert.Equal(NodeRole.Leader, node.CurrentRole);
-    }
-
-    [Theory]
-    [InlineData(0, 1)]
-    [InlineData(0, 2)]
-    [InlineData(1, 2)]
-    [InlineData(1, 3)]
-    [InlineData(2, 3)]
-    [InlineData(4, 5)]
-    [InlineData(1, 4)]
-    [InlineData(2, 4)]
-    [InlineData(3, 4)]
-    public void Кворум__СНесколькимиУзлами__ДолженОстатьсяКандидатомЕслиНеСобралКворум(
-        int grantedVotesCount,
-        int nonGrantedVotesCount)
-    {
-        var term = new Term(2);
-        var peers = Enumerable.Range(0, grantedVotesCount)
-                              .Select(_ => new StubQuorumPeer(term, true))
-                              .Concat(Enumerable.Range(0, nonGrantedVotesCount)
-                                                .Select(_ => new StubQuorumPeer(term, false)));
-
-        var queue = new SingleRunBackgroundJobQueue();
-        using var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
-
-        queue.Run();
-
         Assert.Equal(NodeRole.Candidate, node.CurrentRole);
     }
 
@@ -236,7 +272,10 @@ public class CandidateStateTests
         var queue = new SingleRunBackgroundJobQueue();
         var newTerm = term.Increment();
         var peer = new StubQuorumPeer(new RequestVoteResponse(newTerm, false));
-        using var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer});
+        using var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer}, persistenceFactory: m =>
+        {
+            m.Setup(p => p.UpdateState(newTerm, null));
+        });
 
         queue.Run();
 
@@ -244,27 +283,56 @@ public class CandidateStateTests
     }
 
     [Fact]
-    public void Кворум__КогдаУзелОтветилБольшимТермомИНеОтдалГолос__ДолженОбноситьТерм()
+    public void Кворум__КогдаУзелОтветилБольшимТермомИНеОтдалГолос__ДолженОбновитьТерм()
     {
         var term = new Term(1);
         var queue = new SingleRunBackgroundJobQueue();
         var newTerm = term.Increment();
         var peer = new StubQuorumPeer(new RequestVoteResponse(newTerm, false));
-        using var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer});
+        using var node = CreateCandidateNode(term, jobQueue: queue, peers: new[] {peer}, persistenceFactory: m =>
+        {
+            m.Setup(p => p.UpdateState(newTerm, It.IsAny<NodeId?>())).Verifiable();
+            m.Setup(p => p.LastEntry).Returns(LogEntryInfo.Tomb);
+        });
 
         queue.Run();
 
-        Assert.Equal(newTerm, node.CurrentTerm);
+        _mockPersistence.Verify(p => p.UpdateState(newTerm, It.IsAny<NodeId?>()));
     }
 
     [Fact]
-    public void RequestVote__СБолееВысокимТермом__ДолженСтатьFollower()
+    public void RequestVote__КогдаТермБольшеТекущего__ДолженСтатьFollower()
     {
         var term = new Term(2);
-        using var node = CreateCandidateNode(term);
+        var lastLogEntryInfo = LogEntryInfo.Tomb;
         var newTerm = term.Increment();
-        var request = new RequestVoteRequest(AnotherNodeId, newTerm, LogEntryInfo.Tomb);
-        var response = node.Handle(request);
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
+        {
+            m.Setup(p => p.CurrentTerm).Returns(term);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>()));
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(true);
+        });
+        var request = new RequestVoteRequest(AnotherNodeId, newTerm, lastLogEntryInfo);
+        _ = node.Handle(request);
+
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+    }
+
+    [Fact]
+    public void RequestVote__КогдаТермБольшеТекущего__ДолженОбновитьСвойТерм()
+    {
+        var term = new Term(2);
+        var newTerm = term.Increment();
+        var lastLogEntryInfo = LogEntryInfo.Tomb;
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
+        {
+            m.Setup(p => p.CurrentTerm).Returns(term);
+            m.Setup(p => p.VotedFor).Returns(( NodeId? ) null);
+            m.Setup(p => p.UpdateState(It.Is<Term>(t => t == newTerm), It.IsAny<NodeId?>()));
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(true);
+        });
+
+        var response = node.Handle(new RequestVoteRequest(AnotherNodeId, newTerm, lastLogEntryInfo));
 
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
         Assert.True(response.VoteGranted);
@@ -272,35 +340,49 @@ public class CandidateStateTests
     }
 
     [Fact]
-    public void RequestVote__СБолееВысокимТермом__ДолженОбновитьСвойТерм()
+    public void RequestVote__КогдаТермБолееВысокийИЛогАктуальныйИНеГолосовали__ДолженОтдатьГолосЗаЭтотУзел()
     {
         var term = new Term(2);
-        using var node = CreateCandidateNode(term);
         var newTerm = term.Increment();
-        var request = new RequestVoteRequest(AnotherNodeId, newTerm, LogEntryInfo.Tomb);
-        var response = node.Handle(request);
+        var lastLogEntryInfo = LogEntryInfo.Tomb;
+        var candidateId = AnotherNodeId;
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
+        {
+            m.Setup(p => p.CurrentTerm).Returns(term);
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(true);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.Is<NodeId?>(id => id == candidateId))).Verifiable();
+            m.Setup(p => p.VotedFor).Returns(( NodeId? ) null);
+        });
+
+        var response = node.Handle(new RequestVoteRequest(candidateId, newTerm, lastLogEntryInfo));
 
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
         Assert.True(response.VoteGranted);
-        Assert.Equal(newTerm, response.CurrentTerm);
-        Assert.Equal(newTerm, node.CurrentTerm);
+        _mockPersistence.Verify(p => p.UpdateState(It.IsAny<Term>(), It.Is<NodeId?>(id => id == candidateId)),
+            Times.Once());
     }
 
     [Fact]
-    public void Heartbeat__СБолееВысокимТермом__ДолженПерейтиВFollower()
+    public void RequestVote__КогдаТермРавенИЛогАктуальныйИОтдавалиГолосЗаЭтотГолос__ДолженОтдатьГолосЗаЭтотУзел()
     {
         var term = new Term(2);
-        using var node = CreateCandidateNode(term);
         var newTerm = term.Increment();
+        var lastLogEntryInfo = LogEntryInfo.Tomb;
+        var candidateId = AnotherNodeId;
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
+        {
+            m.Setup(p => p.CurrentTerm).Returns(term);
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(true);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.Is<NodeId?>(id => id == candidateId))).Verifiable();
+            m.Setup(p => p.VotedFor).Returns(candidateId);
+        });
 
-        var request = AppendEntriesRequest.Heartbeat(newTerm, node.Persistence.CommitIndex, AnotherNodeId,
-            node.Persistence.LastEntry);
-        var response = node.Handle(request);
+        var response = node.Handle(new RequestVoteRequest(candidateId, newTerm, lastLogEntryInfo));
 
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
-        Assert.True(response.Success);
-        Assert.Equal(newTerm, response.Term);
-        Assert.Equal(newTerm, node.CurrentTerm);
+        Assert.True(response.VoteGranted);
+        _mockPersistence.Verify(p => p.UpdateState(It.IsAny<Term>(), It.Is<NodeId?>(id => id == candidateId)),
+            Times.Once());
     }
 
     private static LogEntry RandomDataEntry(Term term)
@@ -310,62 +392,156 @@ public class CandidateStateTests
         return new LogEntry(term, data);
     }
 
-    [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(5)]
-    public void AppendEntries__КогдаВЗапросеБылиЗаписиИИндексКоммитаРавенТекущему__НеДолженОбновлятьИндексКоммита(
-        int entriesCount)
+    [Fact]
+    public void AppendEntries__КогдаТермЗапросаРавенТермуУзлаИЛогНеКонфликтует__ДолженСтатьПоследователем()
     {
         var term = new Term(2);
-        var oldCommitIndex = 2;
-        using var node = CreateCandidateNode(term);
-        var requestEntries = Enumerable.Range(0, entriesCount)
+        var prevEntryInfo = new LogEntryInfo(term, 123);
+        var requestEntries = Enumerable.Range(0, 10)
                                        .Select(_ => RandomDataEntry(term))
                                        .ToArray();
-        node.Persistence.SetupTest(new[]
-        {
-            RandomDataEntry(1), // 0
-            RandomDataEntry(1), // 1
-            RandomDataEntry(2), // 2
-        });
-        node.Persistence.SetCommitTest(oldCommitIndex);
 
-        var response = node.Handle(new AppendEntriesRequest(term, oldCommitIndex, AnotherNodeId,
-            node.Persistence.LastEntry, requestEntries));
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevEntryInfo))).Returns(true);
+            m.Setup(p =>
+                p.InsertRange(It.Is<IReadOnlyList<LogEntry>>(l =>
+                        l.SequenceEqual(requestEntries, new LogEntryEqualityComparer())),
+                    It.Is<Lsn>(l => l == prevEntryInfo.Index + 1)));
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>()));
+            m.SetupGet(p => p.LastEntry).Returns(prevEntryInfo);
+            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+            m.Setup(p => p.Commit(It.IsAny<Lsn>()));
+        });
+
+        var response =
+            node.Handle(new AppendEntriesRequest(term, Lsn.Tomb, AnotherNodeId, prevEntryInfo, requestEntries));
 
         Assert.True(response.Success);
-        var actualCommitIndex = node.Persistence.CommitIndex;
-        Assert.Equal(oldCommitIndex, actualCommitIndex);
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+    }
+
+    [Fact]
+    public void AppendEntries__КогдаТермЗапросаБольшеТермаУзлаИЛогНеКонфликтует__ДолженСтатьПоследователем()
+    {
+        var term = new Term(2);
+        var candidateTerm = term.Increment();
+        var prevEntryInfo = new LogEntryInfo(term, 123);
+        var requestEntries = Enumerable.Range(0, 10)
+                                       .Select(_ => RandomDataEntry(term))
+                                       .ToArray();
+
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevEntryInfo))).Returns(true);
+            m.Setup(p =>
+                p.InsertRange(It.Is<IReadOnlyList<LogEntry>>(l =>
+                        l.SequenceEqual(requestEntries, new LogEntryEqualityComparer())),
+                    It.Is<Lsn>(l => l == prevEntryInfo.Index + 1)));
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>()));
+            m.SetupGet(p => p.LastEntry).Returns(prevEntryInfo);
+            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+            m.Setup(p => p.Commit(It.IsAny<Lsn>()));
+        });
+
+        var response =
+            node.Handle(new AppendEntriesRequest(candidateTerm, Lsn.Tomb, AnotherNodeId, prevEntryInfo,
+                requestEntries));
+
+        Assert.True(response.Success);
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+    }
+
+    [Fact]
+    public void AppendEntries__КогдаТермЗапросаБольшеТермаУзлаИЛогНеКонфликтует__ДолженВыставитьГолосВNull()
+    {
+        var term = new Term(2);
+        var candidateTerm = term.Increment();
+        var prevEntryInfo = new LogEntryInfo(term, 123);
+        var requestEntries = Enumerable.Range(0, 10)
+                                       .Select(_ => RandomDataEntry(term))
+                                       .ToArray();
+
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevEntryInfo))).Returns(true);
+            m.Setup(p =>
+                p.InsertRange(It.Is<IReadOnlyList<LogEntry>>(l =>
+                        l.SequenceEqual(requestEntries, new LogEntryEqualityComparer())),
+                    It.Is<Lsn>(l => l == prevEntryInfo.Index + 1)));
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.Is<NodeId?>(id => id == null)));
+            m.Setup(p => p.LastEntry).Returns(prevEntryInfo);
+            m.Setup(p => p.CommitIndex).Returns(Lsn.Tomb);
+            m.Setup(p => p.Commit(It.IsAny<Lsn>()));
+        });
+
+        var response =
+            node.Handle(new AppendEntriesRequest(candidateTerm, Lsn.Tomb, AnotherNodeId, prevEntryInfo,
+                requestEntries));
+
+        Assert.True(response.Success);
+        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+    }
+
+    [Fact]
+    public void AppendEntries__КогдаТермЗапросаБольшеТермаУзлаИЛогНеКонфликтует__ДолженОбновитьТерм()
+    {
+        var term = new Term(2);
+        var candidateTerm = term.Increment();
+        var prevEntryInfo = new LogEntryInfo(term, 123);
+        var requestEntries = Enumerable.Range(0, 10)
+                                       .Select(_ => RandomDataEntry(term))
+                                       .ToArray();
+
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevEntryInfo))).Returns(true);
+            m.Setup(p =>
+                p.InsertRange(It.Is<IReadOnlyList<LogEntry>>(l =>
+                        l.SequenceEqual(requestEntries, new LogEntryEqualityComparer())),
+                    It.Is<Lsn>(l => l == prevEntryInfo.Index + 1)));
+            m.Setup(p => p.UpdateState(It.Is<Term>(t => t == candidateTerm), It.IsAny<NodeId?>())).Verifiable();
+            m.SetupGet(p => p.LastEntry).Returns(prevEntryInfo);
+            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+            m.Setup(p => p.Commit(It.IsAny<Lsn>()));
+        });
+
+        _ = node.Handle(new AppendEntriesRequest(candidateTerm, Lsn.Tomb, AnotherNodeId, prevEntryInfo,
+            requestEntries));
+
+        _mockPersistence.Verify(p => p.UpdateState(It.Is<Term>(t => t == candidateTerm), It.IsAny<NodeId?>()),
+            Times.Once());
     }
 
     [Theory]
-    [InlineData(1, 1)]
-    [InlineData(1, 10)]
-    [InlineData(5, 1)]
-    [InlineData(5, 2)]
-    [InlineData(10, 10)]
-    public void AppendEntries__КогдаПредыдущийИндексРавенПоследнемуИндексу__ДолженДобавитьЗаписиВКонец(
-        int logSize,
-        int entriesCount)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(1000)]
+    public void AppendEntries__КогдаПрефиксСовпадаетИТермНеМеньше__ДолженВставитьЗаписи(long candidateTermDelta)
     {
         var term = new Term(2);
-        using var node = CreateCandidateNode(term);
-        var requestEntries = Enumerable.Range(0, entriesCount)
+        var requestEntries = Enumerable.Range(0, 10)
                                        .Select(_ => RandomDataEntry(term))
                                        .ToArray();
-        var logEntries = Enumerable.Range(0, logSize)
-                                   .Select(_ => RandomDataEntry(term))
-                                   .ToArray();
-        node.Persistence.SetupTest(logEntries);
-        var request = new AppendEntriesRequest(term, Lsn.Tomb, AnotherNodeId,
-            node.Persistence.LastEntry, requestEntries);
-        var expectedLog = logEntries.Concat(requestEntries).ToArray();
+        var prevEntryInfo = new LogEntryInfo(2, 1000);
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevEntryInfo))).Returns(true);
+            m.Setup(p =>
+                p.InsertRange(It.Is<IReadOnlyList<LogEntry>>(l =>
+                        l.SequenceEqual(requestEntries, new LogEntryEqualityComparer())),
+                    It.Is<Lsn>(lsn => lsn == prevEntryInfo.Index + 1)));
+            m.Setup(p => p.Commit(It.IsAny<Lsn>()));
+            m.Setup(p => p.LastEntry).Returns(prevEntryInfo);
+            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>()));
+        });
 
-        var response = node.Handle(request);
+        var response = node.Handle(new AppendEntriesRequest(term.Value + candidateTermDelta, Lsn.Tomb, AnotherNodeId,
+            prevEntryInfo, requestEntries));
 
         Assert.True(response.Success);
-        Assert.Equal(expectedLog, node.Persistence.Log.ReadAllTest(), LogEntryComparer);
     }
 
     [Theory]
@@ -383,177 +559,225 @@ public class CandidateStateTests
         var logEntries = Enumerable.Range(0, requestCommitIndex + 1)
                                    .Select(_ => RandomDataEntry(term))
                                    .ToArray();
-        using var node = CreateCandidateNode(term);
-        node.Persistence.SetupTest(logEntries);
-        node.Persistence.SetCommitTest(currentCommitIndex);
-        var expectedCommitIndex = requestCommitIndex;
+        var prevLogEntryInfo = new LogEntryInfo(term, 213);
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
+        {
+            m.SetupGet(p => p.LastEntry).Returns(new LogEntryInfo(term, requestCommitIndex));
+            m.Setup(p => p.CommitIndex).Returns(currentCommitIndex);
+            m.Setup(p => p.Commit(It.Is<Lsn>(lsn => lsn == requestCommitIndex)));
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntryInfo))).Returns(true);
+            m.Setup(p =>
+                p.InsertRange(It.Is<IReadOnlyList<LogEntry>>(list =>
+                        list.SequenceEqual(logEntries, new LogEntryEqualityComparer())),
+                    It.Is<Lsn>(lsn => lsn == prevLogEntryInfo.Index + 1)));
+            m.Setup(p => p.ShouldCreateSnapshot()).Returns(false);
+        });
 
-        var request = new AppendEntriesRequest(term, requestCommitIndex, AnotherNodeId, node.Persistence.LastEntry,
-            Array.Empty<LogEntry>());
-        var response = node.Handle(request);
+        var response = node.Handle(new AppendEntriesRequest(term, requestCommitIndex, AnotherNodeId, prevLogEntryInfo,
+            Array.Empty<LogEntry>()));
 
         Assert.True(response.Success);
-        Assert.Equal(expectedCommitIndex, node.Persistence.CommitIndex);
     }
 
     [Theory]
     [InlineData(1, 1)]
     [InlineData(0, 5)]
     [InlineData(5, 2)]
-    public void AppendEntries__КогдаЕстьИндексКоммитаИЗаписиДляДобавления__ДолженЗакоммититьИДобавитьЗаписи(
-        int commitIndex,
-        int enqueueCount)
+    public void
+        AppendEntries__КогдаКогдаИндексКоммитаВЗапросеБольшеИндексаПоследнейЗаписи__ДолженЗакоммититьТолькоСвоюПоследнююЗапись(
+        int requestCommitIndex,
+        int myLastIndex)
     {
-        // Изначально ничего не закоммичено
         var term = new Term(2);
-        var logEntries = Enumerable.Range(0, 10)
-                                   .Select(_ => RandomDataEntry(term))
-                                   .ToArray();
-        var requestEntries = Enumerable.Range(0, enqueueCount)
-                                       .Select(_ => RandomDataEntry(term))
-                                       .ToArray();
-        var expectedCommitIndex = commitIndex;
-        var expectedLog = logEntries.Concat(requestEntries).ToArray();
+        var requestEntries = Array.Empty<LogEntry>();
+        var lastEntry = new LogEntryInfo(term, myLastIndex);
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
+        {
+            m.Setup(p => p.Commit(It.Is<Lsn>(lsn => lsn == myLastIndex)));
+            m.SetupGet(p => p.CommitIndex).Returns(requestCommitIndex - 1);
+            m.SetupGet(p => p.LastEntry).Returns(lastEntry);
+            m.Setup(p => p.PrefixMatch(It.IsAny<LogEntryInfo>())).Returns(true);
+            m.Setup(p => p.InsertRange(It.IsAny<IReadOnlyList<LogEntry>>(), It.IsAny<Lsn>()));
+            m.Setup(p => p.Commit(It.IsAny<Lsn>()));
+            m.Setup(p => p.ShouldCreateSnapshot()).Returns(false);
+        });
 
-        using var node = CreateCandidateNode(term);
-        node.Persistence.SetupTest(logEntries);
-
-        var request =
-            new AppendEntriesRequest(term, commitIndex, AnotherNodeId, node.Persistence.LastEntry, requestEntries);
-        var response = node.Handle(request);
+        var response = node.Handle(new AppendEntriesRequest(term, requestCommitIndex, AnotherNodeId,
+            node.Persistence.LastEntry, requestEntries));
 
         Assert.True(response.Success);
-        Assert.Equal(expectedCommitIndex, node.Persistence.CommitIndex);
-        Assert.Equal(expectedLog, node.Persistence.Log.ReadAllTest(), LogEntryComparer);
     }
-
-    private static readonly LogEntryEqualityComparer LogEntryComparer = new();
 
     [Fact]
     public void AppendEntries__КогдаЛогКонфликтует__ДолженОтветитьFalse()
     {
         var term = new Term(5);
-        using var node = CreateCandidateNode(term);
-        var log = new[]
+        var prevLogEntry = new LogEntryInfo(term, 53);
+        var enqueueEntries = new[] {new LogEntry(term, "asdfasdf"u8.ToArray())};
+        using var node = CreateCandidateNode(term, persistenceFactory: m =>
         {
-            RandomDataEntry(1), // 0
-            RandomDataEntry(2), // 1
-            RandomDataEntry(2), // 2
-            RandomDataEntry(3), // 3
-            RandomDataEntry(3), // 4
-            RandomDataEntry(4), // 5
-        };
-        node.Persistence.Log.SetupLogTest(log);
-        /*
-         * Конфликт на 5 записи (индекс 4).
-         * Наш терм: 3
-         * Терм узла: 4
-         */
-        var prevLogEntry = new LogEntryInfo(new Term(4), 4);
-        var enqueueEntries = new[]
-        {
-            RandomDataEntry(new Term(4)), RandomDataEntry(new Term(4)), RandomDataEntry(new Term(5)),
-        };
-        var request = new AppendEntriesRequest(term, 0, AnotherNodeId, prevLogEntry, enqueueEntries);
+            m.Setup(p => p.InsertRange(It.IsAny<IReadOnlyList<LogEntry>>(), It.IsAny<Lsn>()))
+             .Throws(new InvalidOperationException("Не должен быть вызван"));
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntry))).Returns(false);
+            m.SetupGet(p => p.CurrentTerm).Returns(term);
+        });
 
-        var response = node.Handle(request);
+        var response = node.Handle(new AppendEntriesRequest(term, 0, AnotherNodeId, prevLogEntry, enqueueEntries));
 
         Assert.False(response.Success);
-        Assert.Equal(log, node.Persistence.Log.ReadAllTest(), LogEntryComparer);
     }
 
-    private LogEntry RandomDataEntry(int term) => RandomDataEntry(new Term(term));
-
     [Fact]
-    public void RequestVote__СБолееВысокимТермомНоКонфликтующимЛогом__ДолженПерейтиВНовыйТермИНеОтдатьГолос()
+    public void RequestVote__КогдаТермВЗапросеБольшеНоЛогКонфликтует__ДолженПерейтиВНовыйТерм()
     {
         var currentTerm = new Term(2);
-        var queue = new SingleRunBackgroundJobQueue();
-        using var node = CreateCandidateNode(currentTerm, jobQueue: queue);
-        var nodeEntries = new[] {RandomDataEntry(1), RandomDataEntry(2), RandomDataEntry(2), RandomDataEntry(2),};
-        node.Persistence.InsertRange(nodeEntries, 0);
+        var lastLogEntryInfo = new LogEntryInfo(new Term(1), 1);
         var newTerm = currentTerm.Increment();
+        using var node = CreateCandidateNode(currentTerm, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(false);
+            m.Setup(p => p.UpdateState(It.Is<Term>(t => t == newTerm), It.IsAny<NodeId?>())).Verifiable();
+        });
 
-        // Конфликт на 1 индексе (2 запись) - наш терм = 2, его терм = 1
-        var request = new RequestVoteRequest(AnotherNodeId, newTerm, new LogEntryInfo(new Term(1), 1));
-        var response = node.Handle(request);
+        _ = node.Handle(new RequestVoteRequest(AnotherNodeId, newTerm, lastLogEntryInfo));
 
-        Assert.False(response.VoteGranted);
-        Assert.Equal(newTerm, node.CurrentTerm);
-        Assert.Equal(NodeRole.Follower, node.CurrentRole);
+        _mockPersistence.Verify(p => p.UpdateState(It.Is<Term>(t => t == newTerm), It.IsAny<NodeId?>()), Times.Once());
     }
 
     [Fact]
-    public void Heartbeat__СБолееВысокимТермомИСобраннымКворумом__ДолженСтатьFollower()
+    public void RequestVote__КогдаТермВЗапросеБольшеНоЛогКонфликтует__ДолженВернутьFalse()
+    {
+        var currentTerm = new Term(2);
+        var lastLogEntryInfo = new LogEntryInfo(new Term(1), 1);
+        var newTerm = currentTerm.Increment();
+        using var node = CreateCandidateNode(currentTerm, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(false);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>()));
+        });
+
+        var response = node.Handle(new RequestVoteRequest(AnotherNodeId, newTerm, lastLogEntryInfo));
+
+        Assert.False(response.VoteGranted);
+    }
+
+    [Fact]
+    public void RequestVote__КогдаТермВЗапросеБольшеНоЛогКонфликтует__ДолженВыставитьГолосВnull()
+    {
+        var currentTerm = new Term(2);
+        var lastLogEntryInfo = new LogEntryInfo(new Term(1), 1);
+        var newTerm = currentTerm.Increment();
+        var candidateId = AnotherNodeId;
+        using var node = CreateCandidateNode(currentTerm, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(false);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), null)).Verifiable();
+            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+        });
+
+        var response = node.Handle(new RequestVoteRequest(candidateId, newTerm, lastLogEntryInfo));
+
+        Assert.False(response.VoteGranted);
+        _mockPersistence.Verify(p => p.UpdateState(It.IsAny<Term>(), null), Times.Once());
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void AppendEntries__КогдаПришелОтАктуальногоЛидера__НеДолженСтатьНовымЛидеромПослеОкончанияКворума(
+        int peersCount)
     {
         /*
-         * Когда сначала вызываю Handle (после которого становлюсь Follower),
-         * а потом начинаю кворум (собирая при этом большинство голосов),
-         * должен остаться Follower
+         * Когда во время сбора кворма мне приходит AppendEntries (или другой запрос),
+         * то собранный кворум не должен изменять уже новое состояние
          */
         var currentTerm = new Term(2);
         var queue = new SingleRunBackgroundJobQueue();
-        using var node = CreateCandidateNode(currentTerm, jobQueue: queue);
-        var newTerm = currentTerm.Increment();
+        var requestTerm = currentTerm.Increment();
+        var stubPeers = Enumerable.Range(0, peersCount).Select(_ => new StubQuorumPeer(currentTerm, true)).ToArray();
+        using var node = CreateCandidateNode(currentTerm, jobQueue: queue, peers: stubPeers, persistenceFactory: m =>
+        {
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>()));
+            m.Setup(p => p.IsUpToDate(It.IsAny<LogEntryInfo>())).Returns(true);
+            m.Setup(p => p.PrefixMatch(It.IsAny<LogEntryInfo>())).Returns(true);
+            m.Setup(p => p.CommitIndex).Returns(Lsn.Tomb);
+        });
 
-        var request = AppendEntriesRequest.Heartbeat(newTerm, -1, AnotherNodeId, LogEntryInfo.Tomb);
-        var response = node.Handle(request);
+        var response = node.Handle(new AppendEntriesRequest(requestTerm, Lsn.Tomb, AnotherNodeId, LogEntryInfo.Tomb,
+            Array.Empty<LogEntry>()));
         queue.Run();
 
         Assert.True(response.Success);
-        Assert.Equal(newTerm, response.Term);
-
+        Assert.Equal(requestTerm, response.Term);
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
-        Assert.Equal(newTerm, node.CurrentTerm);
     }
 
     [Fact]
-    public void RequestVote__СОдинаковымТермом__ДолженВернутьFalse()
+    public void RequestVote__КогдаТермыОдинаковы__ДолженВернутьFalse()
     {
         var currentTerm = new Term(2);
         var queue = new SingleRunBackgroundJobQueue();
-        using var node = CreateCandidateNode(currentTerm, jobQueue: queue);
+        using var node = CreateCandidateNode(currentTerm, jobQueue: queue, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(It.IsAny<LogEntryInfo>())).Returns(true);
+        });
 
-        var request = new RequestVoteRequest(AnotherNodeId, currentTerm, LogEntryInfo.Tomb);
-        var response = node.Handle(request);
+        var response = node.Handle(new RequestVoteRequest(AnotherNodeId, currentTerm, LogEntryInfo.Tomb));
 
         Assert.False(response.VoteGranted);
         Assert.Equal(currentTerm, response.CurrentTerm);
-
         Assert.Equal(NodeRole.Candidate, node.CurrentRole);
-        Assert.Equal(currentTerm, node.CurrentTerm);
     }
 
-    [Fact]
-    public void СобранныйКворумПослеПолученногоRequestVoteСБольшимТермом__ДолженОстатьсяFollower()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void RequestVote__КогдаТермБольше__НеДолженСтатьЛидеромДажеПриПолученииВсехГолосовВКворуме(int peersCount)
     {
         /*
-         * Когда сначала вызываю Handle (после которого становлюсь Follower),
-         * а потом начинаю кворум (собирая при этом большинство голосов),
-         * должен остаться Follower
+         * Когда во время сбора кворма мне приходит AppendEntries (или другой запрос),
+         * то собранный кворум не должен изменять уже новое состояние
          */
         var currentTerm = new Term(2);
         var queue = new SingleRunBackgroundJobQueue();
-        using var node = CreateCandidateNode(currentTerm, jobQueue: queue);
-        var newTerm = currentTerm.Increment();
+        var requestTerm = currentTerm.Increment();
+        var lastEntryInfo = new LogEntryInfo(requestTerm, 123);
+        var stubPeers = Enumerable.Range(0, peersCount).Select(_ => new StubQuorumPeer(currentTerm, true)).ToArray();
+        using var node = CreateCandidateNode(currentTerm, jobQueue: queue, peers: stubPeers, persistenceFactory: m =>
+        {
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>()));
+            m.Setup(p => p.VotedFor).Returns(NodeId);
+            m.Setup(p => p.IsUpToDate(lastEntryInfo)).Returns(true);
+        });
 
-        var request = new RequestVoteRequest(AnotherNodeId, newTerm, LogEntryInfo.Tomb);
-        var response = node.Handle(request);
-
+        var response = node.Handle(new RequestVoteRequest(AnotherNodeId, requestTerm, lastEntryInfo));
         queue.Run();
 
         Assert.True(response.VoteGranted);
-        Assert.Equal(newTerm, response.CurrentTerm);
-
+        Assert.Equal(requestTerm, response.CurrentTerm);
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
-        Assert.Equal(newTerm, node.CurrentTerm);
+    }
+
+    private static void SetupStubLeaderInitialization(Mock<IPersistence> mock)
+    {
+        mock.Setup(p => p.CommitIndex).Returns(Lsn.Tomb);
+        ISnapshot s = null!;
+        var lei = LogEntryInfo.Tomb;
+        mock.Setup(p => p.TryGetSnapshot(out s, out lei)).Returns(false);
+        mock.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
     }
 
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(5)]
-    public void ПослеПереходаВLeader__КогдаКворумСобран__ДолженОстановитьElectionТаймер(int votes)
+    public void ПослеСтановленияЛидером__КогдаКворумСобран__ДолженОстановитьElectionТаймер(int votes)
     {
         var term = new Term(1);
         var queue = new AwaitingTaskBackgroundJobQueue();
@@ -575,7 +799,11 @@ public class CandidateStateTests
         using var _ = CreateCandidateNode(term,
             electionTimer: electionTimer.Object,
             jobQueue: queue,
-            peers: peers);
+            peers: peers,
+            persistenceFactory: m =>
+            {
+                SetupStubLeaderInitialization(m);
+            });
 
         queue.RunWait();
 
@@ -606,8 +834,18 @@ public class CandidateStateTests
                                                 .Select(_ => new StubQuorumPeer(new Term(term.Value - 1), false)))
                               .ToArray();
         var queue = new AwaitingTaskBackgroundJobQueue();
-        using var node = CreateCandidateNode(term, jobQueue: queue, peers: peers);
+
+        using var node = CreateCandidateNode(term, jobQueue: queue, peers: peers, persistenceFactory: m =>
+        {
+            m.Setup(p => p.CommitIndex).Returns(Lsn.Tomb);
+            ISnapshot s = null!;
+            var lei = LogEntryInfo.Tomb;
+            m.Setup(p => p.TryGetSnapshot(out s, out lei)).Returns(false);
+            m.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), null));
+        });
         queue.RunWait();
+
         Assert.Equal(NodeRole.Leader, node.CurrentRole);
     }
 

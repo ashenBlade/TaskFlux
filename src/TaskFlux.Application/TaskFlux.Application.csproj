@@ -8,6 +8,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Consensus\TaskFlux.Consensus\TaskFlux.Consensus.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Persistence\TaskFlux.Persistence.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

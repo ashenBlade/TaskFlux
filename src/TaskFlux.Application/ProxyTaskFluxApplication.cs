@@ -1,7 +1,7 @@
-using TaskFlux.Application.Persistence;
 using TaskFlux.Consensus;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
+using TaskFlux.Persistence.ApplicationState;
 
 namespace TaskFlux.Application;
 

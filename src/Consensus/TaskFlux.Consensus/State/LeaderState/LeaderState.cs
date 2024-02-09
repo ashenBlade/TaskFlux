@@ -120,8 +120,8 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         {
             if (request.Term == CurrentTerm)
             {
-                _logger.Warning("От узла {NodeId} пришел запрос. Наши термы совпадают: {Term}", request.LeaderId.Id,
-                    request.Term.Value);
+                _logger.Warning("От узла {NodeId} пришел запрос. Наши термы совпадают: {Term}", request.LeaderId,
+                    request.Term);
             }
             else
             {
@@ -142,52 +142,31 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)
     {
-        if (request.CandidateTerm < CurrentTerm)
+        if (request.CandidateTerm <= CurrentTerm)
         {
+            // Мы уже лидер в своем терме, поэтому нет, а если терм отправителя меньше - тем более нет
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
         }
+        // Голос не проверяем, т.к. в любом случае в больше терме не голосовали
 
-        var isUpToDate = Persistence.IsUpToDate(request.LastLogEntryInfo);
-
-        if (CurrentTerm < request.CandidateTerm)
+        var followerState = ConsensusModule.CreateFollowerState();
+        if (ConsensusModule.TryUpdateState(followerState, this))
         {
-            var followerState = ConsensusModule.CreateFollowerState();
-
-            if (ConsensusModule.TryUpdateState(followerState, this))
+            var newTerm = request.CandidateTerm;
+            if (Persistence.IsUpToDate(request.LastLogEntryInfo))
             {
-                ConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
-                return new RequestVoteResponse(CurrentTerm, isUpToDate);
+                Persistence.UpdateState(newTerm, request.CandidateId);
+                return new RequestVoteResponse(newTerm, true);
             }
-
-            // Уже есть новое состояние - пусть оно ответит
-            return ConsensusModule.Handle(request);
+            else
+            {
+                Persistence.UpdateState(newTerm, null);
+                return new RequestVoteResponse(newTerm, false);
+            }
         }
 
-        var canVote =
-            // Ранее не голосовали
-            VotedFor is null
-          ||
-            // В этом терме мы за него уже проголосовали
-            VotedFor == request.CandidateId;
-
-        // Отдать свободный голос можем только за кандидата 
-        if (canVote
-         &&             // За которого можем проголосовать и
-            isUpToDate) // У которого лог не хуже нашего
-        {
-            var followerState = ConsensusModule.CreateFollowerState();
-            if (ConsensusModule.TryUpdateState(followerState, this))
-            {
-                ConsensusModule.Persistence.UpdateState(request.CandidateTerm, request.CandidateId);
-                return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
-            }
-
-            return ConsensusModule.Handle(request);
-        }
-
-        // Кандидат только что проснулся и не знает о текущем состоянии дел. 
-        // Обновим его
-        return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
+        // Кто-то параллельно обновил состояние
+        return ConsensusModule.Handle(request);
     }
 
     public override void Dispose()

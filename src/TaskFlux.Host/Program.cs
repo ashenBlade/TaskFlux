@@ -65,14 +65,14 @@ try
 
     var nodeId = new NodeId(options.Cluster.ClusterNodeId);
 
-    var facade = InitializePersistence(options.Persistence);
-    DumpDataState(facade);
+    var persistence = InitializePersistence(options.Persistence);
+    DumpDataState(persistence);
 
     var peers = ExtractPeers(options.Cluster, nodeId, options.Network);
 
     using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(options.Cluster.ClusterPeers.Length,
         options.Cluster.ClusterNodeId, Log.Logger.ForContext("SourceContext", "BackgroundJobQueue"), lifetime);
-    using var consensusModule = CreateRaftConsensusModule(nodeId, peers, facade, jobQueue);
+    using var consensusModule = CreateRaftConsensusModule(nodeId, peers, persistence, jobQueue);
     using var requestAcceptor =
         new ExclusiveRequestAcceptor(consensusModule, lifetime, Log.ForContext("SourceContext", "RequestAcceptor"));
     using var connectionManager = new NodeConnectionManager(options.Cluster.ClusterListenHost,
@@ -116,7 +116,7 @@ try
                    services.AddSingleton<IApplicationInfo>(sp => new ProxyApplicationInfo(consensusModule,
                        sp.GetRequiredService<ApplicationOptions>().Cluster.ClusterPeers));
 
-                   services.AddNodeStateObserverHostedService(consensusModule);
+                   services.AddNodeStateObserverHostedService(persistence, consensusModule);
                    services.AddTcpRequestModule(lifetime);
                    services.AddHttpRequestModule(lifetime);
                })

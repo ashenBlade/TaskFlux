@@ -402,3 +402,4 @@ FodyWeavers.xsd
 !src/Consensus/Consensus.Core/Log
 !src/Consensus.Log/Consensus.Storage.File/Log
 !src/Consensus/**/Log
+!src/TaskFlux.Persistence/Log

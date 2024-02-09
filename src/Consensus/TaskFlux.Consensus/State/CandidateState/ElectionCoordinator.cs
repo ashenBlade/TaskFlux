@@ -45,7 +45,6 @@ internal class ElectionCoordinator<TCommand, TResponse>
             if (Module.TryUpdateState(leader, _state))
             {
                 _logger.Debug("Превышен порог необходимых голосов. Становлюсь лидером");
-                Module.Persistence.UpdateState(_term.Increment(), null);
             }
             else
             {

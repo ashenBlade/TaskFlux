@@ -3,7 +3,6 @@ using Serilog;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Consensus.State;
 using TaskFlux.Consensus.State.LeaderState;
 using TaskFlux.Core;
@@ -115,7 +114,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     /// <summary>
     /// Фасад для работы с файлами
     /// </summary>
-    public FileSystemPersistenceFacade Persistence { get; }
+    public IPersistence Persistence { get; }
 
     internal RaftConsensusModule(
         NodeId id,
@@ -123,7 +122,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         ILogger logger,
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
-        FileSystemPersistenceFacade persistence,
+        IPersistence persistence,
         IDeltaExtractor<TResponse> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
@@ -199,7 +198,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         ILogger logger,
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
-        FileSystemPersistenceFacade persistenceFacade,
+        IPersistence persistenceFacade,
         IDeltaExtractor<TResponse> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {

@@ -2,6 +2,10 @@ using TaskFlux.Consensus.Persistence;
 
 namespace TaskFlux.Consensus.State.LeaderState;
 
+/// <summary>
+/// Объект для коммита записей, которые были реплицированы на большинство узлов.
+/// Используется вместо того, чтобы вручную коммитить записи.
+/// </summary>
 internal class ReplicationWatcher
 {
     /// <summary>
@@ -12,7 +16,7 @@ internal class ReplicationWatcher
     /// <summary>
     /// Хранилище состояния 
     /// </summary>
-    private readonly FileSystemPersistenceFacade _persistence;
+    private readonly IPersistence _persistence;
 
     /// <summary>
     /// Последний закоммиченный индекс.
@@ -20,7 +24,7 @@ internal class ReplicationWatcher
     /// </summary>
     private Lsn _lastKnownCommitIndex;
 
-    public ReplicationWatcher(PeerReplicationState[] peerInfos, FileSystemPersistenceFacade persistence)
+    public ReplicationWatcher(PeerReplicationState[] peerInfos, IPersistence persistence)
     {
         _peerInfos = peerInfos;
         _persistence = persistence;

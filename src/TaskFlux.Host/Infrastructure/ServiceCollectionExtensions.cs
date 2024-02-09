@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using TaskFlux.Application;
 using TaskFlux.Consensus;
+using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core.Commands;
 using TaskFlux.Host.Configuration;
 using TaskFlux.Transport.Http;
@@ -13,10 +14,11 @@ namespace TaskFlux.Host.Infrastructure;
 public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddNodeStateObserverHostedService(this IServiceCollection sc,
+                                                                       FileSystemPersistenceFacade persistence,
                                                                        RaftConsensusModule<Command, Response> module)
     {
         return sc.AddHostedService(_ =>
-            new NodeStateObserverBackgroundService(module, TimeSpan.FromSeconds(5),
+            new NodeStateObserverBackgroundService(module, persistence, TimeSpan.FromSeconds(5),
                 Log.ForContext("SourceContext", "StateObserver")));
     }
 

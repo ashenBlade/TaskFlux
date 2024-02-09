@@ -26,4 +26,8 @@
         <ProjectReference Include="..\..\TaskFlux.Utils\TaskFlux.Utils.csproj"/>
     </ItemGroup>
 
+    <ItemGroup>
+        <Folder Include="Persistence\"/>
+    </ItemGroup>
+
 </Project>

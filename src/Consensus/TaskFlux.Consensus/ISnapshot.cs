@@ -2,6 +2,7 @@ namespace TaskFlux.Consensus;
 
 public interface ISnapshot
 {
+    // TODO: добавить сюда IncludedEntry
     /// <summary>
     /// Получить все чанки из снапшота
     /// </summary>
