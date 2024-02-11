@@ -10,7 +10,6 @@ using TaskFlux.Application;
 using TaskFlux.Application.Cluster;
 using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster.Network;
-using TaskFlux.Consensus.Persistence.Log;
 using TaskFlux.Consensus.Timers;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
@@ -18,6 +17,7 @@ using TaskFlux.Host;
 using TaskFlux.Host.Configuration;
 using TaskFlux.Host.Infrastructure;
 using TaskFlux.Persistence;
+using TaskFlux.Persistence.Log;
 using TaskFlux.Persistence.Snapshot;
 
 var lifetime = new HostApplicationLifetime();
@@ -148,9 +148,15 @@ FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
 {
     var fs = new FileSystem();
     var dataDirectoryInfo = fs.DirectoryInfo.New(Path.Combine(options.WorkingDirectory, "data"));
-    return FileSystemPersistenceFacade.Initialize(dataDirectoryInfo, Log.ForContext<FileSystemPersistenceFacade>(),
-        snapshotOptions: new SnapshotOptions(2),
-        logOptions: new SegmentedFileLogOptions(1024, 1024 * 2));
+    var snapshotOptions = new SnapshotOptions(
+        snapshotCreationSegmentsThreshold: options.SnapshotCreationSegmentsThreshold);
+    var logOptions = new SegmentedFileLogOptions(softLimit: options.LogFileSoftLimit,
+        hardLimit: options.LogFileHardLimit,
+        preallocateSegment: true);
+    return FileSystemPersistenceFacade.Initialize(dataDirectory: dataDirectoryInfo,
+        logger: Log.ForContext<FileSystemPersistenceFacade>(),
+        snapshotOptions: snapshotOptions,
+        logOptions: logOptions);
 }
 
 RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
@@ -212,7 +218,17 @@ ApplicationOptions GetApplicationOptions()
 bool TryValidateOptions(ApplicationOptions options)
 {
     var results = new List<ValidationResult>();
-    if (Validator.TryValidateObject(options, new ValidationContext(options), results, true))
+
+    _ = Validator.TryValidateObject(options, new ValidationContext(options), results, true);
+
+    if (options.Persistence.LogFileHardLimit < options.Persistence.LogFileSoftLimit)
+    {
+        results.Add(new ValidationResult(
+            $"Жесткий предел размера файла не может быть меньше мягкого предела. Мягкий предел: {options.Persistence.LogFileSoftLimit}. Жесткий предел: {options.Persistence.LogFileHardLimit}",
+            new[] {nameof(options.Persistence.LogFileHardLimit), nameof(options.Persistence.LogFileSoftLimit)}));
+    }
+
+    if (results.Count == 0)
     {
         return true;
     }

@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Buffers;
+using System.Diagnostics;
 using System.IO.Abstractions;
 using Serilog;
 using Serilog.Core;
@@ -453,19 +454,26 @@ public class SegmentedFileLog : IDisposable
 
         private static LogSegment InitializeCore(IFileInfo fileInfo,
                                                  SegmentFileName fileName,
+                                                 SegmentedFileLogOptions options,
                                                  ILogger logger,
                                                  bool readOnly)
         {
             // Файл открываем в ReadWrite режиме, т.к. может потребоваться восстановление файла (обрезание)
             logger.Debug("Открываю файл {FileName}", fileInfo.FullName);
-
             var file = fileInfo.Open(FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+
             var reader = new StreamBinaryReader(file);
 
             if (file.Length == 0)
             {
                 // Файл был пуст
                 Span<byte> headerSpan = stackalloc byte[HeaderSizeBytes + sizeof(int)]; // Заголовок + EndOfDataRecord
+
+                if (options.PreallocateSegment)
+                {
+                    logger.Debug("Файл пуст - выделяю память под сегмент");
+                    file.SetLength(options.LogFileSoftLimit);
+                }
 
                 var headerWriter = new SpanBinaryWriter(headerSpan);
                 headerWriter.Write(FileMarker);
@@ -504,22 +512,41 @@ public class SegmentedFileLog : IDisposable
             }
             catch (EndOfStreamException)
             {
-                logger.Debug("Размер файла {FileName} меньше размера заголовка. Инициализирую пустым",
+                logger.Debug(
+                    "Размер файла {FileName} меньше размера заголовка - выполняю первоначальное инициализирование",
                     fileName.GetFileName());
-                var s = new byte[HeaderSizeBytes + sizeof(int)];
-                var writer = new SpanBinaryWriter(s);
-                writer.Write(FileMarker);
-                writer.Write(CurrentVersion);
-                writer.Write(EndOfDataRecordMarker);
-                file.Write(s);
-                file.Flush(true);
-                if (readOnly)
+
+                if (options.PreallocateSegment)
                 {
-                    file.Dispose();
-                    file = null;
+                    logger.Debug("Выделяю память под файл сегмента");
+                    file.SetLength(options.LogFileSoftLimit);
                 }
 
-                return new LogSegment(fileName, fileInfo, new List<LogRecord>(), file, logger);
+                var requiredSize = HeaderSizeBytes + sizeof(int);
+                var buffer = ArrayPool<byte>.Shared.Rent(requiredSize);
+                try
+                {
+                    var span = buffer.AsSpan(0, requiredSize);
+                    var writer = new SpanBinaryWriter(span);
+                    writer.Write(FileMarker);
+                    writer.Write(CurrentVersion);
+                    writer.Write(EndOfDataRecordMarker);
+
+                    file.Write(span);
+                    file.Flush(true);
+
+                    if (readOnly)
+                    {
+                        file.Dispose();
+                        file = null;
+                    }
+
+                    return new LogSegment(fileName, fileInfo, new List<LogRecord>(), file, logger);
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
             }
 
             var index = new List<LogRecord>();
@@ -655,17 +682,23 @@ public class SegmentedFileLog : IDisposable
         /// При необходимости, содержимое файла лога восстанавливается при обнаружении нарушении целостности.
         /// </summary>
         /// <returns>Инициализированный файл сегмента лога</returns>
-        public static LogSegment InitializeSealed(IFileInfo fileInfo, SegmentFileName fileName, ILogger logger)
+        public static LogSegment InitializeSealed(IFileInfo fileInfo,
+                                                  SegmentFileName fileName,
+                                                  SegmentedFileLogOptions options,
+                                                  ILogger logger)
         {
-            return InitializeCore(fileInfo, fileName, logger, true);
+            return InitializeCore(fileInfo, fileName, options, logger, true);
         }
 
         /// <summary>
         /// Инициализировать файл сегмента в Write режиме 
         /// </summary>
-        public static LogSegment InitializeTail(IFileInfo fileInfo, SegmentFileName fileName, ILogger logger)
+        public static LogSegment InitializeTail(IFileInfo fileInfo,
+                                                SegmentFileName fileName,
+                                                SegmentedFileLogOptions options,
+                                                ILogger logger)
         {
-            return InitializeCore(fileInfo, fileName, logger, false);
+            return InitializeCore(fileInfo, fileName, options, logger, false);
         }
 
         public void Seal()
@@ -674,7 +707,7 @@ public class SegmentedFileLog : IDisposable
                 "Если нужно закрыть сегмент, то он обязан быть открыт прежде");
             // Закрываем поток файла
             var (writeStream, bufferedStream) = WriteStreamData.Value;
-            bufferedStream.Close();
+            bufferedStream.Flush();
             writeStream.Close();
 
             WriteStreamData = null;
@@ -829,10 +862,9 @@ public class SegmentedFileLog : IDisposable
 
     public static SegmentedFileLog Initialize(IDirectoryInfo dataDirectory,
                                               ILogger logger,
-                                              SegmentedFileLogOptions? options = null)
+                                              SegmentedFileLogOptions options)
     {
         var logDirectory = GetLogDirectory();
-        options ??= SegmentedFileLogOptions.Default;
 
         if (!logDirectory.Exists)
         {
@@ -853,7 +885,7 @@ public class SegmentedFileLog : IDisposable
             var firstSegmentFile = GetSegmentFileInfo(logDirectory, firstSegmentName);
 
             logger.Debug("Инициализирую первый файл сегмента {SegmentFileName}", firstSegmentFile.FullName);
-            var firstTailSegment = LogSegment.InitializeTail(firstSegmentFile, firstSegmentName, logger);
+            var firstTailSegment = LogSegment.InitializeTail(firstSegmentFile, firstSegmentName, options, logger);
 
             return new SegmentedFileLog(logDirectory, new List<LogSegment>(), firstTailSegment, options, logger);
         }
@@ -869,7 +901,7 @@ public class SegmentedFileLog : IDisposable
                 "В директории сегментов не оказалось файлов сегментов. Инициализирую первый сегмент {FileName}",
                 firstSegmentFile.Name);
 
-            var firstTailSegment = LogSegment.InitializeTail(firstSegmentFile, firstSegmentName, logger);
+            var firstTailSegment = LogSegment.InitializeTail(firstSegmentFile, firstSegmentName, options, logger);
 
             return new SegmentedFileLog(logDirectory, new List<LogSegment>(), firstTailSegment, options, logger);
         }
@@ -878,7 +910,7 @@ public class SegmentedFileLog : IDisposable
         if (possibleSegmentFiles.Count == 1)
         {
             var (fileInfo, fileName) = possibleSegmentFiles[0];
-            var segmentFile = LogSegment.InitializeTail(fileInfo, fileName, logger);
+            var segmentFile = LogSegment.InitializeTail(fileInfo, fileName, options, logger);
             return new SegmentedFileLog(logDirectory, new List<LogSegment>(), segmentFile, options, logger);
         }
 
@@ -897,7 +929,7 @@ public class SegmentedFileLog : IDisposable
         for (var i = 0; i < possibleSegmentFiles.Count; i++)
         {
             var (fileInfo, name) = possibleSegmentFiles[i];
-            var segmentFile = LogSegment.InitializeSealed(fileInfo, name, logger);
+            var segmentFile = LogSegment.InitializeSealed(fileInfo, name, options, logger);
 
             if (prevLogSegment is { } pls && pls.LastRecordIndex + 1 != segmentFile.LogStartIndex)
             {
@@ -982,7 +1014,7 @@ public class SegmentedFileLog : IDisposable
                 Debug.Assert(entries.Count > 0, "entries.Count > 0", "Закрытый сегмент обязан иметь данные");
                 var fileName = new SegmentFileName(index);
                 var fileInfo = GetSegmentFileInfo(logDirectory, fileName);
-                var segment = LogSegment.InitializeSealed(fileInfo, fileName, Logger.None);
+                var segment = LogSegment.InitializeSealed(fileInfo, fileName, GetOptions(), Logger.None);
                 segment.SetupTest(entries);
                 sealedSegments.Add(segment);
                 index += entries.Count;
@@ -991,7 +1023,7 @@ public class SegmentedFileLog : IDisposable
 
         var tailFileName = new SegmentFileName(index);
         var tailFileInfo = GetSegmentFileInfo(logDirectory, tailFileName);
-        var tail = LogSegment.InitializeTail(tailFileInfo, tailFileName, Logger.None);
+        var tail = LogSegment.InitializeTail(tailFileInfo, tailFileName, GetOptions(), Logger.None);
         if (tailEntries is {Count: > 0})
         {
             tail.SetupTest(tailEntries);
@@ -999,6 +1031,11 @@ public class SegmentedFileLog : IDisposable
 
         return new SegmentedFileLog(logDirectory, sealedSegments, tail, options ?? SegmentedFileLogOptions.Default,
             Logger.None);
+
+        SegmentedFileLogOptions GetOptions()
+        {
+            return options ?? new SegmentedFileLogOptions(1024, 1024 * 2, false);
+        }
     }
 
     private static IFileInfo GetSegmentFileInfo(IDirectoryInfo logDirectory, SegmentFileName fileName)
@@ -1327,7 +1364,7 @@ public class SegmentedFileLog : IDisposable
         var startIndex = 0;
         while (0 < left)
         {
-            var appended = _tail.InsertRangeOverwrite(entries, startIndex, index, _options.SegmentFileHardLimit);
+            var appended = _tail.InsertRangeOverwrite(entries, startIndex, index, _options.LogFileHardLimit);
             if (appended == left)
             {
                 break;
@@ -1414,7 +1451,7 @@ public class SegmentedFileLog : IDisposable
             // Создаем новый файл сегмента (хвост) и обновляем состояние
             var newSegmentFileName = new SegmentFileName(index);
             var newSegmentFileInfo = GetSegmentFileInfo(_logDirectory, newSegmentFileName);
-            _tail = LogSegment.InitializeTail(newSegmentFileInfo, newSegmentFileName, _logger);
+            _tail = LogSegment.InitializeTail(newSegmentFileInfo, newSegmentFileName, _options, _logger);
             _sealed.Clear();
             CommitIndex = index - 1;
             return;
@@ -1495,7 +1532,7 @@ public class SegmentedFileLog : IDisposable
         var newTailName = new SegmentFileName(startIndex);
         var newTailFileInfo = GetSegmentFileInfo(_logDirectory, newTailName);
 
-        var tail = LogSegment.InitializeTail(newTailFileInfo, newTailName, _logger);
+        var tail = LogSegment.InitializeTail(newTailFileInfo, newTailName, _options, _logger);
         _tail = tail;
 
         CommitIndex = startIndex - 1;
@@ -1537,7 +1574,7 @@ public class SegmentedFileLog : IDisposable
             Debug.Assert(data.Count > 0, "data.Count > 0", "Сегмент не может быть пуст");
             var fileName = new SegmentFileName(index);
             var fileInfo = GetSegmentFileInfo(_logDirectory, fileName);
-            var segment = LogSegment.InitializeSealed(fileInfo, fileName, _logger);
+            var segment = LogSegment.InitializeSealed(fileInfo, fileName, _options, _logger);
             segment.SetupTest(data);
             _sealed.Add(segment);
             index += segment.Count;
@@ -1546,7 +1583,7 @@ public class SegmentedFileLog : IDisposable
 
         var tailFileName = new SegmentFileName(index);
         var tailFileInfo = GetSegmentFileInfo(_logDirectory, tailFileName);
-        _tail = LogSegment.InitializeTail(tailFileInfo, tailFileName, _logger);
+        _tail = LogSegment.InitializeTail(tailFileInfo, tailFileName, _options, _logger);
         _tail.SetupTest(tailEntries);
 
         if (commitIndex is { } ci)
@@ -1748,7 +1785,7 @@ public class SegmentedFileLog : IDisposable
         var nextSegmentFileInfo = GetSegmentFileInfo(_logDirectory, nextSegmentFileName);
 
         _logger.Information("Создаю новый файл сегмента {SegmentFileName}", nextSegmentFileInfo.FullName);
-        var nextSegmentFile = LogSegment.InitializeTail(nextSegmentFileInfo, nextSegmentFileName, _logger);
+        var nextSegmentFile = LogSegment.InitializeTail(nextSegmentFileInfo, nextSegmentFileName, _options, _logger);
 
         // 2. Закрываем текущий хвост
         _tail.Seal();
@@ -1770,8 +1807,8 @@ public class SegmentedFileLog : IDisposable
          */
 
         var tailSize = _tail.GetEffectiveFileSize();
-        return ( _options.SegmentFileSoftLimit < tailSize && _tail.LastRecordIndex <= CommitIndex )
-            || _options.SegmentFileHardLimit < tailSize;
+        return ( _options.LogFileSoftLimit < tailSize && _tail.LastRecordIndex <= CommitIndex )
+            || _options.LogFileHardLimit < tailSize;
     }
 
     internal void ValidateFileTest()
@@ -1953,7 +1990,7 @@ public class SegmentedFileLog : IDisposable
         _logger.Information("Удаляю все сегменты и начинаю новый по индексу {StartIndex}", startIndex);
 
         // Этот поток станет новым хвостом, поэтому закрывать его не надо
-        var newTail = LogSegment.InitializeTail(newSegmentFileInfo, newSegmentFileName, _logger);
+        var newTail = LogSegment.InitializeTail(newSegmentFileInfo, newSegmentFileName, _options, _logger);
 
         foreach (var s in _sealed)
         {

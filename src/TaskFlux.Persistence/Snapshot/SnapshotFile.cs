@@ -440,7 +440,7 @@ public class SnapshotFile
         return ( new LogEntryInfo(term, index), length, storedCheckSum );
     }
 
-    public static SnapshotFile Initialize(IDirectoryInfo dataDirectory, SnapshotOptions? options = null)
+    public static SnapshotFile Initialize(IDirectoryInfo dataDirectory, SnapshotOptions options)
     {
         var snapshotFile =
             dataDirectory.FileSystem.FileInfo.New(Path.Combine(dataDirectory.FullName, Constants.SnapshotFileName));
@@ -462,7 +462,7 @@ public class SnapshotFile
         try
         {
             var info = Initialize(snapshotFile);
-            return new SnapshotFile(snapshotFile, tempDirectory, info, options ?? SnapshotOptions.Default);
+            return new SnapshotFile(snapshotFile, tempDirectory, info, options);
         }
         catch (EndOfStreamException e)
         {

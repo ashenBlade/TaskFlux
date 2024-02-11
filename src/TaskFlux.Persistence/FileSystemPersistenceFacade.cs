@@ -1,9 +1,7 @@
-using System.Diagnostics;
 using System.IO.Abstractions;
 using System.Runtime.CompilerServices;
 using Serilog;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Persistence.Log;
 using TaskFlux.Core;
 using TaskFlux.Persistence.Log;
 using TaskFlux.Persistence.Metadata;
@@ -67,8 +65,8 @@ public class FileSystemPersistenceFacade : IPersistence, IDisposable
 
     public static FileSystemPersistenceFacade Initialize(IDirectoryInfo dataDirectory,
                                                          ILogger logger,
-                                                         SnapshotOptions? snapshotOptions = null,
-                                                         SegmentedFileLogOptions? logOptions = null)
+                                                         SnapshotOptions snapshotOptions,
+                                                         SegmentedFileLogOptions logOptions)
     {
         CheckDataDirectory();
         var metadata = InitializeMetadata();
@@ -342,18 +340,6 @@ public class FileSystemPersistenceFacade : IPersistence, IDisposable
         }
     }
 
-    private void SetupLogTest(IReadOnlyList<LogEntry> logEntries, Lsn? startLsn = null)
-    {
-        if (_snapshot.TryGetIncludedIndex(out var snapshotIndex))
-        {
-            Debug.Assert(snapshotIndex < logEntries.Count, "snapshotIndex < logEntries.Count",
-                "Количество записей в логе не может быть меньше индекса последней команды в снапшоте");
-        }
-
-        _log.SetupLogTest(tailEntries: logEntries, sealedSegments: Array.Empty<IReadOnlyList<LogEntry>>(),
-            startIndex: startLsn);
-    }
-
     public LogEntryInfo GetEntryInfo(Lsn index)
     {
         return _log.GetEntryInfoAt(index);
@@ -484,7 +470,7 @@ public class FileSystemPersistenceFacade : IPersistence, IDisposable
          */
 
         var uncoveredSegments = _log.GetSegmentsBefore(_log.CommitIndex);
-        return _snapshot.Options.SegmentsBeforeSnapshot <= uncoveredSegments;
+        return _snapshot.Options.SnapshotCreationSegmentsThreshold <= uncoveredSegments;
     }
 
     public IEnumerable<byte[]> ReadCommittedDeltaFromPreviousSnapshot()

@@ -1,6 +1,5 @@
 using System.IO.Abstractions;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Persistence.Snapshot;
 using Xunit;
 
@@ -9,13 +8,15 @@ namespace TaskFlux.Persistence.Tests;
 [Trait("Category", "Persistence")]
 public class SnapshotFileTests
 {
+    private static SnapshotOptions TestOptions => new SnapshotOptions(100);
+
     private IDirectoryInfo _dataDirectory = null!;
 
     private SnapshotFile CreateSnapshot()
     {
         var fs = Helpers.CreateFileSystem();
         _dataDirectory = fs.DataDirectory;
-        return SnapshotFile.Initialize(fs.DataDirectory);
+        return SnapshotFile.Initialize(fs.DataDirectory, TestOptions);
     }
 
     [Fact]
@@ -71,7 +72,7 @@ public class SnapshotFileTests
         var (_, _, actual) = snapshot.ReadAllDataTest();
         Assert.Equal(data, actual);
 
-        var ex = Record.Exception(() => SnapshotFile.Initialize(_dataDirectory));
+        var ex = Record.Exception(() => SnapshotFile.Initialize(_dataDirectory, TestOptions));
         Assert.Null(ex);
     }
 
@@ -97,7 +98,7 @@ public class SnapshotFileTests
 
         var ex = Record.Exception(() =>
         {
-            var sf = SnapshotFile.Initialize(_dataDirectory);
+            var sf = SnapshotFile.Initialize(_dataDirectory, TestOptions);
             Assert.Equal(expected, sf.LastApplied);
         });
         Assert.Null(ex);

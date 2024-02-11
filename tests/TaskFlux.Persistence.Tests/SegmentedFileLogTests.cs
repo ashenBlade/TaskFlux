@@ -2,7 +2,6 @@ using System.IO.Abstractions;
 using System.Text;
 using Serilog.Core;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Persistence.Log;
 using TaskFlux.Persistence.Log;
 using Xunit;
 
@@ -16,6 +15,10 @@ public class SegmentedFileLogTests : IDisposable
 
     private static LogEntry Entry(Term term, string data)
         => new(term, Encoding.UTF8.GetBytes(data));
+
+    private static SegmentedFileLogOptions TestOptions => new(softLimit: long.MaxValue,
+        hardLimit: long.MaxValue,
+        preallocateSegment: false);
 
     private record MockFiles(IDirectoryInfo LogDirectory, IDirectoryInfo DataDirectory);
 
@@ -32,7 +35,7 @@ public class SegmentedFileLogTests : IDisposable
         // Дополнительная проверка, что оставляемые файлы находятся в корректном состоянии
         if (_createdFiles is var (_, dataDir))
         {
-            var ex = Record.Exception(() => SegmentedFileLog.Initialize(dataDir, Logger.None));
+            var ex = Record.Exception(() => SegmentedFileLog.Initialize(dataDir, Logger.None, TestOptions));
             Assert.Null(ex);
         }
 
@@ -72,7 +75,7 @@ public class SegmentedFileLogTests : IDisposable
 
         SegmentedFileLogOptions GetOptions()
         {
-            return options ?? new SegmentedFileLogOptions(long.MaxValue, long.MaxValue);
+            return options ?? TestOptions;
         }
     }
 
@@ -339,7 +342,7 @@ public class SegmentedFileLogTests : IDisposable
         var (log, _) = CreateLog(start: startLsn,
             tailEntries: tailEntries,
             segmentEntries: segments,
-            options: new SegmentedFileLogOptions(softLimit, hardLimit));
+            options: new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true));
         var lastIndex = startLsn + segmentSize * segmentsCount + tailSize;
         var expected = segments.SelectMany(s => s).Concat(tailEntries).Concat(toInsert);
 
@@ -383,7 +386,7 @@ public class SegmentedFileLogTests : IDisposable
         var (log, _) = CreateLog(start: startLsn,
             tailEntries: tailEntries,
             segmentEntries: segments,
-            options: new SegmentedFileLogOptions(softLimit, hardLimit));
+            options: new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true));
         var insertIndex = startLsn + segmentSize * segmentsCount + tailSize / 2;
         var expected = segments.SelectMany(s => s)
                                .Concat(tailEntries.Take(tailSize / 2))
@@ -571,7 +574,7 @@ public class SegmentedFileLogTests : IDisposable
     {
         const long softLimit = 1024;       // 1Кб
         const long hardLimit = 1024 * 100; // Чтобы случайно не помешал
-        var options = new SegmentedFileLogOptions(softLimit, hardLimit);
+        var options = new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true);
         // На всякий случай, сделаем побольше чуть-чуть
         var atLeastSizeBytes = softLimit + 10;
         var initialTailEntries = SegmentedFileLog.GenerateEntriesForSizeAtLeast(atLeastSizeBytes, 1);
@@ -592,7 +595,7 @@ public class SegmentedFileLogTests : IDisposable
     {
         const long softLimit = 1024;     // 1 Кб
         const long hardLimit = 1024 * 2; // 2 Кб
-        var options = new SegmentedFileLogOptions(softLimit, hardLimit);
+        var options = new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true);
         var initialTailEntries = SegmentedFileLog.GenerateEntriesForSizeAtLeast(hardLimit, 1);
         var (log, _) = CreateLog(0, initialTailEntries, options: options);
         var toInsert = Enumerable.Range(( int ) initialTailEntries[^1].Term.Value + 1, 10)
@@ -2223,7 +2226,7 @@ public class SegmentedFileLogTests : IDisposable
     {
         var fs = Helpers.CreateFileSystem();
 
-        var log = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+        var log = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, TestOptions);
 
         Assert.Empty(log.ReadTailTest());
     }
@@ -2233,7 +2236,7 @@ public class SegmentedFileLogTests : IDisposable
     {
         var fs = Helpers.CreateFileSystem();
 
-        var log = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+        var log = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, TestOptions);
 
         Assert.Equal(0, log.StartIndex);
     }
@@ -2244,7 +2247,7 @@ public class SegmentedFileLogTests : IDisposable
         var fs = Helpers.CreateFileSystem();
         var expectedFileName = new SegmentFileName(0);
 
-        _ = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+        _ = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, TestOptions);
 
         Assert.Contains(fs.Log.GetFiles(), file => file.Name == expectedFileName.GetFileName());
     }
@@ -2264,9 +2267,8 @@ public class SegmentedFileLogTests : IDisposable
             tailEntries: Array.Empty<LogEntry>(),
             segmentEntries: Array.Empty<IReadOnlyList<LogEntry>>());
         oldLog.Dispose();
-        var f = fs.Log.GetFiles();
 
-        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, TestOptions);
 
         Assert.Equal(startLsn, newLog.StartIndex);
     }
@@ -2285,7 +2287,7 @@ public class SegmentedFileLogTests : IDisposable
             tailEntries: Array.Empty<LogEntry>(),
             segmentEntries: Array.Empty<IReadOnlyList<LogEntry>>());
         oldLog.Dispose();
-        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, TestOptions);
 
         Assert.Empty(newLog.ReadTailTest());
     }
@@ -2316,7 +2318,7 @@ public class SegmentedFileLogTests : IDisposable
         oldLog.Dispose();
         var expected = segmentEntries.SelectMany(s => s).Concat(tailEntries);
 
-        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, TestOptions);
 
         var actual = newLog.ReadAllTest();
         Assert.Equal(expected, actual, Comparer);
@@ -2345,7 +2347,7 @@ public class SegmentedFileLogTests : IDisposable
         oldLog.Dispose();
         var expected = tailEntries;
 
-        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, TestOptions);
         var actual = newLog.ReadAllTest();
 
         Assert.Equal(expected, actual, Comparer);
@@ -2373,7 +2375,7 @@ public class SegmentedFileLogTests : IDisposable
         oldLog.Dispose();
         var expected = new Lsn(startIndex);
 
-        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, TestOptions);
 
         var actual = newLog.StartIndex;
         Assert.Equal(expected, actual);
@@ -2416,7 +2418,7 @@ public class SegmentedFileLogTests : IDisposable
         oldLog.Dispose();
         var expected = segmentEntries.SelectMany(s => s).Concat(tailEntries);
 
-        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, TestOptions);
 
         var actual = newLog.ReadAllTest();
         Assert.Equal(expected, actual, Comparer);
@@ -2464,10 +2466,43 @@ public class SegmentedFileLogTests : IDisposable
         oldLog.Dispose();
         var expected = new Lsn(startIndex - 1);
 
-        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, TestOptions);
 
         var actual = newLog.CommitIndex;
         Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(128)]
+    [InlineData(512)]
+    [InlineData(1024)]
+    public void Инициализация__КогдаФайловСегментовНеБыло__ДолженСоздатьНовыйФайлСегментаСРазмеромБольшеМягкогоПредела(
+        int softLimit)
+    {
+        var fs = Helpers.CreateFileSystem();
+        var firstLogFile = new SegmentFileName(0);
+        var options = new SegmentedFileLogOptions(softLimit, softLimit * 2, preallocateSegment: true);
+        _ = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, options);
+
+        var fileInfo = fs.Log.GetFiles().Single(f => f.Name == firstLogFile.GetFileName());
+        Assert.True(softLimit <= fileInfo.Length, "softLimit < fileInfo.Length");
+    }
+
+    [Theory]
+    [InlineData(128)]
+    [InlineData(512)]
+    [InlineData(1024)]
+    public void
+        Инициализация__КогдаФайловСегментовНеБыло__ДолженСоздатьНовыйФайлСегментаСРазмеромНеБольшеЖесткогоПредела(
+        int hardLimit)
+    {
+        var fs = Helpers.CreateFileSystem();
+        var firstLogFile = new SegmentFileName(0);
+        var options = new SegmentedFileLogOptions(hardLimit / 2, hardLimit, true);
+        _ = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, options);
+
+        var fileInfo = fs.Log.GetFiles().Single(f => f.Name == firstLogFile.GetFileName());
+        Assert.True(fileInfo.Length < hardLimit, "fileInfo.Length < hardLimit");
     }
 
     [Theory]
@@ -2478,7 +2513,7 @@ public class SegmentedFileLogTests : IDisposable
     public void CommitIndex__КогдаЛогИнициализировался__ДолженВыставитьИндексКоммитаВПредыдущийОтНачального(
         int startLsn)
     {
-        var (log, _) = CreateLog(startLsn, tailEntries: new[] {Entry(1, "asdf")});
+        var (log, _) = CreateLog(startLsn, tailEntries: new[] {Entry(1, "sample")});
         var expected = new Lsn(startLsn - 1);
 
         var actual = log.CommitIndex;

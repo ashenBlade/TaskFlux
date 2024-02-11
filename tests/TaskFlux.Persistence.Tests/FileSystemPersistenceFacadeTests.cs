@@ -17,6 +17,11 @@ namespace TaskFlux.Persistence.Tests;
 public class FileSystemPersistenceFacadeTests : IDisposable
 {
     private static LogEntry EmptyEntry(int term) => new(new Term(term), Array.Empty<byte>());
+    private static SnapshotOptions TestSnapshotOptions => new SnapshotOptions(100);
+
+    private static SegmentedFileLogOptions TestSegmentedFileLogOptions => new(softLimit: long.MaxValue,
+        hardLimit: long.MaxValue,
+        preallocateSegment: false);
 
     private record MockDataFileSystem(
         IDirectoryInfo LogFile,
@@ -34,12 +39,14 @@ public class FileSystemPersistenceFacadeTests : IDisposable
             return;
         }
 
-        Assert.Null(Record.Exception(() => SegmentedFileLog.Initialize(dataDir, Logger.None)));
+        Assert.Null(Record.Exception(() =>
+            SegmentedFileLog.Initialize(dataDir, Logger.None, TestSegmentedFileLogOptions)));
         Assert.Null(Record.Exception(() => MetadataFile.Initialize(dataDir)));
-        Assert.Null(Record.Exception(() => SnapshotFile.Initialize(dataDir)));
+        Assert.Null(Record.Exception(() => SnapshotFile.Initialize(dataDir, TestSnapshotOptions)));
     }
 
     private static readonly Term DefaultTerm = Term.Start;
+
 
     /// <summary>
     /// Метод для создания фасада с файлами в памяти.
@@ -58,7 +65,8 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     {
         var fs = Helpers.CreateFileSystem();
         var facade =
-            FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None, snapshotOptions: snapshotOptions);
+            FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None,
+                snapshotOptions: snapshotOptions ?? TestSnapshotOptions, logOptions: TestSegmentedFileLogOptions);
         var logEntries = ( tailEntries ?? Array.Empty<LogEntry>(),
                            segmentEntries ?? Array.Empty<IReadOnlyList<LogEntry>>() );
         facade.SetupTest(logEntries: logEntries,
@@ -685,7 +693,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     public void CreateSnapshot__КогдаФайлСнапшотаСуществовалНеПустой__ДолженСохранитьДанныеСнапшота()
     {
         var (facade, _) = CreateFacade();
-        facade.Snapshot.SetupSnapshotTest(new Term(4), 3, new StubSnapshot(new byte[] {1, 2, 3}));
+        facade.Snapshot.SetupSnapshotTest(new Term(4), 3, new StubSnapshot([1, 2, 3]));
         var lastLogEntry = new LogEntryInfo(new Term(7), 10);
         var snapshotData = RandomBytes(123);
 
@@ -875,7 +883,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
 
         facade.SaveSnapshot(new StubSnapshot(expected), new LogEntryInfo(1, 0));
 
-        var ex = Record.Exception(() => SnapshotFile.Initialize(fs.DataDirectory));
+        var ex = Record.Exception(() => SnapshotFile.Initialize(fs.DataDirectory, TestSnapshotOptions));
         Assert.Null(ex);
     }
 
@@ -1538,7 +1546,9 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     {
         var fs = Helpers.CreateFileSystem();
 
-        var ex = Record.Exception(() => FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None));
+        var ex = Record.Exception(() =>
+            FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None, TestSnapshotOptions,
+                TestSegmentedFileLogOptions));
 
         Assert.Null(ex);
     }
@@ -1548,7 +1558,8 @@ public class FileSystemPersistenceFacadeTests : IDisposable
     {
         var fs = Helpers.CreateFileSystem();
 
-        var facade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None);
+        var facade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None, TestSnapshotOptions,
+            TestSegmentedFileLogOptions);
 
         var actual = facade.Log.ReadAllTest();
         Assert.Empty(actual);
@@ -1568,7 +1579,8 @@ public class FileSystemPersistenceFacadeTests : IDisposable
 
         var expected = Lsn.Tomb;
 
-        var newFacade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None);
+        var newFacade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None, TestSnapshotOptions,
+            TestSegmentedFileLogOptions);
         var actual = newFacade.CommitIndex;
 
         Assert.Equal(expected, actual);
@@ -1592,7 +1604,8 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         old.Dispose();
         var expected = new Lsn(snapshotIndex);
 
-        var newFacade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None);
+        var newFacade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None, TestSnapshotOptions,
+            TestSegmentedFileLogOptions);
         var actual = newFacade.CommitIndex;
 
         Assert.Equal(expected, actual);
@@ -1610,10 +1623,11 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         var log = SegmentedFileLog.InitializeTest(fs.Log, startIndex: lastLogIndex,
             tailEntries: new[] {Entry(1, "asdf")});
         log.Dispose();
-        var snapshot = SnapshotFile.Initialize(fs.DataDirectory);
+        var snapshot = SnapshotFile.Initialize(fs.DataDirectory, TestSnapshotOptions);
         snapshot.SetupSnapshotTest(1, snapshotIndex, new StubSnapshot([1, 2, 3, 4]));
 
-        var facade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None);
+        var facade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None, TestSnapshotOptions,
+            TestSegmentedFileLogOptions);
 
         Assert.Empty(facade.Log.ReadAllTest());
     }
@@ -1631,10 +1645,11 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         var log = SegmentedFileLog.InitializeTest(fs.Log, startIndex: lastLogIndex,
             tailEntries: new[] {Entry(1, "asdf")});
         log.Dispose();
-        var snapshot = SnapshotFile.Initialize(fs.DataDirectory);
+        var snapshot = SnapshotFile.Initialize(fs.DataDirectory, TestSnapshotOptions);
         snapshot.SetupSnapshotTest(1, snapshotIndex, new StubSnapshot([1, 2, 3, 4]));
 
-        var facade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None);
+        var facade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None, TestSnapshotOptions,
+            TestSegmentedFileLogOptions);
 
         var actual = facade.CommitIndex;
         Assert.Equal(snapshotIndex, actual);

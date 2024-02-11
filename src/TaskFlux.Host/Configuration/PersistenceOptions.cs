@@ -10,17 +10,28 @@ public class PersistenceOptions
     [Required(ErrorMessage = "Рабочая директория не указана")]
     public string WorkingDirectory { get; set; } = DefaultDataDirectory;
 
-    public const ulong DefaultMaxLogFileSize = 1024 * 1024 * 16; /* 16 Мб */
+    public const long DefaultLogFileSoftLimit = 1024 * 1024 * 16; /* 16 Мб */
 
-    [Range(16, int.MaxValue, ErrorMessage = "Размер файла лога должен быть больше 16 байт")]
-    public ulong MaxLogFileSize { get; set; } = DefaultMaxLogFileSize;
+    [Range(16, long.MaxValue, ErrorMessage = "Размер сегмента лога должен быть больше 16 байт")]
+    public long LogFileSoftLimit { get; set; } = DefaultLogFileSoftLimit;
+
+    public const long DefaultLogFileHardLimit = 1024 * 1024 * 32; /* 32 Мб */
+
+    [Range(16, long.MaxValue, ErrorMessage = "Размер сегмента лога должен быть больше 16 байт")]
+    public long LogFileHardLimit { get; set; } = DefaultLogFileHardLimit;
+
+    public const int DefaultSnapshotCreationSegmentsThreshold = 5;
+    public int SnapshotCreationSegmentsThreshold { get; set; } = DefaultSnapshotCreationSegmentsThreshold;
 
     public static PersistenceOptions FromConfiguration(IConfiguration configuration)
     {
         return new PersistenceOptions()
         {
             WorkingDirectory = configuration.GetValue(nameof(WorkingDirectory), DefaultDataDirectory)!,
-            MaxLogFileSize = configuration.GetValue(nameof(MaxLogFileSize), DefaultMaxLogFileSize),
+            LogFileSoftLimit = configuration.GetValue(nameof(LogFileSoftLimit), DefaultLogFileSoftLimit),
+            LogFileHardLimit = configuration.GetValue(nameof(LogFileHardLimit), DefaultLogFileHardLimit),
+            SnapshotCreationSegmentsThreshold = configuration.GetValue(nameof(SnapshotCreationSegmentsThreshold),
+                DefaultSnapshotCreationSegmentsThreshold),
         };
     }
 }
