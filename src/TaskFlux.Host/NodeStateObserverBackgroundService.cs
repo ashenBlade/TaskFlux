@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core.Commands;
+using TaskFlux.Persistence;
 
 namespace TaskFlux.Host;
 
@@ -34,7 +34,7 @@ public class NodeStateObserverBackgroundService : BackgroundService
                 _logger.Information(
                     "Роль: {State}; Терм: {Term}; Последняя запись лога: {LastEntry}; Запись в снапшоте: {SnapshotEntry}; Запись в логе (всего/коммит): {LogCount}/{LogCommitIndex}",
                     _module.CurrentRole, _persistence.CurrentTerm.Value, _persistence.LastEntry,
-                    _persistence.Snapshot.LastApplied, _persistence.Log.LastIndex.Value,
+                    _persistence.Snapshot.LastApplied, _persistence.Log.LastRecordIndex.Value,
                     _persistence.CommitIndex.Value);
                 await Task.Delay(_interval, token);
             }

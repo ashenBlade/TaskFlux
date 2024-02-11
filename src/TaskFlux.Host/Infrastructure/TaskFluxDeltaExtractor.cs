@@ -4,13 +4,13 @@ using TaskFlux.Persistence.ApplicationState;
 
 namespace TaskFlux.Host.Infrastructure;
 
-public class TaskFluxDeltaExtractor : IDeltaExtractor<Response>
+public class TaskFluxDeltaExtractor : IDeltaExtractor<Command>
 {
-    private readonly DeltaExtractorResponseVisitor _visitor = new();
+    private readonly DeltaExtractorCommandVisitor _visitor = new();
 
-    public bool TryGetDelta(Response response, out byte[] deltaBytes)
+    public bool TryGetDelta(Command command, out byte[] deltaBytes)
     {
-        var delta = response.Accept(_visitor);
+        var delta = command.Accept(_visitor);
         if (delta is null)
         {
             deltaBytes = Array.Empty<byte>();

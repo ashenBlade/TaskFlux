@@ -2,17 +2,19 @@ using System.Diagnostics;
 using System.IO.Abstractions;
 using System.Runtime.CompilerServices;
 using Serilog;
+using TaskFlux.Consensus;
 using TaskFlux.Consensus.Persistence.Log;
-using TaskFlux.Consensus.Persistence.Snapshot;
 using TaskFlux.Core;
+using TaskFlux.Persistence.Log;
 using TaskFlux.Persistence.Metadata;
 using TaskFlux.Persistence.Snapshot;
+using Constants = TaskFlux.Consensus.Persistence.Constants;
 
 [assembly: InternalsVisibleTo("Consensus.Storage.Tests")]
 
-namespace TaskFlux.Consensus.Persistence;
+namespace TaskFlux.Persistence;
 
-public class FileSystemPersistenceFacade : IPersistence
+public class FileSystemPersistenceFacade : IPersistence, IDisposable
 {
     private readonly ILogger _logger;
 
@@ -38,7 +40,13 @@ public class FileSystemPersistenceFacade : IPersistence
     /// </summary>
     private readonly SnapshotFile _snapshot;
 
-    public LogEntryInfo LastEntry => _log.GetLastLogEntry();
+    public LogEntryInfo LastEntry => _log.TryGetLastLogEntry(out var lastLog)
+                                         ? lastLog
+                                         : _snapshot.TryGetLastEntryInfo(out var snapshotEntry)
+                                             ? snapshotEntry
+                                             : throw new InvalidDataException(
+                                                   "Не удалось получить данные о последней записи");
+
     public Lsn CommitIndex => _log.CommitIndex;
     public Term CurrentTerm => _metadata.Term;
     public NodeId? VotedFor => _metadata.VotedFor;
@@ -57,48 +65,82 @@ public class FileSystemPersistenceFacade : IPersistence
         _logger = logger;
     }
 
-    public static FileSystemPersistenceFacade Initialize(string? dataDirectoryPath, ulong maxFileLogFile)
+    public static FileSystemPersistenceFacade Initialize(IDirectoryInfo dataDirectory,
+                                                         ILogger logger,
+                                                         SnapshotOptions? snapshotOptions = null,
+                                                         SegmentedFileLogOptions? logOptions = null)
     {
-        // TODO: пробрасывать настройки в аргументах Initialize 
-        // TODO: инициализировать корректно индекс последней записи
-        var logger = Serilog.Log.ForContext<FileSystemPersistenceFacade>();
-        var dataDirPath = GetDataDirectory();
-        var fs = new FileSystem();
-        var dataDirectory = CreateDataDirectory();
-        var dataDirectoryInfo = new DirectoryInfoWrapper(fs, dataDirectory);
-        var fileLogStorage = CreateFileLogStorage();
-        var metadataStorage = CreateMetadataStorage();
-        var snapshotStorage = CreateSnapshotStorage(new DirectoryInfoWrapper(fs, dataDirectory));
+        CheckDataDirectory();
+        var metadata = InitializeMetadata();
+        var log = InitializeLog();
+        var snapshot = InitializeSnapshot();
+        CheckSnapshotAndLogInterrelation();
+        return new FileSystemPersistenceFacade(log, metadata, snapshot, logger);
 
-        return new FileSystemPersistenceFacade(fileLogStorage,
-            metadataStorage,
-            snapshotStorage,
-            logger);
-
-        DirectoryInfo CreateDataDirectory()
+        void CheckDataDirectory()
         {
-            var dir = new DirectoryInfo(Path.Combine(dataDirPath, "data"));
-            if (!dir.Exists)
+            if (!dataDirectory.Exists)
             {
-                logger.Information("Директории для хранения данных не существует. Создаю новую - {Path}",
-                    dir.FullName);
-                try
-                {
-                    dir.Create();
-                }
-                catch (IOException e)
-                {
-                    logger.Fatal(e, "Невозможно создать директорию для данных");
-                    throw;
-                }
+                logger.Information("Директории для данных {DirectoryPath} не обнаружено. Создаю новую",
+                    dataDirectory.FullName);
+                dataDirectory.Create();
             }
-
-            return dir;
         }
 
-        SnapshotFile CreateSnapshotStorage(IDirectoryInfo dataDir)
+        void CheckSnapshotAndLogInterrelation()
         {
-            var snapshotFile = new FileInfo(Path.Combine(dataDirectory.FullName, "raft.snapshot"));
+            if (!snapshot.TryGetIncludedIndex(out var lastSnapshotIndex))
+            {
+                // Если снапшота нет, то лог обрезан быть не может.
+                // Т.е. начинаться должен с самого начала - индекса 0
+                if (log.StartIndex != 0)
+                {
+                    throw new InvalidDataException(
+                        "Снапшота не обнаружено и лог начинается не с 0 индекса. Восстановление состояния невозможно");
+                }
+
+                return;
+            }
+
+            // В противном случае, необходимо проверить где индекс снапшота лежит
+            if (lastSnapshotIndex == log.StartIndex - 1)
+            {
+                // Нормальная ситуация - создали снапшот и удалили сегменты
+                return;
+            }
+
+            if (lastSnapshotIndex < log.StartIndex)
+            {
+                throw new InvalidDataException(
+                    $"Индекс последней записи в снапшоте гораздо меньше начального индекса лога. "
+                  + $"Индекс снапшота {lastSnapshotIndex}. "
+                  + $"Начальный индекс лога {log.StartIndex}. "
+                  + $"Состояние восстановить невозможно");
+            }
+
+            if (log.LastRecordIndex < lastSnapshotIndex)
+            {
+                // Снапшот содержит более актуальные данные, чем последняя запись в логе.
+                // Такое может быть возможно, когда лог был поврежден и поврежденные сегменты были удалены.
+                // Работать с логом в этом случае нельзя, поэтому просто удаляем все текущие записи и начинаем новый сегмент
+                logger.Warning(
+                    "Индекс снапшота ({SnapshotLastIndex}) больше последнего индекса в логе ({LogLastIndex}). Удаляю текущие сегменты лога и начинаю новый",
+                    lastSnapshotIndex, log.LastRecordIndex);
+                log.StartNewWith(lastSnapshotIndex + 1);
+            }
+            else
+            {
+                // В противном случае, индекс снапшота находится где-то в логе.
+                // Нам необходимо закоммитить этот индекс, так как перезапись приведет к потере данных
+                // (команды из снапшота получить обратно не можем) 
+                log.Commit(lastSnapshotIndex);
+            }
+        }
+
+        SnapshotFile InitializeSnapshot()
+        {
+            var snapshotFile =
+                dataDirectory.FileSystem.FileInfo.New(Path.Combine(dataDirectory.FullName, Constants.SnapshotFileName));
             if (!snapshotFile.Exists)
             {
                 logger.Information("Файл снапшота не обнаружен. Создаю новый - {Path}", snapshotFile.FullName);
@@ -114,15 +156,15 @@ public class FileSystemPersistenceFacade : IPersistence
                 }
             }
 
-            return SnapshotFile.Initialize(dataDir);
+            return SnapshotFile.Initialize(dataDirectory, snapshotOptions);
         }
 
-        SegmentedFileLog CreateFileLogStorage()
+        SegmentedFileLog InitializeLog()
         {
             try
             {
                 // ReSharper disable once ContextualLoggerProblem
-                return SegmentedFileLog.Initialize(dataDirectoryInfo, logger.ForContext<SegmentedFileLog>());
+                return SegmentedFileLog.Initialize(dataDirectory, logger.ForContext<SegmentedFileLog>(), logOptions);
             }
             catch (Exception e)
             {
@@ -131,11 +173,11 @@ public class FileSystemPersistenceFacade : IPersistence
             }
         }
 
-        MetadataFile CreateMetadataStorage()
+        MetadataFile InitializeMetadata()
         {
             try
             {
-                return MetadataFile.Initialize(dataDirectoryInfo);
+                return MetadataFile.Initialize(dataDirectory);
             }
             catch (InvalidDataException invalidDataException)
             {
@@ -148,30 +190,10 @@ public class FileSystemPersistenceFacade : IPersistence
                 throw;
             }
         }
-
-        string GetDataDirectory()
-        {
-            string workingDirectory;
-            if (!string.IsNullOrWhiteSpace(dataDirectoryPath))
-            {
-                workingDirectory = dataDirectoryPath;
-                logger.Debug("Указана рабочая директория: {WorkingDirectory}", workingDirectory);
-            }
-            else
-            {
-                var currentDirectory = Directory.GetCurrentDirectory();
-                logger.Information("Директория данных не указана. Выставляю в рабочую директорию: {CurrentDirectory}",
-                    currentDirectory);
-                workingDirectory = currentDirectory;
-            }
-
-            return workingDirectory;
-        }
     }
 
     public bool IsUpToDate(LogEntryInfo prefix)
     {
-        // ссылка на etcd: https://github.com/etcd-io/raft/blob/main/log.go#L435
         // Неважно на каком индексе последний элемент.
         // Если он последний, то наши старые могут быть заменены
 
@@ -204,20 +226,13 @@ public class FileSystemPersistenceFacade : IPersistence
         }
 
         _logger.Verbose("Записываю {Count} записей по индексу {GlobalIndex}", entries.Count, startIndex);
-
-        lock (_lock)
-        {
-            _log.InsertRangeOverwrite(entries, startIndex);
-        }
+        _log.InsertRangeOverwrite(entries, startIndex);
     }
 
     public Lsn Append(LogEntry entry)
     {
-        lock (_lock)
-        {
-            _logger.Verbose("Добавляю запись {Entry} в лог", entry);
-            return _log.Append(entry);
-        }
+        _logger.Verbose("Добавляю запись {Entry} в лог", entry);
+        return _log.Append(entry);
     }
 
     public bool PrefixMatch(LogEntryInfo prefix)
@@ -277,13 +292,34 @@ public class FileSystemPersistenceFacade : IPersistence
     /// <param name="logEntries">Записи в логе</param>
     /// <param name="snapshotData">Данные для снапшота</param>
     /// <param name="commitIndex">Индекс коммита</param>
+    /// <param name="startLsn">Начальный индекс в логе</param>
     internal void SetupTest(IReadOnlyList<LogEntry>? logEntries = null,
                             (Term term, Lsn lastIncludedIndex, ISnapshot snapshot)? snapshotData = null,
-                            int? commitIndex = null)
+                            Lsn? commitIndex = null,
+                            Lsn? startLsn = null)
     {
-        if (logEntries is not null)
+        SetupTest(logEntries: logEntries is not null
+                                  ? ( logEntries, Array.Empty<IReadOnlyList<LogEntry>>() )
+                                  : null,
+            snapshotData,
+            commitIndex,
+            startLsn);
+    }
+
+    internal void SetupTest(
+        (IReadOnlyList<LogEntry> tail, IReadOnlyList<IReadOnlyList<LogEntry>> sealedSegments)? logEntries = null,
+        (Term term, Lsn lastIncludedIndex, ISnapshot snapshot)? snapshotData = null,
+        Lsn? commitIndex = null,
+        Lsn? startLsn = null,
+        (Term, NodeId?)? metadata = null)
+    {
+        if (logEntries is var (tail, s))
         {
-            SetupLogTest(logEntries);
+            _log.SetupLogTest(tail, s, startLsn);
+        }
+        else if (startLsn.HasValue)
+        {
+            _log.SetupLogTest(Array.Empty<LogEntry>(), Array.Empty<IReadOnlyList<LogEntry>>(), startLsn);
         }
 
         if (snapshotData is var (term, index, snapshot))
@@ -291,13 +327,22 @@ public class FileSystemPersistenceFacade : IPersistence
             SetupSnapshotTest(term, index, snapshot);
         }
 
+        if (metadata is var (currentTerm, votedFor))
+        {
+            _metadata.SetupMetadataTest(currentTerm, votedFor);
+        }
+
         if (commitIndex is { } ci)
         {
             SetCommitTest(ci);
         }
+        else if (snapshotData is var (_, snapshotIndex, _))
+        {
+            SetCommitTest(snapshotIndex);
+        }
     }
 
-    private void SetupLogTest(IReadOnlyList<LogEntry> logEntries)
+    private void SetupLogTest(IReadOnlyList<LogEntry> logEntries, Lsn? startLsn = null)
     {
         if (_snapshot.TryGetIncludedIndex(out var snapshotIndex))
         {
@@ -305,7 +350,8 @@ public class FileSystemPersistenceFacade : IPersistence
                 "Количество записей в логе не может быть меньше индекса последней команды в снапшоте");
         }
 
-        _log.SetupLogTest(logEntries);
+        _log.SetupLogTest(tailEntries: logEntries, sealedSegments: Array.Empty<IReadOnlyList<LogEntry>>(),
+            startIndex: startLsn);
     }
 
     public LogEntryInfo GetEntryInfo(Lsn index)
@@ -317,6 +363,39 @@ public class FileSystemPersistenceFacade : IPersistence
     {
         entryInfo = Snapshot.LastApplied;
         return !entryInfo.IsTomb;
+    }
+
+    public IEnumerable<byte[]> ReadDeltaFromPreviousSnapshot()
+    {
+        if (_log.Count == 0)
+        {
+            yield break;
+        }
+
+        IEnumerable<byte[]> range;
+        if (_snapshot.TryGetIncludedIndex(out var index))
+        {
+            var startIndex = index + 1;
+
+            // Может возникнуть ситуация, когда индекс снапшота равен последнему в логе
+            if (_log.LastRecordIndex < startIndex)
+            {
+                range = Enumerable.Empty<byte[]>();
+            }
+            else
+            {
+                range = _log.ReadDataRange(startIndex, _log.LastRecordIndex);
+            }
+        }
+        else
+        {
+            range = _log.ReadDataRange(_log.StartIndex, _log.LastRecordIndex);
+        }
+
+        foreach (var delta in range)
+        {
+            yield return delta;
+        }
     }
 
     public ISnapshotInstaller CreateSnapshot(LogEntryInfo lastIncludedSnapshotEntry)
@@ -367,7 +446,7 @@ public class FileSystemPersistenceFacade : IPersistence
             _snapshotFileWriter.Save();
 
             // 2. Освобождаем лог 
-            _parent._log.DeleteUntil(_lastIndex);
+            _parent._log.DeleteCoveredSegmentsUntil(_lastIndex);
         }
 
         public void Discard()
@@ -408,16 +487,10 @@ public class FileSystemPersistenceFacade : IPersistence
         return _snapshot.Options.SegmentsBeforeSnapshot <= uncoveredSegments;
     }
 
-
     public IEnumerable<byte[]> ReadCommittedDeltaFromPreviousSnapshot()
     {
         lock (_lock)
         {
-            if (CommitIndex.IsTomb)
-            {
-                yield break;
-            }
-
             var startIndex = Snapshot.TryGetIncludedIndex(out var s)
                                  ? s + 1
                                  : _log.StartIndex;
@@ -441,5 +514,11 @@ public class FileSystemPersistenceFacade : IPersistence
                 yield return bytes;
             }
         }
+    }
+
+    public void Dispose()
+    {
+        _log.Dispose();
+        _metadata.Dispose();
     }
 }

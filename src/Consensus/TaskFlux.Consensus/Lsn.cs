@@ -1,4 +1,4 @@
-namespace TaskFlux.Consensus.Persistence;
+namespace TaskFlux.Consensus;
 
 /// <summary>
 /// Индекс записи лога команд.

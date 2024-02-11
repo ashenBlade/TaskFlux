@@ -7,10 +7,10 @@ namespace TaskFlux.Core.Commands.Dequeue;
 /// </summary>
 public class DequeueResponse : Response
 {
-    public static readonly DequeueResponse Empty = new(false, QueueName.Default, 0, null, false);
+    public static readonly DequeueResponse Empty = new(false, QueueName.Default, 0, null);
 
-    public static DequeueResponse Create(QueueName queueName, long key, byte[] payload, bool produceDelta) =>
-        new(true, queueName, key, payload, produceDelta);
+    public static DequeueResponse Create(QueueName queueName, long key, byte[] payload) =>
+        new(true, queueName, key, payload);
 
     public override ResponseType Type => ResponseType.Dequeue;
 
@@ -31,17 +31,11 @@ public class DequeueResponse : Response
     /// </summary>
     private readonly byte[] _message;
 
-    /// <summary>
-    /// Отдавать ли значение при вызове <see cref="TryGetDelta"/>
-    /// </summary>
-    private readonly bool _produceDelta;
-
-    private DequeueResponse(bool success, QueueName queueName, long key, byte[]? payload, bool produceDelta)
+    private DequeueResponse(bool success, QueueName queueName, long key, byte[]? payload)
     {
         Success = success;
         _queueName = queueName;
         _key = key;
-        _produceDelta = produceDelta;
         _message = payload ?? Array.Empty<byte>();
     }
 
@@ -70,20 +64,4 @@ public class DequeueResponse : Response
     {
         return visitor.Visit(this);
     }
-
-    /// <summary>
-    /// Создать <see cref="DequeueResponse"/> из текущего, который вернет дельту при вызове <see cref="TryGetDelta"/>
-    /// </summary>
-    public DequeueResponse WithDeltaProducing() =>
-        _produceDelta
-            ? this
-            : new DequeueResponse(Success, _queueName, _key, _message, true);
-
-    /// <summary>
-    /// Создать <see cref="DequeueResponse"/> из текущего, который не будет возвращать дельту при вызове <see cref="TryGetDelta"/>
-    /// </summary>
-    public DequeueResponse WithoutDeltaProducing() =>
-        _produceDelta
-            ? new DequeueResponse(Success, _queueName, _key, _message, false)
-            : this;
 }

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 
 namespace TaskFlux.Consensus.State.LeaderState;

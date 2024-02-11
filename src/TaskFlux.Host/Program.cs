@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.IO.Abstractions;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,13 +10,15 @@ using TaskFlux.Application;
 using TaskFlux.Application.Cluster;
 using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster.Network;
-using TaskFlux.Consensus.Persistence;
+using TaskFlux.Consensus.Persistence.Log;
 using TaskFlux.Consensus.Timers;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
 using TaskFlux.Host;
 using TaskFlux.Host.Configuration;
 using TaskFlux.Host.Infrastructure;
+using TaskFlux.Persistence;
+using TaskFlux.Persistence.Snapshot;
 
 var lifetime = new HostApplicationLifetime();
 
@@ -49,7 +52,7 @@ try
 }
 catch (NotSupportedException e)
 {
-    Log.Information(e, "Платформа не поддерживает регистрацию обработчика SIGTERM сигнала");
+    Log.Debug(e, "Платформа не поддерживает регистрацию обработчика SIGTERM");
 }
 
 try
@@ -65,7 +68,7 @@ try
 
     var nodeId = new NodeId(options.Cluster.ClusterNodeId);
 
-    var persistence = InitializePersistence(options.Persistence);
+    using var persistence = InitializePersistence(options.Persistence);
     DumpDataState(persistence);
 
     var peers = ExtractPeers(options.Cluster, nodeId, options.Network);
@@ -143,7 +146,11 @@ return await lifetime.WaitReturnCode();
 
 FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
 {
-    return FileSystemPersistenceFacade.Initialize(options.WorkingDirectory, options.MaxLogFileSize);
+    var fs = new FileSystem();
+    var dataDirectoryInfo = fs.DirectoryInfo.New(Path.Combine(options.WorkingDirectory, "data"));
+    return FileSystemPersistenceFacade.Initialize(dataDirectoryInfo, Log.ForContext<FileSystemPersistenceFacade>(),
+        snapshotOptions: new SnapshotOptions(2),
+        logOptions: new SegmentedFileLogOptions(1024, 1024 * 2));
 }
 
 RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,

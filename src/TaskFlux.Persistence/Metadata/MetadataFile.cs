@@ -206,8 +206,8 @@ public class MetadataFile
 
     public static MetadataFile Initialize(IDirectoryInfo dataDirectory)
     {
-        var metadataFile =
-            dataDirectory.FileSystem.FileInfo.New(Path.Combine(dataDirectory.FullName, Constants.MetadataFileName));
+        var metadataFile = GetMetadataFileInfo();
+
         FileSystemStream fileStream;
         try
         {
@@ -227,6 +227,12 @@ public class MetadataFile
         {
             fileStream.Dispose();
             throw;
+        }
+
+        IFileInfo GetMetadataFileInfo()
+        {
+            return dataDirectory.FileSystem.FileInfo.New(Path.Combine(dataDirectory.FullName,
+                Constants.MetadataFileName));
         }
     }
 
@@ -250,5 +256,10 @@ public class MetadataFile
 
         Term = initialTerm;
         VotedFor = votedFor;
+    }
+
+    public void Dispose()
+    {
+        _file.Close();
     }
 }

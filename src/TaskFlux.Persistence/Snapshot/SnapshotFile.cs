@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO.Abstractions;
 using TaskFlux.Consensus;
 using TaskFlux.Consensus.Persistence;
-using TaskFlux.Consensus.Persistence.Snapshot;
 using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
 

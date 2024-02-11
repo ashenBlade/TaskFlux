@@ -1,6 +1,6 @@
 using Serilog;
 
-namespace TaskFlux.Consensus.State;
+namespace TaskFlux.Consensus.State.CandidateState;
 
 internal class ElectionCoordinator<TCommand, TResponse>
 {

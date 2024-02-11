@@ -1,4 +1,4 @@
-namespace TaskFlux.Consensus.Persistence;
+namespace TaskFlux.Consensus;
 
 /// <summary>
 /// Структура представляющая собой информацию о какой либо записи команды - ее терм и индекс

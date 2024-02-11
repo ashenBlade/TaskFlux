@@ -3,7 +3,6 @@ using Moq;
 using Serilog.Core;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Consensus.Tests.Infrastructure;
 using TaskFlux.Consensus.Tests.Stubs;
 using TaskFlux.Core;
@@ -53,10 +52,8 @@ public class LeaderStateTests
             m.SetupGet(p => p.CurrentTerm).Returns(term);
             m.SetupGet(p => p.VotedFor).Returns(votedFor);
             // Убираем ошибки при восстановлении состояния приложения при инициализации, если надо переопределим
-            ISnapshot stubSnapshot = null!;
-            var stubLogEntryInfo = LogEntryInfo.Tomb;
-            m.Setup(p => p.TryGetSnapshot(out stubSnapshot, out stubLogEntryInfo)).Returns(false);
-            m.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
+            m.Setup(p => p.TryGetSnapshot(out It.Ref<ISnapshot>.IsAny, out It.Ref<LogEntryInfo>.IsAny)).Returns(false);
+            m.Setup(p => p.ReadDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
 
             // Это для инициализации обработчиков
             m.SetupGet(p => p.LastEntry).Returns(LogEntryInfo.Tomb);

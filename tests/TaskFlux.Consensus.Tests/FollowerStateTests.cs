@@ -3,7 +3,6 @@ using Serilog.Core;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Consensus.Tests.Infrastructure;
 using TaskFlux.Consensus.Tests.Stubs;
 using TaskFlux.Core;
@@ -834,8 +833,7 @@ public class FollowerStateTests
         var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
         {
             m.Setup(p =>
-                  p.InsertRange(
-                      It.Is<IReadOnlyList<LogEntry>>(list =>
+                  p.InsertRange(It.Is<IReadOnlyList<LogEntry>>(list =>
                           list.SequenceEqual(entries, new LogEntryEqualityComparer())),
                       prevLogEntry.Index + 1))
              .Verifiable();

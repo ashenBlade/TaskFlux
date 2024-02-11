@@ -440,14 +440,12 @@ internal class ClientRequestProcessor
                 // Если команду все же нужно выполнить - коммитим выполнение и возвращаем ответ
                 case PacketType.AcknowledgeRequest:
                     // Явно указываем, что нужно коммитить
-                    dequeueResponse = dequeueResponse.WithDeltaProducing();
                     submitResponse =
                         await _requestAcceptor.AcceptAsync(new CommitDequeueCommand(dequeueResponse), token);
                     break;
                 // Иначе возвращаем ее обратно
                 case PacketType.NegativeAcknowledgementRequest:
                     // Коммитить результат не нужно
-                    dequeueResponse = dequeueResponse.WithoutDeltaProducing();
                     submitResponse =
                         await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(dequeueResponse), token);
                     break;

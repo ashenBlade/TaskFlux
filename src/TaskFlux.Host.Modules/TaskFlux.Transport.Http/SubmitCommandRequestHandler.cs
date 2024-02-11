@@ -104,8 +104,7 @@ public class SubmitCommandRequestHandler : IRequestHandler
         if (commandString.Equals("dequeue", StringComparison.InvariantCultureIgnoreCase)
          && tokens.Length == 1)
         {
-            command = new DequeueRecordCommand(QueueName.Default,
-                permanent: true); // Коммитим команду сразу, т.к. в HTTP не будет времени думать
+            command = new DequeueRecordCommand(QueueName.Default);
             return true;
         }
 
@@ -127,11 +126,15 @@ public class SubmitCommandRequestHandler : IRequestHandler
         HttpStatusCode responseStatus;
         bool success;
 
+        if (submitResponse.TryGetResponse(out var r) && r is DequeueResponse {Success: true} dr)
+        {
+            submitResponse = await _requestAcceptor.AcceptAsync(new CommitDequeueCommand(dr));
+        }
+
         if (submitResponse.TryGetResponse(out var result))
         {
             var visitor = new HttpResponseJobQueueResponseVisitor();
             result.Accept(visitor);
-
             success = true;
             resultData = visitor.Payload;
             responseStatus = HttpStatusCode.OK;

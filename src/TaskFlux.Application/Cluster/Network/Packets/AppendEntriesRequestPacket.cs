@@ -1,7 +1,7 @@
 using System.Buffers;
+using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Consensus.Commands.AppendEntries;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
 

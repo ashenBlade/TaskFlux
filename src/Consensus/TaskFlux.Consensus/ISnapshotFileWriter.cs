@@ -1,4 +1,4 @@
-namespace TaskFlux.Consensus.Persistence.Snapshot;
+namespace TaskFlux.Consensus;
 
 /// <summary>
 /// Интерфейс для записи файла снапшота

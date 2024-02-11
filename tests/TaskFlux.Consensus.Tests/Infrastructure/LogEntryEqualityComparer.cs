@@ -1,5 +1,3 @@
-using TaskFlux.Consensus.Persistence;
-
 namespace TaskFlux.Consensus.Tests.Infrastructure;
 
 public class LogEntryEqualityComparer : IEqualityComparer<LogEntry>

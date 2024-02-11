@@ -4,7 +4,7 @@ using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
 using TaskFlux.Core;
 
-namespace TaskFlux.Consensus.State;
+namespace TaskFlux.Consensus.State.CandidateState;
 
 public class CandidateState<TCommand, TResponse>
     : State<TCommand, TResponse>
@@ -144,10 +144,16 @@ public class CandidateState<TCommand, TResponse>
     {
         _electionTimer.Timeout -= OnElectionTimerTimeout;
         _electionTimer.Stop();
-        _lifetimeCts.Cancel();
-
-        _lifetimeCts.Dispose();
         _electionTimer.Dispose();
+
+        try
+        {
+            _lifetimeCts.Cancel();
+            _lifetimeCts.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     public override InstallSnapshotResponse Apply(InstallSnapshotRequest request,

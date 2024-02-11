@@ -4,6 +4,7 @@ using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
 using TaskFlux.Consensus.State;
+using TaskFlux.Consensus.State.CandidateState;
 using TaskFlux.Consensus.State.LeaderState;
 using TaskFlux.Core;
 
@@ -22,15 +23,14 @@ public class RaftConsensusModule<TCommand, TResponse>
       IDisposable
 {
     private readonly ITimerFactory _timerFactory;
-    private readonly IDeltaExtractor<TResponse> _deltaExtractor;
+    private readonly IDeltaExtractor<TCommand> _deltaExtractor;
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Текущая роль узла
     /// </summary>
-    // public NodeRole CurrentRole => CurrentState.Role;
     public NodeRole CurrentRole => CurrentState.Role;
 
-    private readonly ILogger _logger;
 
     /// <summary>
     /// ID текущего узла
@@ -123,7 +123,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         IPersistence persistence,
-        IDeltaExtractor<TResponse> deltaExtractor,
+        IDeltaExtractor<TCommand> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         _timerFactory = timerFactory;
@@ -199,7 +199,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         IPersistence persistenceFacade,
-        IDeltaExtractor<TResponse> deltaExtractor,
+        IDeltaExtractor<TCommand> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         var module = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, timerFactory,

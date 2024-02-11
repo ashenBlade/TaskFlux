@@ -5,6 +5,7 @@ services:
     build:
       context: ../../src
       dockerfile: TaskFlux.Host/Dockerfile
+    hostname: 'tflux.0'
     ports:
       - '8080:2602'
     environment:
@@ -26,6 +27,7 @@ services:
     build:
       context: ../../src
       dockerfile: TaskFlux.Host/Dockerfile
+    hostname: 'tflux.1'
     ports:
       - '8081:2602'
     environment:
@@ -47,6 +49,7 @@ services:
     build:
       context: ../../src
       dockerfile: TaskFlux.Host/Dockerfile
+    hostname: 'tflux.2'
     ports:
       - '8082:2602'
     environment:

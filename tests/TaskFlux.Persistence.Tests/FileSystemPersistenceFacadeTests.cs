@@ -2,9 +2,8 @@ using System.IO.Abstractions;
 using System.Text;
 using Serilog.Core;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Persistence;
-using TaskFlux.Consensus.Persistence.Log;
 using TaskFlux.Core;
+using TaskFlux.Persistence.Log;
 using TaskFlux.Persistence.Metadata;
 using TaskFlux.Persistence.Snapshot;
 using Xunit;
@@ -52,19 +51,24 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         NodeId? votedFor = null,
         Lsn? startLsn = null,
         IReadOnlyList<LogEntry>? tailEntries = null,
-        IReadOnlyList<IReadOnlyList<LogEntry>>? segmentEntries = null)
+        IReadOnlyList<IReadOnlyList<LogEntry>>? segmentEntries = null,
+        SnapshotOptions? snapshotOptions = null,
+        (Term, Lsn, ISnapshot)? snapshotData = null,
+        Lsn? commitIndex = null)
     {
         var fs = Helpers.CreateFileSystem();
-        var logStorage = SegmentedFileLog.InitializeTest(fs.Log, startLsn ?? 0, tailEntries, segmentEntries);
+        var facade =
+            FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None, snapshotOptions: snapshotOptions);
+        var logEntries = ( tailEntries ?? Array.Empty<LogEntry>(),
+                           segmentEntries ?? Array.Empty<IReadOnlyList<LogEntry>>() );
+        facade.SetupTest(logEntries: logEntries,
+            snapshotData: snapshotData,
+            commitIndex: commitIndex,
+            startLsn: startLsn,
+            metadata: ( initialTerm ?? MetadataFile.DefaultTerm, votedFor ));
+        var mockFs = new MockDataFileSystem(fs.Log, fs.Metadata, fs.Snapshot, fs.TemporaryDirectory, fs.DataDirectory);
 
-        var metadataStorage = MetadataFile.Initialize(fs.DataDirectory);
-        metadataStorage.SetupMetadataTest(initialTerm ?? MetadataFile.DefaultTerm, votedFor);
-
-        var snapshotStorage = SnapshotFile.Initialize(fs.DataDirectory);
-        var facade = new FileSystemPersistenceFacade(logStorage, metadataStorage, snapshotStorage, Logger.None);
-
-        return ( facade,
-                 new MockDataFileSystem(fs.Log, fs.Metadata, fs.Snapshot, fs.TemporaryDirectory, fs.DataDirectory) );
+        return ( facade, mockFs );
     }
 
     private static readonly LogEntryEqualityComparer Comparer = new();
@@ -639,6 +643,44 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Assert.Equal(expected, actual);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(100)]
+    public void LastEntry__КогдаЛогПустИНачинаетсяНеС0ИЕстьСнапшот__ДолженВернутьЗаписьИзСнапшота(int snapshotIndex)
+    {
+        var snapshotTerm = new Term(2);
+        var (facade, _) = CreateFacade(startLsn: snapshotIndex + 1,
+            tailEntries: Array.Empty<LogEntry>(),
+            segmentEntries: Array.Empty<IReadOnlyList<LogEntry>>(),
+            snapshotData: ( snapshotTerm, snapshotIndex, new StubSnapshot([1, 2, 3]) ));
+        var expected = new LogEntryInfo(snapshotTerm, snapshotIndex);
+
+        var actual = facade.LastEntry;
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(0, 3)]
+    [InlineData(1, 3)]
+    [InlineData(9, 100)]
+    [InlineData(77, 100)]
+    [InlineData(99, 100)]
+    public void LastEntry__КогдаЛогНеПустИСнапшотЕсть__ДолженВернутьЗаписьИзЛога(int snapshotIndex, int logSize)
+    {
+        var logEntries = Enumerable.Range(0, logSize)
+                                   .Select(e => Entry(1, e.ToString()))
+                                   .ToArray();
+        var (facade, _) = CreateFacade(tailEntries: logEntries,
+            snapshotData: ( 1, snapshotIndex, new StubSnapshot([1, 2, 3, 4, 5, 5]) ));
+        var expected = new LogEntryInfo(logEntries[^1].Term, logSize - 1);
+
+        var actual = facade.LastEntry;
+
+        Assert.Equal(expected, actual);
+    }
+
     [Fact]
     public void CreateSnapshot__КогдаФайлСнапшотаСуществовалНеПустой__ДолженСохранитьДанныеСнапшота()
     {
@@ -713,6 +755,52 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Assert.Equal(lastLogEntry.Term, actualLastTerm);
         Assert.Equal(snapshotData, actualData);
         Assert.Equal(lastLogEntry, facade.Snapshot.LastApplied);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 123, 0)]
+    [InlineData(0, 1, 123, 32)]
+    [InlineData(0, 1, 123, 64)]
+    [InlineData(0, 1, 123, 80)]
+    [InlineData(0, 1, 123, 186)]
+    public void CreateSnapshot__КогдаИндексВСнапшотеРавенЗакоммиченному__ДолженСоздатьНовыйСнапшот(
+        int startIndex,
+        int segmentsCount,
+        int tailSize,
+        int snapshotIndex)
+    {
+        const int segmentSize = 64;
+
+        var segmentEntries = Enumerable.Range(0, segmentsCount)
+                                       .Select(s => Enumerable.Range(1, segmentSize)
+                                                              .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                              .ToArray())
+                                       .ToArray();
+        var tail = Enumerable.Range(0, tailSize)
+                             .Select(e => Entry(1, e.ToString()))
+                             .ToArray();
+        byte[] snapshotChunk = [1, 2, 3, 4, 5];
+        var commitIndex = snapshotIndex;
+        var (facade, _) = CreateFacade(startLsn: startIndex,
+            tailEntries: tail,
+            segmentEntries: segmentEntries,
+            commitIndex: commitIndex);
+        var lastIncludedEntry = new LogEntryInfo(1, snapshotIndex);
+
+        var si = facade.CreateSnapshot(lastIncludedEntry);
+        si.InstallChunk(snapshotChunk, CancellationToken.None);
+        si.Commit();
+
+        var success = facade.Snapshot.TryGetSnapshot(out var actualSnapshot, out var actualLastApplied);
+        Assert.True(success);
+        var chunks = new List<byte>();
+        foreach (var memory in actualSnapshot.GetAllChunks())
+        {
+            chunks.AddRange(memory.Span);
+        }
+
+        Assert.Equal(snapshotChunk, chunks);
+        Assert.Equal(lastIncludedEntry, actualLastApplied);
     }
 
     private static byte[] RandomBytes(int size)
@@ -1083,5 +1171,472 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         var actual = facade.IsUpToDate(notTomb);
 
         Assert.True(actual);
+    }
+
+    private class ByteArrayEqualityComparer : IEqualityComparer<byte[]>
+    {
+        public bool Equals(byte[]? x, byte[]? y)
+        {
+            return x != null && y != null && x.SequenceEqual(y);
+        }
+
+        public int GetHashCode(byte[] obj)
+        {
+            return obj.GetHashCode();
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(100)]
+    public void ReadDeltaFromPreviousSnapshot__КогдаСнапшотаНет__ДолженВернутьВсеЗаписиИзЛога(int logSize)
+    {
+        var logEntries = Enumerable.Range(1, logSize)
+                                   .Select(i => Entry(i, i.ToString()))
+                                   .ToArray();
+        var (facade, _) = CreateFacade(tailEntries: logEntries);
+
+        var actual = facade.ReadDeltaFromPreviousSnapshot();
+
+        Assert.Equal(logEntries.Select(e => e.Data), actual, new ByteArrayEqualityComparer());
+    }
+
+    [Fact]
+    public void ReadDeltaFromPreviousSnapshot__КогдаСнапшотаНетИЛогПуст__ДолженВернутьПустойМассив()
+    {
+        var (facade, _) = CreateFacade(tailEntries: null, segmentEntries: null, snapshotData: null);
+
+        var actual = facade.ReadDeltaFromPreviousSnapshot();
+
+        Assert.Empty(actual);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(100)]
+    public void
+        ReadDeltaFromPreviousSnapshot__КогдаСнапшотЕстьИИндексПоследнейЗаписиРавенИндексуСнапшота__ДолженВернутьПустойМассив(
+        int snapshotIndex)
+    {
+        var tailEntries = Enumerable.Range(1, snapshotIndex + 1)
+                                    .Select(i => Entry(i, i.ToString()))
+                                    .ToArray();
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(logEntries: tailEntries,
+            snapshotData: ( snapshotIndex + 1, snapshotIndex, new StubSnapshot([1, 2, 3]) ));
+
+        var actual = facade.ReadDeltaFromPreviousSnapshot();
+
+        Assert.Empty(actual);
+    }
+
+    [Theory]
+    [InlineData(1, 10)]
+    [InlineData(23, 50)]
+    [InlineData(48, 50)]
+    public void
+        ReadDeltaFromPreviousSnapshot__КогдаСнапшотЕстьИИндексПоследнейЗаписиБольшеИндексаСнапшота__ДолженВернутьВсеЗаписиПослеИндексаСнапшота(
+        int snapshotIndex,
+        int logSize)
+    {
+        var logEntries = Enumerable.Range(1, logSize)
+                                   .Select(i => Entry(i, i.ToString()))
+                                   .ToArray();
+        var (facade, _) = CreateFacade(tailEntries: logEntries);
+        facade.SetupTest(logEntries: logEntries,
+            snapshotData: ( logEntries[snapshotIndex].Term, snapshotIndex, new StubSnapshot([1, 2, 3, 4]) ));
+        var expected = logEntries.Skip(snapshotIndex + 1).Select(i => i.Data);
+
+        var actual = facade.ReadDeltaFromPreviousSnapshot();
+
+        Assert.Equal(expected, actual, new ByteArrayEqualityComparer());
+    }
+
+    [Fact]
+    public void ReadCommittedDeltaFromPreviousSnapshot__КогдаСнапшотаНетИЛогПуст__ДолженВернутьПустойМассив()
+    {
+        var (facade, _) = CreateFacade();
+
+        var actual = facade.ReadCommittedDeltaFromPreviousSnapshot();
+
+        Assert.Empty(actual);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(10)]
+    public void
+        ReadCommittedDeltaFromPreviousSnapshot__КогдаСнапшотаНетИЛогНеПустИИндексКоммитаМеньшеНачального__ДолженВернутьПустойМассив(
+        int startLsn)
+    {
+        var entries = new[] {Entry(1, "ss"), Entry(2, "fdfd"), Entry(2, "gggsdg"),};
+        var (facade, _) = CreateFacade(tailEntries: entries, startLsn: startLsn);
+        facade.SetCommitTest(startLsn - 1);
+
+        var actual = facade.ReadCommittedDeltaFromPreviousSnapshot();
+
+        Assert.Empty(actual);
+    }
+
+    [Theory]
+    [InlineData(0, 10, 0)]
+    [InlineData(0, 10, 1)]
+    [InlineData(0, 10, 7)]
+    [InlineData(0, 10, 9)]
+    [InlineData(10, 10, 10)]
+    [InlineData(10, 10, 15)]
+    [InlineData(10, 10, 19)]
+    public void
+        ReadCommittedDeltaFromPreviousSnapshot__КогдаСнапшотаНетИЛогНеПустИИндексКоммитаБольшеНачального__ДолженВернутьЗаписиДоУказанногоИндекса(
+        int startLsn,
+        int logSize,
+        int commitIndex)
+    {
+        var entries = Enumerable.Range(0, logSize).Select(i => Entry(1, i.ToString())).ToArray();
+        var (facade, _) = CreateFacade(startLsn: startLsn, tailEntries: entries);
+        facade.SetCommitTest(commitIndex);
+        var expected = entries.Take(commitIndex - startLsn + 1).Select(e => e.Data);
+
+        var actual = facade.ReadCommittedDeltaFromPreviousSnapshot();
+
+        Assert.Equal(expected, actual, new ByteArrayEqualityComparer());
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0, 10)]
+    [InlineData(0, 0, 1, 10)]
+    [InlineData(0, 0, 5, 10)]
+    [InlineData(0, 0, 9, 10)]
+    [InlineData(0, 4, 4, 10)]
+    [InlineData(0, 4, 5, 10)]
+    [InlineData(0, 4, 9, 10)]
+    [InlineData(10, 10, 19, 10)]
+    [InlineData(10, 11, 19, 10)]
+    [InlineData(10, 18, 19, 10)]
+    [InlineData(10, 12, 15, 10)]
+    public void
+        ReadCommittedDeltaFromPreviousSnapshot__КогдаСнапшотЕстьИЛогНеПустИИндексКоммитаБольшеНачального__ДолженВернутьЗаписиДоУказанногоИндекса(
+        int startLsn,
+        int snapshotIndex,
+        int commitIndex,
+        int logSize)
+    {
+        var entries = Enumerable.Range(0, logSize).Select(i => Entry(1, i.ToString())).ToArray();
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(startLsn: startLsn,
+            logEntries: entries,
+            snapshotData: ( 1, snapshotIndex, new StubSnapshot([1, 2, 3, 99]) ),
+            commitIndex: commitIndex);
+        var expected = entries.Skip(snapshotIndex - startLsn + 1)
+                              .Take(commitIndex - snapshotIndex)
+                              .Select(e => e.Data);
+
+        var actual = facade.ReadCommittedDeltaFromPreviousSnapshot();
+
+        Assert.Equal(expected, actual, new ByteArrayEqualityComparer());
+    }
+
+    [Theory]
+    [InlineData(1, 9, 10)]
+    [InlineData(1, 10, 10)]
+    [InlineData(1, 9, 20)]
+    [InlineData(5, 9, 20)]
+    [InlineData(5, 19, 20)]
+    [InlineData(18, 18, 1)]
+    [InlineData(18, 19, 2)]
+    public void
+        ReadCommittedDeltaFromPreviousSnapshot__КогдаИндексСнапшотаРавенПредыдущемуПослеНачальногоВЛоге__ДолженВернутьВсеЗаписиДоИндексаКоммита(
+        int startLsn,
+        int commitIndex,
+        int logSize)
+    {
+        var snapshotIndex = startLsn - 1;
+        var entries = Enumerable.Range(0, logSize)
+                                .Select(i => Entry(1, i.ToString()))
+                                .ToArray();
+        var (facade, _) = CreateFacade();
+        facade.SetupTest(logEntries: entries,
+            snapshotData: ( 1, snapshotIndex, new StubSnapshot([1, 2, 3, 99]) ),
+            commitIndex: commitIndex,
+            startLsn: startLsn);
+        var expected = entries.Take(commitIndex - startLsn + 1)
+                              .Select(e => e.Data)
+                              .ToArray();
+
+        var actual = facade.ReadCommittedDeltaFromPreviousSnapshot().ToArray();
+
+        Assert.Equal(expected, actual, new ByteArrayEqualityComparer());
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void ShouldCreateSnapshot__КогдаЛогПуст__ДолженВернутьFalse(int threshold)
+    {
+        var (facade, _) = CreateFacade(tailEntries: Array.Empty<LogEntry>(),
+            segmentEntries: Array.Empty<IReadOnlyList<LogEntry>>(),
+            snapshotOptions: new SnapshotOptions(threshold));
+
+        var actual = facade.ShouldCreateSnapshot();
+
+        Assert.False(actual);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void
+        ShouldCreateSnapshot__КогдаВЛогеЕстьТолькоХвостИИндексКоммитаРавенПоследнейЗаписиВХвосте__ДолженВернутьFalse(
+        int threshold)
+    {
+        var (facade, _) = CreateFacade(
+            tailEntries: Enumerable.Range(0, 10).Select(i => Entry(1, i.ToString())).ToArray(),
+            segmentEntries: Array.Empty<IReadOnlyList<LogEntry>>(),
+            snapshotOptions: new SnapshotOptions(threshold));
+
+        var actual = facade.ShouldCreateSnapshot();
+
+        Assert.False(actual);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public void
+        ShouldCreateSnapshot__КогдаПорогРавен1ИЕстьЗакрытыеСегментыИИндексКоммитаРавенПоследнейЗаписи__ДолженВернутьTrue(
+        int segmentsCount)
+    {
+        var threshold = 1;
+        var segmentSize = 128;
+        var tailSize = 100;
+        var (facade, _) = CreateFacade(
+            tailEntries: Enumerable.Range(0, tailSize).Select(i => Entry(1, i.ToString())).ToArray(),
+            segmentEntries: Enumerable.Range(0, segmentsCount)
+                                      .Select(s => Enumerable.Range(1, segmentSize)
+                                                             .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                             .ToArray())
+                                      .ToArray(),
+            snapshotOptions: new SnapshotOptions(threshold));
+        var lastIndex = segmentSize * segmentsCount + tailSize - 1;
+        facade.SetCommitTest(lastIndex);
+
+        var actual = facade.ShouldCreateSnapshot();
+
+        Assert.True(actual);
+    }
+
+    [Theory]
+    [InlineData(1, 2)]
+    [InlineData(2, 3)]
+    [InlineData(2, 4)]
+    [InlineData(1, 5)]
+    public void ShouldCreateSnapshot__КогдаЗакрытыхСегментовМеньшеПорога__ДолженВернутьFalse(
+        int segmentsCount,
+        int threshold)
+    {
+        var segmentSize = 128;
+        var tailSize = 100;
+        var (facade, _) = CreateFacade(
+            tailEntries: Enumerable.Range(0, tailSize).Select(i => Entry(1, i.ToString())).ToArray(),
+            segmentEntries: Enumerable.Range(0, segmentsCount)
+                                      .Select(s => Enumerable.Range(1, segmentSize)
+                                                             .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                             .ToArray())
+                                      .ToArray(),
+            snapshotOptions: new SnapshotOptions(threshold));
+        var lastIndex = segmentSize * segmentsCount - 2; // Коммит на предпоследней записи в последнем сегменте
+
+        facade.SetCommitTest(lastIndex);
+
+        var actual = facade.ShouldCreateSnapshot();
+
+        Assert.False(actual);
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(2, 0)]
+    [InlineData(2, 1)]
+    [InlineData(5, 1)]
+    [InlineData(5, 3)]
+    [InlineData(5, 4)]
+    public void
+        ShouldCreateSnapshot__КогдаСегментовНеМеньшеПорогаНоНеВсеСегментыИзПорогаЗакоммичены__ДолженВернутьFalse(
+        int threshold,
+        int committedSegmentsCount)
+    {
+        const int segmentSize = 128;
+        const int tailSize = 100;
+
+        // Пусть всего будет столько же сегментов, сколько и порог
+        var segmentsCount = threshold;
+        var (facade, _) = CreateFacade(tailEntries: Enumerable.Range(0, tailSize)
+                                                              .Select(i => Entry(1, i.ToString()))
+                                                              .ToArray(),
+            segmentEntries: Enumerable.Range(0, segmentsCount)
+                                      .Select(s => Enumerable.Range(1, segmentSize)
+                                                             .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                             .ToArray())
+                                      .ToArray(),
+            snapshotOptions: new SnapshotOptions(threshold));
+        var lastIndex =
+            segmentSize * committedSegmentsCount
+          + segmentSize / 2; // Коммит на предпоследней записи в последнем сегменте
+        facade.SetCommitTest(lastIndex);
+
+        var actual = facade.ShouldCreateSnapshot();
+
+        Assert.False(actual);
+    }
+
+    [Theory]
+    [InlineData(1, 1, 1)]
+    [InlineData(1, 5, 1)]
+    [InlineData(1, 5, 2)]
+    [InlineData(1, 5, 5)]
+    [InlineData(2, 2, 2)]
+    [InlineData(2, 3, 2)]
+    [InlineData(5, 10, 5)]
+    [InlineData(5, 10, 6)]
+    public void ShouldCreateSnapshot__КогдаСегментовНеМеньшеПорогаИВсеСегментыПорогаЗакоммичены__ДолженВернутьTrue(
+        int threshold,
+        int segmentsCount,
+        int committedSegmentsCount)
+    {
+        const int segmentSize = 128;
+        const int tailSize = segmentSize;
+
+        var (facade, _) = CreateFacade(tailEntries: Enumerable.Range(0, tailSize)
+                                                              .Select(i => Entry(1, i.ToString()))
+                                                              .ToArray(),
+            segmentEntries: Enumerable.Range(0, segmentsCount)
+                                      .Select(s => Enumerable.Range(1, segmentSize)
+                                                             .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                             .ToArray())
+                                      .ToArray(),
+            snapshotOptions: new SnapshotOptions(threshold));
+        var lastIndex =
+            segmentSize * committedSegmentsCount
+          + segmentSize / 2; // Коммит на предпоследней записи в последнем сегменте
+        facade.SetCommitTest(lastIndex);
+
+        var actual = facade.ShouldCreateSnapshot();
+
+        Assert.True(actual);
+    }
+
+    [Fact]
+    public void Инициализация__КогдаФайловНеСуществовало__ДолженИнициализироватьБезОшибок()
+    {
+        var fs = Helpers.CreateFileSystem();
+
+        var ex = Record.Exception(() => FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None));
+
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void Инициализация__КогдаФайловНеСуществовало__ДолженИнициализироватьПустойЛог()
+    {
+        var fs = Helpers.CreateFileSystem();
+
+        var facade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None);
+
+        var actual = facade.Log.ReadAllTest();
+        Assert.Empty(actual);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(10)]
+    [InlineData(754)]
+    public void Инициализация__КогдаСнапшотаНеБылоИЛогНеПуст__ДолженВыставитьИндексКоммитаTomb(
+        int logSize)
+    {
+        var (old, fs) = CreateFacade(
+            tailEntries: Enumerable.Range(0, logSize).Select(_ => Entry(1, "sample")).ToArray());
+        old.Dispose();
+
+        var expected = Lsn.Tomb;
+
+        var newFacade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None);
+        var actual = newFacade.CommitIndex;
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 10)]
+    [InlineData(0, 8, 10)]
+    [InlineData(10, 9, 10)]
+    [InlineData(10, 10, 10)]
+    [InlineData(10, 15, 10)]
+    [InlineData(10, 19, 10)]
+    public void Инициализация__КогдаСнапшотБыл__ДолженВыставитьИндексКоммитаВИндексСнапшота(
+        int startLsn,
+        int snapshotIndex,
+        int logSize)
+    {
+        var (old, fs) = CreateFacade(startLsn: startLsn,
+            snapshotData: ( 1, new Lsn(snapshotIndex), new StubSnapshot([1, 2, 3, 4]) ),
+            tailEntries: Enumerable.Range(0, logSize).Select(i => Entry(1, i.ToString())).ToArray());
+        old.Dispose();
+        var expected = new Lsn(snapshotIndex);
+
+        var newFacade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None);
+        var actual = newFacade.CommitIndex;
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(10, 0)]
+    [InlineData(14, 13)]
+    public void Инициализация__КогдаИндексСнапшотаБольшеПоследнегоИндексаЛога__ДолженОчиститьЛог(
+        int snapshotIndex,
+        int lastLogIndex)
+    {
+        var fs = Helpers.CreateFileSystem();
+        var log = SegmentedFileLog.InitializeTest(fs.Log, startIndex: lastLogIndex,
+            tailEntries: new[] {Entry(1, "asdf")});
+        log.Dispose();
+        var snapshot = SnapshotFile.Initialize(fs.DataDirectory);
+        snapshot.SetupSnapshotTest(1, snapshotIndex, new StubSnapshot([1, 2, 3, 4]));
+
+        var facade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None);
+
+        Assert.Empty(facade.Log.ReadAllTest());
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(10, 0)]
+    [InlineData(14, 13)]
+    public void
+        Инициализация__КогдаИндексСнапшотаБольшеПоследнегоИндексаЛога__ДолженВыставитьИндексКоммитаВИндексСнапшота(
+        int snapshotIndex,
+        int lastLogIndex)
+    {
+        var fs = Helpers.CreateFileSystem();
+        var log = SegmentedFileLog.InitializeTest(fs.Log, startIndex: lastLogIndex,
+            tailEntries: new[] {Entry(1, "asdf")});
+        log.Dispose();
+        var snapshot = SnapshotFile.Initialize(fs.DataDirectory);
+        snapshot.SetupSnapshotTest(1, snapshotIndex, new StubSnapshot([1, 2, 3, 4]));
+
+        var facade = FileSystemPersistenceFacade.Initialize(fs.DataDirectory, Logger.None);
+
+        var actual = facade.CommitIndex;
+        Assert.Equal(snapshotIndex, actual);
     }
 }

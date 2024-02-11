@@ -1,6 +1,7 @@
 using System.Diagnostics;
+using TaskFlux.Consensus;
 
-namespace TaskFlux.Consensus.Persistence.Log;
+namespace TaskFlux.Persistence.Log;
 
 public readonly struct SegmentFileName(Lsn startLsn) : IEquatable<SegmentFileName>
 {
@@ -42,7 +43,8 @@ public readonly struct SegmentFileName(Lsn startLsn) : IEquatable<SegmentFileNam
             return false;
         }
 
-        if (long.TryParse(name[..LsnNumberLength], out var result) && ".log" == name[LsnNumberLength..])
+        var lsnPart = name[..LsnNumberLength];
+        if (long.TryParse(lsnPart, out var result) && name.EndsWith(".log"))
         {
             try
             {

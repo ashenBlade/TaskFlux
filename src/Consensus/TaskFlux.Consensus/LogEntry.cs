@@ -1,6 +1,6 @@
 using TaskFlux.Utils.CheckSum;
 
-namespace TaskFlux.Consensus.Persistence;
+namespace TaskFlux.Consensus;
 
 public record LogEntry(Term Term, byte[] Data)
 {

@@ -3,7 +3,6 @@ using Serilog.Core;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Consensus.Tests.Infrastructure;
 using TaskFlux.Consensus.Tests.Stubs;
 using TaskFlux.Core;
@@ -73,13 +72,14 @@ public class CandidateStateTests
         var expectedTerm = currentTerm.Increment();
         var node = CreateCandidateNode(currentTerm, electionTimer.Object, persistenceFactory: m =>
         {
-            m.Setup(p => p.CommitIndex).Returns(Lsn.Tomb);
-            m.Setup(p => p.UpdateState(It.Is<Term>(t => t == expectedTerm), It.Is<NodeId?>(id => id == NodeId)))
+            m.Setup(p => p.CommitIndex)
+             .Returns(Lsn.Tomb);
+            m.Setup(p => p.UpdateState(expectedTerm, NodeId))
              .Verifiable();
-            ISnapshot s = null;
-            var lei = LogEntryInfo.Tomb;
-            m.Setup(p => p.TryGetSnapshot(out s, out lei)).Returns(false);
-            m.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
+            m.Setup(p => p.TryGetSnapshot(out It.Ref<ISnapshot>.IsAny, out It.Ref<LogEntryInfo>.IsAny))
+             .Returns(false);
+            m.Setup(p => p.ReadDeltaFromPreviousSnapshot())
+             .Returns(Array.Empty<byte[]>());
         });
 
         electionTimer.Raise(x => x.Timeout += null);
@@ -109,12 +109,14 @@ public class CandidateStateTests
             persistenceFactory:
             m =>
             {
-                m.Setup(p => p.CommitIndex).Returns(Lsn.Tomb);
-                m.Setup(p => p.LastEntry).Returns(LogEntryInfo.Tomb);
-                ISnapshot s = null!;
-                var slei = LogEntryInfo.Tomb;
-                m.Setup(p => p.TryGetSnapshot(out s, out slei)).Returns(false);
-                m.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
+                m.Setup(p => p.CommitIndex)
+                 .Returns(Lsn.Tomb);
+                m.Setup(p => p.LastEntry)
+                 .Returns(LogEntryInfo.Tomb);
+                m.Setup(p => p.TryGetSnapshot(out It.Ref<ISnapshot>.IsAny, out It.Ref<LogEntryInfo>.IsAny))
+                 .Returns(false);
+                m.Setup(p => p.ReadDeltaFromPreviousSnapshot())
+                 .Returns(Array.Empty<byte[]>());
                 m.Setup(p => p.UpdateState(It.Is<Term>(t => t == expectedTerm), It.Is<NodeId?>(id => id == NodeId)))
                  .Verifiable();
             });
@@ -140,11 +142,12 @@ public class CandidateStateTests
         {
             m.Setup(p => p.UpdateState(It.Is<Term>(t => t == nextTerm), It.Is<NodeId?>(id => id == NodeId)))
              .Verifiable();
-            ISnapshot s = null;
-            var lei = LogEntryInfo.Tomb;
-            m.Setup(p => p.TryGetSnapshot(out s, out lei)).Returns(false);
-            m.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
-            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+            m.Setup(p => p.TryGetSnapshot(out It.Ref<ISnapshot>.IsAny, out It.Ref<LogEntryInfo>.IsAny))
+             .Returns(false);
+            m.Setup(p => p.ReadDeltaFromPreviousSnapshot())
+             .Returns(Array.Empty<byte[]>());
+            m.SetupGet(p => p.CommitIndex)
+             .Returns(Lsn.Tomb);
         });
 
         timer.Raise(t => t.Timeout += null);
@@ -225,11 +228,12 @@ public class CandidateStateTests
         var queue = new AwaitingTaskBackgroundJobQueue();
         using var node = CreateCandidateNode(term, jobQueue: queue, peers: peers, persistenceFactory: m =>
         {
-            ISnapshot x = null!;
-            var lei = LogEntryInfo.Tomb;
-            m.Setup(p => p.TryGetSnapshot(out x, out lei)).Returns(false);
-            m.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
-            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+            m.Setup(p => p.TryGetSnapshot(out It.Ref<ISnapshot>.IsAny, out It.Ref<LogEntryInfo>.IsAny))
+             .Returns(false);
+            m.Setup(p => p.ReadDeltaFromPreviousSnapshot())
+             .Returns(Array.Empty<byte[]>());
+            m.SetupGet(p => p.CommitIndex)
+             .Returns(Lsn.Tomb);
         });
 
         queue.RunWait();
@@ -770,7 +774,7 @@ public class CandidateStateTests
         ISnapshot s = null!;
         var lei = LogEntryInfo.Tomb;
         mock.Setup(p => p.TryGetSnapshot(out s, out lei)).Returns(false);
-        mock.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
+        mock.Setup(p => p.ReadDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
     }
 
     [Theory]
@@ -841,7 +845,7 @@ public class CandidateStateTests
             ISnapshot s = null!;
             var lei = LogEntryInfo.Tomb;
             m.Setup(p => p.TryGetSnapshot(out s, out lei)).Returns(false);
-            m.Setup(p => p.ReadCommittedDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
+            m.Setup(p => p.ReadDeltaFromPreviousSnapshot()).Returns(Array.Empty<byte[]>());
             m.Setup(p => p.UpdateState(It.IsAny<Term>(), null));
         });
         queue.RunWait();

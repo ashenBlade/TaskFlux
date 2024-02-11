@@ -1,4 +1,4 @@
-namespace TaskFlux.Consensus.Persistence;
+namespace TaskFlux.Consensus;
 
 public static class PersistenceExtensions
 {

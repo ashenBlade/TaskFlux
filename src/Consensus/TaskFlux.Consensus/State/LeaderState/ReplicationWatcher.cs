@@ -1,5 +1,3 @@
-using TaskFlux.Consensus.Persistence;
-
 namespace TaskFlux.Consensus.State.LeaderState;
 
 /// <summary>

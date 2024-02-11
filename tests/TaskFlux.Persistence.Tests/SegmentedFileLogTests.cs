@@ -2,8 +2,8 @@ using System.IO.Abstractions;
 using System.Text;
 using Serilog.Core;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Consensus.Persistence.Log;
+using TaskFlux.Persistence.Log;
 using Xunit;
 
 namespace TaskFlux.Persistence.Tests;
@@ -29,6 +29,7 @@ public class SegmentedFileLogTests : IDisposable
 
     public void Dispose()
     {
+        // Дополнительная проверка, что оставляемые файлы находятся в корректном состоянии
         if (_createdFiles is var (_, dataDir))
         {
             var ex = Record.Exception(() => SegmentedFileLog.Initialize(dataDir, Logger.None));
@@ -47,12 +48,13 @@ public class SegmentedFileLogTests : IDisposable
     /// </summary>
     private (SegmentedFileLog Log, MockFiles Mock) CreateLog()
     {
-        var fileSystem = Helpers.CreateFileSystem();
-        var mockFiles = new MockFiles(fileSystem.Log, fileSystem.DataDirectory);
-        _createdFiles = mockFiles;
-        var fileLog = SegmentedFileLog.Initialize(fileSystem.DataDirectory, Logger.None);
-        _createdFileLog = fileLog;
-        return ( fileLog, mockFiles );
+        return CreateLog(0);
+        // var fileSystem = Helpers.CreateFileSystem();
+        // var mockFiles = new MockFiles(fileSystem.Log, fileSystem.DataDirectory);
+        // _createdFiles = mockFiles;
+        // var fileLog = SegmentedFileLog.InitializeTest(fileSystem.DataDirectory, );
+        // _createdFileLog = fileLog;
+        // return ( fileLog, mockFiles );
     }
 
     private (SegmentedFileLog Log, MockFiles Mock) CreateLog(Lsn start,
@@ -220,29 +222,6 @@ public class SegmentedFileLogTests : IDisposable
     }
 
     [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(5)]
-    [InlineData(10)]
-    [InlineData(20)]
-    public void ПриПередачеУжеЗаполненногоЛога__ДолженСчитатьСохраненныеЗаписи(int entriesCount)
-    {
-        using var memory = new MemoryStream();
-        var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => Entry(i, $"data {i}"))
-                                .ToArray();
-
-        var (firstLog, fs) = CreateLog();
-        firstLog.SetupLogTest(entries);
-
-        var secondLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
-        var actual = secondLog.ReadAllTest();
-
-        Assert.Equal(entries, actual, Comparer);
-    }
-
-    [Theory]
     [InlineData(1, 1)]
     [InlineData(1, 2)]
     [InlineData(2, 1)]
@@ -263,7 +242,7 @@ public class SegmentedFileLogTests : IDisposable
         var (log, _) = CreateLog();
         log.SetupLogTest(initial);
 
-        log.InsertRangeOverwrite(appended, log.LastIndex + 1);
+        log.InsertRangeOverwrite(appended, log.LastRecordIndex + 1);
 
         var actual = log.ReadAllTest();
         Assert.Equal(expected, actual, Comparer);
@@ -321,6 +300,98 @@ public class SegmentedFileLogTests : IDisposable
 
         var actual = log.ReadAllTest();
         Assert.Equal(expected, actual, Comparer);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0, 1)]
+    [InlineData(0, 1, 1, 1)]
+    [InlineData(0, 0, 0, 3)]
+    [InlineData(0, 0, 10, 3)]
+    [InlineData(0, 1, 0, 3)]
+    [InlineData(0, 1, 1, 2)]
+    [InlineData(0, 1, 1, 5)]
+    [InlineData(0, 1, 18, 5)]
+    [InlineData(0, 3, 30, 5)]
+    [InlineData(10, 0, 1, 5)]
+    [InlineData(10, 0, 1, 3)]
+    public void InsertRangeOverwrite__КогдаПревышаетсяЖесткийПределИВставкаВКонец__ДолженУспешноВставитьЗаписи(
+        int startLsn,
+        int segmentsCount,
+        int tailSize,
+        int segmentsToInsertCount)
+    {
+        const int softLimit = 512;
+        const int hardLimit = 1024;
+        const int segmentSize = 128;
+
+        var tailEntries = Enumerable.Range(0, tailSize)
+                                    .Select(e => Entry(1, e.ToString()))
+                                    .ToArray();
+
+        var segments = Enumerable.Range(0, segmentsCount)
+                                 .Select(s => Enumerable.Range(1, segmentSize)
+                                                        .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                        .ToArray())
+                                 .ToArray();
+        var toInsert = Enumerable.Range(0, segmentsToInsertCount)
+                                 .SelectMany(_ => SegmentedFileLog.GenerateEntriesForSizeAtLeast(hardLimit, 1))
+                                 .ToArray();
+        var (log, _) = CreateLog(start: startLsn,
+            tailEntries: tailEntries,
+            segmentEntries: segments,
+            options: new SegmentedFileLogOptions(softLimit, hardLimit));
+        var lastIndex = startLsn + segmentSize * segmentsCount + tailSize;
+        var expected = segments.SelectMany(s => s).Concat(tailEntries).Concat(toInsert);
+
+        log.InsertRangeOverwrite(toInsert, lastIndex);
+
+        Assert.Equal(expected, log.ReadAllTest(), Comparer);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 1, 1)]
+    [InlineData(0, 0, 10, 3)]
+    [InlineData(0, 1, 15, 2)]
+    [InlineData(0, 1, 11, 5)]
+    [InlineData(0, 1, 18, 5)]
+    [InlineData(0, 3, 30, 5)]
+    [InlineData(10, 0, 19, 5)]
+    [InlineData(10, 0, 1, 3)]
+    [InlineData(10, 3, 30, 5)]
+    public void InsertRangeOverwrite__КогдаПревышаетсяЖесткийПределИВставкаВСерединуХвоста__ДолженУспешноВставитьЗаписи(
+        int startLsn,
+        int segmentsCount,
+        int tailSize,
+        int segmentsToInsertCount)
+    {
+        const int softLimit = 512;
+        const int hardLimit = 1024;
+        const int segmentSize = 128;
+
+        var tailEntries = Enumerable.Range(0, tailSize)
+                                    .Select(e => Entry(1, e.ToString()))
+                                    .ToArray();
+
+        var segments = Enumerable.Range(0, segmentsCount)
+                                 .Select(s => Enumerable.Range(1, segmentSize)
+                                                        .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                        .ToArray())
+                                 .ToArray();
+        var toInsert = Enumerable.Range(0, segmentsToInsertCount)
+                                 .SelectMany(_ => SegmentedFileLog.GenerateEntriesForSizeAtLeast(hardLimit, 1))
+                                 .ToArray();
+        var (log, _) = CreateLog(start: startLsn,
+            tailEntries: tailEntries,
+            segmentEntries: segments,
+            options: new SegmentedFileLogOptions(softLimit, hardLimit));
+        var insertIndex = startLsn + segmentSize * segmentsCount + tailSize / 2;
+        var expected = segments.SelectMany(s => s)
+                               .Concat(tailEntries.Take(tailSize / 2))
+                               .Concat(toInsert);
+
+        log.InsertRangeOverwrite(toInsert, insertIndex);
+
+        Assert.Equal(expected, log.ReadAllTest(), Comparer);
     }
 
     [Theory]
@@ -439,7 +510,7 @@ public class SegmentedFileLogTests : IDisposable
         var toInsert = Enumerable.Range(0, count).Select(i => Entry(term, i.ToString())).ToArray();
         var expected = toInsert;
 
-        log.InsertRangeOverwrite(toInsert, log.LastIndex + 1);
+        log.InsertRangeOverwrite(toInsert, log.LastRecordIndex + 1);
 
         var actual = log.ReadTailTest();
         Assert.Equal(expected, actual, Comparer);
@@ -508,9 +579,9 @@ public class SegmentedFileLogTests : IDisposable
         var toInsert = Enumerable.Range(( int ) initialTailEntries[^1].Term.Value + 1, 10)
                                  .Select(i => Entry(i, i.ToString()))
                                  .ToArray();
-        log.SetCommitIndexTest(log.LastIndex);
+        log.SetCommitIndexTest(log.LastRecordIndex);
 
-        log.InsertRangeOverwrite(toInsert, log.LastIndex + 1);
+        log.InsertRangeOverwrite(toInsert, log.LastRecordIndex + 1);
 
         Assert.Equal(2, log.GetSegmentsCountTest());
         Assert.Equal(toInsert, log.ReadTailTest());
@@ -530,7 +601,7 @@ public class SegmentedFileLogTests : IDisposable
         // Как будто ничего не закоммичено
         // log.SetCommitIndexTest(log.LastIndex);
 
-        log.InsertRangeOverwrite(toInsert, log.LastIndex + 1);
+        log.InsertRangeOverwrite(toInsert, log.LastRecordIndex + 1);
 
         Assert.Equal(2, log.GetSegmentsCountTest());
         Assert.Equal(toInsert, log.ReadTailTest());
@@ -673,7 +744,7 @@ public class SegmentedFileLogTests : IDisposable
         var (log, _) = CreateLog(start: 0, tailEntries: tailEntries, segmentEntries: sealedSegmentEntries);
         var toInsert = Enumerable.Range(tailSize, insertCount).Select(i => Entry(term, i.ToString())).ToArray();
         var expected = toInsert;
-        var insertIndex = log.LastIndex + indexGap + 1;
+        var insertIndex = log.LastRecordIndex + indexGap + 1;
 
         log.InsertRangeOverwrite(toInsert, insertIndex);
 
@@ -700,7 +771,7 @@ public class SegmentedFileLogTests : IDisposable
         var tailEntries = Enumerable.Range(1, tailSize).Select(i => Entry(term, i.ToString())).ToArray();
         var (log, fs) = CreateLog(start: 0, tailEntries: tailEntries, segmentEntries: sealedSegmentEntries);
         var toInsert = Enumerable.Range(tailSize, insertCount).Select(i => Entry(term, i.ToString())).ToArray();
-        var insertIndex = log.LastIndex + indexGap + 1;
+        var insertIndex = log.LastRecordIndex + indexGap + 1;
 
         log.InsertRangeOverwrite(toInsert, insertIndex);
 
@@ -730,7 +801,7 @@ public class SegmentedFileLogTests : IDisposable
         var tailEntries = Enumerable.Range(1, tailSize).Select(i => Entry(term, i.ToString())).ToArray();
         var (log, _) = CreateLog(start: 0, tailEntries: tailEntries, segmentEntries: sealedSegmentEntries);
         var toInsert = Enumerable.Range(tailSize, insertCount).Select(i => Entry(term, i.ToString())).ToArray();
-        var insertIndex = log.LastIndex + indexGap + 1;
+        var insertIndex = log.LastRecordIndex + indexGap + 1;
         var expected = insertIndex;
 
         log.InsertRangeOverwrite(toInsert, insertIndex);
@@ -770,35 +841,86 @@ public class SegmentedFileLogTests : IDisposable
     }
 
     [Fact]
-    public void GetLastLogEntry__СПустымЛогом__ДолженВернутьTomb()
+    public void TryGetLastLogEntry__КогдаЛогПустИНачинаетсяС0__ДолженВернутьTomb()
     {
         var expected = LogEntryInfo.Tomb;
-
         var (log, _) = CreateLog();
 
-        var actual = log.GetLastLogEntry();
+        var success = log.TryGetLastLogEntry(out var actual);
+
+        Assert.True(success);
         Assert.Equal(expected, actual);
     }
 
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    [InlineData(10)]
-    [InlineData(15)]
-    [InlineData(20)]
-    public void GetLastLogEntry__СЕдинственнымСегментом__ДолженВернутьПоследнююЗапись(int logSize)
+    [InlineData(87654)]
+    public void TryGetLastLogEntry__КогдаЛогПустИНачинаетсяНеС0__ДолженВернутьFalse(int startLsn)
     {
-        var initial = Enumerable.Range(1, logSize)
+        var (log, _) = CreateLog(start: startLsn);
+
+        var actual = log.TryGetLastLogEntry(out _);
+
+        Assert.False(actual);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 1)]
+    [InlineData(0, 0, 100)]
+    [InlineData(0, 1, 1)]
+    [InlineData(0, 1, 100)]
+    [InlineData(1, 0, 1)]
+    [InlineData(1, 0, 100)]
+    [InlineData(1, 1, 100)]
+    public void TryGetLastLogEntry__КогдаЕстьЗакрытыеСегментыИХвостНеПуст__ДолженВернутьЗаписьИзХвоста(
+        int startLsn,
+        int segmentsCount,
+        int tailSize)
+    {
+        const int segmentSize = 128;
+        var segmentEntries = Enumerable.Range(0, segmentsCount)
+                                       .Select(s => Enumerable.Range(1, segmentSize)
+                                                              .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                              .ToArray())
+                                       .ToArray();
+        var tailEntries = Enumerable.Range(0, tailSize)
+                                    .Select(e => Entry(1, ( segmentsCount * segmentSize + e ).ToString()))
+                                    .ToArray();
+        var (log, _) = CreateLog(start: startLsn,
+            tailEntries: tailEntries,
+            segmentEntries: segmentEntries);
+        var expected = new LogEntryInfo(1, startLsn + segmentSize * segmentsCount + tailSize - 1);
+
+        var success = log.TryGetLastLogEntry(out var actual);
+
+        Assert.True(success);
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(0, 2)]
+    [InlineData(0, 36)]
+    [InlineData(1, 544)]
+    [InlineData(1, 4)]
+    [InlineData(176, 1)]
+    [InlineData(176, 55)]
+    public void TryGetLastLogEntry__КогдаЕстьТолькоЗакрытыйСегментИХвостПуст__ДолженВернутьПоследнююЗаписьИзСегмента(
+        int startLsn,
+        int segmentSize)
+    {
+        var initial = Enumerable.Range(1, segmentSize)
                                 .Select(i => Entry(i, $"data {i}"))
                                 .ToArray();
 
-        var (log, _) = CreateLog();
-        log.SetupLogTest(initial);
+        var (log, _) = CreateLog(start: startLsn,
+            tailEntries: Array.Empty<LogEntry>(),
+            segmentEntries: new[] {initial});
+        var expected = new LogEntryInfo(initial[^1].Term, startLsn + initial.Length - 1);
 
-        var expected = new LogEntryInfo(initial[^1].Term, initial.Length - 1);
-        var actual = log.GetLastLogEntry();
+        var success = log.TryGetLastLogEntry(out var actual);
+        Assert.True(success);
         Assert.Equal(expected, actual);
     }
 
@@ -953,7 +1075,133 @@ public class SegmentedFileLogTests : IDisposable
         log.SetupLogTest(entries);
         var expected = entries;
 
-        var actual = log.ReadDataRange(0, log.LastIndex).ToList();
+        var actual = log.ReadDataRange(0, log.LastRecordIndex).ToList();
+
+        Assert.Equal(expected.Select(e => e.Data), actual, ByteComparer);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 0)]
+    [InlineData(0, 1, 1)]
+    [InlineData(0, 1, 100)]
+    [InlineData(0, 2, 0)]
+    [InlineData(0, 2, 1)]
+    [InlineData(0, 2, 100)]
+    [InlineData(1, 10, 0)]
+    [InlineData(1, 10, 1)]
+    [InlineData(1, 10, 100)]
+    public void ReadDataRange__КогдаЕстьЗакрытыеСегментыИИндексРавенНачальному__ДолженСчитатьВесьЛог(
+        int startLsn,
+        int segmentsCount,
+        int tailSize)
+    {
+        var segmentSize = 128;
+        var tail = Enumerable.Range(0, tailSize)
+                             .Select(i => Entry(1, i.ToString()))
+                             .ToList();
+        var segments = Enumerable.Range(0, segmentsCount)
+                                 .Select(s => Enumerable.Range(1, segmentSize)
+                                                        .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                        .ToArray())
+                                 .ToArray();
+
+        var (log, _) = CreateLog(startLsn, tailEntries: tail, segmentEntries: segments);
+        var expected = segments.SelectMany(s => s).Concat(tail);
+
+        var actual = log.ReadDataRange(log.StartIndex, log.LastRecordIndex).ToList();
+
+        Assert.Equal(expected.Select(e => e.Data), actual, ByteComparer);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 1)]
+    [InlineData(0, 1, 100)]
+    [InlineData(0, 2, 1)]
+    [InlineData(0, 2, 100)]
+    [InlineData(1, 10, 1)]
+    [InlineData(1, 10, 100)]
+    public void ReadDataRange__КогдаЕстьЗакрытыеСегментыИИндексРавенПервомуВХвосте__ДолженСчитатьЗаписиВХвосте(
+        int startLsn,
+        int segmentsCount,
+        int tailSize)
+    {
+        var segmentSize = 128;
+        var tail = Enumerable.Range(0, tailSize)
+                             .Select(i => Entry(1, i.ToString()))
+                             .ToList();
+        var segments = Enumerable.Range(0, segmentsCount)
+                                 .Select(s => Enumerable.Range(1, segmentSize)
+                                                        .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                        .ToArray())
+                                 .ToArray();
+        var (log, _) = CreateLog(startLsn, tailEntries: tail, segmentEntries: segments);
+        var expected = tail;
+        var startIndex = startLsn + segmentSize * segmentsCount;
+
+        var actual = log.ReadDataRange(startIndex, log.LastRecordIndex).ToList();
+
+        Assert.Equal(expected.Select(e => e.Data), actual, ByteComparer);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 1)]
+    [InlineData(0, 1, 100)]
+    [InlineData(0, 2, 1)]
+    [InlineData(0, 2, 100)]
+    [InlineData(1, 10, 1)]
+    [InlineData(1, 10, 100)]
+    public void
+        ReadDataRange__КогдаЕстьЗакрытыеСегментыИИндексВнутриСегмента__ДолженСчитатьЗаписиНачинаяСУказанногоИндекса(
+        int startLsn,
+        int segmentsCount,
+        int tailSize)
+    {
+        var segmentSize = 128;
+        var tail = Enumerable.Range(0, tailSize)
+                             .Select(i => Entry(1, i.ToString()))
+                             .ToList();
+        var segments = Enumerable.Range(0, segmentsCount)
+                                 .Select(s => Enumerable.Range(1, segmentSize)
+                                                        .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                        .ToArray())
+                                 .ToArray();
+        var (log, _) = CreateLog(startLsn, tailEntries: tail, segmentEntries: segments);
+        var offset = segmentSize * ( segmentsCount / 2 ) + segmentSize / 2;
+        var startIndex = startLsn + offset;
+        var expected = segments.SelectMany(s => s).Concat(tail).Skip(offset).ToArray();
+
+        var actual = log.ReadDataRange(startIndex, log.LastRecordIndex).ToList();
+
+        Assert.Equal(expected.Select(e => e.Data), actual, ByteComparer);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 1)]
+    [InlineData(0, 1, 100)]
+    [InlineData(0, 2, 1)]
+    [InlineData(0, 2, 100)]
+    [InlineData(1, 10, 1)]
+    [InlineData(1, 10, 100)]
+    public void ReadDataRange__КогдаЕстьЗакрытыеСегментыИИндексВНачалеСегмент__ДолженСчитатьВсеЗаписиСНужногоСегмента(
+        int startLsn,
+        int segmentsCount,
+        int tailSize)
+    {
+        var segmentSize = 128;
+        var tail = Enumerable.Range(0, tailSize)
+                             .Select(i => Entry(1, i.ToString()))
+                             .ToList();
+        var segments = Enumerable.Range(0, segmentsCount)
+                                 .Select(s => Enumerable.Range(1, segmentSize)
+                                                        .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                        .ToArray())
+                                 .ToArray();
+        var (log, _) = CreateLog(startLsn, tailEntries: tail, segmentEntries: segments);
+        var offset = segmentSize * ( segmentsCount / 2 );
+        var startIndex = startLsn + offset;
+        var expected = segments.SelectMany(s => s).Concat(tail).Skip(offset).ToArray();
+
+        var actual = log.ReadDataRange(startIndex, log.LastRecordIndex).ToList();
 
         Assert.Equal(expected.Select(e => e.Data), actual, ByteComparer);
     }
@@ -979,7 +1227,7 @@ public class SegmentedFileLogTests : IDisposable
     [InlineData(5)]
     [InlineData(10)]
     public void
-        DeleteUntil__КогдаВЛогеЕстьНесколькоЗакрытыхСегментовИИндексРавенНачальномуВХвосте__ДолженУдалитьВсеЗакрытыеСегменты(
+        DeleteCoveredSegmentsUntil__КогдаВЛогеЕстьНесколькоЗакрытыхСегментовИИндексРавенНачальномуВХвосте__ДолженУдалитьВсеЗакрытыеСегменты(
         int sealedSegmentsCount)
     {
         const int segmentSize = 1024;
@@ -996,13 +1244,14 @@ public class SegmentedFileLogTests : IDisposable
         var (facade, _) = CreateLog(0, tailEntries: tailEntries, segmentEntries: sealedSegmentsEntries);
         var startSegmentIndex = segmentSize * sealedSegmentsCount;
 
-        facade.DeleteUntil(startSegmentIndex);
+        facade.DeleteCoveredSegmentsUntil(startSegmentIndex);
 
         Assert.Equal(1, facade.GetSegmentsCountTest());
     }
 
     [Fact]
-    public void DeleteUntil__КогдаИндексУказываетНаСегментВСередине__ДолженУдалитьСегментыДоЭтогоСегмента()
+    public void
+        DeleteCoveredSegmentsUntil__КогдаИндексУказываетНаСегментВСередине__ДолженУдалитьСегментыДоЭтогоСегмента()
     {
         const int segmentSize = 1024;
         const int sealedSegmentsCount = 10;
@@ -1020,13 +1269,13 @@ public class SegmentedFileLogTests : IDisposable
         var startSegmentIndex = segmentSize * 4 + 1; // Индекс внутри 5-ого сегмента 
         var expectedSegmentsCount = 6 + 1;           // Удалили 4 сегмента (10 - 4) и хвост  
 
-        facade.DeleteUntil(startSegmentIndex);
+        facade.DeleteCoveredSegmentsUntil(startSegmentIndex);
 
         Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCountTest());
     }
 
     [Fact]
-    public void DeleteUntil__КогдаИндексРавенНачальному__НеДолженУдалятьСегменты()
+    public void DeleteCoveredSegmentsUntil__КогдаИндексРавенНачальному__НеДолженУдалятьСегменты()
     {
         const int segmentSize = 1024;
         const int sealedSegmentsCount = 10;
@@ -1044,13 +1293,13 @@ public class SegmentedFileLogTests : IDisposable
         var startSegmentIndex = 0;
         var expectedSegmentsCount = sealedSegmentsCount + 1; // Все сегменты + хвост   
 
-        facade.DeleteUntil(startSegmentIndex);
+        facade.DeleteCoveredSegmentsUntil(startSegmentIndex);
 
         Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCountTest());
     }
 
     [Fact]
-    public void DeleteUntil__КогдаБылиУдаленыСегменты__ДолженОбновитьНачальныйИндекс()
+    public void DeleteCoveredSegmentsUntil__КогдаБылиУдаленыСегменты__ДолженОбновитьНачальныйИндекс()
     {
         const int segmentSize = 1024;
         const int sealedSegmentsCount = 10;
@@ -1068,13 +1317,13 @@ public class SegmentedFileLogTests : IDisposable
         var startSegmentIndex = segmentSize * 5 + segmentSize / 2; // Указывает на середину 6 сегмента     
         var expectedStartIndex = segmentSize * 5;
 
-        facade.DeleteUntil(startSegmentIndex);
+        facade.DeleteCoveredSegmentsUntil(startSegmentIndex);
 
         Assert.Equal(expectedStartIndex, facade.StartIndex);
     }
 
     [Fact]
-    public void DeleteUntil__КогдаИндексБольшеПоследнего__ДолженУдалитьВсеСегменты()
+    public void DeleteCoveredSegmentsUntil__КогдаИндексБольшеПоследнего__ДолженУдалитьВсеСегменты()
     {
         const int segmentSize = 1024;
         const int sealedSegmentsCount = 10;
@@ -1091,14 +1340,14 @@ public class SegmentedFileLogTests : IDisposable
                                     .ToArray();
         var (facade, _) = CreateLog(0, tailEntries: tailEntries, segmentEntries: sealedSegmentsEntries);
 
-        facade.DeleteUntil(deleteIndex);
+        facade.DeleteCoveredSegmentsUntil(deleteIndex);
 
         Assert.Equal(1, facade.GetSegmentsCountTest());
         Assert.Empty(facade.ReadAllTest());
     }
 
     [Fact]
-    public void DeleteUntil__КогдаИндексБольшеПоследнего__ДолженОбновитьНачальныйИндекс()
+    public void DeleteCoveredSegmentsUntil__КогдаИндексБольшеПоследнего__ДолженОбновитьНачальныйИндекс()
     {
         const int segmentSize = 1024;
         const int sealedSegmentsCount = 10;
@@ -1115,13 +1364,14 @@ public class SegmentedFileLogTests : IDisposable
                                     .ToArray();
         var (facade, _) = CreateLog(0, tailEntries: tailEntries, segmentEntries: sealedSegmentsEntries);
 
-        facade.DeleteUntil(deleteIndex);
+        facade.DeleteCoveredSegmentsUntil(deleteIndex);
 
         Assert.Equal(deleteIndex, facade.StartIndex);
     }
 
     [Fact]
-    public void DeleteUntil__КогдаИндексУказываетНаЗаписьВнутриПервогоЗакрытогоСегмента__НеДолженУдалятьСегменты()
+    public void
+        DeleteCoveredSegmentsUntil__КогдаИндексУказываетНаЗаписьВнутриПервогоЗакрытогоСегмента__НеДолженУдалятьСегменты()
     {
         const int segmentSize = 1024;
         const int sealedSegmentsCount = 10;
@@ -1139,7 +1389,7 @@ public class SegmentedFileLogTests : IDisposable
         var expectedSegmentsCount = sealedSegmentsCount + 1;
         var deleteIndex = segmentSize / 2;
 
-        facade.DeleteUntil(deleteIndex);
+        facade.DeleteCoveredSegmentsUntil(deleteIndex);
 
         Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCountTest());
     }
@@ -1850,6 +2100,486 @@ public class SegmentedFileLogTests : IDisposable
         var expected = new LogEntryInfo(segmentIndex * segmentSize, segmentIndex * segmentSize - 1 + startLsn);
 
         _ = log.TryGetFrom(offset + startLsn, out _, out var actual);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 0)]
+    [InlineData(0, 1, 1)]
+    [InlineData(0, 2, 1)]
+    [InlineData(0, 2, 10)]
+    [InlineData(0, 123, 10)]
+    [InlineData(1, 1, 0)]
+    [InlineData(1, 1, 1)]
+    [InlineData(1, 2, 1)]
+    [InlineData(1, 123, 1)]
+    [InlineData(666, 1, 0)]
+    [InlineData(666, 1, 1)]
+    [InlineData(666, 2, 1)]
+    [InlineData(666, 123, 1)]
+    public void TryGetFrom__КогдаИндексСледующийПослеПоследнегоИХвостНеПуст__ДолженВернутьПустойМассив(
+        int startLsn,
+        int tailSize,
+        int segmentsCount)
+    {
+        var segmentSize = 128;
+        var sealedSegments = Enumerable.Range(0, segmentsCount)
+                                       .Select(s => Enumerable.Range(1, segmentSize)
+                                                              .Select(e => Entry(s * segmentSize + e,
+                                                                   ( s * segmentSize + e ).ToString()))
+                                                              .ToArray())
+                                       .ToArray();
+        var tailEntries = Enumerable.Range(segmentsCount * segmentSize + 1, tailSize)
+                                    .Select(i => Entry(i, i.ToString()))
+                                    .ToArray();
+        var offset = segmentsCount * segmentSize + tailSize;
+        var (log, _) = CreateLog(startLsn, tailEntries, sealedSegments);
+
+        _ = log.TryGetFrom(startLsn + offset, out var actual, out _);
+
+        Assert.Empty(actual);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 0)]
+    [InlineData(0, 1, 1)]
+    [InlineData(0, 2, 1)]
+    [InlineData(0, 2, 10)]
+    [InlineData(0, 123, 10)]
+    [InlineData(1, 1, 0)]
+    [InlineData(1, 1, 1)]
+    [InlineData(1, 2, 1)]
+    [InlineData(1, 123, 1)]
+    [InlineData(666, 1, 0)]
+    [InlineData(666, 1, 1)]
+    [InlineData(666, 2, 1)]
+    [InlineData(666, 123, 1)]
+    public void TryGetFrom__КогдаИндексСледующийПослеПоследнегоИХвостНеПуст__ДолженВернутьДанныеОПоследнейЗаписиВХвосте(
+        int startLsn,
+        int tailSize,
+        int segmentsCount)
+    {
+        var segmentSize = 128;
+        var sealedSegments = Enumerable.Range(0, segmentsCount)
+                                       .Select(s => Enumerable.Range(1, segmentSize)
+                                                              .Select(e => Entry(s * segmentSize + e,
+                                                                   ( s * segmentSize + e ).ToString()))
+                                                              .ToArray())
+                                       .ToArray();
+        var tailEntries = Enumerable.Range(segmentsCount * segmentSize + 1, tailSize)
+                                    .Select(i => Entry(i, i.ToString()))
+                                    .ToArray();
+        var offset = segmentsCount * segmentSize + tailSize;
+        var lastIndex = startLsn + offset - 1;
+        var (log, _) = CreateLog(startLsn, tailEntries, sealedSegments);
+        var expected = new LogEntryInfo(tailEntries[^1].Term, lastIndex);
+
+        _ = log.TryGetFrom(lastIndex + 1, out _, out var actual);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 0)]
+    [InlineData(0, 1, 1)]
+    [InlineData(0, 2, 1)]
+    [InlineData(0, 2, 10)]
+    [InlineData(0, 123, 10)]
+    [InlineData(1, 1, 0)]
+    [InlineData(1, 1, 1)]
+    [InlineData(1, 2, 1)]
+    [InlineData(1, 123, 1)]
+    [InlineData(666, 1, 0)]
+    [InlineData(666, 1, 1)]
+    [InlineData(666, 2, 1)]
+    [InlineData(666, 123, 1)]
+    public void TryGetFrom__КогдаИндексСледующийПослеПоследнегоИХвостНеПуст__ДолженВернутьTrue(
+        int startLsn,
+        int tailSize,
+        int segmentsCount)
+    {
+        var segmentSize = 128;
+        var sealedSegments = Enumerable.Range(0, segmentsCount)
+                                       .Select(s => Enumerable.Range(1, segmentSize)
+                                                              .Select(e => Entry(s * segmentSize + e,
+                                                                   ( s * segmentSize + e ).ToString()))
+                                                              .ToArray())
+                                       .ToArray();
+        var tailEntries = Enumerable.Range(segmentsCount * segmentSize + 1, tailSize)
+                                    .Select(i => Entry(i, i.ToString()))
+                                    .ToArray();
+        var offset = segmentsCount * segmentSize + tailSize;
+        var lastIndex = startLsn + offset - 1;
+        var (log, _) = CreateLog(startLsn, tailEntries, sealedSegments);
+
+        var actual = log.TryGetFrom(lastIndex + 1, out _, out _);
+
+        Assert.True(actual);
+    }
+
+    [Fact]
+    public void Инициализация__КогдаДиректорияПуста__ДолженСоздатьПустойХвост()
+    {
+        var fs = Helpers.CreateFileSystem();
+
+        var log = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+
+        Assert.Empty(log.ReadTailTest());
+    }
+
+    [Fact]
+    public void Инициализация__КогдаДиректорияПуста__ДолженИнициализироватьСегментС0()
+    {
+        var fs = Helpers.CreateFileSystem();
+
+        var log = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+
+        Assert.Equal(0, log.StartIndex);
+    }
+
+    [Fact]
+    public void Инициализация__КогдаДиректорияПуста__ДолженСоздатьФайлСегмента()
+    {
+        var fs = Helpers.CreateFileSystem();
+        var expectedFileName = new SegmentFileName(0);
+
+        _ = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+
+        Assert.Contains(fs.Log.GetFiles(), file => file.Name == expectedFileName.GetFileName());
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(87654)]
+    [InlineData(100000)]
+    public void
+        Инициализация__КогдаСуществовалПустойФайлСегмента__ДолженКорректноИнициализироватьПервыйНачальныйИндексСегмента(
+        int startLsn)
+    {
+        var fs = Helpers.CreateFileSystem();
+        var oldLog = SegmentedFileLog.InitializeTest(fs.Log,
+            startIndex: startLsn,
+            tailEntries: Array.Empty<LogEntry>(),
+            segmentEntries: Array.Empty<IReadOnlyList<LogEntry>>());
+        oldLog.Dispose();
+        var f = fs.Log.GetFiles();
+
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+
+        Assert.Equal(startLsn, newLog.StartIndex);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(100000)]
+    [InlineData(87654)]
+    public void Инициализация__КогдаСуществовалПустойФайлСегмента__ДолженИнициализироватьПустойЛог(int startLsn)
+    {
+        var fs = Helpers.CreateFileSystem();
+
+        var oldLog = SegmentedFileLog.InitializeTest(fs.DataDirectory,
+            startIndex: startLsn,
+            tailEntries: Array.Empty<LogEntry>(),
+            segmentEntries: Array.Empty<IReadOnlyList<LogEntry>>());
+        oldLog.Dispose();
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+
+        Assert.Empty(newLog.ReadTailTest());
+    }
+
+    [Theory]
+    [InlineData(0, 1, 0)]
+    [InlineData(0, 1, 1)]
+    [InlineData(1, 1, 1)]
+    [InlineData(0, 2, 0)]
+    [InlineData(3765, 10, 10)]
+    public void Инициализация__КогдаБылиЗакрытыеСегменты__ДолженИнициализироватьВсеЗаписиКорректно(
+        int startIndex,
+        int segmentsCount,
+        int tailSize)
+    {
+        const int segmentSize = 128;
+        var segmentEntries = Enumerable.Range(0, segmentsCount)
+                                       .Select(s => Enumerable.Range(1, segmentSize)
+                                                              .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                              .ToArray())
+                                       .ToArray();
+        var tailEntries = Enumerable.Range(segmentsCount * segmentSize, tailSize)
+                                    .Select(e => Entry(1, e.ToString()))
+                                    .ToArray();
+        var fs = Helpers.CreateFileSystem();
+        var oldLog = SegmentedFileLog.InitializeTest(fs.Log, startIndex, tailEntries: tailEntries,
+            segmentEntries: segmentEntries);
+        oldLog.Dispose();
+        var expected = segmentEntries.SelectMany(s => s).Concat(tailEntries);
+
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+
+        var actual = newLog.ReadAllTest();
+        Assert.Equal(expected, actual, Comparer);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(0, 100)]
+    [InlineData(1, 1)]
+    [InlineData(1, 100)]
+    [InlineData(674565, 62)]
+    public void Инициализация__КогдаЕстьТолькоХвостИОнНеПуст__ДолженСчитатьСохраненныеЗаписи(
+        int startIndex,
+        int tailSize)
+    {
+        using var memory = new MemoryStream();
+        var tailEntries = Enumerable.Range(1, tailSize)
+                                    .Select(i => Entry(i, $"data {i}"))
+                                    .ToArray();
+
+        var fs = Helpers.CreateFileSystem();
+        var oldLog = SegmentedFileLog.InitializeTest(logDirectory: fs.Log,
+            startIndex: startIndex,
+            tailEntries: tailEntries,
+            segmentEntries: Array.Empty<IReadOnlyList<LogEntry>>());
+        oldLog.Dispose();
+        var expected = tailEntries;
+
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+        var actual = newLog.ReadAllTest();
+
+        Assert.Equal(expected, actual, Comparer);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(0, 100)]
+    [InlineData(1, 1)]
+    [InlineData(1, 100)]
+    [InlineData(674565, 62)]
+    public void Инициализация__КогдаЕстьТолькоХвостИОнНеПуст__ДолженКорректноИнициализироватьНачальныйИндекс(
+        int startIndex,
+        int tailSize)
+    {
+        var tailEntries = Enumerable.Range(1, tailSize)
+                                    .Select(i => Entry(i, $"data {i}"))
+                                    .ToArray();
+
+        var fs = Helpers.CreateFileSystem();
+        var oldLog = SegmentedFileLog.InitializeTest(logDirectory: fs.Log,
+            startIndex: startIndex,
+            tailEntries: tailEntries,
+            segmentEntries: Array.Empty<IReadOnlyList<LogEntry>>());
+        oldLog.Dispose();
+        var expected = new Lsn(startIndex);
+
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+
+        var actual = newLog.StartIndex;
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 1)]
+    [InlineData(0, 2, 1)]
+    [InlineData(0, 10, 1)]
+    [InlineData(0, 1, 100)]
+    [InlineData(0, 2, 100)]
+    [InlineData(1, 1, 1)]
+    [InlineData(1, 1, 100)]
+    [InlineData(1, 6, 1)]
+    [InlineData(1, 6, 75)]
+    [InlineData(786543, 1, 1)]
+    [InlineData(786543, 1, 16)]
+    [InlineData(786543, 6, 16)]
+    public void Инициализация__КогдаЕстьЗакрытыеСегментыИНеПустойХвост__ДолженКорректноИнициализироватьВсеЗаписи(
+        int startIndex,
+        int segmentsCount,
+        int tailSize)
+    {
+        var random = new Random(HashCode.Combine(startIndex, segmentsCount, tailSize));
+        const int maxSegmentSize = 256;
+        var tailEntries = Enumerable.Range(1, tailSize)
+                                    .Select(i => Entry(i, $"data {i}"))
+                                    .ToArray();
+        var i = 0;
+        var segmentEntries = Enumerable.Range(0, segmentsCount)
+                                       .Select(_ => Enumerable.Range(1, random.Next(1, maxSegmentSize))
+                                                              .Select(_ => Entry(1, ( i++ ).ToString()))
+                                                              .ToArray())
+                                       .ToArray();
+        var fs = Helpers.CreateFileSystem();
+        var oldLog = SegmentedFileLog.InitializeTest(logDirectory: fs.Log,
+            startIndex: startIndex,
+            tailEntries: tailEntries,
+            segmentEntries: segmentEntries);
+        oldLog.Dispose();
+        var expected = segmentEntries.SelectMany(s => s).Concat(tailEntries);
+
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+
+        var actual = newLog.ReadAllTest();
+        Assert.Equal(expected, actual, Comparer);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0)]
+    [InlineData(0, 1, 0)]
+    [InlineData(0, 4, 0)]
+    [InlineData(0, 0, 1)]
+    [InlineData(0, 1, 1)]
+    [InlineData(0, 2, 1)]
+    [InlineData(0, 10, 1)]
+    [InlineData(0, 1, 100)]
+    [InlineData(0, 2, 100)]
+    [InlineData(1, 1, 1)]
+    [InlineData(1, 1, 100)]
+    [InlineData(1, 6, 1)]
+    [InlineData(1, 6, 75)]
+    [InlineData(7863, 1, 1)]
+    [InlineData(64643, 1, 16)]
+    [InlineData(99999, 6, 16)]
+    public void
+        Инициализация__КогдаЕстьЗакрытыеСегментыИНеПустойХвост__ДолженВыставитьИндексКоммитаВПредшествующийНачальномуИндекс(
+        int startIndex,
+        int segmentsCount,
+        int tailSize)
+    {
+        var random = new Random(HashCode.Combine(startIndex, segmentsCount, tailSize));
+        const int maxSegmentSize = 256;
+        var tailEntries = Enumerable.Range(1, tailSize)
+                                    .Select(i => Entry(i, $"data {i}"))
+                                    .ToArray();
+        var i = 0;
+        var segmentEntries = Enumerable.Range(0, segmentsCount)
+                                       .Select(_ => Enumerable.Range(1, random.Next(1, maxSegmentSize))
+                                                              .Select(_ => Entry(1, ( i++ ).ToString()))
+                                                              .ToArray())
+                                       .ToArray();
+        var fs = Helpers.CreateFileSystem();
+        var oldLog = SegmentedFileLog.InitializeTest(logDirectory: fs.Log,
+            startIndex: startIndex,
+            tailEntries: tailEntries,
+            segmentEntries: segmentEntries);
+        oldLog.Dispose();
+        var expected = new Lsn(startIndex - 1);
+
+        var newLog = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None);
+
+        var actual = newLog.CommitIndex;
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(10)]
+    [InlineData(8434)]
+    public void CommitIndex__КогдаЛогИнициализировался__ДолженВыставитьИндексКоммитаВПредыдущийОтНачального(
+        int startLsn)
+    {
+        var (log, _) = CreateLog(startLsn, tailEntries: new[] {Entry(1, "asdf")});
+        var expected = new Lsn(startLsn - 1);
+
+        var actual = log.CommitIndex;
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(100)]
+    public void StartNewWith__КогдаЛогБылПуст__ДолженСоздатьНовыйФайл(int startLsn)
+    {
+        var (log, fs) = CreateLog();
+        var expectedFileName = new SegmentFileName(startLsn);
+
+        log.StartNewWith(startLsn);
+
+        Assert.Contains(fs.LogDirectory.GetFiles(), file => file.Name == expectedFileName.GetFileName());
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(0, 2)]
+    [InlineData(0, 100)]
+    [InlineData(0, 1024)]
+    [InlineData(123, 124)]
+    [InlineData(512, 1024)]
+    public void StartNewWith__КогдаЛогБылПуст__ДолженУдалитьСтарыйФайл(int oldStartLsn, int newStartLsn)
+    {
+        var (log, fs) = CreateLog(start: oldStartLsn);
+        var oldSegmentFile = new SegmentFileName(oldStartLsn);
+
+        log.StartNewWith(newStartLsn);
+
+        Assert.DoesNotContain(fs.LogDirectory.GetFiles(), file => file.Name == oldSegmentFile.GetFileName());
+    }
+
+    [Theory]
+    [InlineData(0, 0, 1, 2)]
+    [InlineData(0, 1, 0, 23)]
+    [InlineData(0, 1, 1, 44)]
+    [InlineData(1, 0, 1, 654)]
+    [InlineData(1, 1, 0, 10)]
+    [InlineData(76, 7, 12, 10)]
+    public void StartNewWith__КогдаВЛогеБылиЗаписи__ДолженУдалитьСтарыеФайлы(
+        int oldStartLsn,
+        int segmentsCount,
+        int tailSize,
+        int newStartLsn)
+    {
+        var tail = Enumerable.Range(0, tailSize)
+                             .Select(e => Entry(1, e.ToString()))
+                             .ToArray();
+        const int segmentSize = 128;
+        var segments = Enumerable.Range(0, segmentsCount)
+                                 .Select(s => Enumerable.Range(1, segmentSize)
+                                                        .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                        .ToArray())
+                                 .ToArray();
+        var (log, fs) = CreateLog(start: oldStartLsn,
+            tailEntries: tail,
+            segmentEntries: segments);
+        var oldSegmentFileNames = log.GetAllSegmentNamesTest()
+                                     .Select(n => n.GetFileName())
+                                     .ToHashSet(StringComparer.InvariantCultureIgnoreCase);
+
+        log.StartNewWith(newStartLsn);
+
+        Assert.DoesNotContain(fs.LogDirectory.GetFiles(), file => oldSegmentFileNames.Contains(file.Name));
+    }
+
+    [Theory]
+    [InlineData(0, 0, 1, 2)]
+    [InlineData(0, 1, 0, 23)]
+    [InlineData(0, 1, 1, 44)]
+    [InlineData(1, 0, 1, 654)]
+    [InlineData(1, 1, 0, 10)]
+    [InlineData(76, 7, 12, 10)]
+    public void StartNewWith__КогдаВЛогеБылиЗаписи__ДолженВыставитьИндексКоммитаВПредыдущийОтНачального(
+        int oldStartLsn,
+        int segmentsCount,
+        int tailSize,
+        int newStartLsn)
+    {
+        var tail = Enumerable.Range(0, tailSize)
+                             .Select(e => Entry(1, e.ToString()))
+                             .ToArray();
+        const int segmentSize = 128;
+        var segments = Enumerable.Range(0, segmentsCount)
+                                 .Select(s => Enumerable.Range(1, segmentSize)
+                                                        .Select(e => Entry(1, ( s * segmentSize + e ).ToString()))
+                                                        .ToArray())
+                                 .ToArray();
+        var (log, _) = CreateLog(start: oldStartLsn,
+            tailEntries: tail,
+            segmentEntries: segments);
+        var expected = new Lsn(newStartLsn - 1);
+
+        log.StartNewWith(newStartLsn);
+        var actual = log.CommitIndex;
 
         Assert.Equal(expected, actual);
     }

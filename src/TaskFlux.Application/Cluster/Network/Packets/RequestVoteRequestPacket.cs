@@ -1,6 +1,6 @@
 using System.Buffers;
+using TaskFlux.Consensus;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Application.Cluster.Network.Packets;

@@ -3,7 +3,6 @@ using Serilog;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 
 namespace TaskFlux.Consensus.State.LeaderState;
@@ -19,7 +18,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     private (PeerProcessorBackgroundJob<TCommand, TResponse> Processor, ITimer Timer)[] _peerProcessors =
         Array.Empty<(PeerProcessorBackgroundJob<TCommand, TResponse>, ITimer)>();
 
-    private readonly IDeltaExtractor<TResponse> _deltaExtractor;
+    private readonly IDeltaExtractor<TCommand> _deltaExtractor;
     private readonly ITimerFactory _timerFactory;
     private IApplication<TCommand, TResponse>? _application;
 
@@ -31,7 +30,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     internal LeaderState(RaftConsensusModule<TCommand, TResponse> consensusModule,
                          ILogger logger,
-                         IDeltaExtractor<TResponse> deltaExtractor,
+                         IDeltaExtractor<TCommand> deltaExtractor,
                          ITimerFactory timerFactory)
         : base(consensusModule)
     {
@@ -43,13 +42,6 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     public override void Initialize()
     {
         _peerProcessors = CreatePeerProcessors();
-        var oldSnapshot = Persistence.TryGetSnapshot(out var s, out _)
-                              ? s
-                              : null;
-
-        _logger.Information("Восстанавливаю предыдущее состояние");
-        var deltas = Persistence.ReadCommittedDeltaFromPreviousSnapshot();
-        _application = ApplicationFactory.Restore(oldSnapshot, deltas);
         Array.ForEach(_peerProcessors, p =>
         {
             // Вместе с таймером уйдет и остальное
@@ -85,7 +77,13 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             p.Timer.ForceRun();
             _logger.Debug("Обработчик для узла {NodeId} запущен", p.Processor.NodeId);
         });
-        _logger.Verbose("Потоки обработчиков узлов запущены");
+
+        _logger.Information("Восстанавливаю предыдущее состояние");
+        var oldSnapshot = Persistence.TryGetSnapshot(out var s, out _)
+                              ? s
+                              : null;
+        var deltas = Persistence.ReadDeltaFromPreviousSnapshot();
+        _application = ApplicationFactory.Restore(oldSnapshot, deltas);
     }
 
     private (PeerProcessorBackgroundJob<TCommand, TResponse>, ITimer)[] CreatePeerProcessors()
@@ -212,65 +210,56 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override SubmitResponse<TResponse> Apply(TCommand command, CancellationToken token = default)
     {
-        // TODO: сначала реплицировать, а только потом применять
         Debug.Assert(_application is not null, "_application is not null",
             "Приложение не было инициализировано на момент обработки запроса");
         _logger.Debug("Получил новую команду: {Command}", command);
 
-        var response = _application.Apply(command);
-        if (!_deltaExtractor.TryGetDelta(response, out var delta))
+        if (_deltaExtractor.TryGetDelta(command, out var delta))
         {
-            // Если команда не выполнила модификаций (дельты нет),
-            // то сразу возвращаем результат - без необходимости репликации/фиксации
-            return SubmitResponse<TResponse>.Success(response, true);
-        }
+            // Добавляем команду в буфер
+            _logger.Verbose("Добавляю команду в лог");
+            var newEntry = new LogEntry(CurrentTerm, delta);
+            var appended = Persistence.Append(newEntry);
 
-        // Добавляем команду в буфер
-        _logger.Verbose("Добавляю команду в лог");
-        var newEntry = new LogEntry(CurrentTerm, delta);
-        var appended = Persistence.Append(newEntry);
-
-        // Сигнализируем узлам, чтобы принялись реплицировать
-        _logger.Verbose("Начинаю репликацию записанной команды");
-        var success = TryReplicate(appended, out var greaterTerm);
-        if (!success)
-        {
-            _logger.Verbose("Команду реплицировать не удалось: состояние поменялось");
-            if (Role != NodeRole.Leader)
+            // Сигнализируем узлам, чтобы принялись реплицировать
+            if (!TryReplicate(appended, out var greaterTerm))
             {
-                // Пока выполняли запрос перестали быть лидером
+                if (Role != NodeRole.Leader)
+                {
+                    // Пока выполняли запрос уже перестали быть лидером
+                    return ConsensusModule.Handle(command, token);
+                }
+
+                // Либо, другой узел еще не присылал нам запрос с большим термом - обновимся сами
+                if (ConsensusModule.TryUpdateState(ConsensusModule.CreateFollowerState(), this))
+                {
+                    Persistence.UpdateState(greaterTerm, null);
+                    return SubmitResponse<TResponse>.NotLeader;
+                }
+
                 return ConsensusModule.Handle(command, token);
             }
 
-            if (ConsensusModule.TryUpdateState(ConsensusModule.CreateFollowerState(), this))
+            /*
+             * Если мы вернулись, то это может значить 2 вещи:
+             *  1. Запись успешно реплицирована
+             *  2. Какой-то узел вернул больший терм и мы перешли в фолловера
+             *  3. Во время отправки запросов нам пришел запрос с большим термом
+             */
+            if (!IsStillLeader)
             {
-                _logger.Verbose("Стал Follower");
-                Persistence.UpdateState(greaterTerm, null);
                 return SubmitResponse<TResponse>.NotLeader;
             }
 
-            return ConsensusModule.Handle(command, token);
+            if (Persistence.ShouldCreateSnapshot())
+            {
+                _logger.Information("Создаю снапшот приложения");
+                var snapshot = _application.GetSnapshot();
+                Persistence.SaveSnapshot(snapshot, new LogEntryInfo(newEntry.Term, appended), token);
+            }
         }
 
-        /*
-         * Если мы вернулись, то это может значить 2 вещи:
-         *  1. Запись успешно реплицирована
-         *  2. Какой-то узел вернул больший терм и мы перешли в фолловера
-         *  3. Во время отправки запросов нам пришел запрос с большим термом
-         */
-        if (!IsStillLeader)
-        {
-            return SubmitResponse<TResponse>.NotLeader;
-        }
-
-        if (Persistence.ShouldCreateSnapshot())
-        {
-            _logger.Debug("Создаю снапшот");
-            var snapshot = _application.GetSnapshot();
-            Persistence.SaveSnapshot(snapshot, new LogEntryInfo(newEntry.Term, appended), token);
-        }
-
-        // Возвращаем результат
+        var response = _application.Apply(command);
         return SubmitResponse<TResponse>.Success(response, true);
     }
 
@@ -293,12 +282,13 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         }
         catch (ObjectDisposedException)
         {
-            greaterTerm = Term.Start;
+            greaterTerm = CurrentTerm;
             return false;
         }
 
         request.Wait(token);
-        return !request.TryGetGreaterTerm(out greaterTerm);
+        var hasGreaterTerm = request.TryGetGreaterTerm(out greaterTerm);
+        return !hasGreaterTerm;
     }
 
     /// <summary>

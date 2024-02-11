@@ -1,4 +1,3 @@
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 
 namespace TaskFlux.Consensus;
@@ -97,10 +96,18 @@ public interface IPersistence
 
     /// <summary>
     /// Прочитать из лога все закоммиченные команды, начиная с первой, включенной в снапшот.
-    /// Вызывается, когда 
+    /// Вызывается, когда необходимо создать новый снапшот 
     /// </summary>
     /// <returns>Перечисление закоммиченных команд, начиная с команды после снапшота до индекса коммита</returns>
     public IEnumerable<byte[]> ReadCommittedDeltaFromPreviousSnapshot();
+
+    /// <summary>
+    /// Прочитать из лога все команды, начиная с первой, включенной в снапшот.
+    /// Вызывается, когда инициализируется лидер для восстановления актуального состояния -
+    /// можно не учитывать индекс коммита, т.к. лидер свои записи не перетирает
+    /// </summary>
+    /// <returns>Перечисление команд, начиная с команды после снапшота</returns>
+    public IEnumerable<byte[]> ReadDeltaFromPreviousSnapshot();
 
     /// <summary>
     /// Создать объект для записи нового снапшота

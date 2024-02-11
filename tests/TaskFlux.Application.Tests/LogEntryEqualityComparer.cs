@@ -1,4 +1,4 @@
-using TaskFlux.Consensus.Persistence;
+using TaskFlux.Consensus;
 
 namespace TaskFlux.Application.Tests;
 

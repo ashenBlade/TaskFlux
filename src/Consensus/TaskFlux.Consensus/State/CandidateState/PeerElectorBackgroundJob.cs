@@ -1,9 +1,8 @@
 using Serilog;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 
-namespace TaskFlux.Consensus.State;
+namespace TaskFlux.Consensus.State.CandidateState;
 
 /// <summary>
 /// Фоновая задача для получения голоса у другого узла
