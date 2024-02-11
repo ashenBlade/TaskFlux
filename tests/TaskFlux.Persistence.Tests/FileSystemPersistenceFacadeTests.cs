@@ -21,7 +21,8 @@ public class FileSystemPersistenceFacadeTests : IDisposable
 
     private static SegmentedFileLogOptions TestSegmentedFileLogOptions => new(softLimit: long.MaxValue,
         hardLimit: long.MaxValue,
-        preallocateSegment: false);
+        preallocateSegment: false,
+        maxReadEntriesSize: long.MaxValue);
 
     private record MockDataFileSystem(
         IDirectoryInfo LogFile,

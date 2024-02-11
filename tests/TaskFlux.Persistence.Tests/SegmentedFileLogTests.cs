@@ -18,7 +18,8 @@ public class SegmentedFileLogTests : IDisposable
 
     private static SegmentedFileLogOptions TestOptions => new(softLimit: long.MaxValue,
         hardLimit: long.MaxValue,
-        preallocateSegment: false);
+        preallocateSegment: false,
+        maxReadEntriesSize: long.MaxValue);
 
     private record MockFiles(IDirectoryInfo LogDirectory, IDirectoryInfo DataDirectory);
 
@@ -342,7 +343,7 @@ public class SegmentedFileLogTests : IDisposable
         var (log, _) = CreateLog(start: startLsn,
             tailEntries: tailEntries,
             segmentEntries: segments,
-            options: new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true));
+            options: new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true, long.MaxValue));
         var lastIndex = startLsn + segmentSize * segmentsCount + tailSize;
         var expected = segments.SelectMany(s => s).Concat(tailEntries).Concat(toInsert);
 
@@ -386,7 +387,7 @@ public class SegmentedFileLogTests : IDisposable
         var (log, _) = CreateLog(start: startLsn,
             tailEntries: tailEntries,
             segmentEntries: segments,
-            options: new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true));
+            options: new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true, long.MaxValue));
         var insertIndex = startLsn + segmentSize * segmentsCount + tailSize / 2;
         var expected = segments.SelectMany(s => s)
                                .Concat(tailEntries.Take(tailSize / 2))
@@ -574,7 +575,7 @@ public class SegmentedFileLogTests : IDisposable
     {
         const long softLimit = 1024;       // 1Кб
         const long hardLimit = 1024 * 100; // Чтобы случайно не помешал
-        var options = new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true);
+        var options = new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true, long.MaxValue);
         // На всякий случай, сделаем побольше чуть-чуть
         var atLeastSizeBytes = softLimit + 10;
         var initialTailEntries = SegmentedFileLog.GenerateEntriesForSizeAtLeast(atLeastSizeBytes, 1);
@@ -595,7 +596,7 @@ public class SegmentedFileLogTests : IDisposable
     {
         const long softLimit = 1024;     // 1 Кб
         const long hardLimit = 1024 * 2; // 2 Кб
-        var options = new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true);
+        var options = new SegmentedFileLogOptions(softLimit, hardLimit, preallocateSegment: true, long.MaxValue);
         var initialTailEntries = SegmentedFileLog.GenerateEntriesForSizeAtLeast(hardLimit, 1);
         var (log, _) = CreateLog(0, initialTailEntries, options: options);
         var toInsert = Enumerable.Range(( int ) initialTailEntries[^1].Term.Value + 1, 10)
@@ -1207,6 +1208,44 @@ public class SegmentedFileLogTests : IDisposable
         var actual = log.ReadDataRange(startIndex, log.LastRecordIndex).ToList();
 
         Assert.Equal(expected.Select(e => e.Data), actual, ByteComparer);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 100, 0, 99)]
+    [InlineData(0, 0, 100, 0, 50)]
+    [InlineData(0, 0, 100, 10, 50)]
+    [InlineData(0, 1, 100, 0, 128 + 99)]
+    [InlineData(0, 1, 100, 13, 128 + 99)]
+    [InlineData(1, 0, 100, 1, 100)]
+    [InlineData(1, 1, 100, 1, 1 + 128 + 99)]
+    public void ReadDataRange__КогдаВыставленоОграничениеНаРазмерПрочитанныхЗаписей__ДолженВернутьОжидаемыеЗаписи(
+        int startLsn,
+        int segmentsCount,
+        int tailSize,
+        int startReadIndex,
+        int endReadIndex)
+    {
+        const int segmentSize = 128;
+        var tailEntries = Enumerable.Range(0, tailSize)
+                                    .Select(e => Entry(1, ( segmentSize * segmentsCount + e ).ToString()))
+                                    .ToArray();
+        var segments = Enumerable.Range(0, segmentsCount)
+                                 .Select(s => Enumerable.Range(0, segmentSize)
+                                                        .Select(e => Entry(1, ( segmentSize * s + e ).ToString()))
+                                                        .ToArray())
+                                 .ToArray();
+        var expected = segments.SelectMany(s => s)
+                               .Concat(tailEntries)
+                               .Skip(startReadIndex - startLsn)
+                               .Take(endReadIndex - startReadIndex + 1)
+                               .Select(e => e.Data);
+        var (log, _) = CreateLog(startLsn, tailEntries: tailEntries, segmentEntries: segments,
+            options: new SegmentedFileLogOptions(long.MaxValue, long.MaxValue, false,
+                16 /* 16 байт - точно достигнем, но оно не должно повлиять на кол-во прочитанных данных из лога */));
+
+        var actual = log.ReadDataRange(startReadIndex, endReadIndex);
+
+        Assert.Equal(expected, actual, ByteComparer);
     }
 
     private static readonly IEqualityComparer<byte[]> ByteComparer = new ByteArrayEqualityComparer();
@@ -2222,6 +2261,52 @@ public class SegmentedFileLogTests : IDisposable
     }
 
     [Fact]
+    public void TryGetFrom__КогдаРазмерХранящихсяЗаписейПревышаетПредел__ДолженВернутьСтолькоЧтобыНеПревышатьПредел()
+    {
+        const int maxSize = 1024;
+        var options = new SegmentedFileLogOptions(softLimit: long.MaxValue,
+            hardLimit: long.MaxValue,
+            preallocateSegment: false,
+            maxReadEntriesSize: maxSize);
+
+        var tailEntries = new List<LogEntry>();
+        var currentSize = 0L;
+        var term = new Term(1);
+        var random = new Random(42);
+        while (currentSize < maxSize)
+        {
+            var payload = CreateRandomBuffer();
+            var entry = new LogEntry(term, payload);
+            currentSize += entry.CalculateRecordSize();
+            tailEntries.Add(entry);
+            term = term.Increment();
+        }
+
+        var expected = new LogEntry[tailEntries.Count];
+        tailEntries.CopyTo(expected);
+
+        // Еще наделаем данных, чтобы точно превысили предел
+        tailEntries.AddRange(Enumerable.Range(0, 10).Select(_ => new LogEntry(term, CreateRandomBuffer())));
+        var (log, _) = CreateLog(0,
+            options: options,
+            tailEntries: tailEntries);
+
+        var success = log.TryGetFrom(0, out var actual, out _);
+
+        Assert.True(success);
+        Assert.Equal(expected, actual, Comparer);
+
+        return;
+
+        byte[] CreateRandomBuffer()
+        {
+            var payload = new byte[random.Next(0, 32)];
+            random.NextBytes(payload);
+            return payload;
+        }
+    }
+
+    [Fact]
     public void Инициализация__КогдаДиректорияПуста__ДолженСоздатьПустойХвост()
     {
         var fs = Helpers.CreateFileSystem();
@@ -2481,7 +2566,7 @@ public class SegmentedFileLogTests : IDisposable
     {
         var fs = Helpers.CreateFileSystem();
         var firstLogFile = new SegmentFileName(0);
-        var options = new SegmentedFileLogOptions(softLimit, softLimit * 2, preallocateSegment: true);
+        var options = new SegmentedFileLogOptions(softLimit, softLimit * 2, preallocateSegment: true, long.MaxValue);
         _ = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, options);
 
         var fileInfo = fs.Log.GetFiles().Single(f => f.Name == firstLogFile.GetFileName());
@@ -2498,7 +2583,7 @@ public class SegmentedFileLogTests : IDisposable
     {
         var fs = Helpers.CreateFileSystem();
         var firstLogFile = new SegmentFileName(0);
-        var options = new SegmentedFileLogOptions(hardLimit / 2, hardLimit, true);
+        var options = new SegmentedFileLogOptions(hardLimit / 2, hardLimit, true, long.MaxValue);
         _ = SegmentedFileLog.Initialize(fs.DataDirectory, Logger.None, options);
 
         var fileInfo = fs.Log.GetFiles().Single(f => f.Name == firstLogFile.GetFileName());

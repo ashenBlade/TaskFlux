@@ -1,3 +1,5 @@
+using TaskFlux.Consensus;
+
 namespace TaskFlux.Persistence.Log;
 
 public class SegmentedFileLogOptions
@@ -7,7 +9,7 @@ public class SegmentedFileLogOptions
 
     public static SegmentedFileLogOptions Default => new();
 
-    public SegmentedFileLogOptions(long softLimit, long hardLimit, bool preallocateSegment)
+    public SegmentedFileLogOptions(long softLimit, long hardLimit, bool preallocateSegment, long maxReadEntriesSize)
     {
         if (hardLimit < softLimit)
         {
@@ -15,9 +17,28 @@ public class SegmentedFileLogOptions
                 "Жесткий предел размера файла лога не может быть меньше мягкого предела");
         }
 
+        if (softLimit < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(softLimit), softLimit,
+                "Мягкий предел не может быть отрицательным");
+        }
+
+        if (hardLimit < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(hardLimit), hardLimit,
+                "Жесткий предел не может быть отрицательным");
+        }
+
+        if (maxReadEntriesSize < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxReadEntriesSize), maxReadEntriesSize,
+                "Максимальный размер прочитанных записей из лога не может быть отрицательным");
+        }
+
         LogFileSoftLimit = softLimit;
         LogFileHardLimit = hardLimit;
         PreallocateSegment = preallocateSegment;
+        MaxReadEntriesSize = maxReadEntriesSize;
     }
 
     public SegmentedFileLogOptions()
@@ -45,4 +66,10 @@ public class SegmentedFileLogOptions
     /// Жесткий предел размера сегмента лога
     /// </summary>
     public long LogFileHardLimit { get; }
+
+    /// <summary>
+    /// Максимальный размер данных, прочитанных из лога за раз при использовании метода <see cref="IPersistence.TryGetFrom"/>.
+    /// Используется чтобы не выделять слишком большой участок памяти за раз.
+    /// </summary>
+    public long MaxReadEntriesSize { get; }
 }

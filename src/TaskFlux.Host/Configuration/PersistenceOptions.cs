@@ -23,6 +23,11 @@ public class PersistenceOptions
     public const int DefaultSnapshotCreationSegmentsThreshold = 5;
     public int SnapshotCreationSegmentsThreshold { get; set; } = DefaultSnapshotCreationSegmentsThreshold;
 
+    public const long DefaultReplicationMaxSendSize = 1024 * 1024; /* 1 Мб */
+
+    [Range(0, long.MaxValue, ErrorMessage = "Максимальный размер отправляемых записей должен быть положительным")]
+    public long ReplicationMaxSendSize { get; set; }
+
     public static PersistenceOptions FromConfiguration(IConfiguration configuration)
     {
         return new PersistenceOptions()
@@ -32,6 +37,8 @@ public class PersistenceOptions
             LogFileHardLimit = configuration.GetValue(nameof(LogFileHardLimit), DefaultLogFileHardLimit),
             SnapshotCreationSegmentsThreshold = configuration.GetValue(nameof(SnapshotCreationSegmentsThreshold),
                 DefaultSnapshotCreationSegmentsThreshold),
+            ReplicationMaxSendSize =
+                configuration.GetValue(nameof(ReplicationMaxSendSize), DefaultReplicationMaxSendSize),
         };
     }
 }

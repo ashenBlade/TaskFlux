@@ -48,6 +48,12 @@ public class SegmentedFileLog : IDisposable
     private const long DataStartPosition = HeaderSizeBytes;
 
     /// <summary>
+    /// Константа, используемая во время чтения данных из сегментов, для уведомления,
+    /// что размер прочитанных данных проверять не надо.
+    /// </summary>
+    private const long NoSizeCheck = -1;
+
+    /// <summary>
     /// Лок для разделения доступов для записи/чтения лога.
     /// </summary>
     private readonly ReaderWriterLockSlim _lock = new();
@@ -377,11 +383,17 @@ public class SegmentedFileLog : IDisposable
         /// <summary>
         /// Прочитать из лога все записи в указанном диапазоне
         /// </summary>
-        /// <param name="start"></param>
-        /// <param name="end"></param>
-        /// <returns></returns>
-        public IReadOnlyList<LogEntry> ReadRange(Lsn start, Lsn end)
+        /// <param name="start">Начальный индекс записи включительно</param>
+        /// <param name="end">Последний индекс записи включительно</param>
+        /// <param name="allowSize">Допустимый размер занимаемых записей</param>
+        /// <param name="written">Размер записанных данных</param>
+        /// <returns>Список прочитанных записей</returns>
+        public IReadOnlyList<LogEntry> ReadRange(Lsn start, Lsn end, in long allowSize, out long written)
         {
+            Debug.Assert(allowSize is > 0 or NoSizeCheck, "allowSize is > 0 or NoSizeCheck",
+                "Разрешенный размер прочитанных записей должен быть положительным либо равен NoSizeCheck константе - переданный равен {0}",
+                allowSize);
+
             var localStart = ( int ) ( start - LogStartIndex );
             var localEnd = ( int ) ( end - LogStartIndex );
 
@@ -397,6 +409,8 @@ public class SegmentedFileLog : IDisposable
 
             var count = localEnd - localStart + 1;
             var entries = new List<LogEntry>(count);
+            var leftSize = allowSize;
+            var shouldCheckSize = allowSize != NoSizeCheck;
             if (WriteStreamData is not null)
             {
                 // Хвост - данные находятся в индексе
@@ -406,6 +420,14 @@ public class SegmentedFileLog : IDisposable
                     var entry = new LogEntry(record.Term, record.Payload);
                     entry.SetCheckSum(record.CheckSum);
                     entries.Add(entry);
+                    if (shouldCheckSize)
+                    {
+                        leftSize -= entry.CalculateRecordSize();
+                        if (leftSize <= 0)
+                        {
+                            break;
+                        }
+                    }
                 }
             }
             else
@@ -422,9 +444,21 @@ public class SegmentedFileLog : IDisposable
                     var entry = new LogEntry(record.Term, payload);
                     entry.SetCheckSum(record.CheckSum);
                     entries.Add(entry);
+
+                    if (shouldCheckSize)
+                    {
+                        leftSize -= entry.CalculateRecordSize();
+                        if (leftSize <= 0)
+                        {
+                            break;
+                        }
+                    }
                 }
             }
 
+            written = shouldCheckSize
+                          ? allowSize - leftSize
+                          : -1;
             return entries;
         }
 
@@ -432,24 +466,27 @@ public class SegmentedFileLog : IDisposable
         /// Прочитать все записи, начиная с указанного индекса
         /// </summary>
         /// <param name="start">Индекс, начиная с которого необходимо начинать чтение включительно. Индекс глобальный</param>
+        /// <param name="allowSize">Допустимый размер занимаемых записей</param>
+        /// <param name="written">Размер записанных данных</param>
         /// <returns>Хранившиеся записи, начиная с указанной позиции</returns>
-        public IReadOnlyList<LogEntry> ReadFrom(Lsn start)
+        public IReadOnlyList<LogEntry> ReadFrom(Lsn start, in long allowSize, out long written)
         {
-            return ReadRange(start, LastRecordIndex);
+            return ReadRange(start, LastRecordIndex, allowSize, out written);
         }
 
         /// <summary>
         /// Прочитать все записи из сегмента
         /// </summary>
         /// <returns></returns>
-        public IReadOnlyList<LogEntry> ReadAll()
+        public IReadOnlyList<LogEntry> ReadAll(long allowSize, out long written)
         {
             if (Records.Count == 0)
             {
+                written = 0;
                 return Array.Empty<LogEntry>();
             }
 
-            return ReadRange(LogStartIndex, LastRecordIndex);
+            return ReadRange(LogStartIndex, LastRecordIndex, allowSize, out written);
         }
 
         private static LogSegment InitializeCore(IFileInfo fileInfo,
@@ -1034,7 +1071,7 @@ public class SegmentedFileLog : IDisposable
 
         SegmentedFileLogOptions GetOptions()
         {
-            return options ?? new SegmentedFileLogOptions(1024, 1024 * 2, false);
+            return options ?? new SegmentedFileLogOptions(long.MaxValue, long.MaxValue, false, long.MaxValue);
         }
     }
 
@@ -1168,7 +1205,7 @@ public class SegmentedFileLog : IDisposable
         return _sealed.Append(_tail)
                       .Aggregate(new List<LogEntry>(), (list, segment) =>
                        {
-                           list.AddRange(segment.ReadAll());
+                           list.AddRange(segment.ReadAll(long.MaxValue, out _));
                            return list;
                        });
     }
@@ -1186,6 +1223,8 @@ public class SegmentedFileLog : IDisposable
     /// <returns><c>true</c> - записи успешно прочитаны <c>false</c> - указан индекс до первой записи</returns>
     public bool TryGetFrom(Lsn index, out IReadOnlyList<LogEntry> entries, out LogEntryInfo prevLogEntry)
     {
+        // TODO: сюда добавить ограничение на размер
+
         // Индекс указывает на уже удаленный сегмент
         if (index < StartIndex)
         {
@@ -1267,7 +1306,7 @@ public class SegmentedFileLog : IDisposable
 
         if (_tail.LogStartIndex <= index)
         {
-            entries = _tail.ReadFrom(index);
+            entries = _tail.ReadFrom(index, _options.MaxReadEntriesSize, out _);
             return true;
         }
 
@@ -1282,25 +1321,40 @@ public class SegmentedFileLog : IDisposable
 
         // Находим индекс, в котором содержатся записи 
         var segmentIndex = 0;
+        var leftSize = _options.MaxReadEntriesSize;
         for (; segmentIndex < _sealed.Count; segmentIndex++)
         {
             var segment = _sealed[segmentIndex];
             if (segment.Contains(index))
             {
-                result.AddRange(segment.ReadFrom(index));
+                result.AddRange(segment.ReadFrom(index, leftSize, out var written));
+                leftSize -= written;
                 segmentIndex++;
                 break;
             }
+        }
+
+        if (leftSize <= 0)
+        {
+            entries = result;
+            return true;
         }
 
         // Полностью читаем все записи из оставшихся сегментов
         for (; segmentIndex < _sealed.Count; segmentIndex++)
         {
             var segment = _sealed[segmentIndex];
-            result.AddRange(segment.ReadAll());
+            var read = segment.ReadAll(leftSize, out var written);
+            Debug.Assert(read.Count > 0, "read.Count > 0", "Закрытый сегмент не может быть пустым");
+            result.AddRange(read);
+            leftSize -= written;
         }
 
-        result.AddRange(_tail.ReadAll());
+        if (0 < leftSize && 0 < _tail.Count)
+        {
+            result.AddRange(_tail.ReadAll(leftSize, out _));
+        }
+
         entries = result;
         return true;
     }
@@ -1610,7 +1664,7 @@ public class SegmentedFileLog : IDisposable
 
     internal IReadOnlyList<LogEntry> ReadTailTest()
     {
-        return _tail.ReadAll();
+        return _tail.ReadAll(long.MaxValue, out _);
     }
 
     /// <summary>
@@ -1641,9 +1695,19 @@ public class SegmentedFileLog : IDisposable
                 "Указанный индекс начала диапазона выходит за пределы лога");
         }
 
+        /*
+         * Замечание: проверять ограничение на размер прочитанных данных здесь не нужно (пока)
+         *
+         * Этот метод используется для восстановления состояния приложения - чтение хранящихся команд в сегментах.
+         * Во время чтения сегментов МОЖЕТ возникнуть ситуация когда весь 64+ Мб файл будет прочитан и будет висеть в памяти (до GC).
+         * Этот вариант я пока допускаю, т.к. восстановление состояния будет происходить не так часто.
+         * Поэтому ограничение на размер не проверяется, но в будущем (возможно) такую фичу добавлю.
+         * Далее, все ограничения на размер прочитанных записей снимаются.
+         */
+
         if (_tail.Contains(start))
         {
-            foreach (var data in _tail.ReadRange(start, end).Select(x => x.Data))
+            foreach (var data in _tail.ReadRange(start, end, NoSizeCheck, out var _).Select(x => x.Data))
             {
                 yield return data;
             }
@@ -1677,18 +1741,17 @@ public class SegmentedFileLog : IDisposable
              */
             IReadOnlyList<LogEntry> entries;
             var shouldStop = false;
-
             if (start <= segment.LogStartIndex)
             {
                 if (segment.LastRecordIndex <= end)
                 {
                     // Весь сегмент
-                    entries = segment.ReadAll();
+                    entries = segment.ReadAll(NoSizeCheck, out var _);
                 }
                 else
                 {
                     // Начало сегмента
-                    entries = segment.ReadRange(segment.LogStartIndex, end);
+                    entries = segment.ReadRange(segment.LogStartIndex, end, NoSizeCheck, out var _);
                     shouldStop = true;
                 }
             }
@@ -1697,12 +1760,12 @@ public class SegmentedFileLog : IDisposable
                 if (segment.LastRecordIndex <= end)
                 {
                     // Последняя часть сегмента 
-                    entries = segment.ReadRange(start, segment.LastRecordIndex);
+                    entries = segment.ReadRange(start, segment.LastRecordIndex, NoSizeCheck, out var _);
                 }
                 else
                 {
                     // Внутренняя часть сегмента
-                    entries = segment.ReadRange(start, end);
+                    entries = segment.ReadRange(start, end, NoSizeCheck, out var _);
                     shouldStop = true;
                 }
             }
@@ -1728,7 +1791,7 @@ public class SegmentedFileLog : IDisposable
         return _sealed.Append(_tail)
                       .Aggregate(new List<LogEntry>(), (entries, segment) =>
                        {
-                           entries.AddRange(segment.ReadAll());
+                           entries.AddRange(segment.ReadAll(long.MaxValue, out _));
                            return entries;
                        });
     }

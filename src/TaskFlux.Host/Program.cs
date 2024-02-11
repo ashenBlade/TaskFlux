@@ -152,7 +152,8 @@ FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
         snapshotCreationSegmentsThreshold: options.SnapshotCreationSegmentsThreshold);
     var logOptions = new SegmentedFileLogOptions(softLimit: options.LogFileSoftLimit,
         hardLimit: options.LogFileHardLimit,
-        preallocateSegment: true);
+        preallocateSegment: true,
+        maxReadEntriesSize: options.ReplicationMaxSendSize);
     return FileSystemPersistenceFacade.Initialize(dataDirectory: dataDirectoryInfo,
         logger: Log.ForContext<FileSystemPersistenceFacade>(),
         snapshotOptions: snapshotOptions,

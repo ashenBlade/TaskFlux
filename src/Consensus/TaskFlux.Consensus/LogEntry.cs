@@ -29,4 +29,16 @@ public record LogEntry(Term Term, byte[] Data)
              + sizeof(int)  // Длина данных
              + Data.Length; // Сами данные
     }
+
+    /// <summary>
+    /// Рассчитать размер самой записи, без учета вспомогательных полей.
+    /// Используется для учета размера при чтении
+    /// </summary>
+    /// <returns>Занимаемый записью размер в байтах</returns>
+    public long CalculateRecordSize()
+    {
+        return sizeof(long) // Терм
+             + sizeof(int)  // Размер данных
+             + Data.Length; // Сами данные
+    }
 }
