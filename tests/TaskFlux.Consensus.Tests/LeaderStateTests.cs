@@ -973,8 +973,6 @@ public class LeaderStateTests
         applicationMock.Verify(a => a.Apply(It.Is<int>(i => i == command)), Times.Once());
     }
 
-    // TODO: тесты на создание снапшота (ShouldCreateSnasphot())
-
     [Fact]
     public void
         SubmitRequest__КогдаДругойУзелОтветилБольшимТермомВоВремяРепликации__ДолженВернутьЧтоПересталБытьЛидеромВОтвете()

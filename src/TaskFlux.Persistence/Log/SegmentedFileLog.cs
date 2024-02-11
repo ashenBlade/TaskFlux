@@ -1223,8 +1223,6 @@ public class SegmentedFileLog : IDisposable
     /// <returns><c>true</c> - записи успешно прочитаны <c>false</c> - указан индекс до первой записи</returns>
     public bool TryGetFrom(Lsn index, out IReadOnlyList<LogEntry> entries, out LogEntryInfo prevLogEntry)
     {
-        // TODO: сюда добавить ограничение на размер
-
         // Индекс указывает на уже удаленный сегмент
         if (index < StartIndex)
         {
@@ -1977,7 +1975,6 @@ public class SegmentedFileLog : IDisposable
         return entries;
     }
 
-    // TODO: при создании файлов сразу выделять softLimit байт размера
     /// <summary>
     /// Удалить все сегменты, покрываемые указанным индексом.
     /// Возможно:

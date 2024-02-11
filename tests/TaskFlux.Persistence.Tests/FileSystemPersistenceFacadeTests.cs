@@ -238,7 +238,6 @@ public class FileSystemPersistenceFacadeTests : IDisposable
         Assert.Equal(expected, actual);
     }
 
-    // TODO: тесты на то, что LastEntry обновляется
     private static LogEntry RandomDataEntry(Term term)
     {
         var buffer = new byte[Random.Shared.Next(0, 32)];
