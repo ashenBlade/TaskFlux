@@ -1,8 +1,6 @@
-using TaskFlux.Application;
-
 namespace TaskFlux.Host.Infrastructure;
 
-public class HostApplicationLifetime : IApplicationLifetime
+public class HostApplicationLifetime : Application.IApplicationLifetime
 {
     private readonly TaskCompletionSource<ExitCode> _lifetime = new();
     private readonly CancellationTokenSource _cts = new();

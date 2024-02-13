@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using Serilog;
 using TaskFlux.Application.Cluster.Network;
+using TaskFlux.Application.Cluster.Network.Exceptions;
 using TaskFlux.Application.Cluster.Network.Packets;
 using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster.Network.Exceptions;

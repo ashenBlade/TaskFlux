@@ -1,7 +1,7 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using TaskFlux.Application.Cluster.Network.Exceptions;
 using TaskFlux.Application.Cluster.Network.Packets;
-using TaskFlux.Consensus.Cluster.Network.Exceptions;
 
 namespace TaskFlux.Application.Cluster.Network;
 

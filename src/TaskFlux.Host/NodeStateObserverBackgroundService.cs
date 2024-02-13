@@ -1,8 +1,7 @@
-using Microsoft.Extensions.Hosting;
-using Serilog;
 using TaskFlux.Consensus;
 using TaskFlux.Core.Commands;
 using TaskFlux.Persistence;
+using ILogger = Serilog.ILogger;
 
 namespace TaskFlux.Host;
 
