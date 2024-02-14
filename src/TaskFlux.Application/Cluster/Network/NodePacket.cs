@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using TaskFlux.Application.Cluster.Network.Exceptions;
 using TaskFlux.Application.Cluster.Network.Packets;
@@ -23,12 +24,34 @@ public abstract class NodePacket
         try
         {
             SerializeBuffer(buffer.AsSpan(0, estimatedSize));
-            await stream.WriteAsync(buffer.AsMemory(0, estimatedSize), token);
+            var watch = Stopwatch.StartNew();
+            try
+            {
+                await SendPayloadAsync(stream, buffer.AsMemory(0, estimatedSize), token);
+                Metrics.RpcSentBytes.Add(estimatedSize);
+            }
+            finally
+            {
+                watch.Stop();
+                Metrics.RpcDuration.Record(watch.ElapsedMilliseconds);
+            }
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    private async Task SendPayloadAsync(Stream stream, Memory<byte> payload, CancellationToken token)
+    {
+        await stream.WriteAsync(payload, token);
+        await stream.FlushAsync(token);
+    }
+
+    private void SendPayload(Stream stream, Span<byte> payload)
+    {
+        stream.Write(payload);
+        stream.Flush();
     }
 
     public void Serialize(Stream stream)
@@ -39,7 +62,17 @@ public abstract class NodePacket
         {
             var span = buffer.AsSpan(0, estimatedSize);
             SerializeBuffer(span);
-            stream.Write(span);
+            var watch = Stopwatch.StartNew();
+            try
+            {
+                SendPayload(stream, span);
+                Metrics.RpcSentBytes.Add(estimatedSize);
+            }
+            finally
+            {
+                watch.Stop();
+                Metrics.RpcDuration.Record(watch.ElapsedMilliseconds);
+            }
         }
         finally
         {

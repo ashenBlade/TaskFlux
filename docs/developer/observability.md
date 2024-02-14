@@ -10,7 +10,7 @@ title: "Observability"
 
 Какие метрики приложение имеет:
 
-Пользовательские запросы:
+Поль зовательские запросы:
 
 - `taskflux_requests_accepted_total` - Принято запросов всего
 - `taskflux_requests_processed_total` - Обработано запросов всего
@@ -18,18 +18,16 @@ title: "Observability"
 - `taskflux_clients_disconnected_total` - Общее количество отключенных пользователей
 - `taskflux_commands_processed_total` - Общее количество обработанных команд
 - `taskflux_command_queue_length` - Размер очереди запросов
-- `taskflux_commands_in_process` - Количество команд, находящихся в обработке в текущий момент
 
 Рафт:
 
 - `taskflux_rpc_duration` - Скорость отправки RPC запросов
 - `taskflux_rpc_sent_bytes_total` - Общее количество отправленных байтов
-- `taskflux_rpc_received_bytes_total` - Общее количество принятых байтов
 - `taskflux_raft_uncommitted_entries_count` - Количество незакоммиченных записей
 - `taskflux_raft_log_segments_count` - Количество файлов сегментов
 - `taskflux_raft_term_total` - текущий терм узла
 - `taskflux_raft_snapshot_index` - индекс записи в снапшоте
-- `taskflux_raft_log_last_written_index` - индекс последней команды в логе
+- `taskflux_raft_log_last_index` - индекс последней команды в логе
 - `taskflux_raft_log_commit_index` - индекс закоммиченной команды
 - `taskflux_fsync_duration` - Время выполнения `fsync`/`FileStream.Flush(true)`
 

@@ -235,7 +235,7 @@ public class SegmentedFileLog : IDisposable
             writer.Write(EndOfDataRecordMarker);
 
             bufferedStream.Flush();
-            fileStream.Flush(true);
+            fileStream.Fsync();
 
             // Обновляем индекс
             Records.RemoveRange(( int ) localIndex, ( int ) ( Records.Count - localIndex ));
@@ -268,7 +268,7 @@ public class SegmentedFileLog : IDisposable
             writer.Write(EndOfDataRecordMarker);
 
             bufferedStream.Flush();
-            fileStream.Flush(true);
+            fileStream.Fsync();
 
             Records.Add(new LogRecord(entry.Term, entry.GetCheckSum(), entry.Data, entry.Data.Length,
                 savedAppendPosition));
@@ -375,7 +375,7 @@ public class SegmentedFileLog : IDisposable
             writer.Write(EndOfDataRecordMarker);
 
             bufferedStream.Flush();
-            fileStream.Flush(true);
+            fileStream.Fsync();
 
             return appended;
         }
@@ -518,7 +518,7 @@ public class SegmentedFileLog : IDisposable
                 headerWriter.Write(EndOfDataRecordMarker);
 
                 file.Write(headerSpan);
-                file.Flush(true);
+                file.Fsync();
                 if (readOnly)
                 {
                     file.Dispose();
@@ -570,7 +570,7 @@ public class SegmentedFileLog : IDisposable
                     writer.Write(EndOfDataRecordMarker);
 
                     file.Write(span);
-                    file.Flush(true);
+                    file.Fsync();
 
                     if (readOnly)
                     {
@@ -701,7 +701,7 @@ public class SegmentedFileLog : IDisposable
                 Span<byte> s = stackalloc byte[sizeof(int)];
                 new SpanBinaryWriter(s).Write(EndOfDataRecordMarker);
                 file.Write(s);
-                file.Flush(true);
+                file.Fsync();
             }
 
             if (readOnly)
@@ -856,7 +856,7 @@ public class SegmentedFileLog : IDisposable
             if (WriteStreamData is var (s, b))
             {
                 b.Flush();
-                s.Flush(true);
+                s.Fsync();
                 s.Close();
 
                 WriteStreamData = null;
@@ -1943,7 +1943,7 @@ public class SegmentedFileLog : IDisposable
     /// <summary>
     /// Получить общее кол-во сегментов лога
     /// </summary>
-    internal int GetSegmentsCountTest()
+    internal int GetSegmentsCount()
     {
         return _sealed.Count + 1;
     }
@@ -2072,5 +2072,31 @@ public class SegmentedFileLog : IDisposable
         names.AddRange(_sealed.Select(s => s.FileName));
         names.Add(_tail.FileName);
         return names;
+    }
+
+    /// <summary>
+    /// Подсчитать размер всех сегментов лога в байтах.
+    /// Используется для метрик
+    /// </summary>
+    /// <returns>Суммарный размер всех сегментов лога</returns>
+    internal long CalculateLogSegmentsTotalSize()
+    {
+        using var _ = BeginReadLock();
+
+        var resultSize = _sealed.Sum(static s => GetFileSizeSafe(s.File));
+        resultSize += GetFileSizeSafe(_tail.File);
+        return resultSize;
+
+        static long GetFileSizeSafe(IFileInfo fi)
+        {
+            try
+            {
+                return fi.Length;
+            }
+            catch (IOException)
+            {
+                return 0;
+            }
+        }
     }
 }

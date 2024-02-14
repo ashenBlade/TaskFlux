@@ -8,6 +8,7 @@ services:
     hostname: 'tflux.0'
     ports:
       - '8080:2602'
+      - '9090:1606'
     environment:
       TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000 tflux.1:5000 tflux.2:5000'
       TASKFLUX_CLUSTER_NODE_ID: 0
@@ -30,6 +31,7 @@ services:
     hostname: 'tflux.1'
     ports:
       - '8081:2602'
+      - '9091:1606'
     environment:
       TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000 tflux.1:5000 tflux.2:5000'
       TASKFLUX_CLUSTER_NODE_ID: 1
@@ -52,6 +54,7 @@ services:
     hostname: 'tflux.2'
     ports:
       - '8082:2602'
+      - '9092:1606'
     environment:
       TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000 tflux.1:5000 tflux.2:5000'
       TASKFLUX_CLUSTER_NODE_ID: 2

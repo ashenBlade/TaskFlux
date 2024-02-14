@@ -303,7 +303,7 @@ public class SnapshotFile
             _temporarySnapshotFileStream.Seek(LengthPosition, SeekOrigin.Begin);
             writer.Write(_length);
 
-            _temporarySnapshotFileStream.Flush(true);
+            _temporarySnapshotFileStream.Fsync();
             _temporarySnapshotFileStream.Close();
             _temporarySnapshotFileStream.Dispose();
 
@@ -528,6 +528,28 @@ public class SnapshotFile
             }
 
             return memory.ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Получить размер файла снапшота в байтах.
+    /// Используется для метрик
+    /// </summary>
+    /// <returns>Размер файла снапшота в байтах</returns>
+    internal long CalculateSnapshotFileSize()
+    {
+        if (!_snapshotFile.Exists)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return _snapshotFile.Length;
+        }
+        catch (IOException)
+        {
+            return 0;
         }
     }
 }

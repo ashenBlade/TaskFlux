@@ -587,7 +587,7 @@ public class SegmentedFileLogTests : IDisposable
 
         log.InsertRangeOverwrite(toInsert, log.LastRecordIndex + 1);
 
-        Assert.Equal(2, log.GetSegmentsCountTest());
+        Assert.Equal(2, log.GetSegmentsCount());
         Assert.Equal(toInsert, log.ReadTailTest());
     }
 
@@ -607,7 +607,7 @@ public class SegmentedFileLogTests : IDisposable
 
         log.InsertRangeOverwrite(toInsert, log.LastRecordIndex + 1);
 
-        Assert.Equal(2, log.GetSegmentsCountTest());
+        Assert.Equal(2, log.GetSegmentsCount());
         Assert.Equal(toInsert, log.ReadTailTest());
     }
 
@@ -779,7 +779,7 @@ public class SegmentedFileLogTests : IDisposable
 
         log.InsertRangeOverwrite(toInsert, insertIndex);
 
-        var segmentsCount = log.GetSegmentsCountTest();
+        var segmentsCount = log.GetSegmentsCount();
         Assert.Equal(1, segmentsCount);
         fs.LogDirectory.Refresh();
         var segmentFiles = fs.LogDirectory.GetFiles();
@@ -1288,7 +1288,7 @@ public class SegmentedFileLogTests : IDisposable
 
         facade.DeleteCoveredSegmentsUntil(startSegmentIndex);
 
-        Assert.Equal(1, facade.GetSegmentsCountTest());
+        Assert.Equal(1, facade.GetSegmentsCount());
     }
 
     [Fact]
@@ -1313,7 +1313,7 @@ public class SegmentedFileLogTests : IDisposable
 
         facade.DeleteCoveredSegmentsUntil(startSegmentIndex);
 
-        Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCountTest());
+        Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCount());
     }
 
     [Fact]
@@ -1337,7 +1337,7 @@ public class SegmentedFileLogTests : IDisposable
 
         facade.DeleteCoveredSegmentsUntil(startSegmentIndex);
 
-        Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCountTest());
+        Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCount());
     }
 
     [Fact]
@@ -1384,7 +1384,7 @@ public class SegmentedFileLogTests : IDisposable
 
         facade.DeleteCoveredSegmentsUntil(deleteIndex);
 
-        Assert.Equal(1, facade.GetSegmentsCountTest());
+        Assert.Equal(1, facade.GetSegmentsCount());
         Assert.Empty(facade.ReadAllTest());
     }
 
@@ -1433,7 +1433,7 @@ public class SegmentedFileLogTests : IDisposable
 
         facade.DeleteCoveredSegmentsUntil(deleteIndex);
 
-        Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCountTest());
+        Assert.Equal(expectedSegmentsCount, facade.GetSegmentsCount());
     }
 
     [Theory]

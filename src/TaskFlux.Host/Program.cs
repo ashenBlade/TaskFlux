@@ -1,8 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.IO.Abstractions;
-using System.Net;
 using System.Runtime.InteropServices;
-using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Serilog;
 using Serilog.Core;
 using TaskFlux.Application;
@@ -79,19 +77,12 @@ try
 
     var peers = ExtractPeers(options.Cluster, nodeId, options.Network);
 
-    using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(options.Cluster.ClusterPeers.Length,
-        options.Cluster.ClusterNodeId,
-        Log.ForContext("SourceContext", "BackgroundJobQueue"), lifetime);
+    using var jobQueue = CreateJobQueue(options, lifetime);
     using var consensusModule = CreateRaftConsensusModule(nodeId, peers, persistence, jobQueue);
-    using var requestAcceptor =
-        new ExclusiveRequestAcceptor(consensusModule, lifetime, Log.ForContext("SourceContext", "RequestAcceptor"));
-    using var connectionManager = new NodeConnectionManager(options.Cluster.ClusterListenHost,
-        options.Cluster.ClusterListenPort,
-        consensusModule, options.Network.ClientRequestTimeout,
-        lifetime, Log.ForContext<NodeConnectionManager>());
-
-    var taskFluxHostedService = new TaskFluxNodeHostedService(consensusModule, requestAcceptor, jobQueue,
-        connectionManager, Log.ForContext<TaskFluxNodeHostedService>());
+    using var requestAcceptor = CreateRequestAcceptor(consensusModule, lifetime);
+    using var connectionManager = CreateClusterNodeConnectionManager(options, consensusModule, lifetime);
+    var taskFluxHostedService =
+        CreateTaskFluxHostedService(consensusModule, requestAcceptor, jobQueue, connectionManager);
 
     try
     {
@@ -110,86 +101,34 @@ try
     {
         return new HostBuilder()
               .UseSerilog()
-              .ConfigureHostConfiguration(builder =>
-                   builder.AddEnvironmentVariables("DOTNET_")
-                          .AddCommandLine(args))
-              .ConfigureAppConfiguration(builder =>
-                   builder.AddEnvironmentVariables()
-                          .AddCommandLine(args))
+              .ConfigureHostConfiguration(host =>
+                   host.AddEnvironmentVariables("DOTNET_")
+                       .AddCommandLine(args))
+              .ConfigureAppConfiguration(app =>
+                   app.AddEnvironmentVariables()
+                      .AddCommandLine(args))
               .ConfigureWebHost(web =>
                {
+                   web.ConfigureTaskFluxKestrel(options.Http);
                    web.Configure(app =>
                    {
                        app.UseRouting();
                        app.UseEndpoints(ep =>
                        {
+                           ep.MapPrometheusScrapingEndpoint("/metrics");
                            ep.MapControllers();
                        });
                    });
                    web.UseKestrel();
                })
-               // Настройка kestrel
-              .ConfigureServices(sp =>
-               {
-                   sp.Configure<KestrelServerOptions>(kestrel =>
-                   {
-                       if (!string.IsNullOrWhiteSpace(options.Http.HttpListenAddress))
-                       {
-                           const int defaultHttpPort = 1606;
-                           var address = options.Http.HttpListenAddress;
-                           var addressesToBind = new List<IPEndPoint>();
-                           if (IPEndPoint.TryParse(address, out var ipEndPoint))
-                           {
-                               if (ipEndPoint.Port == 0)
-                               {
-                                   // Скорее всего 0 означает, что порт не был указан
-                                   Log.Information("Порт для HTTP запросов не указан. Выставляю в {DefaultHttpPort}",
-                                       defaultHttpPort);
-                                   ipEndPoint.Port = defaultHttpPort;
-                               }
-
-                               addressesToBind.Add(ipEndPoint);
-                           }
-                           else
-                           {
-                               // Если адрес - не IP, то парсим как DNS хост
-                               var parts = address.Split(':');
-                               int port;
-                               if (parts.Length != 1)
-                               {
-                                   Log.Information("Порт для HTTP запросов не указан. Выставляю в {DefaultHttpPort}",
-                                       defaultHttpPort);
-                                   port = int.Parse(parts[1]);
-                               }
-                               else
-                               {
-                                   port = defaultHttpPort;
-                               }
-
-                               var hostNameOrAddress = parts[0];
-                               Log.Debug("Ищу IP адреса для хоста {HostName}", hostNameOrAddress);
-                               var addresses = Dns.GetHostAddresses(hostNameOrAddress);
-                               Log.Debug("Найденные адреса для хоста: {IPAddresses}", addresses);
-                               foreach (var ip in addresses)
-                               {
-                                   addressesToBind.Add(new IPEndPoint(ip, port));
-                               }
-                           }
-
-                           foreach (var ep in addressesToBind)
-                           {
-                               kestrel.Listen(ep);
-                           }
-                       }
-
-                       var kestrelOptions = new ConfigurationBuilder()
-                                           .AddJsonFile("kestrel.settings.json", optional: true)
-                                           .Build();
-                       kestrel.Configure(kestrelOptions, reloadOnChange: true);
-                   });
-               })
               .ConfigureServices((_, services) =>
                {
+                   services.AddOpenTelemetry()
+                           .WithMetrics(metrics =>
+                            {
+                                metrics.AddTaskFluxMetrics(persistence, requestAcceptor);
+                            });
+
                    services.AddHostedService(_ => taskFluxHostedService);
 
                    services.AddSingleton<IRequestAcceptor>(requestAcceptor);
@@ -338,4 +277,38 @@ void DumpDataState(FileSystemPersistenceFacade persistence)
     {
         Log.Information("Индекс закоммиченной команды: {CommitIndex}", persistence.CommitIndex);
     }
+}
+
+ThreadPerWorkerBackgroundJobQueue CreateJobQueue(ApplicationOptions applicationOptions,
+                                                 HostApplicationLifetime hostApplicationLifetime)
+{
+    return new ThreadPerWorkerBackgroundJobQueue(applicationOptions.Cluster.ClusterPeers.Length,
+        applicationOptions.Cluster.ClusterNodeId,
+        Log.ForContext("SourceContext", "BackgroundJobQueue"), hostApplicationLifetime);
+}
+
+ExclusiveRequestAcceptor CreateRequestAcceptor(RaftConsensusModule<Command, Response> raftConsensusModule,
+                                               HostApplicationLifetime lifetime1)
+{
+    return new ExclusiveRequestAcceptor(raftConsensusModule, lifetime1,
+        Log.ForContext("SourceContext", "RequestAcceptor"));
+}
+
+NodeConnectionManager CreateClusterNodeConnectionManager(ApplicationOptions applicationOptions,
+                                                         RaftConsensusModule<Command, Response> consensusModule,
+                                                         HostApplicationLifetime hostApplicationLifetime1)
+{
+    return new NodeConnectionManager(applicationOptions.Cluster.ClusterListenHost,
+        applicationOptions.Cluster.ClusterListenPort,
+        consensusModule, applicationOptions.Network.ClientRequestTimeout,
+        hostApplicationLifetime1, Log.ForContext<NodeConnectionManager>());
+}
+
+TaskFluxNodeHostedService CreateTaskFluxHostedService(RaftConsensusModule<Command, Response> consensusModule,
+                                                      ExclusiveRequestAcceptor exclusiveRequestAcceptor,
+                                                      ThreadPerWorkerBackgroundJobQueue jobQueue,
+                                                      NodeConnectionManager nodeConnectionManager)
+{
+    return new TaskFluxNodeHostedService(consensusModule, exclusiveRequestAcceptor, jobQueue,
+        nodeConnectionManager, Log.ForContext<TaskFluxNodeHostedService>());
 }

@@ -10,6 +10,7 @@ namespace TaskFlux.Persistence.Metadata;
 
 public class MetadataFile
 {
+    // TODO: обновлять файл через rename()/Move()
     public static Term DefaultTerm => Term.Start;
     public static NodeId? DefaultVotedFor => null;
 
@@ -56,7 +57,7 @@ public class MetadataFile
 
         _file.Seek(0, SeekOrigin.Begin);
         _file.Write(span);
-        _file.Flush(true);
+        _file.Fsync();
 
         Term = term;
         VotedFor = votedFor;

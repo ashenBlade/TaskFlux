@@ -537,7 +537,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
 
         writer.Commit();
 
-        Assert.Equal(expectedSegmentsCount, facade.Log.GetSegmentsCountTest());
+        Assert.Equal(expectedSegmentsCount, facade.Log.GetSegmentsCount());
 
         var (actualLastIndex, actualLastTerm, actualData) = facade.Snapshot.ReadAllDataTest();
         Assert.True(fs.SnapshotFile.Exists);
@@ -575,7 +575,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
 
         writer.Commit();
 
-        Assert.Equal(1, facade.Log.GetSegmentsCountTest());
+        Assert.Equal(1, facade.Log.GetSegmentsCount());
 
         var (actualLastIndex, actualLastTerm, actualData) = facade.Snapshot.ReadAllDataTest();
         Assert.True(fs.SnapshotFile.Exists);
@@ -613,7 +613,7 @@ public class FileSystemPersistenceFacadeTests : IDisposable
 
         writer.Commit();
 
-        Assert.Equal(1, facade.Log.GetSegmentsCountTest());
+        Assert.Equal(1, facade.Log.GetSegmentsCount());
         Assert.Empty(facade.Log.ReadAllTest());
         Assert.Equal(lastSnapshotEntry.Index, facade.Log.StartIndex);
 

@@ -1,6 +1,5 @@
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
-using Serilog;
 using TaskFlux.Application;
 using TaskFlux.Consensus;
 using TaskFlux.Core;
@@ -21,23 +20,12 @@ namespace TaskFlux.Transport.Http;
 
 [ApiController]
 [Route("commands/v1/")]
-public class RequestController : ControllerBase
+public class RequestController(
+    IRequestAcceptor requestAcceptor,
+    IApplicationInfo applicationInfo)
+    : ControllerBase
 {
     private static readonly Encoding Encoding = Encoding.UTF8;
-
-    private readonly IApplicationInfo _applicationInfo;
-    private readonly IRequestAcceptor _requestAcceptor;
-    private readonly ILogger _logger;
-
-    public RequestController(IRequestAcceptor requestAcceptor,
-                             IApplicationInfo applicationInfo,
-                             ILogger logger)
-    {
-        _applicationInfo = applicationInfo;
-        _logger = logger;
-        _requestAcceptor = requestAcceptor;
-    }
-
 
     [HttpPost("enqueue")]
     public async Task<ActionResult<CommandResponseDto>> Enqueue(
@@ -89,23 +77,33 @@ public class RequestController : ControllerBase
         Command command,
         CancellationToken token)
     {
-        var submitResponse = await _requestAcceptor.AcceptAsync(command, token);
-        var commandResponse = await TryGetResponseAsync(submitResponse, token);
-        if (commandResponse is not null)
+        Metrics.TotalConnectedClients.Add(1);
+        Metrics.TotalAcceptedRequests.Add(1);
+        try
         {
-            var visitor = new HttpResponseJobQueueResponseVisitor();
-            commandResponse.Accept(visitor);
-            return Ok(new CommandResponseDto() {Success = true, Payload = visitor.Payload});
-        }
+            var submitResponse = await requestAcceptor.AcceptAsync(command, token);
+            var commandResponse = await TryGetResponseAsync(submitResponse, token);
+            if (commandResponse is not null)
+            {
+                var visitor = new HttpResponseJobQueueResponseVisitor();
+                commandResponse.Accept(visitor);
+                return Ok(new CommandResponseDto() {Success = true, Payload = visitor.Payload});
+            }
 
-        return BadRequest(new CommandResponseDto()
+            return BadRequest(new CommandResponseDto()
+            {
+                Success = false,
+                Error = submitResponse.WasLeader
+                            ? "Неизвестная ошибка"
+                            : "Узел не является лидером",
+                LeaderId = applicationInfo.LeaderId?.Id
+            });
+        }
+        finally
         {
-            Success = false,
-            Error = submitResponse.WasLeader
-                        ? "Неизвестная ошибка"
-                        : "Узел не является лидером",
-            LeaderId = _applicationInfo.LeaderId?.Id
-        });
+            Metrics.TotalDisconnectedClients.Add(1);
+            Metrics.TotalProcessedRequests.Add(1);
+        }
     }
 
     private async ValueTask<Response?> TryGetResponseAsync(SubmitResponse<Response> firstResponse,
@@ -115,7 +113,7 @@ public class RequestController : ControllerBase
         {
             if (response is DequeueResponse {Success: true} dr)
             {
-                var commitResponse = await _requestAcceptor.AcceptAsync(new CommitDequeueCommand(dr), token);
+                var commitResponse = await requestAcceptor.AcceptAsync(new CommitDequeueCommand(dr), token);
                 return commitResponse.HasValue
                            ? dr
                            : null;
