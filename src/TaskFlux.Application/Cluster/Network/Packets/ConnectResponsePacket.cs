@@ -14,16 +14,14 @@ public class ConnectResponsePacket : NodePacket
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return SizeOf.PacketType // Маркер
-             + SizeOf.Bool;      // Success
+        return PayloadSize;
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.ConnectResponse);
         writer.Write(Success);
     }
 

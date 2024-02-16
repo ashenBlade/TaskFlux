@@ -13,16 +13,14 @@ public class InstallSnapshotResponsePacket : NodePacket
         CurrentTerm = term;
     }
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return SizeOf.PacketType // Маркер
-             + SizeOf.Term;      // Терм
+        return PayloadSize;
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.InstallSnapshotResponse);
         writer.Write(CurrentTerm.Value);
     }
 

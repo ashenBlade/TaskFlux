@@ -4,13 +4,12 @@ public class InstallSnapshotChunkResponsePacket : NodePacket
 {
     public override NodePacketType PacketType => NodePacketType.InstallSnapshotChunkResponse;
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return sizeof(NodePacketType);
+        return 0;
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
-        buffer[0] = ( byte ) NodePacketType.InstallSnapshotChunkResponse;
     }
 }

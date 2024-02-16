@@ -15,19 +15,17 @@ public class RequestVoteRequestPacket : NodePacket
         Request = request;
     }
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return SizeOf.PacketType // Маркер пакета
-             + SizeOf.NodeId     // Id узла
-             + SizeOf.Term       // Терм узла кандидата
-             + SizeOf.Term       // Терм последней записи
-             + SizeOf.Lsn;       // Индекс последней записи
+        return SizeOf.NodeId // Id узла
+             + SizeOf.Term   // Терм узла кандидата
+             + SizeOf.Term   // Терм последней записи
+             + SizeOf.Lsn;   // Индекс последней записи
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.RequestVoteRequest);
         writer.Write(Request.CandidateId.Id);
         writer.Write(Request.CandidateTerm.Value);
         writer.Write(Request.LastLogEntryInfo.Term.Value);

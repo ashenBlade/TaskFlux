@@ -15,21 +15,19 @@ public class RequestVoteResponsePacket : NodePacket
 
     public override NodePacketType PacketType => NodePacketType.RequestVoteResponse;
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return SizeOf.PacketType // Маркер
-             + SizeOf.Bool       // Vote Granted
-             + SizeOf.Term;      // Current Term
+        return PayloadSize;
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.RequestVoteResponse);
         writer.Write(Response.VoteGranted);
         writer.Write(Response.CurrentTerm.Value);
     }
 
+    // TODO: поменять местами
     private const int PayloadSize = SizeOf.Bool
                                   + SizeOf.Term;
 

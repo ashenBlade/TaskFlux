@@ -13,29 +13,28 @@ public class AppendEntriesRequestPacket : NodePacket
     /// Позиция с которой начинаются сами данные.
     /// Нужно для тестов
     /// </summary>
-    internal const int DataStartPosition = BasePacketSize - SizeOf.CheckSum;
+    internal const int DataStartPosition = SizeOf.PacketType + BasePayloadSize - SizeOf.CheckSum;
 
     public override NodePacketType PacketType => NodePacketType.AppendEntriesRequest;
 
-    private const int BasePacketSize = SizeOf.PacketType  // Маркер
-                                     + SizeOf.Int32       // Размер
-                                     + SizeOf.NodeId      // ID узла лидера
-                                     + SizeOf.Lsn         // Коммит лидера
-                                     + SizeOf.Term        // Терм лидера
-                                     + SizeOf.Term        // Терм предыдущей записи
-                                     + SizeOf.Lsn         // LSN предыдущей записи
-                                     + SizeOf.ArrayLength // Количество записей в массиве
-                                     + SizeOf.CheckSum;   // Чек-сумма 
+    private const int BasePayloadSize = SizeOf.Int32       // Размер полезной нагрузки
+                                      + SizeOf.NodeId      // ID узла лидера
+                                      + SizeOf.Lsn         // Коммит лидера
+                                      + SizeOf.Term        // Терм лидера
+                                      + SizeOf.Term        // Терм предыдущей записи
+                                      + SizeOf.Lsn         // LSN предыдущей записи
+                                      + SizeOf.ArrayLength // Количество записей в массиве
+                                      + SizeOf.CheckSum;   // Чек-сумма 
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
         var entries = Request.Entries;
         if (entries.Count == 0)
         {
-            return BasePacketSize;
+            return BasePayloadSize;
         }
 
-        return BasePacketSize
+        return BasePayloadSize
              + entries.Sum(entry => SizeOf.Term                 // Терм записи
                                   + SizeOf.Buffer(entry.Data)); // Размер буфера с данными включая длину
     }
@@ -43,11 +42,10 @@ public class AppendEntriesRequestPacket : NodePacket
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(NodePacketType.AppendEntriesRequest);
 
         // Буфер, который нам передали должен занимать ровно столько сколько сказали,
-        // поэтому размер нагрузки равен размеру буфера за исключением размера маркера пакета и самого поля длины
-        var packetPayloadLength = buffer.Length - ( SizeOf.PacketType + SizeOf.ArrayLength );
+        // поэтому размер нагрузки равен размеру буфера за исключением размера самой нагрузки
+        var packetPayloadLength = buffer.Length - SizeOf.Int32;
         writer.Write(packetPayloadLength);
 
         writer.Write(Request.Term);
@@ -121,11 +119,11 @@ public class AppendEntriesRequestPacket : NodePacket
         // Сначала определим полный размер пакета
         // ReSharper disable once RedundantAssignment
         var streamReader = new StreamBinaryReader(stream);
-        var payloadSize = await streamReader.ReadInt32Async(token);
-        var buffer = ArrayPool<byte>.Shared.Rent(payloadSize);
+        var totalPayloadSize = await streamReader.ReadInt32Async(token);
+        var buffer = ArrayPool<byte>.Shared.Rent(totalPayloadSize);
         try
         {
-            var data = buffer.AsMemory(0, payloadSize);
+            var data = buffer.AsMemory(0, totalPayloadSize);
             await stream.ReadExactlyAsync(data, token);
             return DeserializePacketVerifyCheckSum(data.Span);
         }

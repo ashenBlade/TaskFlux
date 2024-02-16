@@ -7,23 +7,20 @@ namespace TaskFlux.Application.Cluster.Network.Packets;
 public class AppendEntriesResponsePacket : NodePacket
 {
     public override NodePacketType PacketType => NodePacketType.AppendEntriesResponse;
+    public AppendEntriesResponse Response { get; }
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return SizeOf.PacketType // Маркер
-             + SizeOf.Bool       // Success
-             + SizeOf.Term;      // Term
+        return SizeOf.Bool  // Success
+             + SizeOf.Term; // Term
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(NodePacketType.AppendEntriesResponse);
         writer.Write(Response.Success);
         writer.Write(Response.Term);
     }
-
-    public AppendEntriesResponse Response { get; }
 
     public AppendEntriesResponsePacket(AppendEntriesResponse response)
     {

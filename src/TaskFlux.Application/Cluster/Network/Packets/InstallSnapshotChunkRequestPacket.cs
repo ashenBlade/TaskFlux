@@ -6,8 +6,7 @@ namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public class InstallSnapshotChunkRequestPacket : NodePacket
 {
-    internal const int DataStartPosition = SizeOf.PacketType   // Маркер
-                                         + SizeOf.ArrayLength; // Размер чанка
+    internal const int DataStartPosition = SizeOf.ArrayLength; // Размер чанка
 
     public ReadOnlyMemory<byte> Chunk { get; }
     public override NodePacketType PacketType => NodePacketType.InstallSnapshotChunkRequest;
@@ -17,27 +16,25 @@ public class InstallSnapshotChunkRequestPacket : NodePacket
         Chunk = chunk;
     }
 
-    protected override int EstimatePacketSize()
+    // TODO: выравнивание
+    protected override int EstimatePayloadSize()
     {
-        return sizeof(NodePacketType)    // Маркер
-             + SizeOf.Buffer(this.Chunk) // Данные
-             + sizeof(uint);             // Чек-сумма
+        return SizeOf.Buffer(Chunk) // Данные
+             + sizeof(uint);        // Чек-сумма
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var checkSum = Crc32CheckSum.Compute(Chunk.Span);
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.InstallSnapshotChunkRequest);
         writer.WriteBuffer(Chunk.Span);
         writer.Write(checkSum);
     }
 
     internal int GetDataEndPosition()
     {
-        return 1             // Маркер
-             + 4             // Размер данных
-             + Chunk.Length; // Сами данные
+        return SizeOf.PacketType
+             + SizeOf.Buffer(Chunk);
     }
 
     public new static InstallSnapshotChunkRequestPacket Deserialize(Stream stream)

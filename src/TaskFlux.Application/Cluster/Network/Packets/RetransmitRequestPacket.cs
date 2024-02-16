@@ -8,13 +8,12 @@ public class RetransmitRequestPacket : NodePacket
 {
     public override NodePacketType PacketType => NodePacketType.RetransmitRequest;
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return sizeof(byte);
+        return 0;
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
-        buffer[0] = ( byte ) NodePacketType.RetransmitRequest;
     }
 }

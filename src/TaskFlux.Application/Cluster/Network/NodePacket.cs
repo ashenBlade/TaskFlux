@@ -13,13 +13,13 @@ public abstract class NodePacket
     }
 
     public abstract NodePacketType PacketType { get; }
-    protected abstract int EstimatePacketSize();
+    protected abstract int EstimatePayloadSize();
     protected abstract void SerializeBuffer(Span<byte> buffer);
 
     public async ValueTask SerializeAsync(Stream stream, CancellationToken token = default)
     {
         token.ThrowIfCancellationRequested();
-        var estimatedSize = EstimatePacketSize();
+        var estimatedSize = EstimatePayloadSize();
         var buffer = ArrayPool<byte>.Shared.Rent(estimatedSize);
         try
         {
@@ -44,19 +44,31 @@ public abstract class NodePacket
 
     private async Task SendPayloadAsync(Stream stream, Memory<byte> payload, CancellationToken token)
     {
-        await stream.WriteAsync(payload, token);
-        await stream.FlushAsync(token);
+        var buffer = ArrayPool<byte>.Shared.Rent(sizeof(byte));
+        try
+        {
+            buffer[0] = ( byte ) PacketType;
+            await stream.WriteAsync(buffer.AsMemory(0, 1), token);
+            await stream.WriteAsync(payload, token);
+            await stream.FlushAsync(token);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
+    // TODO: положение полей в пакетах пересмотреть
 
     private void SendPayload(Stream stream, Span<byte> payload)
     {
+        stream.WriteByte(( byte ) PacketType);
         stream.Write(payload);
         stream.Flush();
     }
 
     public void Serialize(Stream stream)
     {
-        var estimatedSize = EstimatePacketSize();
+        var estimatedSize = EstimatePayloadSize();
         var buffer = ArrayPool<byte>.Shared.Rent(estimatedSize);
         try
         {

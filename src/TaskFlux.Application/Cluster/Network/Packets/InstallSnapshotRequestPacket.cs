@@ -1,5 +1,4 @@
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 using TaskFlux.Utils.Serialization;
 
@@ -19,19 +18,14 @@ public sealed class InstallSnapshotRequestPacket : NodePacket
         LastEntry = lastEntry;
     }
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return SizeOf.PacketType // Маркер
-             + SizeOf.Term       // Терм
-             + SizeOf.NodeId     // Id узла
-             + SizeOf.Lsn        // Последний индекс
-             + SizeOf.Term;      // Последний терм
+        return PayloadSize;
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.InstallSnapshotRequest);
         writer.Write(Term.Value);
         writer.Write(LeaderId.Id);
         writer.Write(LastEntry.Index);

@@ -6,21 +6,19 @@ namespace TaskFlux.Application.Cluster.Network.Packets;
 public class ConnectRequestPacket : NodePacket
 {
     public override NodePacketType PacketType => NodePacketType.ConnectRequest;
+    public NodeId Id { get; }
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return SizeOf.PacketType // Маркер
-             + SizeOf.NodeId;    // ID узла
+        return SizeOf.NodeId; // ID узла
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(NodePacketType.ConnectRequest);
         writer.Write(Id.Id);
     }
 
-    public NodeId Id { get; }
 
     public ConnectRequestPacket(NodeId id)
     {
