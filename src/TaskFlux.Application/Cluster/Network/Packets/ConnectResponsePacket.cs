@@ -29,20 +29,21 @@ public class ConnectResponsePacket : NodePacket
 
     public new static ConnectResponsePacket Deserialize(Stream stream)
     {
-        Span<byte> buffer = stackalloc byte[PayloadSize]; // Success
+        Span<byte> buffer = stackalloc byte[PayloadSize + sizeof(uint)]; // Success
         stream.ReadExactly(buffer);
         return DeserializePayload(buffer);
     }
 
     public new static async Task<ConnectResponsePacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        using var buffer = Rent(PayloadSize);
+        using var buffer = Rent(PayloadSize + sizeof(uint));
         await stream.ReadExactlyAsync(buffer.GetMemory(), token);
         return DeserializePayload(buffer.GetSpan());
     }
 
     private static ConnectResponsePacket DeserializePayload(Span<byte> buffer)
     {
+        VerifyCheckSum(buffer);
         var reader = new SpanBinaryReader(buffer);
         var success = reader.ReadBoolean();
         return new ConnectResponsePacket(success);

@@ -33,17 +33,17 @@ public class RequestVoteResponsePacket : NodePacket
 
     public new static RequestVoteResponsePacket Deserialize(Stream stream)
     {
-        Span<byte> buffer = stackalloc byte[PayloadSize];
+        Span<byte> buffer = stackalloc byte[PayloadSize + sizeof(uint)];
         stream.ReadExactly(buffer);
         return DeserializePayload(buffer);
     }
 
     public new static async Task<RequestVoteResponsePacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(PayloadSize);
+        var buffer = ArrayPool<byte>.Shared.Rent(PayloadSize + sizeof(uint));
         try
         {
-            var memory = buffer.AsMemory(0, PayloadSize);
+            var memory = buffer.AsMemory(0, PayloadSize + sizeof(uint));
             await stream.ReadExactlyAsync(memory, token);
             return DeserializePayload(memory.Span);
         }
@@ -55,6 +55,7 @@ public class RequestVoteResponsePacket : NodePacket
 
     private static RequestVoteResponsePacket DeserializePayload(Span<byte> buffer)
     {
+        VerifyCheckSum(buffer);
         var reader = new SpanBinaryReader(buffer);
         var success = reader.ReadBoolean();
         var term = reader.ReadTerm();

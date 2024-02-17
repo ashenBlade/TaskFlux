@@ -16,4 +16,24 @@ public class RetransmitRequestPacket : NodePacket
     protected override void SerializeBuffer(Span<byte> buffer)
     {
     }
+
+    public new static RetransmitRequestPacket Deserialize(Stream stream)
+    {
+        Span<byte> buffer = stackalloc byte[sizeof(uint)];
+        stream.ReadExactly(buffer);
+        return DeserializePayload(buffer);
+    }
+
+    public new static async Task<RetransmitRequestPacket> DeserializeAsync(Stream stream, CancellationToken token)
+    {
+        using var buffer = Rent(sizeof(uint));
+        await stream.ReadExactlyAsync(buffer.GetMemory(), token);
+        return DeserializePayload(buffer.GetSpan());
+    }
+
+    private static RetransmitRequestPacket DeserializePayload(Span<byte> payload)
+    {
+        VerifyCheckSum(payload);
+        return new RetransmitRequestPacket();
+    }
 }

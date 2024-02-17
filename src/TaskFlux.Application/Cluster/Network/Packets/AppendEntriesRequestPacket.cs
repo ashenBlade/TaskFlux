@@ -1,4 +1,3 @@
-using System.Buffers;
 using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Consensus.Commands.AppendEntries;
@@ -13,7 +12,7 @@ public class AppendEntriesRequestPacket : NodePacket
     /// Позиция с которой начинаются сами данные.
     /// Нужно для тестов
     /// </summary>
-    internal const int DataStartPosition = SizeOf.PacketType + BasePayloadSize - SizeOf.CheckSum;
+    internal const int DataStartPosition = BasePayloadSize - SizeOf.CheckSum;
 
     public override NodePacketType PacketType => NodePacketType.AppendEntriesRequest;
 
@@ -55,7 +54,6 @@ public class AppendEntriesRequestPacket : NodePacket
         writer.Write(Request.PrevLogEntryInfo.Index);
         writer.Write(Request.Entries.Count);
 
-        var dataStartPosition = writer.Index;
         if (Request.Entries.Count > 0)
         {
             foreach (var entry in Request.Entries)
@@ -64,9 +62,6 @@ public class AppendEntriesRequestPacket : NodePacket
                 writer.WriteBuffer(entry.Data);
             }
         }
-
-        var checkSum = Crc32CheckSum.Compute(buffer[dataStartPosition..writer.Index]);
-        writer.Write(checkSum);
     }
 
     public AppendEntriesRequest Request { get; }
@@ -83,60 +78,46 @@ public class AppendEntriesRequestPacket : NodePacket
     internal int GetDataEndPosition()
     {
         return DataStartPosition
-             + Request.Entries.Sum(entry => SizeOf.Term                 // Терм записи
-                                          + SizeOf.Buffer(entry.Data)); // Данные записи
+             + Request.Entries.Sum(entry => SizeOf.Term                // Терм записи
+                                          + SizeOf.Buffer(entry.Data)) // Данные записи
+             + sizeof(uint);                                           // Чек-сумма
     }
 
     public new static AppendEntriesRequestPacket Deserialize(Stream stream)
     {
         // Сначала определим полный размер пакета
         // ReSharper disable once RedundantAssignment
-        var streamReader = new StreamBinaryReader(stream);
-        var payloadSize = streamReader.ReadInt32();
+        Span<byte> prefixSpan = stackalloc byte[sizeof(int)];
+        stream.ReadExactly(prefixSpan);
+        var payloadSize = new SpanBinaryReader(prefixSpan).ReadInt32() + sizeof(uint);
 
         if (payloadSize < 1024) // 1 Кб
         {
             Span<byte> span = stackalloc byte[payloadSize];
             stream.ReadExactly(span);
-            return DeserializePacketVerifyCheckSum(span);
+            return DeserializePayload(span, prefixSpan);
         }
 
-        var buffer = ArrayPool<byte>.Shared.Rent(payloadSize);
-        try
-        {
-            var data = buffer.AsSpan(0, payloadSize);
-            stream.ReadExactly(data);
-            return DeserializePacketVerifyCheckSum(data);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+        using var buffer = Rent(payloadSize);
+        var data = buffer.GetSpan();
+        stream.ReadExactly(data);
+        return DeserializePayload(data, prefixSpan);
     }
 
     public new static async Task<AppendEntriesRequestPacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        // Сначала определим полный размер пакета
-        // ReSharper disable once RedundantAssignment
-        var streamReader = new StreamBinaryReader(stream);
-        var totalPayloadSize = await streamReader.ReadInt32Async(token);
-        var buffer = ArrayPool<byte>.Shared.Rent(totalPayloadSize);
-        try
-        {
-            var data = buffer.AsMemory(0, totalPayloadSize);
-            await stream.ReadExactlyAsync(data, token);
-            return DeserializePacketVerifyCheckSum(data.Span);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+        using var prefixBuffer = Rent(sizeof(int));
+        await stream.ReadExactlyAsync(prefixBuffer.GetMemory(), token);
+        var totalPayloadSize = new SpanBinaryReader(prefixBuffer.GetSpan()).ReadInt32();
+
+        using var payloadBuffer = Rent(totalPayloadSize + sizeof(uint));
+        await stream.ReadExactlyAsync(payloadBuffer.GetMemory(), token);
+        return DeserializePayload(payloadBuffer.GetSpan(), prefixBuffer.GetSpan());
     }
 
-    private static AppendEntriesRequestPacket DeserializePacketVerifyCheckSum(Span<byte> buffer)
+    private static AppendEntriesRequestPacket DeserializePayload(Span<byte> buffer, Span<byte> prefix)
     {
-        // Сперва валидируем чек-сумму
-        ValidateCheckSum(buffer);
+        VerifyCheckSumRequest(buffer, prefix);
 
         var reader = new SpanBinaryReader(buffer);
 
@@ -167,22 +148,16 @@ public class AppendEntriesRequestPacket : NodePacket
 
         return new AppendEntriesRequestPacket(new AppendEntriesRequest(term, leaderCommit, leaderId,
             new LogEntryInfo(lastEntryTerm, lastEntryIndex), entries));
+    }
 
-        static void ValidateCheckSum(Span<byte> buffer)
+    private static void VerifyCheckSumRequest(Span<byte> payload, Span<byte> payloadSizePrefix)
+    {
+        var calculated = Crc32CheckSum.Compute(payloadSizePrefix);
+        calculated = Crc32CheckSum.Compute(calculated, payload[..^4]);
+        var stored = new SpanBinaryReader(payload[^4..]).ReadUInt32();
+        if (calculated != stored)
         {
-            var crcReader = new SpanBinaryReader(buffer[^4..]);
-            var storedCrc = crcReader.ReadUInt32();
-            const int dataStartPosition = SizeOf.Term         // Терм  
-                                        + SizeOf.NodeId       // Id лидера  
-                                        + SizeOf.Lsn          // Коммит лидера
-                                        + SizeOf.Term         // Терм последней записи
-                                        + SizeOf.Lsn          // Индекс последней записи
-                                        + SizeOf.ArrayLength; // Количество записей
-            var calculatedCrc = Crc32CheckSum.Compute(buffer[dataStartPosition..^4]);
-            if (storedCrc != calculatedCrc)
-            {
-                throw new IntegrityException();
-            }
+            throw new IntegrityException();
         }
     }
 }

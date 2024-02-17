@@ -29,14 +29,14 @@ public class ConnectRequestPacket : NodePacket
 
     public new static ConnectRequestPacket Deserialize(Stream stream)
     {
-        Span<byte> buffer = stackalloc byte[PayloadSize];
+        Span<byte> buffer = stackalloc byte[PayloadSize + sizeof(uint)];
         stream.ReadExactly(buffer);
         return DeserializePayload(buffer);
     }
 
     public new static async Task<ConnectRequestPacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        using var buffer = Rent(PayloadSize);
+        using var buffer = Rent(PayloadSize + sizeof(uint));
         var memory = buffer.GetMemory();
         await stream.ReadExactlyAsync(memory, token);
         return DeserializePayload(memory.Span);

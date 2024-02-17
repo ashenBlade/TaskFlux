@@ -39,7 +39,7 @@ public sealed class InstallSnapshotRequestPacket : NodePacket
 
     public new static InstallSnapshotRequestPacket Deserialize(Stream stream)
     {
-        Span<byte> buffer = stackalloc byte[PayloadSize];
+        Span<byte> buffer = stackalloc byte[PayloadSize + sizeof(uint)];
         stream.ReadExactly(buffer);
 
         return DeserializePayload(buffer);
@@ -47,6 +47,7 @@ public sealed class InstallSnapshotRequestPacket : NodePacket
 
     private static InstallSnapshotRequestPacket DeserializePayload(Span<byte> buffer)
     {
+        VerifyCheckSum(buffer);
         var reader = new SpanBinaryReader(buffer);
         var term = reader.ReadTerm();
         var leaderId = reader.ReadNodeId();
@@ -56,11 +57,9 @@ public sealed class InstallSnapshotRequestPacket : NodePacket
             new LogEntryInfo(lastTerm, lastIndex));
     }
 
-    public new static async Task<InstallSnapshotRequestPacket> DeserializeAsync(
-        Stream stream,
-        CancellationToken token)
+    public new static async Task<InstallSnapshotRequestPacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        using var buffer = Rent(PayloadSize);
+        using var buffer = Rent(PayloadSize + sizeof(uint));
         await stream.ReadExactlyAsync(buffer.GetMemory(), token);
         return DeserializePayload(buffer.GetSpan());
     }

@@ -6,7 +6,6 @@ using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 
 namespace TaskFlux.Application.Tests;
@@ -119,7 +118,7 @@ public class NodePacketTests
 
     public static IEnumerable<object[]> LongWithBoolPairwise =>
         new long[] {1, 123, long.MaxValue, 123, 1 << 8, 1 << 8 + 1, 1 << 15, 1 << 30, ( 1L << 54 ) + 54}
-           .SelectMany(i => new[] {new object[] {i, true}, new object[] {i, false}});
+           .SelectMany(i => new object[][] { [i, true], [i, false]});
 
     [Theory]
     [MemberData(nameof(LongWithBoolPairwise))]

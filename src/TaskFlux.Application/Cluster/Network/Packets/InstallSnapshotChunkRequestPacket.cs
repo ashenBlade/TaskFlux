@@ -16,7 +16,6 @@ public class InstallSnapshotChunkRequestPacket : NodePacket
         Chunk = chunk;
     }
 
-    // TODO: выравнивание
     protected override int EstimatePayloadSize()
     {
         return SizeOf.Buffer(Chunk) // Данные
@@ -45,7 +44,7 @@ public class InstallSnapshotChunkRequestPacket : NodePacket
         var totalPayloadSize = payloadLength + sizeof(uint);
         using var buffer = Rent(totalPayloadSize);
         stream.ReadExactly(buffer.GetSpan());
-        return DeserializeDataVerifyCheckSum(buffer.GetSpan());
+        return DeserializePayload(buffer.GetSpan());
     }
 
     public new static async Task<InstallSnapshotChunkRequestPacket> DeserializeAsync(
@@ -58,10 +57,10 @@ public class InstallSnapshotChunkRequestPacket : NodePacket
         var totalPayloadSize = payloadLength + sizeof(uint);
         using var buffer = Rent(totalPayloadSize);
         await stream.ReadExactlyAsync(buffer.GetMemory(), token);
-        return DeserializeDataVerifyCheckSum(buffer.GetSpan());
+        return DeserializePayload(buffer.GetSpan());
     }
 
-    private static InstallSnapshotChunkRequestPacket DeserializeDataVerifyCheckSum(Span<byte> payload)
+    private static InstallSnapshotChunkRequestPacket DeserializePayload(Span<byte> payload)
     {
         ValidateChecksum(payload);
 
