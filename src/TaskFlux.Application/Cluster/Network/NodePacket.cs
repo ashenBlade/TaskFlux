@@ -69,7 +69,6 @@ public abstract class NodePacket
             ArrayPool<byte>.Shared.Return(buffer);
         }
     }
-    // TODO: положение полей в пакетах пересмотреть
 
     private void SendPayload(Stream stream, Span<byte> payload, Span<byte> checkSum)
     {
@@ -78,12 +77,6 @@ public abstract class NodePacket
         stream.Write(checkSum);
         stream.Flush();
     }
-
-    /*
-     * TODO:
-     * 1. Тесты на проверку чек-суммы для каждого (в обобщенный метод)
-     * 2. AppendEntriesRequest, RequestVoteRequest - ID node
-     */
 
     public void Serialize(Stream stream)
     {

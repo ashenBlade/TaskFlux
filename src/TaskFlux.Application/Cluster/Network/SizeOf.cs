@@ -12,6 +12,14 @@ internal static class SizeOf
     public const int Bool = sizeof(Byte);
 
     public static int Buffer(byte[] buffer) => sizeof(int) + buffer.Length;
+
+    public static int BufferAligned(ReadOnlySpan<byte> buffer, int alignment) =>
+        sizeof(int) + buffer.Length + GetAlignment(buffer.Length, alignment);
+
+    private static int GetAlignment(int length, int alignment) => alignment == 0
+                                                                      ? 0
+                                                                      : length % alignment;
+
     public static int Buffer(ReadOnlySpan<byte> buffer) => sizeof(int) + buffer.Length;
     public static int Buffer(ReadOnlyMemory<byte> buffer) => sizeof(int) + buffer.Length;
 }

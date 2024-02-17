@@ -16,14 +16,16 @@ public class AppendEntriesRequestPacket : NodePacket
 
     public override NodePacketType PacketType => NodePacketType.AppendEntriesRequest;
 
-    private const int BasePayloadSize = SizeOf.Int32       // Размер полезной нагрузки
-                                      + SizeOf.NodeId      // ID узла лидера
-                                      + SizeOf.Lsn         // Коммит лидера
-                                      + SizeOf.Term        // Терм лидера
-                                      + SizeOf.Term        // Терм предыдущей записи
-                                      + SizeOf.Lsn         // LSN предыдущей записи
-                                      + SizeOf.ArrayLength // Количество записей в массиве
-                                      + SizeOf.CheckSum;   // Чек-сумма 
+    private const int BasePayloadSize = SizeOf.Int32        // Размер полезной нагрузки
+                                      + SizeOf.Lsn          // Коммит лидера
+                                      + SizeOf.Term         // Терм лидера
+                                      + SizeOf.Term         // Терм предыдущей записи
+                                      + SizeOf.Lsn          // LSN предыдущей записи
+                                      + SizeOf.NodeId       // ID узла лидера
+                                      + SizeOf.ArrayLength; // Количество записей в массиве
+
+    private const int DataAlignment = 8;
+
 
     protected override int EstimatePayloadSize()
     {
@@ -34,8 +36,9 @@ public class AppendEntriesRequestPacket : NodePacket
         }
 
         return BasePayloadSize
-             + entries.Sum(entry => SizeOf.Term                 // Терм записи
-                                  + SizeOf.Buffer(entry.Data)); // Размер буфера с данными включая длину
+             + entries.Sum(entry => SizeOf.Term // Терм записи
+                                  + SizeOf.BufferAligned(entry.Data,
+                                        DataAlignment)); // Размер буфера с данными включая длину
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
@@ -47,11 +50,11 @@ public class AppendEntriesRequestPacket : NodePacket
         var packetPayloadLength = buffer.Length - SizeOf.Int32;
         writer.Write(packetPayloadLength);
 
-        writer.Write(Request.Term);
-        writer.Write(Request.LeaderId);
         writer.Write(Request.LeaderCommit);
+        writer.Write(Request.Term);
         writer.Write(Request.PrevLogEntryInfo.Term);
         writer.Write(Request.PrevLogEntryInfo.Index);
+        writer.Write(Request.LeaderId);
         writer.Write(Request.Entries.Count);
 
         if (Request.Entries.Count > 0)
@@ -59,7 +62,7 @@ public class AppendEntriesRequestPacket : NodePacket
             foreach (var entry in Request.Entries)
             {
                 writer.Write(entry.Term);
-                writer.WriteBuffer(entry.Data);
+                writer.WriteBufferAligned(entry.Data, DataAlignment);
             }
         }
     }
@@ -78,9 +81,9 @@ public class AppendEntriesRequestPacket : NodePacket
     internal int GetDataEndPosition()
     {
         return DataStartPosition
-             + Request.Entries.Sum(entry => SizeOf.Term                // Терм записи
-                                          + SizeOf.Buffer(entry.Data)) // Данные записи
-             + sizeof(uint);                                           // Чек-сумма
+             + Request.Entries.Sum(entry => SizeOf.Term                                      // Терм записи
+                                          + SizeOf.BufferAligned(entry.Data, DataAlignment)) // Данные записи
+             + sizeof(uint);                                                                 // Чек-сумма
     }
 
     public new static AppendEntriesRequestPacket Deserialize(Stream stream)
@@ -121,11 +124,11 @@ public class AppendEntriesRequestPacket : NodePacket
 
         var reader = new SpanBinaryReader(buffer);
 
-        var term = reader.ReadTerm();
-        var leaderId = reader.ReadNodeId();
         var leaderCommit = reader.ReadLsn();
+        var term = reader.ReadTerm();
         var lastEntryTerm = reader.ReadTerm();
         var lastEntryIndex = reader.ReadLsn();
+        var leaderId = reader.ReadNodeId();
         var entriesCount = reader.ReadInt32();
 
         IReadOnlyList<LogEntry> entries;
@@ -139,7 +142,7 @@ public class AppendEntriesRequestPacket : NodePacket
             for (int i = 0; i < entriesCount; i++)
             {
                 var logEntryTerm = reader.ReadTerm();
-                var payload = reader.ReadBuffer();
+                var payload = reader.ReadBufferAligned(DataAlignment);
                 list.Add(new LogEntry(logEntryTerm, payload));
             }
 

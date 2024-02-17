@@ -159,6 +159,7 @@ public class NodePacketTests
 
     [Theory]
     [InlineData(1, 1, 1, 1, 1, 1, "hello")]
+    [InlineData(1, 1, 1, 1, 1, 1, "12345678")]
     [InlineData(3, 2, 22, 3, 2, 2, "")]
     [InlineData(3, 2, 22, 3, 2, 3, "                 ")]
     [InlineData(50, 2, 30, 3, 30, 2, "\n\n")]
@@ -178,25 +179,33 @@ public class NodePacketTests
         AssertBase(new AppendEntriesRequestPacket(request));
     }
 
-    public static IEnumerable<object[]> СериализацияAppendEntriesСНесколькимиКомандами = new[]
+    public static IEnumerable<object[]> СериализацияAppendEntriesСНесколькимиКомандами = new object[][]
     {
-        new object[] {1, 1, 1, 1, 1, new[] {Entry(1, "payload"), Entry(2, "hello"), Entry(3, "world")}},
-        new object[] {2, 1, 1, 5, 2, new[] {Entry(5, ""), Entry(3, "    ")}},
-        new object[]
-        {
+        [1, 1, 1, 1, 1, new[] {Entry(1, "payload"), Entry(2, "hello"), Entry(3, "world")}],
+        [2, 1, 1, 5, 2, new[] {Entry(5, ""), Entry(3, "    ")}],
+        [
             32, 31, 21, 11, 20,
             new[] {Entry(1, "payload"), Entry(2, "hello"), Entry(3, "world"), Entry(4, "Привет мир")}
-        },
+        ],
+        [
+            long.MaxValue, Lsn.TombIndex, Term.StartTerm, Lsn.TombIndex, 0,
+            new[]
+            {
+                Entry(1, "a"), Entry(11, "ab"), Entry(111, "abc"), Entry(1111, "abcd"), Entry(11111, "abcde"),
+                Entry(111111, "abcdef"), Entry(1111111, "abcdefg"), Entry(11111111, "abcdefgh"),
+                Entry(111111111, "abcdefghi"),
+            }
+        ]
     };
 
     [Theory]
     [MemberData(nameof(СериализацияAppendEntriesСНесколькимиКомандами))]
     public void AppendEntriesRequest__СНесколькимиКомандами__ДолженДесериализоватьТакоеЖеКоличествоКоманд(
         long term,
-        int leaderId,
         long leaderCommit,
         long logTerm,
         long logIndex,
+        int leaderId,
         LogEntry[] entries)
     {
         var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId),
@@ -208,10 +217,10 @@ public class NodePacketTests
     [MemberData(nameof(СериализацияAppendEntriesСНесколькимиКомандами))]
     public void AppendEntriesRequest__СНесколькимиКомандами__ДолженДесериализоватьКомандыСТемиЖеСамымиДанными(
         long term,
-        int leaderId,
         long leaderCommit,
         long logTerm,
         long logIndex,
+        int leaderId,
         LogEntry[] entries)
     {
         var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId),
@@ -257,11 +266,14 @@ public class NodePacketTests
 
     [Theory]
     [InlineData(new byte[] { })]
-    [InlineData(new byte[] {1})]
     [InlineData(new byte[] {0})]
     [InlineData(new[] {byte.MaxValue})]
+    [InlineData(new byte[] {1})]
     [InlineData(new byte[] {1, 2})]
+    [InlineData(new byte[] {1, 2, 3})]
+    [InlineData(new byte[] {1, 2, 3, 4})]
     [InlineData(new byte[] {255, 254, 253, 252})]
+    [InlineData(new byte[] {255, 254, 253, 252, 251})]
     [InlineData(new byte[] {1, 1, 2, 44, 128, 88, 33, 2})]
     public void InstallSnapshotChunk__ДолженДесериализоватьТакуюЖеКоманду(byte[] data)
     {

@@ -23,13 +23,12 @@ public class RequestVoteResponsePacket : NodePacket
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(Response.VoteGranted);
         writer.Write(Response.CurrentTerm.Value);
+        writer.Write(Response.VoteGranted);
     }
 
-    // TODO: поменять местами
-    private const int PayloadSize = SizeOf.Bool
-                                  + SizeOf.Term;
+    private const int PayloadSize = SizeOf.Term
+                                  + SizeOf.Bool;
 
     public new static RequestVoteResponsePacket Deserialize(Stream stream)
     {
@@ -57,8 +56,8 @@ public class RequestVoteResponsePacket : NodePacket
     {
         VerifyCheckSum(buffer);
         var reader = new SpanBinaryReader(buffer);
-        var success = reader.ReadBoolean();
         var term = reader.ReadTerm();
+        var success = reader.ReadBoolean();
         return new RequestVoteResponsePacket(new RequestVoteResponse(term, success));
     }
 }
