@@ -1,21 +1,23 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.IO.Abstractions;
 using System.Runtime.InteropServices;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Serilog;
 using Serilog.Core;
 using TaskFlux.Application;
 using TaskFlux.Application.Cluster;
 using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster.Network;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Consensus.Timers;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
 using TaskFlux.Host;
 using TaskFlux.Host.Configuration;
 using TaskFlux.Host.Infrastructure;
+using TaskFlux.Persistence;
+using TaskFlux.Persistence.Log;
+using TaskFlux.Persistence.Snapshot;
+using TaskFlux.Transport.Http;
+using TaskFlux.Utils.Network;
 
 var lifetime = new HostApplicationLifetime();
 
@@ -49,12 +51,16 @@ try
 }
 catch (NotSupportedException e)
 {
-    Log.Information(e, "Платформа не поддерживает регистрацию обработчика SIGTERM сигнала");
+    Log.Warning(e, "Не удалось зарегистрировать обработчик SIGTERM: платформа не поддерживает");
 }
 
 try
 {
-    var options = GetApplicationOptions();
+    var configuration = new ConfigurationBuilder()
+                       .AddTaskFluxSource(args, "taskflux.settings.json")
+                       .Build();
+
+    var options = ApplicationOptions.FromConfiguration(configuration);
 
     if (!TryValidateOptions(options))
     {
@@ -65,23 +71,18 @@ try
 
     var nodeId = new NodeId(options.Cluster.ClusterNodeId);
 
-    var facade = InitializePersistence(options.Persistence);
-    DumpDataState(facade);
+    using var persistence = InitializePersistence(options.Persistence);
+
+    DumpDataState(persistence);
 
     var peers = ExtractPeers(options.Cluster, nodeId, options.Network);
 
-    using var jobQueue = new ThreadPerWorkerBackgroundJobQueue(options.Cluster.ClusterPeers.Length,
-        options.Cluster.ClusterNodeId, Log.Logger.ForContext("SourceContext", "BackgroundJobQueue"), lifetime);
-    using var consensusModule = CreateRaftConsensusModule(nodeId, peers, facade, jobQueue);
-    using var requestAcceptor =
-        new ExclusiveRequestAcceptor(consensusModule, lifetime, Log.ForContext("SourceContext", "RequestAcceptor"));
-    using var connectionManager = new NodeConnectionManager(options.Cluster.ClusterListenHost,
-        options.Cluster.ClusterListenPort,
-        consensusModule, options.Network.ClientRequestTimeout,
-        lifetime, Log.ForContext<NodeConnectionManager>());
-
-    var taskFluxHostedService = new TaskFluxNodeHostedService(consensusModule, requestAcceptor, jobQueue,
-        connectionManager, Log.ForContext<TaskFluxNodeHostedService>());
+    using var jobQueue = CreateJobQueue(options, lifetime);
+    using var consensusModule = CreateRaftConsensusModule(nodeId, peers, persistence, jobQueue);
+    using var requestAcceptor = CreateRequestAcceptor(consensusModule, lifetime);
+    using var connectionManager = CreateClusterNodeConnectionManager(options, consensusModule, lifetime);
+    var taskFluxHostedService =
+        CreateTaskFluxHostedService(consensusModule, requestAcceptor, jobQueue, connectionManager);
 
     try
     {
@@ -96,19 +97,38 @@ try
         lifetime.StopAbnormal();
     }
 
-
     IHost BuildHost()
     {
         return new HostBuilder()
-              .ConfigureHostConfiguration(builder =>
-                   builder.AddEnvironmentVariables()
-                          .AddCommandLine(args))
-              .ConfigureAppConfiguration(builder =>
-                   builder.AddEnvironmentVariables()
-                          .AddCommandLine(args))
               .UseSerilog()
+              .ConfigureHostConfiguration(host =>
+                   host.AddEnvironmentVariables("DOTNET_")
+                       .AddCommandLine(args))
+              .ConfigureAppConfiguration(app =>
+                   app.AddEnvironmentVariables()
+                      .AddCommandLine(args))
+              .ConfigureWebHost(web =>
+               {
+                   web.ConfigureTaskFluxKestrel(options.Http);
+                   web.Configure(app =>
+                   {
+                       app.UseRouting();
+                       app.UseEndpoints(ep =>
+                       {
+                           ep.MapPrometheusScrapingEndpoint("/metrics");
+                           ep.MapControllers();
+                       });
+                   });
+                   web.UseKestrel();
+               })
               .ConfigureServices((_, services) =>
                {
+                   services.AddOpenTelemetry()
+                           .WithMetrics(metrics =>
+                            {
+                                metrics.AddTaskFluxMetrics(persistence, requestAcceptor);
+                            });
+
                    services.AddHostedService(_ => taskFluxHostedService);
 
                    services.AddSingleton<IRequestAcceptor>(requestAcceptor);
@@ -116,9 +136,14 @@ try
                    services.AddSingleton<IApplicationInfo>(sp => new ProxyApplicationInfo(consensusModule,
                        sp.GetRequiredService<ApplicationOptions>().Cluster.ClusterPeers));
 
-                   services.AddNodeStateObserverHostedService(consensusModule);
+                   services.AddNodeStateObserverHostedService(persistence, consensusModule);
+
+                   // Модуль для HTTP запросов
+                   services.AddControllers()
+                           .AddApplicationPart(typeof(RequestController).Assembly);
+
+                   // Модуль для запросов по своему протоколу
                    services.AddTcpRequestModule(lifetime);
-                   services.AddHttpRequestModule(lifetime);
                })
               .Build();
     }
@@ -130,11 +155,7 @@ catch (Exception e)
 }
 finally
 {
-    if (sigTermRegistration is not null)
-    {
-        sigTermRegistration.Dispose();
-    }
-
+    sigTermRegistration?.Dispose();
     Log.CloseAndFlush();
 }
 
@@ -143,7 +164,18 @@ return await lifetime.WaitReturnCode();
 
 FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
 {
-    return FileSystemPersistenceFacade.Initialize(options.WorkingDirectory, options.MaxLogFileSize);
+    var fs = new FileSystem();
+    var dataDirectoryInfo = fs.DirectoryInfo.New(Path.Combine(options.WorkingDirectory, "data"));
+    var snapshotOptions = new SnapshotOptions(
+        snapshotCreationSegmentsThreshold: options.SnapshotCreationSegmentsThreshold);
+    var logOptions = new SegmentedFileLogOptions(softLimit: options.LogFileSoftLimit,
+        hardLimit: options.LogFileHardLimit,
+        preallocateSegment: true,
+        maxReadEntriesSize: options.ReplicationMaxSendSize);
+    return FileSystemPersistenceFacade.Initialize(dataDirectory: dataDirectoryInfo,
+        logger: Log.ForContext<FileSystemPersistenceFacade>(),
+        snapshotOptions: snapshotOptions,
+        logOptions: logOptions);
 }
 
 RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
@@ -193,19 +225,33 @@ static IPeer[] ExtractPeers(ClusterOptions serverOptions, NodeId currentNodeId, 
     return peers;
 }
 
-ApplicationOptions GetApplicationOptions()
-{
-    var root = new ConfigurationBuilder()
-              .AddTaskFluxSource(args, "taskflux.settings.json")
-              .Build();
-
-    return ApplicationOptions.FromConfiguration(root);
-}
-
 bool TryValidateOptions(ApplicationOptions options)
 {
     var results = new List<ValidationResult>();
-    if (Validator.TryValidateObject(options, new ValidationContext(options), results, true))
+
+    _ = Validator.TryValidateObject(options, new ValidationContext(options), results, true);
+
+    if (options.Persistence.LogFileHardLimit < options.Persistence.LogFileSoftLimit)
+    {
+        results.Add(new ValidationResult(
+            $"Жесткий предел размера файла не может быть меньше мягкого предела. Мягкий предел: {options.Persistence.LogFileSoftLimit}. Жесткий предел: {options.Persistence.LogFileHardLimit}",
+            new[] {nameof(options.Persistence.LogFileHardLimit), nameof(options.Persistence.LogFileSoftLimit)}));
+    }
+
+    if (options.Http.HttpListenAddress is {Length: > 0} httpListenAddress)
+    {
+        try
+        {
+            _ = EndPointHelpers.ParseEndPoint(httpListenAddress, 0);
+        }
+        catch (ArgumentException ae)
+        {
+            results.Add(new ValidationResult($"Невалидный адрес для HTTP запросов: {ae.Message}",
+                new[] {nameof(options.Http.HttpListenAddress)}));
+        }
+    }
+
+    if (results.Count == 0)
     {
         return true;
     }
@@ -227,8 +273,42 @@ void DumpDataState(FileSystemPersistenceFacade persistence)
     }
 
     Log.Information("Количество записей в логе: {LogEntriesCount}", persistence.Log.Count);
-    if (persistence.Log.Count > 0)
+    if (!persistence.CommitIndex.IsTomb)
     {
-        Log.Information("Индекс закоммиченной команды: {CommitIndex}", persistence.Log.CommitIndex);
+        Log.Information("Индекс закоммиченной команды: {CommitIndex}", persistence.CommitIndex);
     }
+}
+
+ThreadPerWorkerBackgroundJobQueue CreateJobQueue(ApplicationOptions applicationOptions,
+                                                 HostApplicationLifetime hostApplicationLifetime)
+{
+    return new ThreadPerWorkerBackgroundJobQueue(applicationOptions.Cluster.ClusterPeers.Length,
+        applicationOptions.Cluster.ClusterNodeId,
+        Log.ForContext("SourceContext", "BackgroundJobQueue"), hostApplicationLifetime);
+}
+
+ExclusiveRequestAcceptor CreateRequestAcceptor(RaftConsensusModule<Command, Response> raftConsensusModule,
+                                               HostApplicationLifetime lifetime1)
+{
+    return new ExclusiveRequestAcceptor(raftConsensusModule, lifetime1,
+        Log.ForContext("SourceContext", "RequestAcceptor"));
+}
+
+NodeConnectionManager CreateClusterNodeConnectionManager(ApplicationOptions applicationOptions,
+                                                         RaftConsensusModule<Command, Response> consensusModule,
+                                                         HostApplicationLifetime hostApplicationLifetime1)
+{
+    return new NodeConnectionManager(applicationOptions.Cluster.ClusterListenHost,
+        applicationOptions.Cluster.ClusterListenPort,
+        consensusModule, applicationOptions.Network.ClientRequestTimeout,
+        hostApplicationLifetime1, Log.ForContext<NodeConnectionManager>());
+}
+
+TaskFluxNodeHostedService CreateTaskFluxHostedService(RaftConsensusModule<Command, Response> consensusModule,
+                                                      ExclusiveRequestAcceptor exclusiveRequestAcceptor,
+                                                      ThreadPerWorkerBackgroundJobQueue jobQueue,
+                                                      NodeConnectionManager nodeConnectionManager)
+{
+    return new TaskFluxNodeHostedService(consensusModule, exclusiveRequestAcceptor, jobQueue,
+        nodeConnectionManager, Log.ForContext<TaskFluxNodeHostedService>());
 }

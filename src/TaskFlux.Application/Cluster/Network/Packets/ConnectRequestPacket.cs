@@ -1,44 +1,42 @@
 using TaskFlux.Core;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public class ConnectRequestPacket : NodePacket
 {
     public override NodePacketType PacketType => NodePacketType.ConnectRequest;
+    public NodeId Id { get; }
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return 1  // Маркер
-             + 4; // NodeId
+        return SizeOf.NodeId; // ID узла
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.ConnectRequest);
         writer.Write(Id.Id);
     }
 
-    public NodeId Id { get; }
 
     public ConnectRequestPacket(NodeId id)
     {
         Id = id;
     }
 
+    private const int PayloadSize = SizeOf.NodeId;
+
     public new static ConnectRequestPacket Deserialize(Stream stream)
     {
-        const int packetSize = sizeof(int); // Node Id
-        Span<byte> buffer = stackalloc byte[packetSize];
+        Span<byte> buffer = stackalloc byte[PayloadSize + sizeof(uint)];
         stream.ReadExactly(buffer);
         return DeserializePayload(buffer);
     }
 
     public new static async Task<ConnectRequestPacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        const int packetSize = sizeof(int); // Node Id
-        using var buffer = Rent(packetSize);
+        using var buffer = Rent(PayloadSize + sizeof(uint));
         var memory = buffer.GetMemory();
         await stream.ReadExactlyAsync(memory, token);
         return DeserializePayload(memory.Span);
@@ -47,7 +45,7 @@ public class ConnectRequestPacket : NodePacket
     private static ConnectRequestPacket DeserializePayload(Span<byte> buffer)
     {
         var reader = new SpanBinaryReader(buffer);
-        var id = reader.ReadInt32();
-        return new ConnectRequestPacket(new NodeId(id));
+        var id = reader.ReadNodeId();
+        return new ConnectRequestPacket(id);
     }
 }

@@ -2,7 +2,7 @@ using System.Buffers;
 using TaskFlux.Consensus.Commands.RequestVote;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public class RequestVoteResponsePacket : NodePacket
 {
@@ -15,40 +15,34 @@ public class RequestVoteResponsePacket : NodePacket
 
     public override NodePacketType PacketType => NodePacketType.RequestVoteResponse;
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return 1  // Маркер
-             + 1  // Vote Granted
-             + 4; // Current Term
+        return PayloadSize;
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.RequestVoteResponse);
-        writer.Write(Response.VoteGranted);
         writer.Write(Response.CurrentTerm.Value);
+        writer.Write(Response.VoteGranted);
     }
+
+    private const int PayloadSize = SizeOf.Term
+                                  + SizeOf.Bool;
 
     public new static RequestVoteResponsePacket Deserialize(Stream stream)
     {
-        const int packetSize = sizeof(bool) // Success 
-                             + sizeof(int); // Term
-
-        Span<byte> buffer = stackalloc byte[packetSize];
+        Span<byte> buffer = stackalloc byte[PayloadSize + sizeof(uint)];
         stream.ReadExactly(buffer);
         return DeserializePayload(buffer);
     }
 
     public new static async Task<RequestVoteResponsePacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        const int packetSize = sizeof(bool) // Success 
-                             + sizeof(int); // Term
-
-        var buffer = ArrayPool<byte>.Shared.Rent(packetSize);
+        var buffer = ArrayPool<byte>.Shared.Rent(PayloadSize + sizeof(uint));
         try
         {
-            var memory = buffer.AsMemory(0, packetSize);
+            var memory = buffer.AsMemory(0, PayloadSize + sizeof(uint));
             await stream.ReadExactlyAsync(memory, token);
             return DeserializePayload(memory.Span);
         }
@@ -60,9 +54,10 @@ public class RequestVoteResponsePacket : NodePacket
 
     private static RequestVoteResponsePacket DeserializePayload(Span<byte> buffer)
     {
+        VerifyCheckSum(buffer);
         var reader = new SpanBinaryReader(buffer);
+        var term = reader.ReadTerm();
         var success = reader.ReadBoolean();
-        var term = reader.ReadInt32();
-        return new RequestVoteResponsePacket(new RequestVoteResponse(new Term(term), success));
+        return new RequestVoteResponsePacket(new RequestVoteResponse(term, success));
     }
 }

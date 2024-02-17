@@ -1,4 +1,4 @@
-namespace TaskFlux.Consensus.Cluster.Network.Exceptions;
+namespace TaskFlux.Application.Cluster.Network.Exceptions;
 
 /// <summary>
 /// Исключение, возникающее, когда из сети получен маркер неизвестного пакета

@@ -1,9 +1,9 @@
-using TaskFlux.Application.Persistence;
-using TaskFlux.Application.Persistence.Delta;
 using TaskFlux.Consensus;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
 using TaskFlux.Core.Queue;
+using TaskFlux.Persistence.ApplicationState;
+using TaskFlux.Persistence.ApplicationState.Deltas;
 using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Application;

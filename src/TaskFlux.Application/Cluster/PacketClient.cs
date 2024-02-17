@@ -1,7 +1,7 @@
 using System.Net.Sockets;
-using TaskFlux.Consensus.Cluster.Network;
+using TaskFlux.Application.Cluster.Network;
 
-namespace TaskFlux.Consensus.Cluster;
+namespace TaskFlux.Application.Cluster;
 
 public class PacketClient
 {

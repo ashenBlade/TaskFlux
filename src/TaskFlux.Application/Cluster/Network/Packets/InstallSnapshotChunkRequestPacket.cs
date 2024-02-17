@@ -2,12 +2,12 @@ using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public class InstallSnapshotChunkRequestPacket : NodePacket
 {
-    internal const int DataStartPosition = 1  // Маркер
-                                         + 4; // Размер чанка
+    internal const int DataStartPosition = SizeOf.ArrayLength; // Размер чанка
+    private const int DataAlignment = 4;
 
     public ReadOnlyMemory<byte> Chunk { get; }
     public override NodePacketType PacketType => NodePacketType.InstallSnapshotChunkRequest;
@@ -17,39 +17,46 @@ public class InstallSnapshotChunkRequestPacket : NodePacket
         Chunk = chunk;
     }
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return sizeof(NodePacketType) // Маркер
-             + sizeof(int)            // Размер
-             + Chunk.Length           // Данные
-             + sizeof(uint);          // Чек-сумма
+        return SizeOf.BufferAligned(Chunk.Span, DataAlignment); // Данные
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
-        var checkSum = Crc32CheckSum.Compute(Chunk.Span);
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.InstallSnapshotChunkRequest);
-        writer.WriteBuffer(Chunk.Span);
-        writer.Write(checkSum);
+        writer.WriteBufferAligned(Chunk.Span, DataAlignment);
     }
 
     internal int GetDataEndPosition()
     {
-        return 1             // Маркер
-             + 4             // Размер данных
-             + Chunk.Length; // Сами данные
+        return SizeOf.PacketType
+             + SizeOf.BufferAligned(Chunk.Span, DataAlignment)
+             + SizeOf.CheckSum;
     }
 
     public new static InstallSnapshotChunkRequestPacket Deserialize(Stream stream)
     {
         // Читаем размер данных
-        var reader = new StreamBinaryReader(stream);
-        var payloadLength = reader.ReadInt32();
-        var totalPayloadSize = payloadLength + sizeof(uint);
-        using var buffer = Rent(totalPayloadSize);
+        Span<byte> lengthSpan = stackalloc byte[sizeof(int)];
+        stream.ReadExactly(lengthSpan);
+        var bufferLength = new SpanBinaryReader(lengthSpan).ReadInt32();
+        var restPayloadSize = bufferLength + GetAlignment(bufferLength) + SizeOf.CheckSum;
+        if (restPayloadSize < 1024) // 1 Кб
+        {
+            Span<byte> payloadBuffer = stackalloc byte[restPayloadSize];
+            stream.ReadExactly(payloadBuffer);
+            return DeserializePayload(payloadBuffer, lengthSpan, bufferLength);
+        }
+
+        using var buffer = Rent(restPayloadSize);
         stream.ReadExactly(buffer.GetSpan());
-        return DeserializeDataVerifyCheckSum(buffer.GetSpan());
+        return DeserializePayload(buffer.GetSpan(), lengthSpan, bufferLength);
+    }
+
+    private static int GetAlignment(int payloadLength)
+    {
+        return payloadLength % DataAlignment;
     }
 
     public new static async Task<InstallSnapshotChunkRequestPacket> DeserializeAsync(
@@ -57,30 +64,36 @@ public class InstallSnapshotChunkRequestPacket : NodePacket
         CancellationToken token)
     {
         // Читаем размер данных
-        var reader = new StreamBinaryReader(stream);
-        var payloadLength = await reader.ReadInt32Async(token);
-        var totalPayloadSize = payloadLength + sizeof(uint);
+        using var lengthBuffer = Rent(sizeof(int));
+        await stream.ReadExactlyAsync(lengthBuffer.GetMemory(), token);
+        var bufferLength = new SpanBinaryReader(lengthBuffer.GetSpan()).ReadInt32();
+        var totalPayloadSize = bufferLength + GetAlignment(bufferLength) + sizeof(uint);
+
         using var buffer = Rent(totalPayloadSize);
         await stream.ReadExactlyAsync(buffer.GetMemory(), token);
-        return DeserializeDataVerifyCheckSum(buffer.GetSpan());
+        return DeserializePayload(buffer.GetSpan(), lengthBuffer.GetSpan(), bufferLength);
     }
 
-    private static InstallSnapshotChunkRequestPacket DeserializeDataVerifyCheckSum(Span<byte> payload)
+    private static InstallSnapshotChunkRequestPacket DeserializePayload(
+        Span<byte> restPayload,
+        Span<byte> lengthSpan,
+        int bufferLength)
     {
-        ValidateChecksum(payload);
+        ValidateChecksum(restPayload, lengthSpan);
 
-        if (payload.Length == 4)
+        if (bufferLength == 0)
         {
             return new InstallSnapshotChunkRequestPacket(Array.Empty<byte>());
         }
 
-        return new InstallSnapshotChunkRequestPacket(payload[..^4].ToArray());
+        var alignment = GetAlignment(bufferLength);
+        return new InstallSnapshotChunkRequestPacket(restPayload[..^( alignment + sizeof(uint) )].ToArray());
 
-        static void ValidateChecksum(Span<byte> buffer)
+        static void ValidateChecksum(Span<byte> restPayload, Span<byte> lengthPayload)
         {
-            var crcReader = new SpanBinaryReader(buffer[^4..]);
-            var storedCrc = crcReader.ReadUInt32();
-            var calculatedCrc = Crc32CheckSum.Compute(buffer[..^4]);
+            var storedCrc = new SpanBinaryReader(restPayload[^4..]).ReadUInt32();
+            var calculatedCrc = Crc32CheckSum.Compute(lengthPayload);
+            calculatedCrc = Crc32CheckSum.Compute(calculatedCrc, restPayload[..^4]);
             if (storedCrc != calculatedCrc)
             {
                 throw new IntegrityException();

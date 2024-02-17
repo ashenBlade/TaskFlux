@@ -1,14 +1,8 @@
-using System.IO.Abstractions;
-using FluentAssertions;
 using Moq;
 using Serilog.Core;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
-using TaskFlux.Consensus.Persistence.Log;
-using TaskFlux.Consensus.Persistence.Metadata;
-using TaskFlux.Consensus.Persistence.Snapshot;
 using TaskFlux.Consensus.Tests.Infrastructure;
 using TaskFlux.Consensus.Tests.Stubs;
 using TaskFlux.Core;
@@ -22,28 +16,31 @@ public class FollowerStateTests
 
     private static readonly PeerGroup EmptyPeerGroup = new(Array.Empty<IPeer>());
 
-    private static RaftConsensusModule<int, int> CreateFollowerNode(Term currentTerm,
-                                                                    NodeId? votedFor,
-                                                                    ITimer? electionTimer = null,
-                                                                    IBackgroundJobQueue? jobQueue = null)
+    private Mock<IPersistence> _mockPersistence;
+
+    private RaftConsensusModule<int, int> CreateFollowerNode(Term currentTerm,
+                                                             NodeId? votedFor,
+                                                             ITimer? electionTimer = null,
+                                                             IBackgroundJobQueue? jobQueue = null,
+                                                             Action<Mock<IPersistence>>? persistenceFactory = null)
     {
-        var fs = Helpers.CreateFileSystem();
-        var timerFactory = electionTimer != null
+        var timerFactory = electionTimer is not null
                                ? new ConstantTimerFactory(electionTimer)
                                : Helpers.NullTimerFactory;
-        var backgroundJobQueue = jobQueue ?? Helpers.NullBackgroundJobQueue;
-        var metadataFile = MetadataFile.Initialize(fs.DataDirectory);
-        metadataFile.SetupMetadataTest(currentTerm, votedFor);
-        var persistence = new FileSystemPersistenceFacade(FileLog.Initialize(fs.DataDirectory),
-            metadataFile,
-            SnapshotFile.Initialize(fs.DataDirectory), Logger.None);
-
+        var persistence = new Mock<IPersistence>(MockBehavior.Strict)
+           .Apply(m =>
+            {
+                m.SetupGet(p => p.CurrentTerm).Returns(currentTerm);
+                m.SetupGet(p => p.VotedFor).Returns(votedFor);
+                persistenceFactory?.Invoke(m);
+            });
+        _mockPersistence = persistence;
         var node = new RaftConsensusModule(NodeId,
             EmptyPeerGroup,
             Logger.None,
             timerFactory,
-            backgroundJobQueue,
-            persistence,
+            jobQueue ?? Helpers.NullBackgroundJobQueue,
+            persistence.Object,
             Helpers.NullDeltaExtractor,
             Helpers.NullApplicationFactory);
 
@@ -53,132 +50,230 @@ public class FollowerStateTests
     }
 
     [Fact]
-    public void RequestVote__СБолееВысокимТермом()
+    public void RequestVote__КогдаТермБольшеИЛогАктуальный__ДолженВыставитьVotedForВIdКандидата()
     {
         var oldTerm = new Term(1);
-        var node = CreateFollowerNode(oldTerm, null);
+        var candidateTerm = oldTerm.Increment();
+        var lastLogEntryInfo = LogEntryInfo.Tomb;
+        var candidateId = AnotherNodeId;
+        using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.VotedFor).Returns(( NodeId? ) null);
+            m.Setup(p => p.IsUpToDate(lastLogEntryInfo)).Returns(true);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), candidateId)).Verifiable();
+        });
 
+        _ = node.Handle(new RequestVoteRequest(candidateId, candidateTerm, lastLogEntryInfo));
+
+        _mockPersistence.Verify(p => p.UpdateState(It.IsAny<Term>(), candidateId), Times.Once());
+    }
+
+    [Fact]
+    public void RequestVote__КогдаТермБольшеИЛогАктуальный__ДолженОбновитьТерм()
+    {
+        var oldTerm = new Term(1);
+        var candidateTerm = oldTerm.Increment();
+        var lastLogEntryInfo = LogEntryInfo.Tomb;
+        var candidateId = AnotherNodeId;
+        using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.VotedFor).Returns(( NodeId? ) null);
+            m.Setup(p => p.IsUpToDate(lastLogEntryInfo)).Returns(true);
+            m.Setup(p => p.UpdateState(candidateTerm, It.IsAny<NodeId?>())).Verifiable();
+        });
+
+        _ = node.Handle(new RequestVoteRequest(candidateId, candidateTerm, lastLogEntryInfo));
+
+        _mockPersistence.Verify(p => p.UpdateState(candidateTerm, It.IsAny<NodeId?>()), Times.Once());
+    }
+
+    [Fact]
+    public void RequestVote__КогдаТермВЗапросеБольше__ДолженВыставитьТермКакВЗапросе()
+    {
+        var oldTerm = new Term(1);
+        var lastLogEntryInfo = new LogEntryInfo(oldTerm, 0);
         var expectedTerm = oldTerm.Increment();
         var candidateId = new NodeId(2);
+        using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(true);
+            m.Setup(p => p.VotedFor).Returns(( NodeId? ) null);
+            m.Setup(p => p.UpdateState(It.Is<Term>(t => t == expectedTerm), It.IsAny<NodeId?>()));
+        });
 
-        var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: expectedTerm,
-            LastLogEntryInfo: new LogEntryInfo(oldTerm, 0));
-
-        var response = node.Handle(request);
+        var response = node.Handle(new RequestVoteRequest(candidateId, expectedTerm, lastLogEntryInfo));
 
         Assert.True(response.VoteGranted);
-        Assert.Equal(expectedTerm, node.CurrentTerm);
-        Assert.Equal(candidateId, node.VotedFor);
     }
 
     [Fact]
-    public void RequestVote__СРавнымТермомКогдаРанееНеГолосовал__ДолженОтветитьTrue()
+    public void RequestVote__КогдаТермВЗапросеБольшеИЛогАктуальный__ДолженВыставитьОтданныйГолосВКандидата()
     {
-        var term = new Term(1);
-        var node = CreateFollowerNode(term, null);
-
-        var expectedTerm = term;
+        var oldTerm = new Term(1);
+        var expectedTerm = oldTerm.Increment();
         var candidateId = new NodeId(2);
+        var lastLogEntryInfo = new LogEntryInfo(oldTerm, 0);
 
-        var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: expectedTerm,
-            LastLogEntryInfo: new LogEntryInfo(term, 0));
+        using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(true);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), candidateId)).Verifiable();
+            m.SetupGet(p => p.VotedFor).Returns(( NodeId? ) null);
+        });
 
-        var response = node.Handle(request);
+        var request = new RequestVoteRequest(candidateId, expectedTerm, lastLogEntryInfo);
 
-        Assert.True(response.VoteGranted);
-        Assert.Equal(expectedTerm, node.CurrentTerm);
-        Assert.Equal(candidateId, node.VotedFor);
+        _ = node.Handle(request);
+
+        _mockPersistence.Verify(p => p.UpdateState(It.IsAny<Term>(), candidateId), Times.Once());
     }
 
     [Fact]
-    public void RequestVote__СРавнымТермомКогдаУжеГолосовалЗаУзел__ДолженОтветитьTrue()
+    public void RequestVote__КогдаТермВЗапросеБольшеИЛогНеАктуальный__ДолженВыставитьОтданныйГолосВnull()
+    {
+        var oldTerm = new Term(1);
+        var expectedTerm = oldTerm.Increment();
+        var candidateId = new NodeId(2);
+        var lastLogEntryInfo = new LogEntryInfo(oldTerm, 0);
+
+        using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(false);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), null)).Verifiable();
+            m.SetupGet(p => p.VotedFor).Returns(( NodeId? ) null);
+        });
+
+        var request = new RequestVoteRequest(candidateId, expectedTerm, lastLogEntryInfo);
+
+        _ = node.Handle(request);
+
+        _mockPersistence.Verify(p => p.UpdateState(It.IsAny<Term>(), null), Times.Once());
+    }
+
+    [Fact]
+    public void RequestVote__КогдаЛогАктуаленИТермКандидатаБольшеИРанееНеГолосовал__ДолженОтдатьГолос()
     {
         var term = new Term(1);
-        var expectedTerm = term;
-        var candidateId = new NodeId(2);
-        var node = CreateFollowerNode(term, candidateId);
+        var candidateId = AnotherNodeId;
+        var candidateTerm = term.Increment();
+        var candidateLastEntry = new LogEntryInfo(candidateTerm, 100);
+        using var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == candidateLastEntry))).Returns(true);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.Is<NodeId?>(id => id == candidateId)));
+        });
 
-        var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: expectedTerm,
-            LastLogEntryInfo: new LogEntryInfo(term, 0));
-
-        var response = node.Handle(request);
+        var response = node.Handle(new RequestVoteRequest(candidateId, candidateTerm, candidateLastEntry));
 
         Assert.True(response.VoteGranted);
-        Assert.Equal(expectedTerm, node.CurrentTerm);
-        Assert.Equal(candidateId, node.VotedFor);
+        Assert.Equal(candidateTerm, response.CurrentTerm);
+    }
+
+    [Fact]
+    public void RequestVote__КогдаЛогАктуаленИТермРавенИРанееНеГолосовал__ДолженОтветитьTrue()
+    {
+        var term = new Term(1);
+        var candidateId = new NodeId(2);
+        var lastLogEntryInfo = new LogEntryInfo(term, 0);
+        using var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(lastLogEntryInfo)).Returns(true);
+            m.Setup(p => p.UpdateState(term, candidateId));
+        });
+
+        var response = node.Handle(new RequestVoteRequest(candidateId, term, lastLogEntryInfo));
+
+        Assert.True(response.VoteGranted);
+    }
+
+    [Fact]
+    public void RequestVote__КогдаЛогАктуаленИТермРавенИРанееНеГолосовал__ДолженВыставитьVotedForВIdКандидата()
+    {
+        var term = new Term(1);
+        var candidateId = new NodeId(2);
+        var lastLogEntryInfo = new LogEntryInfo(term, 0);
+        using var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(lastLogEntryInfo)).Returns(true);
+            m.Setup(p => p.UpdateState(term, candidateId)).Verifiable();
+        });
+
+        _ = node.Handle(new RequestVoteRequest(candidateId, term, lastLogEntryInfo));
+
+        _mockPersistence.Verify(p => p.UpdateState(term, candidateId), Times.Once());
+    }
+
+    [Fact]
+    public void RequestVote__КогдаЛогАктуаленИТермРавенИРанееГолосовалЗаЭтотУзел__ДолженВернутьTrue()
+    {
+        var term = new Term(1);
+        var candidateId = new NodeId(2);
+        var lastLogEntryInfo = new LogEntryInfo(term, 0);
+        using var node = CreateFollowerNode(term, candidateId, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(lastLogEntryInfo)).Returns(true);
+            m.Setup(p => p.UpdateState(term, candidateId)).Verifiable();
+        });
+
+        var response = node.Handle(new RequestVoteRequest(candidateId, term, lastLogEntryInfo));
+
+        Assert.True(response.VoteGranted);
+    }
+
+    [Fact]
+    public void RequestVote__КогдаЛогАктуаленИТермРавенИРанееГолосовалЗаДругойУзел__ДолженВернутьFalse()
+    {
+        var term = new Term(1);
+        var candidateId = new NodeId(2);
+        var anotherNodeId = new NodeId(3);
+        var lastLogEntryInfo = new LogEntryInfo(term, 0);
+        using var node = CreateFollowerNode(term, anotherNodeId, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(lastLogEntryInfo)).Returns(true);
+            m.Setup(p => p.UpdateState(term, candidateId));
+        });
+
+        var response = node.Handle(new RequestVoteRequest(candidateId, term, lastLogEntryInfo));
+
+        Assert.False(response.VoteGranted);
     }
 
     [Theory]
     [InlineData(2, 1)]
     [InlineData(3, 2)]
     [InlineData(3, 1)]
-    public void RequestVote__СТермомМеньше__ДолженОтветитьFalse(
+    public void RequestVote__КогдаТермВЗапросеМеньше__ДолженОтветитьFalse(
         int myTerm,
         int otherTerm)
     {
         var oldTerm = new Term(myTerm);
+        var lesserTerm = new Term(otherTerm);
+        using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
+        {
+        });
 
-        var node = CreateFollowerNode(oldTerm, null);
-
-        var expectedTerm = new Term(otherTerm);
-        var request = new RequestVoteRequest(CandidateId: new NodeId(2), CandidateTerm: expectedTerm,
-            LastLogEntryInfo: new LogEntryInfo(oldTerm, 0));
-
-        var response = node.Handle(request);
+        var response = node.Handle(new RequestVoteRequest(AnotherNodeId, lesserTerm, new LogEntryInfo(oldTerm, 0)));
 
         Assert.False(response.VoteGranted);
     }
 
-    [Fact]
-    public void RequestVote__СКонфликтующимЛогом__ДолженОтветитьFalse()
+    [Theory]
+    [InlineData(2, 1)]
+    [InlineData(3, 2)]
+    [InlineData(3, 1)]
+    public void RequestVote__КогдаТермВЗапросеМеньше__ДолженВернутьСвойТерм(
+        int myTerm,
+        int otherTerm)
     {
-        var term = new Term(4);
-        var node = CreateFollowerNode(term, null);
-        node.Persistence.InsertRange(new LogEntry[]
+        var currentTerm = new Term(myTerm);
+        var lesserTerm = new Term(otherTerm);
+        using var node = CreateFollowerNode(currentTerm, null, persistenceFactory: _ =>
         {
-            new(new(1), Array.Empty<byte>()), // 1
-            new(new(3), Array.Empty<byte>()), // 2
-            new(new(3), Array.Empty<byte>()), // 3
-        }, 0);
-        var expectedTerm = term;
-        var candidateId = new NodeId(2);
+        });
 
-        // Конфликт на 2 записи (индекс 1): наш терм - 3, его терм - 2
-        var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: expectedTerm,
-            LastLogEntryInfo: new LogEntryInfo(new Term(2), 1));
+        var response = node.Handle(new RequestVoteRequest(AnotherNodeId, lesserTerm, new LogEntryInfo(currentTerm, 0)));
 
-        var response = node.Handle(request);
-
-        Assert.False(response.VoteGranted);
-
-        // Проверка, что состояние не изменилось
-        Assert.Equal(term, node.CurrentTerm);
-        Assert.Null(node.VotedFor);
-    }
-
-    [Fact]
-    public void RequestVote__КогдаТермБольшеНоЛогКонфликтует__ДолженОтветитьFalseИИзменитьТерм()
-    {
-        var term = new Term(4);
-        var node = CreateFollowerNode(term, null);
-        node.Persistence.InsertRange(new LogEntry[]
-        {
-            new(new(1), Array.Empty<byte>()), // 1
-            new(new(3), Array.Empty<byte>()), // 2
-            new(new(3), Array.Empty<byte>()), // 3
-        }, 0);
-        var expectedTerm = term.Increment();
-        var candidateId = new NodeId(2);
-
-        // Конфликт на 2 записи (индекс 1): наш терм - 3, его терм - 2
-        var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: expectedTerm,
-            LastLogEntryInfo: new LogEntryInfo(new Term(2), 1));
-
-        var response = node.Handle(request);
-
-        Assert.False(response.VoteGranted);
-        Assert.Equal(expectedTerm, node.CurrentTerm);
-        Assert.Null(node.VotedFor);
+        Assert.Equal(currentTerm, response.CurrentTerm);
     }
 
     [Fact]
@@ -186,7 +281,11 @@ public class FollowerStateTests
     {
         var timer = new Mock<ITimer>(MockBehavior.Loose);
 
-        var node = CreateFollowerNode(new Term(1), null, electionTimer: timer.Object);
+        using var node = CreateFollowerNode(new Term(1), null, electionTimer: timer.Object, persistenceFactory: m =>
+        {
+            m.SetupGet(p => p.LastEntry).Returns(LogEntryInfo.Tomb);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>()));
+        });
 
         timer.Raise(x => x.Timeout += null);
 
@@ -194,28 +293,36 @@ public class FollowerStateTests
     }
 
     [Fact]
-    public void ElectionTimeout__ПослеСрабатыванияОбработчика__ДолженПерейтиВСледующийТерм()
+    public void ElectionTimeout__ДолженПерейтиВСледующийТерм()
     {
         var oldTerm = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
-        using var raft = CreateFollowerNode(new Term(1), null, timer.Object);
+        var expectedTerm = oldTerm.Increment();
+        using var raft = CreateFollowerNode(new Term(1), null, timer.Object, persistenceFactory: m =>
+        {
+            m.SetupGet(p => p.LastEntry).Returns(LogEntryInfo.Tomb);
+            m.Setup(p => p.UpdateState(expectedTerm, It.IsAny<NodeId?>())).Verifiable();
+        });
 
         timer.Raise(x => x.Timeout += null);
 
-        var expectedTerm = oldTerm.Increment();
-        Assert.Equal(expectedTerm, raft.CurrentTerm);
+        _mockPersistence.Verify(p => p.UpdateState(expectedTerm, It.IsAny<NodeId?>()), Times.Once());
     }
 
     [Fact]
-    public void ElectionTimeout__ПослеСрабатыванияОбработчика__ДолженПроголосоватьЗаСебя()
+    public void ElectionTimeout__ДолженВыставитьVotedForВСвойId()
     {
         var oldTerm = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
-        using var node = CreateFollowerNode(oldTerm, null, timer.Object);
+        using var node = CreateFollowerNode(oldTerm, null, timer.Object, persistenceFactory: m =>
+        {
+            m.SetupGet(p => p.LastEntry).Returns(LogEntryInfo.Tomb);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), NodeId)).Verifiable();
+        });
 
         timer.Raise(x => x.Timeout += null);
 
-        Assert.Equal(node.Id, node.VotedFor);
+        _mockPersistence.Verify(p => p.UpdateState(It.IsAny<Term>(), NodeId), Times.Once());
     }
 
     [Fact]
@@ -228,10 +335,16 @@ public class FollowerStateTests
         timer.Setup(x => x.Schedule())
              .Verifiable();
 
-        using var node = CreateFollowerNode(term, null, electionTimer: timer.Object);
+        var prevLogEntryInfo = new LogEntryInfo(term, 0);
+        var leaderCommit = Lsn.Tomb;
+        using var node = CreateFollowerNode(term, null, electionTimer: timer.Object, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(prevLogEntryInfo)).Returns(true);
+            m.SetupGet(p => p.CommitIndex).Returns(leaderCommit);
+        });
 
-        var request = AppendEntriesRequest.Heartbeat(term, 0,
-            new NodeId(id: NodeId.Id + 1), new LogEntryInfo(term, 0));
+        var request =
+            new AppendEntriesRequest(term, leaderCommit, AnotherNodeId, prevLogEntryInfo, Array.Empty<LogEntry>());
 
         node.Handle(request);
 
@@ -241,373 +354,617 @@ public class FollowerStateTests
     }
 
     [Fact]
-    public void Heartbeat__СОдинаковымТермомИОдинаковойПоследнейЗаписью__ДолженОтдатьГолос()
+    public void AppendEntries__КогдаПереданБольшийТерм__ДолженВыставитьVotedForВNull()
     {
-        var term = new Term(3);
+        var oldTerm = new Term(1);
+        var nextTerm = new Term(oldTerm.Value + 123);
+        using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), null)).Verifiable();
+            m.Setup(p => p.PrefixMatch(It.IsAny<LogEntryInfo>())).Returns(true);
+            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+        });
 
-        var node = CreateFollowerNode(term, null);
+        node.Handle(new AppendEntriesRequest(nextTerm, Lsn.Tomb, AnotherNodeId, LogEntryInfo.Tomb,
+            Array.Empty<LogEntry>()));
 
-        node.Persistence.InsertRange(
-            new LogEntry[]
-            {
-                new(new(1), Array.Empty<byte>()), new(new(2), Array.Empty<byte>()),
-                new(new(4), Array.Empty<byte>()),
-            }, 0);
-
-        // Наша последняя запись - (4, 2)
-        // Последняя запись кандидата - (4, 2)
-        var request = AppendEntriesRequest.Heartbeat(term, 2,
-            new NodeId(id: NodeId.Id + 1), new LogEntryInfo(new Term(4), 2));
-
-        var response = node.Handle(request);
-
-        Assert.True(response.Success);
-        Assert.Equal(term, node.CurrentTerm);
+        _mockPersistence.Verify(p => p.UpdateState(It.IsAny<Term>(), null), Times.Once());
     }
 
     [Fact]
-    public void RequestVote__СБолееВысокимТермом__ДолженОтдатьГолосЗаКандидата()
+    public void AppendEntries__КогдаПереданБольшийТерм__ДолженОстатьсяFollower()
     {
         var oldTerm = new Term(1);
-        using var raft = CreateFollowerNode(oldTerm, null);
+        var nextTerm = new Term(oldTerm.Value + 66);
 
-        var candidateId = new NodeId(2);
-        var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: oldTerm.Increment(),
-            LastLogEntryInfo: raft.Persistence.LastEntry);
-        raft.Handle(request);
+        using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>()));
+            m.Setup(p => p.PrefixMatch(It.IsAny<LogEntryInfo>())).Returns(true);
+            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+        });
 
-        Assert.Equal(candidateId, raft.VotedFor);
-    }
-
-    [Theory]
-    [InlineData(null)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    public void Heartbeat__СБолееВысокимТермом__ДолженВыставитьСвойГолосВnull(int? oldVotedFor)
-    {
-        var oldTerm = new Term(1);
-        NodeId? votedForId = oldVotedFor is null
-                                 ? null
-                                 : new NodeId(oldVotedFor.Value);
-
-        using var node = CreateFollowerNode(oldTerm, votedForId);
-
-        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.Persistence.CommitIndex,
-            new NodeId(2),
-            node.Persistence.LastEntry);
-        node.Handle(request);
-
-        Assert.False(node.VotedFor.HasValue);
-    }
-
-    [Fact]
-    public void Heartbeat__СБолееВысокимТермом__ДолженОстатьсяFollower()
-    {
-        var oldTerm = new Term(1);
-
-        using var node = CreateFollowerNode(oldTerm, null);
-
-        var request = AppendEntriesRequest.Heartbeat(node.CurrentTerm.Increment(), node.Persistence.CommitIndex,
-            new NodeId(2),
-            node.Persistence.LastEntry);
-        node.Handle(request);
+        node.Handle(AppendEntriesRequest.Heartbeat(nextTerm, Lsn.Tomb, AnotherNodeId, LogEntryInfo.Tomb));
 
         Assert.Equal(NodeRole.Follower, node.CurrentRole);
     }
 
-
-    private record ConsensusFileSystem(IFileInfo SnapshotFile);
-
-    private record NodeCreateResult(
-        RaftConsensusModule Module,
-        FileSystemPersistenceFacade Persistence,
-        ConsensusFileSystem FileSystem);
-
-    private static NodeCreateResult CreateFollowerNodeNew()
+    [Fact]
+    public void AppendEntries__КогдаПереданБольшийТерм__ДолженОбновитьТерм()
     {
-        // Follower никому ничего не отправляет, только принимает
-        var peers = new PeerGroup(Array.Empty<IPeer>());
+        var oldTerm = new Term(5);
+        var nextTerm = oldTerm.Increment();
 
-        // Follower не использует фоновые задачи - это только для Candidate/Leader
-        var backgroundJobQueue = Mock.Of<IBackgroundJobQueue>();
-        var deltaBytes = new byte[] {1,};
-        var commandSerializer =
-            Mock.Of<IDeltaExtractor<int>>(x => x.TryGetDelta(It.IsAny<int>(), out deltaBytes) == true);
-
-        var (persistenceFacade, fileSystem) = CreateStorage();
-        var node = new RaftConsensusModule(NodeId,
-            peers, Logger.None,
-            Helpers.NullTimerFactory,
-            backgroundJobQueue,
-            persistenceFacade,
-            commandSerializer,
-            Helpers.NullApplicationFactory);
-
-        node.SetStateTest(node.CreateFollowerState());
-
-        return new NodeCreateResult(node, persistenceFacade, fileSystem);
-
-        (FileSystemPersistenceFacade, ConsensusFileSystem) CreateStorage()
+        using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
         {
-            var (_, _, _, snapshot, _, dataDir) = Helpers.CreateFileSystem();
-            var logFile = FileLog.Initialize(dataDir);
-            var metadataFile = MetadataFile.Initialize(dataDir);
-            var snapshotFile = SnapshotFile.Initialize(dataDir);
-            return ( new FileSystemPersistenceFacade(logFile, metadataFile, snapshotFile, Logger.None),
-                     new ConsensusFileSystem(snapshot) );
+            m.Setup(p => p.UpdateState(nextTerm, It.IsAny<NodeId?>())).Verifiable();
+            m.Setup(p => p.PrefixMatch(It.IsAny<LogEntryInfo>())).Returns(true);
+            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+        });
+
+        _ = node.Handle(AppendEntriesRequest.Heartbeat(nextTerm, Lsn.Tomb, AnotherNodeId, LogEntryInfo.Tomb));
+
+        _mockPersistence.Verify(p => p.UpdateState(nextTerm, It.IsAny<NodeId?>()), Times.Once());
+    }
+
+    [Fact]
+    public void InstallSnapshot__КогдаУстановленУспешно__ДолженВызыватьCommitПослеУстановки()
+    {
+        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
+        var snapshotData = new byte[] {1, 2, 3};
+        var currentTerm = 1;
+
+        // Приходится использовать Loose, т.к. нельзя матчить с Span
+        var msi = new MockSnapshotInstaller();
+
+        using var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.CreateSnapshot(It.Is<LogEntryInfo>(lei => lei == lastIncludedEntry)))
+             .Returns(msi);
+        });
+
+        _ = node.Handle(new InstallSnapshotRequest(currentTerm, AnotherNodeId, lastIncludedEntry,
+            new StubSnapshot(snapshotData)));
+
+        Assert.True(msi.CommitCalled);
+    }
+
+    [Fact]
+    public void InstallSnapshot__КогдаПереданныйТермБольше__ДолженОбновитьТерм()
+    {
+        var currentTerm = new Term(1);
+        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
+        var snapshotData = new byte[] {1, 2, 3};
+        var leaderTerm = currentTerm.Increment();
+
+        // Приходится использовать Loose, т.к. нельзя матчить с Span
+        var msi = new MockSnapshotInstaller();
+
+        var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.CreateSnapshot(lastIncludedEntry))
+             .Returns(msi);
+            m.Setup(p => p.UpdateState(leaderTerm, It.IsAny<NodeId?>())).Verifiable();
+        });
+
+        var response = node.Handle(new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
+            new StubSnapshot(snapshotData)));
+
+        Assert.Equal(leaderTerm, response.CurrentTerm);
+        _mockPersistence.Verify(p => p.UpdateState(leaderTerm, It.IsAny<NodeId?>()), Times.Once());
+    }
+
+    private class MockSnapshotInstaller : ISnapshotInstaller
+    {
+        public bool CommitCalled { get; set; }
+        public bool DiscardCalled { get; set; }
+        public List<byte> InstalledChunks { get; } = new();
+
+        public void InstallChunk(ReadOnlySpan<byte> chunk, CancellationToken token)
+        {
+            InstalledChunks.AddRange(chunk);
+        }
+
+        public void Commit()
+        {
+            CommitCalled = true;
+        }
+
+        public void Discard()
+        {
+            DiscardCalled = true;
         }
     }
 
     [Fact]
-    public void InstallSnapshot__ДолженСоздатьНовыйФайлСнапшота()
+    public void InstallSnapshot__КогдаВозниклаОшибка__ДолженВызыватьDiscard()
     {
-        var (node, persistence, fs) = CreateFollowerNodeNew();
-        fs.SnapshotFile.Delete();
-
         var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
-        var snapshotData = new byte[] {1, 2, 3};
-        var leaderTerm = new Term(2);
 
-        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
-            new StubSnapshot(snapshotData));
-        var response = node.Handle(request);
 
-        response.CurrentTerm
-                .Should()
-                .Be(leaderTerm, "отправленный лидером терм больше текущего");
-        var (index, term, data) = persistence.Snapshot.ReadAllDataTest();
-        Assert.Equal(10, index);
-        Assert.Equal(new Term(2), term);
-        Assert.Equal(snapshotData, data);
-    }
-
-    [Fact]
-    public void InstallSnapshot__СуществующийПустойФайлСнапшотаДолженПерезаписаться()
-    {
-        var (node, persistence, _) = CreateFollowerNodeNew();
-
-        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
-        var snapshotData = new byte[] {1, 2, 3};
-        var leaderTerm = new Term(2);
-        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
-            new StubSnapshot(snapshotData));
-
-        var response = node.Handle(request);
-        Assert.Equal(leaderTerm, response.CurrentTerm);
-
-        var (index, term, data) = persistence.Snapshot.ReadAllDataTest();
-        Assert.Equal(lastIncludedEntry.Index, index);
-        Assert.Equal(lastIncludedEntry.Term, term);
-        Assert.Equal(snapshotData, data);
-    }
-
-    [Fact]
-    public void InstallSnapshot__СуществующийФайлСнапшотаДолженПерезаписаться()
-    {
-        var (node, persistence, _) = CreateFollowerNodeNew();
-        persistence.Snapshot.SetupSnapshotTest(new Term(2), 3,
-            new StubSnapshot(new byte[] {9, 5, 234, 1, 6, 2, 44, 2, 7, 45, 52, 97}));
-
-        var lastIncludedEntry = new LogEntryInfo(new Term(4), 13);
-        var snapshotData = new byte[] {1, 2, 3};
-        var leaderTerm = new Term(4);
-        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
-            new StubSnapshot(snapshotData));
-
-        var response = node.Handle(request);
-        response.CurrentTerm
-                .Should()
-                .Be(leaderTerm, "терм лидера больше текущего");
-
-        var (index, term, data) = persistence.Snapshot.ReadAllDataTest();
-        Assert.Equal(lastIncludedEntry.Index, index);
-        Assert.Equal(lastIncludedEntry.Term, term);
-        Assert.Equal(snapshotData, data);
-        Assert.Equal(lastIncludedEntry, persistence.Snapshot.LastApplied);
-    }
-
-    [Fact]
-    public void InstallSnapshot__КогдаТермЛидераМеньше__ДолженВернутьОтветСразу()
-    {
-        var leaderTerm = new Term(4);
-        var nodeTerm = leaderTerm.Increment();
-
-        var (node, persistence, _) = CreateFollowerNodeNew();
-        persistence.UpdateState(nodeTerm, null);
-
-        var snapshot = new Mock<ISnapshot>().Apply(m =>
+        var mockSnapshot = new Mock<ISnapshot>().Apply(m =>
         {
-            m.Setup(x => x.GetAllChunks(It.IsAny<CancellationToken>()))
-             .Returns(Array.Empty<ReadOnlyMemory<byte>>())
-             .Verifiable();
+            IEnumerable<ReadOnlyMemory<byte>> StubChunkData()
+            {
+                yield return new byte[] {1, 1, 1};
+                throw new EndOfStreamException("Соединение представим разорвалось и это исключение было выкинуто");
+            }
+
+            m.Setup(x => x.GetAllChunks(It.IsAny<CancellationToken>())).Returns(StubChunkData);
         });
 
-        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
-        var request = new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry, snapshot.Object);
+        var currentTerm = new Term(1);
+        var msi = new MockSnapshotInstaller();
+        using var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.CreateSnapshot(It.Is<LogEntryInfo>(lei => lei == lastIncludedEntry)))
+             .Returns(msi);
+        });
 
-        var response = node.Handle(request);
-        response.CurrentTerm
-                .Should()
-                .Be(nodeTerm, "терм должен быть как у лидера");
-
-        snapshot.Verify(x => x.GetAllChunks(It.IsAny<CancellationToken>()), Times.Never());
+        Assert.Throws<EndOfStreamException>(() =>
+            node.Handle(new InstallSnapshotRequest(currentTerm, AnotherNodeId, lastIncludedEntry,
+                mockSnapshot.Object)));
+        Assert.True(msi.DiscardCalled);
     }
 
-    private static readonly NodeId AnotherNodeId = new NodeId(NodeId.Id + 1);
+    [Fact]
+    public void InstallSnapshot__КогдаТермЛидераМеньше__ДолженВернутьСвойТермВОтвете()
+    {
+        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
+        var leaderTerm = new Term(2);
+
+        var nodeTerm = 3;
+        using var node = CreateFollowerNode(nodeTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.CreateSnapshot(It.Is<LogEntryInfo>(lei => lei == lastIncludedEntry)))
+             .Throws(new InvalidOperationException("Нельзя даже вызывать этот метод"));
+        });
+
+        var response = node.Handle(new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
+            new StubSnapshot([1, 2, 4, 8, 16, 32])));
+
+        Assert.Equal(nodeTerm, response.CurrentTerm);
+    }
+
+    [Fact]
+    public void InstallSnapshot__КогдаТермЛидераМеньше__НеДолженСоздаватьНовыйСнапшот()
+    {
+        var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
+        var leaderTerm = new Term(2);
+
+        var nodeTerm = 3;
+        var node = CreateFollowerNode(nodeTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.CreateSnapshot(It.Is<LogEntryInfo>(lei => lei == lastIncludedEntry)))
+             .Throws(new InvalidOperationException("Нельзя даже вызывать этот метод"));
+        });
+
+        var ex = Record.Exception(() => node.Handle(new InstallSnapshotRequest(leaderTerm, new NodeId(1),
+            lastIncludedEntry, new StubSnapshot([1, 2, 4, 8, 16, 32]))));
+
+        Assert.IsNotType<InvalidOperationException>(ex);
+    }
+
+    private static readonly NodeId AnotherNodeId = new(NodeId.Id + 1);
 
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(5)]
     [InlineData(10)]
-    public void AppendEntries__КогдаЛогПустой__ДолженВставитьЗаписиВНачало(int entriesCount)
+    public void AppendEntries__КогдаПрефиксСовпадает__ДолженВставитьЗаписи(int entriesCount)
     {
         var term = new Term(2);
+        var entries = Enumerable.Range(1, entriesCount)
+                                .Select(i => new LogEntry(term, [( byte ) i]))
+                                .ToArray();
+
+        var prevLsn = 30;
+        var prevLogEntryInfo = new LogEntryInfo(term, prevLsn);
+        var commitIndex = Lsn.Tomb;
+        var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntryInfo)))
+             .Returns(true);
+            m.Setup(p =>
+                p.InsertRange(
+                    It.Is<IReadOnlyList<LogEntry>>(x => x.SequenceEqual(entries, new LogEntryEqualityComparer())),
+                    It.Is<Lsn>(l => l == prevLsn + 1)));
+            m.SetupGet(p => p.CommitIndex).Returns(commitIndex);
+        });
+
+        var request = new AppendEntriesRequest(term, commitIndex, AnotherNodeId, prevLogEntryInfo, entries);
+
+        var response = node.Handle(request);
+
+        Assert.True(response.Success);
+    }
+
+    [Fact]
+    public void AppendEntries__КогдаПрефиксСовпадает__ДолженВернутьTrue()
+    {
+        var term = new Term(2);
+        var entries = Enumerable.Range(1, 10)
+                                .Select(i => new LogEntry(term, [( byte ) i]))
+                                .ToArray();
+
+        var prevLsn = 30;
+        var prevLogEntryInfo = new LogEntryInfo(term, prevLsn);
+        var commitIndex = Lsn.Tomb;
+        var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntryInfo)))
+             .Returns(true);
+            m.Setup(p => p.InsertRange(
+                It.Is<IReadOnlyList<LogEntry>>(x => x.SequenceEqual(entries, new LogEntryEqualityComparer())),
+                prevLsn + 1));
+            m.SetupGet(p => p.CommitIndex).Returns(commitIndex);
+        });
+
+        var response =
+            node.Handle(new AppendEntriesRequest(term, commitIndex, AnotherNodeId, prevLogEntryInfo, entries));
+
+        Assert.True(response.Success);
+    }
+
+    [Fact]
+    public void AppendEntries__КогдаТермБольше__ДолженВыставитьТермКакВЗапросе()
+    {
+        var term = new Term(2);
+        var entries = Enumerable.Range(1, 10)
+                                .Select(i => new LogEntry(term, [( byte ) i]))
+                                .ToArray();
+
+        var prevLsn = 30;
+        var prevLogEntryInfo = new LogEntryInfo(term, prevLsn);
+        var commitIndex = Lsn.Tomb;
+        var requestTerm = term.Increment();
+        var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntryInfo)))
+             .Returns(true);
+            m.Setup(p => p.InsertRange(
+                It.Is<IReadOnlyList<LogEntry>>(x => x.SequenceEqual(entries, new LogEntryEqualityComparer())),
+                prevLsn + 1));
+            m.Setup(p => p.UpdateState(requestTerm, It.IsAny<NodeId?>())).Verifiable();
+            m.SetupGet(p => p.CommitIndex).Returns(commitIndex);
+        });
+
+        _ = node.Handle(new AppendEntriesRequest(requestTerm, commitIndex, AnotherNodeId, prevLogEntryInfo, entries));
+
+        _mockPersistence.Verify(p => p.UpdateState(requestTerm, It.IsAny<NodeId?>()), Times.Once());
+    }
+
+    [Fact]
+    public void AppendEntries__КогдаТермБольше__ДолженВыставитьVotedForВNull()
+    {
+        var term = new Term(2);
+        var entries = Enumerable.Range(1, 10)
+                                .Select(i => new LogEntry(term, [( byte ) i]))
+                                .ToArray();
+
+        var prevLsn = 30;
+        var prevLogEntryInfo = new LogEntryInfo(term, prevLsn);
+        var commitIndex = Lsn.Tomb;
+        var requestTerm = term.Increment();
+        var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntryInfo)))
+             .Returns(true);
+            m.Setup(p => p.InsertRange(
+                It.Is<IReadOnlyList<LogEntry>>(x => x.SequenceEqual(entries, new LogEntryEqualityComparer())),
+                prevLsn + 1));
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), null)).Verifiable();
+            m.SetupGet(p => p.CommitIndex).Returns(commitIndex);
+        });
+
+        _ = node.Handle(new AppendEntriesRequest(requestTerm, commitIndex, AnotherNodeId, prevLogEntryInfo, entries));
+
+        _mockPersistence.Verify(p => p.UpdateState(It.IsAny<Term>(), null), Times.Once());
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void AppendEntries__КогдаПрефиксСовпадаетИИндексКоммитаБольше__ДолженЗакоммититьЗаписи(int entriesCount)
+    {
+        var term = new Term(2);
+        var entries = Enumerable.Range(1, entriesCount)
+                                .Select(i => new LogEntry(term, [( byte ) i]))
+                                .ToArray();
+
+        var prevLsn = 30;
+        var prevLogEntryInfo = new LogEntryInfo(term, prevLsn);
+
+        var nodeCommitIndex = Lsn.Tomb;
+        var requestCommitIndex = nodeCommitIndex + 1;
+        var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntryInfo)))
+             .Returns(true);
+            m.Setup(p =>
+                p.InsertRange(
+                    It.Is<IReadOnlyList<LogEntry>>(x => x.SequenceEqual(entries, new LogEntryEqualityComparer())),
+                    It.Is<Lsn>(l => l == prevLsn + 1)));
+            m.SetupGet(p => p.CommitIndex).Returns(nodeCommitIndex);
+            m.Setup(p => p.Commit(It.Is<Lsn>(l => l == requestCommitIndex)));
+            m.Setup(p => p.LastEntry).Returns(prevLogEntryInfo with {Index = requestCommitIndex});
+            m.Setup(p => p.ShouldCreateSnapshot()).Returns(false);
+        });
+
+        var request = new AppendEntriesRequest(term, requestCommitIndex, AnotherNodeId, prevLogEntryInfo, entries);
+
+        var response = node.Handle(request);
+
+        Assert.True(response.Success);
+    }
+
+    [Fact]
+    public void AppendEntries__КогдаПрефиксНеСовпадает__ДолженВернутьFalse()
+    {
+        var term = new Term(2);
+        var entries = Enumerable.Range(1, 10)
+                                .Select(i => new LogEntry(term, new[] {( byte ) i}))
+                                .ToArray();
+
+        var requestPrevEntry = new LogEntryInfo(term.Increment(), entries.Length - 1);
+        var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == requestPrevEntry))).Returns(false);
+            m.SetupGet(p => p.LastEntry).Returns(LogEntryInfo.Tomb);
+        });
+
+        var response = node.Handle(new AppendEntriesRequest(term, Lsn.Tomb, AnotherNodeId, requestPrevEntry, entries));
+
+        Assert.False(response.Success);
+    }
+
+    [Fact]
+    public void AppendEntries__КогдаИндексКоммитаБольшеИндексаПоследнейЗаписи__ДолженЗакоммититьТолькоПоследнююЗапись()
+    {
+        var term = new Term(2);
+        var entriesCount = 10;
         var entries = Enumerable.Range(1, entriesCount)
                                 .Select(i => new LogEntry(term, new[] {( byte ) i}))
                                 .ToArray();
 
-        // Лог изначально был пуст и у нас, и у лидера
-        // Причем, еще ничего не закоммичено
-        var node = CreateFollowerNode(term, null);
+        var requestPrevEntry = new LogEntryInfo(term.Increment(), entries.Length - 1);
+        var nodeLastEntry = new LogEntryInfo(term, 30);
+        var requestCommitIndex = nodeLastEntry.Index + entriesCount + 5;
+        var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == requestPrevEntry))).Returns(true);
+            m.Setup(p =>
+                p.InsertRange(
+                    It.Is<IReadOnlyList<LogEntry>>(l => l.SequenceEqual(entries, new LogEntryEqualityComparer())),
+                    requestPrevEntry.Index + 1));
+            m.SetupGet(p => p.LastEntry).Returns(nodeLastEntry);
+            m.Setup(p => p.Commit(nodeLastEntry.Index)).Verifiable();
+            m.SetupGet(p => p.CommitIndex).Returns(nodeLastEntry.Index - 5);
+            m.Setup(p => p.ShouldCreateSnapshot()).Returns(false);
+        });
 
-        var request = new AppendEntriesRequest(term, LogEntryInfo.TombIndex, AnotherNodeId, LogEntryInfo.Tomb, entries);
-
-        var response = node.Handle(request);
+        var response =
+            node.Handle(new AppendEntriesRequest(term, requestCommitIndex, AnotherNodeId, requestPrevEntry, entries));
 
         Assert.True(response.Success);
+        _mockPersistence.Verify(p => p.Commit(nodeLastEntry.Index), Times.Once());
     }
 
     [Fact]
-    public void AppendEntries__КогдаЕстьКонфликтующиеЗаписи__ДолженПерезатеретьНеЗакомиченные()
+    public void AppendEntries__КогдаПрефиксНеСовпадает__НеДолженВставлятьЗаписи()
     {
         var term = new Term(2);
-        var node = CreateFollowerNode(term, null);
+        var entriesCount = 10;
+        var entries = Enumerable.Range(1, entriesCount)
+                                .Select(i => new LogEntry(term, new[] {( byte ) i}))
+                                .ToArray();
 
-        // 3 закоммиченные записи с индексами
-        var committedEntries = new LogEntry[] {new(new(1), [1]), new(new(2), [2]), new(new(2), [3]),};
+        var requestPrevEntry = new LogEntryInfo(term.Increment(), entries.Length - 1);
+        var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(requestPrevEntry)).Returns(false);
+            m.Setup(p => p.InsertRange(It.IsAny<IReadOnlyList<LogEntry>>(), It.IsAny<Lsn>()));
+        });
 
-        node.Persistence.Log.AppendRange(committedEntries);
+        var response = node.Handle(new AppendEntriesRequest(term, Lsn.Tomb, AnotherNodeId, requestPrevEntry, entries));
 
-        // Добавляем 2 незакоммиченные записи
-        node.Persistence.InsertRange(new LogEntry[] {new(new(3), new byte[] {4}), new(new(3), new byte[] {5}),},
-            3);
-
-        // В запросе передается 1 запись (идет сразу после наших закоммиченных) 
-        var leaderCommit = 2;
-        var newEntries = new LogEntry[] {new(new(3), new byte[] {6}), new(new(3), new byte[] {7}),};
-        var prevLogEntryInfo = new LogEntryInfo(committedEntries[^1].Term, committedEntries.Length - 1);
-        var request = new AppendEntriesRequest(term, leaderCommit, AnotherNodeId, prevLogEntryInfo, newEntries);
-
-        var response = node.Handle(request);
-
-        Assert.True(response.Success);
-        var actualEntries = node.Persistence.Log.ReadAllTest();
-        Assert.Equal(committedEntries.Concat(newEntries), actualEntries, LogEntryEqualityComparer.Instance);
-        Assert.Equal(request.Term, response.Term);
-        Assert.Equal(node.CurrentTerm, response.Term);
+        Assert.False(response.Success);
+        _mockPersistence.Verify(p => p.InsertRange(It.IsAny<IReadOnlyList<LogEntry>>(), It.IsAny<Lsn>()),
+            Times.Never());
     }
 
     [Fact]
-    public void RequestVote__КогдаУжеГолосовалВТерме__НеДолженОтдатьГолос()
+    public void AppendEntries__КогдаПрефиксНеСовпадает__НеДолженКоммититьЗаписи()
+    {
+        var term = new Term(2);
+        var entriesCount = 10;
+        var entries = Enumerable.Range(1, entriesCount)
+                                .Select(i => new LogEntry(term, new[] {( byte ) i}))
+                                .ToArray();
+
+        var requestPrevEntry = new LogEntryInfo(term.Increment(), entries.Length - 1);
+        var node = CreateFollowerNode(term, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(requestPrevEntry)).Returns(false);
+            m.Setup(p => p.Commit(It.IsAny<Lsn>())).Verifiable();
+        });
+
+        var response = node.Handle(new AppendEntriesRequest(term, Lsn.Tomb, AnotherNodeId, requestPrevEntry, entries));
+
+        Assert.False(response.Success);
+        _mockPersistence.Verify(p => p.Commit(It.IsAny<Lsn>()), Times.Never());
+    }
+
+    [Fact]
+    public void AppendEntries__КогдаТермМеньше__ДолженВернутьFalse()
+    {
+        var currentTerm = new Term(10);
+        var lesserTerm = new Term(1);
+        var entriesCount = 10;
+        var entries = Enumerable.Range(1, entriesCount)
+                                .Select(i => new LogEntry(currentTerm, [( byte ) i]))
+                                .ToArray();
+
+        var requestPrevEntry = new LogEntryInfo(currentTerm.Increment(), entries.Length - 1);
+        var node = CreateFollowerNode(currentTerm, null, persistenceFactory: _ =>
+        {
+        });
+
+        var response =
+            node.Handle(new AppendEntriesRequest(lesserTerm, Lsn.Tomb, AnotherNodeId, requestPrevEntry, entries));
+
+        Assert.False(response.Success);
+    }
+
+    [Fact]
+    public void AppendEntries__КогдаЕстьЗаписи__ДолженВставитьИхПоСледующемуИндексуПослеПереданного()
+    {
+        var currentTerm = new Term(10);
+        var entriesCount = 10;
+        var lastLogEntry = new LogEntryInfo(currentTerm, 5);
+        var prevLogEntry = new LogEntryInfo(currentTerm, 3); // Представим, что нужно затереть 
+        var entries = Enumerable.Range(1, entriesCount)
+                                .Select(i => new LogEntry(currentTerm, [( byte ) i]))
+                                .ToArray();
+
+        var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p =>
+                  p.InsertRange(It.Is<IReadOnlyList<LogEntry>>(list =>
+                          list.SequenceEqual(entries, new LogEntryEqualityComparer())),
+                      prevLogEntry.Index + 1))
+             .Verifiable();
+            m.Setup(p => p.PrefixMatch(It.IsAny<LogEntryInfo>())).Returns(true);
+            m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
+            m.SetupGet(p => p.LastEntry).Returns(lastLogEntry);
+        });
+
+        _ = node.Handle(new AppendEntriesRequest(currentTerm, Lsn.Tomb, AnotherNodeId, prevLogEntry, entries));
+
+        _mockPersistence.Verify(p =>
+            p.InsertRange(
+                It.Is<IReadOnlyList<LogEntry>>(list => list.SequenceEqual(entries, new LogEntryEqualityComparer())),
+                prevLogEntry.Index + 1), Times.Once());
+    }
+
+    [Fact]
+    public void AppendEntries__КогдаИндексКоммитаВЗапросеБольше__ДолженЗакоммититьПоУказанномуИндексу()
+    {
+        var currentTerm = new Term(10);
+        var entriesCount = 10;
+        var oldCommitIndex = 12;
+        var newCommitIndex = 15;
+        var entries = Enumerable.Range(1, entriesCount)
+                                .Select(i => new LogEntry(currentTerm, [( byte ) i]))
+                                .ToArray();
+        var requestPrevEntry = new LogEntryInfo(currentTerm.Increment(), entries.Length - 1);
+
+        var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.InsertRange(It.IsAny<IReadOnlyList<LogEntry>>(), It.IsAny<Lsn>()));
+            m.Setup(p => p.PrefixMatch(It.IsAny<LogEntryInfo>())).Returns(true);
+            m.SetupGet(p => p.CommitIndex).Returns(oldCommitIndex);
+            m.Setup(p => p.Commit(newCommitIndex)).Verifiable();
+            m.SetupGet(p => p.LastEntry).Returns(new LogEntryInfo(currentTerm, newCommitIndex + 1));
+            m.Setup(p => p.ShouldCreateSnapshot()).Returns(false);
+        });
+
+        _ = node.Handle(new AppendEntriesRequest(currentTerm, newCommitIndex, AnotherNodeId, requestPrevEntry,
+            entries));
+
+        _mockPersistence.Verify(p => p.Commit(newCommitIndex), Times.Once());
+    }
+
+    [Fact]
+    public void
+        AppendEntries__КогдаИндексКоммитаВЗапросеБольшеИндексаПоследнейЗаписиВЛоге__ДолженЗакоммититьИндексПоследнейЗаписи()
+    {
+        var currentTerm = new Term(10);
+        var entriesCount = 10;
+        var oldCommitIndex = 12;
+        var lastEntryIndex = 14;
+        var newCommitIndex = 20;
+        var entries = Enumerable.Range(1, entriesCount)
+                                .Select(i => new LogEntry(currentTerm, [( byte ) i]))
+                                .ToArray();
+
+        var requestPrevEntry = new LogEntryInfo(currentTerm.Increment(), entries.Length - 1);
+        var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
+        {
+            m.Setup(p => p.PrefixMatch(It.IsAny<LogEntryInfo>())).Returns(true);
+            m.Setup(p => p.InsertRange(It.IsAny<IReadOnlyList<LogEntry>>(), It.IsAny<Lsn>()));
+            m.SetupGet(p => p.CommitIndex).Returns(oldCommitIndex);
+            m.Setup(p => p.Commit(lastEntryIndex)).Verifiable();
+            m.SetupGet(p => p.LastEntry).Returns(new LogEntryInfo(currentTerm, lastEntryIndex));
+            m.Setup(p => p.ShouldCreateSnapshot()).Returns(false);
+        });
+
+        _ = node.Handle(new AppendEntriesRequest(currentTerm, newCommitIndex, AnotherNodeId, requestPrevEntry,
+            entries));
+
+        _mockPersistence.Verify(p => p.Commit(lastEntryIndex), Times.Once());
+    }
+
+    [Fact]
+    public void RequestVote__КогдаУжеГолосовалВТермеИУзелНеТотЗаКоторогоГолосовали__НеДолженОтдатьГолос()
     {
         var term = new Term(4);
-        var votedFor = new NodeId(5);
         var candidateId = new NodeId(2);
+        var votedFor = new NodeId(3);
 
-        var node = CreateFollowerNode(term, votedFor);
-        node.Persistence.InsertRange(new LogEntry[]
+        var lastLogEntryInfo = new LogEntryInfo(new Term(2), 1);
+        var node = CreateFollowerNode(term, votedFor, persistenceFactory: m =>
         {
-            new(new(1), Array.Empty<byte>()), // 1
-            new(new(3), Array.Empty<byte>()), // 2
-            new(new(3), Array.Empty<byte>()), // 3
-        }, 0);
-        var expectedTerm = term.Increment();
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(true);
+            m.SetupGet(p => p.VotedFor).Returns(votedFor);
+            m.SetupGet(p => p.CurrentTerm).Returns(term);
+        });
 
-        // Конфликт на 2 записи (индекс 1): наш терм - 3, его терм - 2
-        var request = new RequestVoteRequest(CandidateId: candidateId, CandidateTerm: expectedTerm,
-            LastLogEntryInfo: new LogEntryInfo(new Term(2), 1));
+        var request = new RequestVoteRequest(candidateId, term, lastLogEntryInfo);
 
         var response = node.Handle(request);
 
         Assert.False(response.VoteGranted);
-        Assert.Equal(expectedTerm, node.CurrentTerm);
     }
 
     [Fact]
-    public void RequestVote__КогдаУжеОтдавалГолосЗаУзел__ДолженПовторноОтдатьГолос()
+    public void RequestVote__КогдаУжеОтдавалГолосЗаУзелВЭтомТермеИЛогАктуальныйИТермРавен__ДолженВернутьTrue()
     {
         var term = new Term(4);
-        var votedFor = new NodeId(5);
+        var candidateId = new NodeId(5);
+        var lastLogEntryInfo = new LogEntryInfo(new Term(2), 1);
 
-        var node = CreateFollowerNode(term, votedFor);
-        node.Persistence.InsertRange(new LogEntry[]
+        using var node = CreateFollowerNode(term, candidateId, persistenceFactory: m =>
         {
-            new(new(1), Array.Empty<byte>()), // 1
-            new(new(3), Array.Empty<byte>()), // 2
-            new(new(3), Array.Empty<byte>()), // 3
-        }, 0);
-        var expectedTerm = term.Increment();
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(true);
+            m.Setup(p => p.VotedFor).Returns(candidateId);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>()));
+        });
 
-        // Конфликт на 2 записи (индекс 1): наш терм - 3, его терм - 2
-        var request = new RequestVoteRequest(CandidateId: votedFor, CandidateTerm: expectedTerm,
-            LastLogEntryInfo: new LogEntryInfo(new Term(2), 1));
+        var response = node.Handle(new RequestVoteRequest(candidateId, term, lastLogEntryInfo));
 
-        var response = node.Handle(request);
-
-        Assert.False(response.VoteGranted);
-        Assert.Equal(expectedTerm, node.CurrentTerm);
+        Assert.True(response.VoteGranted);
     }
 
     [Fact]
-    public void InstallSnapshot__ДолженОчиститьЛогИБуфер()
+    public void RequestVote__КогдаУжеОтдавалГолосЗаУзелВЭтомТермеИЛогАктуальныйИТермРавен__НеДолженОбновлятьСостояние()
     {
-        var (node, persistence, fs) = CreateFollowerNodeNew();
-        fs.SnapshotFile.Delete();
+        var term = new Term(4);
+        var candidateId = new NodeId(5);
+        var lastLogEntryInfo = new LogEntryInfo(new Term(2), 1);
 
-        var lastSnapshotEntry = new LogEntryInfo(new Term(2), 10);
-        var snapshotData = new byte[] {1, 2, 3};
-        var leaderTerm = new Term(2);
+        using var node = CreateFollowerNode(term, candidateId, persistenceFactory: m =>
+        {
+            m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(true);
+            m.Setup(p => p.VotedFor).Returns(candidateId);
+            m.Setup(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>())).Verifiable();
+        });
 
-        var response = node.Handle(new InstallSnapshotRequest(leaderTerm,
-            new NodeId(1),
-            lastSnapshotEntry,
-            new StubSnapshot(snapshotData)));
+        _ = node.Handle(new RequestVoteRequest(candidateId, term, lastLogEntryInfo));
 
-        response.CurrentTerm
-                .Should()
-                .Be(leaderTerm, "отправленный лидером терм больше текущего");
-        persistence.Log.GetUncommittedTest()
-                   .Should()
-                   .BeEmpty("лог должен быть очищен после установки нового снапшота");
-        persistence.Log.GetCommittedTest()
-                   .Should()
-                   .BeEmpty("лог должен быть очищен после установки нового снапшота");
-    }
-
-    [Fact]
-    public void InstallSnapshot__КогдаИндексСнапшотаРавенТекущемуИндексу__ДолженУстановитьСнапшот()
-    {
-        // Такое может случиться, когда на лидера большая нагрузка идет и отправляется тот же самый снапшот
-
-        var (follower, storage, _) = CreateFollowerNodeNew();
-        var snapshot = new StubSnapshot(new byte[] {1, 2, 3});
-        var term = new Term(2);
-        var logEntryInfo = new LogEntryInfo(new Term(2), 1000);
-        var oldSnapshot = new StubSnapshot(new byte[] {4, 5, 6});
-        storage.Snapshot.SetupSnapshotTest(logEntryInfo.Term, logEntryInfo.Index, oldSnapshot);
-
-        var request = new InstallSnapshotRequest(term, AnotherNodeId, logEntryInfo, snapshot);
-        follower.Handle(request);
-
-        var (lastIndex, lastTerm, snapshotData) = storage.Snapshot.ReadAllDataTest();
-        lastIndex.Should()
-                 .Be(logEntryInfo.Index, "индекс записи в снапшоте должна быть такая же как и в запросе");
-        lastTerm.Should()
-                .Be(logEntryInfo.Term, "терм записи в снапшоте должна быть такой же как и в запросе");
-        snapshotData
-           .Should()
-           .Equal(snapshot.Data, "данные снапшота должны быть перезаписаны");
+        _mockPersistence.Verify(p => p.UpdateState(It.IsAny<Term>(), It.IsAny<NodeId?>()), Times.Never());
     }
 }

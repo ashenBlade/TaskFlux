@@ -1,6 +1,7 @@
+using TaskFlux.Consensus;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public class InstallSnapshotResponsePacket : NodePacket
 {
@@ -12,39 +13,38 @@ public class InstallSnapshotResponsePacket : NodePacket
         CurrentTerm = term;
     }
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return sizeof(NodePacketType) // Маркер
-             + sizeof(int);           // Терм
+        return PayloadSize;
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.InstallSnapshotResponse);
         writer.Write(CurrentTerm.Value);
     }
 
+    private const int PayloadSize = SizeOf.Term;
+
     public new static InstallSnapshotResponsePacket Deserialize(Stream stream)
     {
-        const int packetSize = sizeof(int); // Терм
-        Span<byte> buffer = stackalloc byte[packetSize];
+        Span<byte> buffer = stackalloc byte[PayloadSize + sizeof(uint)];
         stream.ReadExactly(buffer);
         return DeserializePayload(buffer);
     }
 
-    private static InstallSnapshotResponsePacket DeserializePayload(Span<byte> buffer)
-    {
-        var reader = new SpanBinaryReader(buffer);
-        var term = reader.ReadInt32();
-        return new InstallSnapshotResponsePacket(new Term(term));
-    }
-
     public new static async Task<InstallSnapshotResponsePacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        const int packetSize = sizeof(int); // Терм
-        using var buffer = Rent(packetSize);
+        using var buffer = Rent(PayloadSize + sizeof(uint));
         await stream.ReadExactlyAsync(buffer.GetMemory(), token);
         return DeserializePayload(buffer.GetSpan());
+    }
+
+    private static InstallSnapshotResponsePacket DeserializePayload(Span<byte> buffer)
+    {
+        VerifyCheckSum(buffer);
+        var reader = new SpanBinaryReader(buffer);
+        var term = reader.ReadTerm();
+        return new InstallSnapshotResponsePacket(term);
     }
 }

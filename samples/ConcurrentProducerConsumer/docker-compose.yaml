@@ -5,16 +5,17 @@ services:
     build:
       context: ../../src
       dockerfile: TaskFlux.Host/Dockerfile
+    hostname: 'tflux.0'
     ports:
       - '8080:2602'
+      - '9090:1606'
     environment:
       TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000 tflux.1:5000 tflux.2:5000'
-      #      TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000'
       TASKFLUX_CLUSTER_NODE_ID: 0
       TASKFLUX_CLUSTER_LISTEN_PORT: 5000
       TASKFLUX_CLUSTER_LISTEN_HOST: tflux.0
       TASKFLUX_CLUSTER_DATA_DIRECTORY: '/var/lib/tflux'
-      TASKFLUX_HTTP_ADAPTER_LISTEN_PORT: 1606
+      TASKFLUX_HTTP_LISTEN_ADDRESS: 'tflux.0:1606'
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
       TASKFLUX_LOG_LEVEL: 'Verbose'
       TASKFLUX_MAX_LOG_FILE_SIZE: 1024
@@ -27,15 +28,17 @@ services:
     build:
       context: ../../src
       dockerfile: TaskFlux.Host/Dockerfile
+    hostname: 'tflux.1'
     ports:
       - '8081:2602'
+      - '9091:1606'
     environment:
       TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000 tflux.1:5000 tflux.2:5000'
       TASKFLUX_CLUSTER_NODE_ID: 1
       TASKFLUX_CLUSTER_LISTEN_PORT: 5000
       TASKFLUX_CLUSTER_LISTEN_HOST: tflux.1
       TASKFLUX_CLUSTER_DATA_DIRECTORY: '/var/lib/tflux'
-      TASKFLUX_HTTP_ADAPTER_LISTEN_PORT: 1606
+      TASKFLUX_HTTP_LISTEN_ADDRESS: 'tflux.1:1606'
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
       TASKFLUX_LOG_LEVEL: 'Verbose'
       TASKFLUX_MAX_LOG_FILE_SIZE: 1024
@@ -48,15 +51,17 @@ services:
     build:
       context: ../../src
       dockerfile: TaskFlux.Host/Dockerfile
+    hostname: 'tflux.2'
     ports:
       - '8082:2602'
+      - '9092:1606'
     environment:
       TASKFLUX_CLUSTER_PEERS: 'tflux.0:5000 tflux.1:5000 tflux.2:5000'
       TASKFLUX_CLUSTER_NODE_ID: 2
       TASKFLUX_CLUSTER_LISTEN_PORT: 5000
       TASKFLUX_CLUSTER_LISTEN_HOST: tflux.2
       TASKFLUX_CLUSTER_DATA_DIRECTORY: '/var/lib/tflux'
-      TASKFLUX_HTTP_ADAPTER_LISTEN_PORT: 1606
+      TASKFLUX_HTTP_LISTEN_ADDRESS: 'tflux.2:1606'
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
       TASKFLUX_LOG_LEVEL: 'Verbose'
       TASKFLUX_MAX_LOG_FILE_SIZE: 1024

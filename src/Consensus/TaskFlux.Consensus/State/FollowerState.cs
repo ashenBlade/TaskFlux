@@ -15,6 +15,7 @@ public class FollowerState<TCommand, TResponse>
     public override NodeRole Role => NodeRole.Follower;
     private readonly ITimer _electionTimer;
     private readonly ILogger _logger;
+    private readonly CancellationTokenSource _cts = new();
 
     internal FollowerState(RaftConsensusModule<TCommand, TResponse> consensusModule,
                            ITimer electionTimer,
@@ -50,35 +51,35 @@ public class FollowerState<TCommand, TResponse>
             VotedFor == request.CandidateId;
 
         // Отдать свободный голос можем только за кандидата 
-        var logConflicts = Persistence.Conflicts(request.LastLogEntryInfo);
-        if (canVote && !logConflicts)
+        var isUpToDate = Persistence.IsUpToDate(request.LastLogEntryInfo);
+        if (canVote && isUpToDate)
         {
-            _logger.Debug(
-                "Получен RequestVote от узла за которого можем проголосовать. Id узла {NodeId}, Терм узла {Term}. Обновляю состояние",
-                request.CandidateId.Id, request.CandidateTerm.Value);
+            _logger.Debug("Голосую за узел {CandidateId}", request.CandidateId);
 
-            Persistence.UpdateState(request.CandidateTerm, request.CandidateId);
+            var newTerm = request.CandidateTerm;
 
-            return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
+            // Для оптимизации состояние обновляем, только если что-то изменилось
+            var shouldUpdateState = !( newTerm == CurrentTerm && request.CandidateId == VotedFor );
+            if (shouldUpdateState)
+            {
+                Persistence.UpdateState(newTerm, request.CandidateId);
+            }
+
+            return new RequestVoteResponse(CurrentTerm: newTerm, VoteGranted: true);
         }
 
+        Term responseTerm;
         if (CurrentTerm < request.CandidateTerm)
         {
-            if (logConflicts)
-            {
-                _logger.Debug(
-                    "Терм кандидата больше, но лог конфликтует: обновляю только терм. Кандидат: {CandidateId}. Моя последняя запись: {MyLastEntry}. Его последняя запись: {CandidateLastEntry}",
-                    request.CandidateId, Persistence.LastEntry, request.LastLogEntryInfo);
-            }
-            else
-            {
-                _logger.Debug("Терм кандидата больше. Кандидат: {CandidateId}", request.CandidateId);
-            }
-
             Persistence.UpdateState(request.CandidateTerm, null);
+            responseTerm = request.CandidateTerm;
+        }
+        else
+        {
+            responseTerm = CurrentTerm;
         }
 
-        return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
+        return new RequestVoteResponse(CurrentTerm: responseTerm, VoteGranted: false);
     }
 
     public override AppendEntriesResponse Apply(AppendEntriesRequest request)
@@ -100,11 +101,7 @@ public class FollowerState<TCommand, TResponse>
 
         if (!Persistence.PrefixMatch(request.PrevLogEntryInfo))
         {
-            // Префиксы закоммиченных записей лога не совпадают 
-            _logger.Debug(
-                "Текущий лог не совпадает с логом узла {NodeId}. Моя последняя запись: {MyLastEntry}. Его предыдущая запись: {HisLastEntry}",
-                request.LeaderId, Persistence.LastEntry, request.PrevLogEntryInfo);
-            return AppendEntriesResponse.Fail(CurrentTerm);
+            return AppendEntriesResponse.Fail(request.Term);
         }
 
         if (0 < request.Entries.Count)
@@ -115,12 +112,22 @@ public class FollowerState<TCommand, TResponse>
         if (Persistence.CommitIndex == request.LeaderCommit)
         {
             _leaderId = request.LeaderId;
-            return AppendEntriesResponse.Ok(CurrentTerm);
+            return AppendEntriesResponse.Ok(request.Term);
         }
 
         // Дополнительная проверка того, что не выходим за кол-во записей у себя же
-        var commitIndex = Math.Min(request.LeaderCommit, Persistence.LastEntry.Index);
-        Persistence.Commit(commitIndex);
+        if (Persistence.CommitIndex < request.LeaderCommit)
+        {
+            var commitIndex = Math.Min(request.LeaderCommit, Persistence.LastEntry.Index);
+            _logger.Information("Коммичу запись по индексу {CommitIndex}", commitIndex);
+            Persistence.Commit(commitIndex);
+        }
+        else if (request.LeaderCommit < Persistence.CommitIndex)
+        {
+            _logger.Warning(
+                "Лидер передал индекс коммита меньше, чем у меня. Индекс коммита лидера: {LeaderCommitIndex}. Текущий индекс коммита: {CommitIndex}",
+                request.LeaderCommit, Persistence.CommitIndex);
+        }
 
         if (Persistence.ShouldCreateSnapshot())
         {
@@ -128,25 +135,15 @@ public class FollowerState<TCommand, TResponse>
             var oldSnapshot = Persistence.TryGetSnapshot(out var s, out var _)
                                   ? s
                                   : null;
-            var deltas = Persistence.ReadCommittedDelta();
+            var deltas = Persistence.ReadCommittedDeltaFromPreviousSnapshot();
             var newSnapshot = ApplicationFactory.CreateSnapshot(oldSnapshot, deltas);
             var lastIncludedEntry = Persistence.GetEntryInfo(Persistence.CommitIndex);
-            try
-            {
-                Persistence.SaveSnapshot(newSnapshot, lastIncludedEntry);
-            }
-            catch (Exception e)
-            {
-                _logger.Error(e,
-                    "Ошибка во время сохранения снапшота. Последний {LastEntry}. Коммит лидера: {LeaderCommit}",
-                    lastIncludedEntry, request.LeaderCommit);
-                throw;
-            }
+            Persistence.SaveSnapshot(newSnapshot, lastIncludedEntry);
         }
 
         _leaderId = request.LeaderId;
 
-        return AppendEntriesResponse.Ok(CurrentTerm);
+        return AppendEntriesResponse.Ok(request.Term);
     }
 
     private readonly record struct ElectionTimerScope(ITimer Timer) : IDisposable
@@ -195,38 +192,43 @@ public class FollowerState<TCommand, TResponse>
     {
         if (request.Term < CurrentTerm)
         {
-            _logger.Information("Терм узла меньше моего. Отклоняю InstallSnapshot запрос");
+            _logger.Debug("Терм узла меньше моего. Отклоняю InstallSnapshot запрос");
             return new InstallSnapshotResponse(CurrentTerm);
         }
 
         using var _ = ElectionTimerScope.BeginScope(_electionTimer);
-        _logger.Information("Получен InstallSnapshot запрос");
         _logger.Debug("Получен снапшот с индексом {Index} и термом {Term}", request.LastEntry.Index,
             request.LastEntry.Term);
 
         if (CurrentTerm < request.Term)
         {
-            _logger.Information("Терм лидера больше моего. Обновляю терм до {Term}", request.Term);
-            NodeId? votedFor = null;
-            if (Persistence.VotedFor is null || Persistence.VotedFor == request.LeaderId)
-            {
-                votedFor = request.LeaderId;
-            }
-
-            Persistence.UpdateState(request.Term, votedFor);
+            Persistence.UpdateState(request.Term, null);
         }
 
         _electionTimer.Stop();
         _electionTimer.Schedule();
         _logger.Debug("Начинаю получать чанки снапшота");
         token.ThrowIfCancellationRequested();
+        _logger.Information("Начинаю устанавливать снапшот с последней командой {LastApplied}", request.LastEntry);
         var snapshotWriter = Persistence.CreateSnapshot(request.LastEntry);
         try
         {
-            foreach (var chunk in request.Snapshot.GetAllChunks(token))
+            using var snapshotCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            using var registration = _cts.Token.UnsafeRegister(cts =>
+            {
+                try
+                {
+                    ( ( CancellationTokenSource ) cts! ).Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+            }, snapshotCts);
+            var t = snapshotCts.Token;
+            foreach (var chunk in request.Snapshot.GetAllChunks(t))
             {
                 using var scope = ElectionTimerScope.BeginScope(_electionTimer);
-                snapshotWriter.InstallChunk(chunk.Span, token);
+                snapshotWriter.InstallChunk(chunk.Span, t);
             }
 
             snapshotWriter.Commit();
@@ -237,12 +239,9 @@ public class FollowerState<TCommand, TResponse>
             throw;
         }
 
-        _logger.Debug("Снапшот установлен");
-
-        // Persistence.SetLastApplied(Persistence.CommitIndex);
+        _logger.Information("Снапшот установлен");
 
         _leaderId = request.LeaderId;
-
-        return new InstallSnapshotResponse(CurrentTerm);
+        return new InstallSnapshotResponse(request.Term);
     }
 }

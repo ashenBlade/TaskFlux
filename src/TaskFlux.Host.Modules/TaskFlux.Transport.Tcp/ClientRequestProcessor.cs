@@ -45,6 +45,7 @@ internal class ClientRequestProcessor
         _logger.Information("Начинаю обработку клиента");
         await using var stream = _client.GetStream();
         var client = new TaskFluxClient(stream);
+        Metrics.TotalConnectedClients.Add(1);
         try
         {
             if (await AcceptSetupClientAsync(client, token))
@@ -95,6 +96,10 @@ internal class ClientRequestProcessor
         {
             _logger.Error(e, "Во время обработки клиента произошла неизвестная ошибка");
             _lifetime.StopAbnormal();
+        }
+        finally
+        {
+            Metrics.TotalDisconnectedClients.Add(1);
         }
     }
 
@@ -221,30 +226,39 @@ internal class ClientRequestProcessor
                 request = await client.ReceiveAsync(cts.Token);
             }
 
-            switch (request.Type)
+            Metrics.TotalAcceptedRequests.Add(1);
+
+            try
             {
-                case PacketType.CommandRequest:
-                    await ProcessCommandRequestAsync(client, ( CommandRequestPacket ) request, token);
-                    break;
-                case PacketType.ClusterMetadataRequest:
-                    await ProcessClusterMetadataRequestAsync(client, token);
-                    break;
-                case PacketType.AcknowledgeRequest:
-                case PacketType.CommandResponse:
-                case PacketType.ErrorResponse:
-                case PacketType.NotLeader:
-                case PacketType.AuthorizationRequest:
-                case PacketType.AuthorizationResponse:
-                case PacketType.BootstrapRequest:
-                case PacketType.BootstrapResponse:
-                case PacketType.ClusterMetadataResponse:
-                case PacketType.NegativeAcknowledgementRequest:
-                case PacketType.Ok:
-                    _logger.Warning("От клиента получен неожиданный тип пакета {PacketType}", request.Type);
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(request.Type), ( int ) request.Type,
-                        "Получен неизвестный тип пакета");
+                switch (request.Type)
+                {
+                    case PacketType.CommandRequest:
+                        await ProcessCommandRequestAsync(client, ( CommandRequestPacket ) request, token);
+                        break;
+                    case PacketType.ClusterMetadataRequest:
+                        await ProcessClusterMetadataRequestAsync(client, token);
+                        break;
+                    case PacketType.AcknowledgeRequest:
+                    case PacketType.CommandResponse:
+                    case PacketType.ErrorResponse:
+                    case PacketType.NotLeader:
+                    case PacketType.AuthorizationRequest:
+                    case PacketType.AuthorizationResponse:
+                    case PacketType.BootstrapRequest:
+                    case PacketType.BootstrapResponse:
+                    case PacketType.ClusterMetadataResponse:
+                    case PacketType.NegativeAcknowledgementRequest:
+                    case PacketType.Ok:
+                        _logger.Warning("От клиента получен неожиданный тип пакета {PacketType}", request.Type);
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(request.Type), ( int ) request.Type,
+                            "Получен неизвестный тип пакета");
+                }
+            }
+            finally
+            {
+                Metrics.TotalProcessedRequests.Add(1);
             }
         }
     }
@@ -440,14 +454,12 @@ internal class ClientRequestProcessor
                 // Если команду все же нужно выполнить - коммитим выполнение и возвращаем ответ
                 case PacketType.AcknowledgeRequest:
                     // Явно указываем, что нужно коммитить
-                    dequeueResponse = dequeueResponse.WithDeltaProducing();
                     submitResponse =
                         await _requestAcceptor.AcceptAsync(new CommitDequeueCommand(dequeueResponse), token);
                     break;
                 // Иначе возвращаем ее обратно
                 case PacketType.NegativeAcknowledgementRequest:
                     // Коммитить результат не нужно
-                    dequeueResponse = dequeueResponse.WithoutDeltaProducing();
                     submitResponse =
                         await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(dequeueResponse), token);
                     break;

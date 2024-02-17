@@ -1,8 +1,6 @@
-using System.Diagnostics;
 using Serilog;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 
 namespace TaskFlux.Consensus.State.LeaderState;
@@ -11,11 +9,11 @@ namespace TaskFlux.Consensus.State.LeaderState;
 /// Фоновый обработчик соединения с другими узлами-последователями.
 /// Нужен для репликации записей.
 /// </summary>
-public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, IDisposable
+internal class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, IDisposable
 {
     public NodeId NodeId => _peer.Id;
     private volatile bool _disposed;
-    private RaftConsensusModule<TCommand, TResponse> RaftConsensusModule => _caller.ConsensusModule;
+    private RaftConsensusModule<TCommand, TResponse> ConsensusModule => _caller.ConsensusModule;
 
     /// <summary>
     /// Терм, в котором начали работу
@@ -33,7 +31,7 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
     /// </remarks>
     private Term SavedTerm { get; }
 
-    private FileSystemPersistenceFacade Persistence => RaftConsensusModule.Persistence;
+    private IPersistence Persistence => ConsensusModule.Persistence;
 
     /// <summary>
     /// Узел, с которым общаемся
@@ -41,6 +39,8 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
     private readonly IPeer _peer;
 
     private readonly ILogger _logger;
+    private readonly PeerReplicationState _replicationState;
+    private readonly ReplicationWatcher _watcher;
 
     /// <summary>
     /// Очередь команд для потока обработчика
@@ -58,6 +58,8 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
     public PeerProcessorBackgroundJob(IPeer peer,
                                       ILogger logger,
                                       Term savedTerm,
+                                      PeerReplicationState replicationState,
+                                      ReplicationWatcher watcher,
                                       LeaderState<TCommand, TResponse> caller)
     {
         var handle = new AutoResetEvent(false);
@@ -65,6 +67,8 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
         _queueStopEvent = handle;
         _peer = peer;
         _logger = logger;
+        _replicationState = replicationState;
+        _watcher = watcher;
         _caller = caller;
         SavedTerm = savedTerm;
     }
@@ -98,7 +102,6 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
          * Если нашли такое - поставим флаг.
          * От лидера все равно запрос и там обновим состояние.
          */
-        var peerInfo = new PeerInfo(Persistence.LastEntry.Index + 1);
         Term? foundGreaterTerm = null;
         _logger.Information("Обработчик узла начинает работу");
         foreach (var heartbeatOrRequest in _queue.ReadAllRequests(token))
@@ -124,7 +127,7 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
             if (heartbeatOrRequest.TryGetRequest(out var request))
             {
                 _logger.Debug("Получен запрос для репликации {Index} записи", request.LogIndex);
-                if (ReplicateLogReturnGreaterTerm(request.LogIndex, peerInfo, token) is { } greaterTerm)
+                if (ReplicateLogReturnGreaterTerm(request.LogIndex, token) is { } greaterTerm)
                 {
                     _logger.Debug("При отправке AppendEntries узел ответил большим термом");
                     request.NotifyFoundGreaterTerm(greaterTerm);
@@ -138,7 +141,7 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
             }
             else if (heartbeatOrRequest.TryGetHeartbeat(out var heartbeat))
             {
-                if (ReplicateLogReturnGreaterTerm(peerInfo.NextIndex, peerInfo, token) is { } greaterTerm)
+                if (ReplicateLogReturnGreaterTerm(_replicationState.NextIndex, token) is { } greaterTerm)
                 {
                     _logger.Debug("При отправке Heartbeat запроса узел ответил большим термом");
                     heartbeat.NotifyFoundGreaterTerm(greaterTerm);
@@ -162,7 +165,6 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
     /// <param name="replicationIndex">
     /// Индекс, до которого нужно реплицировать лог
     /// </param>
-    /// <param name="info">Вспомогательная информация про узел - на каком индексе репликации находимся</param>
     /// <param name="token">Токен отмены</param>
     /// <returns>
     /// <see cref="Term"/> - найденный больший терм, <c>null</c> - репликация прошла успешно
@@ -170,18 +172,18 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
     /// <exception cref="ApplicationException">
     /// Для репликации нужна запись с определенным индексом, но ее нет ни в логе, ни в снапшоте (маловероятно)
     /// </exception>
-    private Term? ReplicateLogReturnGreaterTerm(int replicationIndex, PeerInfo info, CancellationToken token)
+    private Term? ReplicateLogReturnGreaterTerm(Lsn replicationIndex, CancellationToken token)
     {
         while (!token.IsCancellationRequested)
         {
-            if (!Persistence.TryGetFrom(info.NextIndex, out var entries))
+            if (!Persistence.TryGetFrom(_replicationState.NextIndex, out var entries, out var prevLogEntry))
             {
-                _logger.Debug("В логе не оказалось записей после индекса: {Index}", info.NextIndex);
+                _logger.Debug("В логе не оказалось записей после индекса: {Index}", _replicationState.NextIndex);
                 if (Persistence.TryGetSnapshot(out var snapshot, out var lastEntry))
                 {
                     _logger.Debug("Отправляю снапшот на узел");
                     var installSnapshotResponse = _peer.SendInstallSnapshot(new InstallSnapshotRequest(SavedTerm,
-                        RaftConsensusModule.Id, lastEntry,
+                        ConsensusModule.Id, lastEntry,
                         snapshot), token);
 
                     if (SavedTerm < installSnapshotResponse.CurrentTerm)
@@ -191,45 +193,44 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
                         return installSnapshotResponse.CurrentTerm;
                     }
 
-                    info.Set(lastEntry.Index + 1);
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    _replicationState.Set(lastEntry.Index + 1);
+                    _watcher.Notify();
                     _logger.Debug("Снапшот отправлен на другой узел");
                     continue;
                 }
 
                 throw new ApplicationException(
-                    $"Для репликации нужны данные лога с {info.NextIndex} индекса, но ни в логе ни в снапшоте этого лога нет");
+                    $"Для репликации нужны данные лога с {_replicationState.NextIndex} индекса, но ни в логе ни в снапшоте этого лога нет");
             }
 
             // 1. Отправляем запрос с текущим отслеживаемым индексом узла
-            AppendEntriesRequest appendEntriesRequest;
-            try
-            {
-                appendEntriesRequest = new AppendEntriesRequest(Term: SavedTerm,
-                    LeaderCommit: Persistence.CommitIndex,
-                    LeaderId: RaftConsensusModule.Id,
-                    PrevLogEntryInfo: Persistence.GetPrecedingEntryInfo(info.NextIndex),
-                    Entries: entries);
-            }
-            catch (ArgumentOutOfRangeException)
-            {
-                /*
-                 * Между первым TryGetFrom и GetPrecedingEntryInfo прошло много времени
-                 * и был создан новый снапшот, поэтому info.NextIndex уже нет.
-                 * На следующем круге отправим уже снапшот
-                 */
-                continue;
-            }
 
-            var response = _peer.SendAppendEntries(appendEntriesRequest, token);
+            var response = _peer.SendAppendEntries(new AppendEntriesRequest(Term: SavedTerm,
+                    LeaderCommit: Persistence.CommitIndex,
+                    LeaderId: ConsensusModule.Id,
+                    PrevLogEntryInfo: prevLogEntry,
+                    Entries: entries),
+                token);
 
             // 3. Если ответ успешный 
             if (response.Success)
             {
+                if (token.IsCancellationRequested)
+                {
+                    break;
+                }
+
                 // 3.1. Обновить nextIndex = + кол-во Entries в запросе
-                info.Increment(appendEntriesRequest.Entries.Count);
+                _replicationState.Increment(entries.Count);
+                _watcher.Notify();
 
                 // 3.2. Если лог не до конца был синхронизирован
-                if (info.NextIndex < replicationIndex)
+                if (_replicationState.NextIndex < replicationIndex)
                 {
                     // Заходим на новый круг и отправляем еще
                     continue;
@@ -250,14 +251,17 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
             }
 
             // 5.1. Декрементируем последние записи лога
-            info.Decrement();
+            _replicationState.Decrement();
+
+            // Не нужно уведомлять, т.к. записи у нас уже были закоммичены
+            // _watcher.Notify();
 
             // 5.2. Идем на следующий круг
         }
 
         // Единственный случай попадания сюда - токен отменен == мы больше не лидер
         // Скорее всего терм уже был обновлен
-        return RaftConsensusModule.CurrentTerm;
+        return ConsensusModule.CurrentTerm;
     }
 
     public void Dispose()
@@ -278,63 +282,6 @@ public class PeerProcessorBackgroundJob<TCommand, TResponse> : IBackgroundJob, I
         return _queue.TryAddHeartbeat(out o);
     }
 
-    /// <summary>
-    /// Информация об узле, необходимая для взаимодействия с ним в состоянии <see cref="NodeRole.Leader"/>
-    /// </summary>
-    private class PeerInfo
-    {
-        /// <summary>
-        /// Индекс следующей записи в логе, которую необходимо отправить клиенту
-        /// </summary>
-        public int NextIndex { get; private set; }
-
-        public PeerInfo(int nextIndex)
-        {
-            NextIndex = nextIndex;
-        }
-
-        /// <summary>
-        /// Добавить к последнему индексу указанное число.
-        /// Используется, когда запись (или несколько) были успешно реплицированы - не отправка снапшота
-        /// </summary>
-        /// <param name="appliedCount">Количество успешно отправленных записей</param>
-        public void Increment(int appliedCount)
-        {
-            var nextIndex = NextIndex + appliedCount;
-            Debug.Assert(0 <= nextIndex, "0 <= nextIndex",
-                "Выставленный индекс следующей записи не может получиться отрицательным. Рассчитано: {0}. Кол-во примененных записей: {1}",
-                nextIndex, appliedCount);
-            NextIndex = nextIndex;
-        }
-
-        /// <summary>
-        /// Выставить нужное число 
-        /// </summary>
-        /// <param name="nextIndex">Новый следующий индекс</param>
-        public void Set(int nextIndex)
-        {
-            Debug.Assert(0 <= nextIndex, "Следующий индекс записи не может быть отрицательным",
-                "Нельзя выставлять отрицательный индекс следующей записи. Попытка выставить {0}. Старый следующий индекс: {1}",
-                nextIndex, NextIndex);
-            NextIndex = nextIndex;
-        }
-
-        /// <summary>
-        /// Откатиться назад, если узел ответил на AppendEntries <c>false</c>
-        /// </summary>
-        /// <exception cref="InvalidOperationException"><see cref="NextIndex"/> равен 0</exception>
-        public void Decrement()
-        {
-            if (NextIndex is 0)
-            {
-                throw new InvalidOperationException("Нельзя откатиться на индекс меньше 0");
-            }
-
-            NextIndex--;
-        }
-
-        public override string ToString() => $"PeerInfo(NextIndex = {NextIndex})";
-    }
 
     public override string ToString()
     {

@@ -3,7 +3,6 @@ using Serilog;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 
 namespace TaskFlux.Consensus.State.LeaderState;
@@ -19,7 +18,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     private (PeerProcessorBackgroundJob<TCommand, TResponse> Processor, ITimer Timer)[] _peerProcessors =
         Array.Empty<(PeerProcessorBackgroundJob<TCommand, TResponse>, ITimer)>();
 
-    private readonly IDeltaExtractor<TResponse> _deltaExtractor;
+    private readonly IDeltaExtractor<TCommand> _deltaExtractor;
     private readonly ITimerFactory _timerFactory;
     private IApplication<TCommand, TResponse>? _application;
 
@@ -31,7 +30,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     internal LeaderState(RaftConsensusModule<TCommand, TResponse> consensusModule,
                          ILogger logger,
-                         IDeltaExtractor<TResponse> deltaExtractor,
+                         IDeltaExtractor<TCommand> deltaExtractor,
                          ITimerFactory timerFactory)
         : base(consensusModule)
     {
@@ -43,13 +42,6 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     public override void Initialize()
     {
         _peerProcessors = CreatePeerProcessors();
-        var oldSnapshot = Persistence.TryGetSnapshot(out var s, out _)
-                              ? s
-                              : null;
-
-        _logger.Information("Восстанавливаю предыдущее состояние");
-        var deltas = Persistence.ReadCommittedDelta();
-        _application = ApplicationFactory.Restore(oldSnapshot, deltas);
         Array.ForEach(_peerProcessors, p =>
         {
             // Вместе с таймером уйдет и остальное
@@ -85,18 +77,34 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             p.Timer.ForceRun();
             _logger.Debug("Обработчик для узла {NodeId} запущен", p.Processor.NodeId);
         });
-        _logger.Verbose("Потоки обработчиков узлов запущены");
+
+        _logger.Information("Восстанавливаю предыдущее состояние");
+        var oldSnapshot = Persistence.TryGetSnapshot(out var s, out _)
+                              ? s
+                              : null;
+        var deltas = Persistence.ReadDeltaFromPreviousSnapshot();
+        _application = ApplicationFactory.Restore(oldSnapshot, deltas);
     }
 
     private (PeerProcessorBackgroundJob<TCommand, TResponse>, ITimer)[] CreatePeerProcessors()
     {
         var peers = PeerGroup.Peers;
         var processors = new (PeerProcessorBackgroundJob<TCommand, TResponse>, ITimer)[peers.Count];
+        var replicationStates = new PeerReplicationState[peers.Count];
+        var lastEntryIndex = Persistence.LastEntry.Index + 1;
+        for (var i = 0; i < replicationStates.Length; i++)
+        {
+            replicationStates[i] = new PeerReplicationState(lastEntryIndex);
+        }
+
+        var replicationWatcher = new ReplicationWatcher(replicationStates, Persistence);
         for (var i = 0; i < processors.Length; i++)
         {
             var peer = peers[i];
+            var info = replicationStates[i];
             var processor = new PeerProcessorBackgroundJob<TCommand, TResponse>(peer,
-                _logger.ForContext("SourceContext", $"PeerProcessor({peer.Id.Id})"), CurrentTerm, this);
+                _logger.ForContext("SourceContext", $"PeerProcessor({peer.Id.Id})"), CurrentTerm, info,
+                replicationWatcher, this);
             var timer = _timerFactory.CreateHeartbeatTimer();
             processors[i] = ( processor, timer );
         }
@@ -110,8 +118,8 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         {
             if (request.Term == CurrentTerm)
             {
-                _logger.Warning("От узла {NodeId} пришел запрос. Наши термы совпадают: {Term}", request.LeaderId.Id,
-                    request.Term.Value);
+                _logger.Warning("От узла {NodeId} пришел запрос. Наши термы совпадают: {Term}", request.LeaderId,
+                    request.Term);
             }
             else
             {
@@ -132,52 +140,31 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     public override RequestVoteResponse Apply(RequestVoteRequest request)
     {
-        if (request.CandidateTerm < CurrentTerm)
+        if (request.CandidateTerm <= CurrentTerm)
         {
+            // Мы уже лидер в своем терме, поэтому нет, а если терм отправителя меньше - тем более нет
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
         }
+        // Голос не проверяем, т.к. в любом случае в больше терме не голосовали
 
-        var logConflicts = Persistence.Conflicts(request.LastLogEntryInfo);
-
-        if (CurrentTerm < request.CandidateTerm)
+        var followerState = ConsensusModule.CreateFollowerState();
+        if (ConsensusModule.TryUpdateState(followerState, this))
         {
-            var followerState = ConsensusModule.CreateFollowerState();
-
-            if (ConsensusModule.TryUpdateState(followerState, this))
+            var newTerm = request.CandidateTerm;
+            if (Persistence.IsUpToDate(request.LastLogEntryInfo))
             {
-                ConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
-                return new RequestVoteResponse(CurrentTerm, !logConflicts);
+                Persistence.UpdateState(newTerm, request.CandidateId);
+                return new RequestVoteResponse(newTerm, true);
             }
-
-            // Уже есть новое состояние - пусть оно ответит
-            return ConsensusModule.Handle(request);
+            else
+            {
+                Persistence.UpdateState(newTerm, null);
+                return new RequestVoteResponse(newTerm, false);
+            }
         }
 
-        var canVote =
-            // Ранее не голосовали
-            VotedFor is null
-          ||
-            // В этом терме мы за него уже проголосовали
-            VotedFor == request.CandidateId;
-
-        // Отдать свободный голос можем только за кандидата 
-        if (canVote
-         &&                // За которого можем проголосовать и
-            !logConflicts) // У которого лог не хуже нашего
-        {
-            var followerState = ConsensusModule.CreateFollowerState();
-            if (ConsensusModule.TryUpdateState(followerState, this))
-            {
-                ConsensusModule.Persistence.UpdateState(request.CandidateTerm, request.CandidateId);
-                return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: true);
-            }
-
-            return ConsensusModule.Handle(request);
-        }
-
-        // Кандидат только что проснулся и не знает о текущем состоянии дел. 
-        // Обновим его
-        return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
+        // Кто-то параллельно обновил состояние
+        return ConsensusModule.Handle(request);
     }
 
     public override void Dispose()
@@ -225,82 +212,62 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     {
         Debug.Assert(_application is not null, "_application is not null",
             "Приложение не было инициализировано на момент обработки запроса");
-        _logger.Information("Получил новую команду: {Command}", command);
+        _logger.Debug("Получил новую команду: {Command}", command);
 
-        var response = _application.Apply(command);
-        if (!_deltaExtractor.TryGetDelta(response, out var delta))
+        if (_deltaExtractor.TryGetDelta(command, out var delta))
         {
-            // Если команда не выполнила модификаций (дельты нет),
-            // то сразу возвращаем результат - без необходимости репликации/фиксации
-            return SubmitResponse<TResponse>.Success(response, true);
-        }
+            // Добавляем команду в буфер
+            _logger.Verbose("Добавляю команду в лог");
+            var newEntry = new LogEntry(CurrentTerm, delta);
+            var appended = Persistence.Append(newEntry);
 
-        // Добавляем команду в буфер
-        _logger.Verbose("Добавляю команду в лог");
-        var newEntry = new LogEntry(CurrentTerm, delta);
-        var appended = Persistence.Append(newEntry);
-
-        // Сигнализируем узлам, чтобы принялись реплицировать
-        _logger.Verbose("Начинаю репликацию записанной команды");
-        var success = TryReplicate(appended.Index, out var greaterTerm);
-        if (!success)
-        {
-            _logger.Verbose("Команду реплицировать не удалось: состояние поменялось");
-            if (Role != NodeRole.Leader)
+            // Сигнализируем узлам, чтобы принялись реплицировать
+            if (!TryReplicate(appended, out var greaterTerm))
             {
-                // Пока выполняли запрос перестали быть лидером
+                if (Role != NodeRole.Leader)
+                {
+                    // Пока выполняли запрос уже перестали быть лидером
+                    return ConsensusModule.Handle(command, token);
+                }
+
+                // Либо, другой узел еще не присылал нам запрос с большим термом - обновимся сами
+                if (ConsensusModule.TryUpdateState(ConsensusModule.CreateFollowerState(), this))
+                {
+                    Persistence.UpdateState(greaterTerm, null);
+                    return SubmitResponse<TResponse>.NotLeader;
+                }
+
                 return ConsensusModule.Handle(command, token);
             }
 
-            if (ConsensusModule.TryUpdateState(ConsensusModule.CreateFollowerState(), this))
+            /*
+             * Если мы вернулись, то это может значить 2 вещи:
+             *  1. Запись успешно реплицирована
+             *  2. Какой-то узел вернул больший терм и мы перешли в фолловера
+             *  3. Во время отправки запросов нам пришел запрос с большим термом
+             */
+            if (!IsStillLeader)
             {
-                _logger.Verbose("Стал Follower");
-                Persistence.UpdateState(greaterTerm, null);
                 return SubmitResponse<TResponse>.NotLeader;
             }
 
-            return ConsensusModule.Handle(command, token);
+            if (Persistence.ShouldCreateSnapshot())
+            {
+                _logger.Information("Создаю снапшот приложения");
+                var snapshot = _application.GetSnapshot();
+                Persistence.SaveSnapshot(snapshot, new LogEntryInfo(newEntry.Term, appended), token);
+            }
         }
 
-        /*
-         * Если мы вернулись, то это может значить 2 вещи:
-         *  1. Запись успешно реплицирована
-         *  2. Какой-то узел вернул больший терм и мы перешли в фолловера
-         *  3. Во время отправки запросов нам пришел запрос с большим термом
-         */
-        if (!IsStillLeader)
-        {
-            return SubmitResponse<TResponse>.NotLeader;
-        }
-
-        // Применяем команду к приложению.
-        // Лучше сначала применить и, если что не так, упасть,
-        // чем закоммитить, а потом каждый раз валиться при восстановлении
-
-        _logger.Verbose("Коммичу команду с индексом {Index}", appended.Index);
-        Persistence.Commit(appended.Index);
-
-        /*
-         * На этом моменте Heartbeat не отправляю,
-         * т.к. он отправится по таймеру (он должен вызываться часто).
-         * Либо придет новый запрос и он отправится вместе с AppendEntries
-         */
-        if (Persistence.ShouldCreateSnapshot())
-        {
-            _logger.Debug("Создаю снапшот");
-            var snapshot = _application.GetSnapshot();
-            Persistence.SaveSnapshot(snapshot, appended, token);
-        }
-
-        // Возвращаем результат
+        var response = _application.Apply(command);
         return SubmitResponse<TResponse>.Success(response, true);
     }
 
-    private bool TryReplicate(int appendedIndex, out Term greaterTerm)
+    private bool TryReplicate(Lsn appendedIndex, out Term greaterTerm)
     {
         if (_peerProcessors.Length == 0)
         {
-            // Кроме нас в кластере никого нет
+            Persistence.Commit(appendedIndex);
             greaterTerm = Term.Start;
             return true;
         }
@@ -315,12 +282,13 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
         }
         catch (ObjectDisposedException)
         {
-            greaterTerm = Term.Start;
+            greaterTerm = CurrentTerm;
             return false;
         }
 
         request.Wait(token);
-        return !request.TryGetGreaterTerm(out greaterTerm);
+        var hasGreaterTerm = request.TryGetGreaterTerm(out greaterTerm);
+        return !hasGreaterTerm;
     }
 
     /// <summary>

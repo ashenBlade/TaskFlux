@@ -53,6 +53,24 @@ public ref struct SpanBinaryReader
         return buffer;
     }
 
+    public byte[] ReadBufferAligned(int alignment)
+    {
+        var length = ReadInt32();
+        var align = GetAlign(length, alignment);
+        EnsureLength(length + align);
+        var buffer = new byte[length];
+        _buffer.Slice(_index, length).CopyTo(buffer);
+        _index += length + align;
+        return buffer;
+    }
+
+    private static int GetAlign(int length, int alignment)
+    {
+        return alignment == 0
+                   ? 0
+                   : length % alignment;
+    }
+
     public string ReadString()
     {
         var length = ReadInt32();

@@ -108,8 +108,8 @@ public static class CommandMapper
 
         public Command Visit(DequeueNetworkCommand command)
         {
-            return new DequeueRecordCommand(queue: QueueName.Parse(command.QueueName),
-                permanent: false); // Команда не должна быть перманентной, т.к. должно будут Ack/Nack пакеты дополнительные
+            // Команда Dequeue, посылаемая по сети, не должна быть закоммичена
+            return new DequeueRecordCommand(queue: QueueName.Parse(command.QueueName));
         }
     }
 }

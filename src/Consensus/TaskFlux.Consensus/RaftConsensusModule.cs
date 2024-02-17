@@ -3,8 +3,8 @@ using Serilog;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Consensus.State;
+using TaskFlux.Consensus.State.CandidateState;
 using TaskFlux.Consensus.State.LeaderState;
 using TaskFlux.Core;
 
@@ -23,15 +23,14 @@ public class RaftConsensusModule<TCommand, TResponse>
       IDisposable
 {
     private readonly ITimerFactory _timerFactory;
-    private readonly IDeltaExtractor<TResponse> _deltaExtractor;
+    private readonly IDeltaExtractor<TCommand> _deltaExtractor;
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Текущая роль узла
     /// </summary>
-    // public NodeRole CurrentRole => CurrentState.Role;
     public NodeRole CurrentRole => CurrentState.Role;
 
-    private readonly ILogger _logger;
 
     /// <summary>
     /// ID текущего узла
@@ -115,7 +114,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     /// <summary>
     /// Фасад для работы с файлами
     /// </summary>
-    public FileSystemPersistenceFacade Persistence { get; }
+    public IPersistence Persistence { get; }
 
     internal RaftConsensusModule(
         NodeId id,
@@ -123,8 +122,8 @@ public class RaftConsensusModule<TCommand, TResponse>
         ILogger logger,
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
-        FileSystemPersistenceFacade persistence,
-        IDeltaExtractor<TResponse> deltaExtractor,
+        IPersistence persistence,
+        IDeltaExtractor<TCommand> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         _timerFactory = timerFactory;
@@ -199,8 +198,8 @@ public class RaftConsensusModule<TCommand, TResponse>
         ILogger logger,
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
-        FileSystemPersistenceFacade persistenceFacade,
-        IDeltaExtractor<TResponse> deltaExtractor,
+        IPersistence persistenceFacade,
+        IDeltaExtractor<TCommand> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         var module = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, timerFactory,

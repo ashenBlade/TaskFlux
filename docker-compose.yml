@@ -3,6 +3,7 @@
     build:
       context: src
       dockerfile: TaskFlux.Host/Dockerfile
+    hostname: 'tflux.1'
     ports:
       - '9000:1606'
     environment:
@@ -11,8 +12,11 @@
       TASKFLUX_CLUSTER_LISTEN_PORT: 5000
       TASKFLUX_CLUSTER_LISTEN_HOST: tflux.1
       TASKFLUX_CLUSTER_DATA_DIRECTORY: /var/lib/tflux
-      TASKFLUX_HTTP_ADAPTER_LISTEN_PORT: 1606
+      TASKFLUX_HTTP_LISTEN_ADDRESS: 'tflux.1:1606'
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
+      TASKFLUX_LOG_FILE_SOFT_LIMIT: '33554432'
+      TASKFLUX_LOG_FILE_HARD_LIMIT: '67108864'
+      TASKFLUX_SNAPSHOT_SNAPSHOT_CREATION_SEGMENTS_THRESHOLD: '5'
     volumes:
       - tflux.1.volume:/var/lib/tflux
     networks:
@@ -22,6 +26,7 @@
     build:
       context: src
       dockerfile: TaskFlux.Host/Dockerfile
+    hostname: 'tflux.2'
     ports:
       - '9001:1606'
     environment:
@@ -30,8 +35,11 @@
       TASKFLUX_CLUSTER_LISTEN_PORT: 5000
       TASKFLUX_CLUSTER_LISTEN_HOST: tflux.2
       TASKFLUX_CLUSTER_DATA_DIRECTORY: /var/lib/tflux
-      TASKFLUX_HTTP_ADAPTER_LISTEN_PORT: 1606
+      TASKFLUX_HTTP_LISTEN_ADDRESS: 'tflux.2:1606'
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
+      TASKFLUX_LOG_FILE_SOFT_LIMIT: '33554432'
+      TASKFLUX_LOG_FILE_HARD_LIMIT: '67108864'
+      TASKFLUX_SNAPSHOT_SNAPSHOT_CREATION_SEGMENTS_THRESHOLD: '5'
     volumes:
       - tflux.2.volume:/var/lib/tflux
     networks:
@@ -41,6 +49,7 @@
     build:
       context: src
       dockerfile: TaskFlux.Host/Dockerfile
+    hostname: 'tflux.3'
     ports:
       - '9002:1606'
     environment:
@@ -49,8 +58,11 @@
       TASKFLUX_CLUSTER_LISTEN_PORT: 5000
       TASKFLUX_CLUSTER_LISTEN_HOST: tflux.3
       TASKFLUX_CLUSTER_DATA_DIRECTORY: /var/lib/tflux
-      TASKFLUX_HTTP_ADAPTER_LISTEN_PORT: 1606
+      TASKFLUX_HTTP_LISTEN_ADDRESS: 'tflux.3:1606'
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
+      TASKFLUX_LOG_FILE_SOFT_LIMIT: '33554432'
+      TASKFLUX_LOG_FILE_HARD_LIMIT: '67108864'
+      TASKFLUX_SNAPSHOT_SNAPSHOT_CREATION_SEGMENTS_THRESHOLD: '5'
     volumes:
       - tflux.3.volume:/var/lib/tflux
     networks:

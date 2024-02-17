@@ -220,4 +220,18 @@ public struct StreamBinaryReader
             ArrayPool<byte>.Shared.Return(buffer);
         }
     }
+
+    public async Task<uint> ReadUInt32Async(CancellationToken token)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(sizeof(uint));
+        try
+        {
+            await Stream.ReadExactlyAsync(buffer.AsMemory(0, sizeof(uint)), token);
+            return BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(0, sizeof(uint)));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
 }

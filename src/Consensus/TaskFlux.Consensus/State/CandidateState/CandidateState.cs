@@ -4,7 +4,7 @@ using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
 using TaskFlux.Core;
 
-namespace TaskFlux.Consensus.State;
+namespace TaskFlux.Consensus.State.CandidateState;
 
 public class CandidateState<TCommand, TResponse>
     : State<TCommand, TResponse>
@@ -74,7 +74,7 @@ public class CandidateState<TCommand, TResponse>
             if (ConsensusModule.TryUpdateState(leaderState, this))
             {
                 _logger.Debug("Сработал Election Timeout и в кластере я один. Становлюсь лидером");
-                Persistence.UpdateState(CurrentTerm.Increment(), null);
+                Persistence.UpdateState(CurrentTerm.Increment(), Id);
                 return;
             }
         }
@@ -114,14 +114,24 @@ public class CandidateState<TCommand, TResponse>
 
         if (CurrentTerm < request.CandidateTerm)
         {
+            // В любом случае обновляем терм и переходим в последователя
+            var newTerm = request.CandidateTerm;
             var followerState = ConsensusModule.CreateFollowerState();
             if (ConsensusModule.TryUpdateState(followerState, this))
             {
-                ConsensusModule.Persistence.UpdateState(request.CandidateTerm, null);
+                if (Persistence.IsUpToDate(request.LastLogEntryInfo))
+                {
+                    Persistence.UpdateState(newTerm, request.CandidateId);
+                    return new RequestVoteResponse(CurrentTerm: newTerm, VoteGranted: true);
+                }
+                else
+                {
+                    Persistence.UpdateState(newTerm, null);
+                    return new RequestVoteResponse(CurrentTerm: newTerm, VoteGranted: false);
+                }
             }
 
-            // Даже если не смогли стать фолловером (не смогли обновить состояние), 
-            // все равно делегируем обработку запроса 
+            // Пока обрабатывали запрос кто-то поменял состояние, может таймер выборов сработал
             return ConsensusModule.Handle(request);
         }
 
@@ -134,10 +144,16 @@ public class CandidateState<TCommand, TResponse>
     {
         _electionTimer.Timeout -= OnElectionTimerTimeout;
         _electionTimer.Stop();
-        _lifetimeCts.Cancel();
-
-        _lifetimeCts.Dispose();
         _electionTimer.Dispose();
+
+        try
+        {
+            _lifetimeCts.Cancel();
+            _lifetimeCts.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     public override InstallSnapshotResponse Apply(InstallSnapshotRequest request,

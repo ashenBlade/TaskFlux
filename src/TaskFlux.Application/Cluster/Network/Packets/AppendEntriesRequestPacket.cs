@@ -1,12 +1,10 @@
-using System.Buffers;
+using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Consensus.Commands.AppendEntries;
-using TaskFlux.Consensus.Persistence;
-using TaskFlux.Core;
 using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public class AppendEntriesRequestPacket : NodePacket
 {
@@ -14,70 +12,59 @@ public class AppendEntriesRequestPacket : NodePacket
     /// Позиция с которой начинаются сами данные.
     /// Нужно для тестов
     /// </summary>
-    internal const int DataStartPosition = 1  // Маркер
-                                         + 4  // Размер
-                                         + 4  // Leader Id
-                                         + 4  // LeaderCommit 
-                                         + 4  // Term
-                                         + 4  // PrevLogEntry Term
-                                         + 4  // PrevLogEntry Index
-                                         + 4; // Entries Count
+    internal const int DataStartPosition = BasePayloadSize - SizeOf.CheckSum;
 
     public override NodePacketType PacketType => NodePacketType.AppendEntriesRequest;
 
-    protected override int EstimatePacketSize()
-    {
-        const int baseSize = 1  // Маркер
-                           + 4  // Размер
-                           + 4  // Leader Id
-                           + 4  // LeaderCommit 
-                           + 4  // Term
-                           + 4  // PrevLogEntry Term
-                           + 4  // PrevLogEntry Index
-                           + 4  // Entries Count
-                           + 4; // Чек-сумма
+    private const int BasePayloadSize = SizeOf.Int32        // Размер полезной нагрузки
+                                      + SizeOf.Lsn          // Коммит лидера
+                                      + SizeOf.Term         // Терм лидера
+                                      + SizeOf.Term         // Терм предыдущей записи
+                                      + SizeOf.Lsn          // LSN предыдущей записи
+                                      + SizeOf.NodeId       // ID узла лидера
+                                      + SizeOf.ArrayLength; // Количество записей в массиве
 
+    private const int DataAlignment = 8;
+
+
+    protected override int EstimatePayloadSize()
+    {
         var entries = Request.Entries;
         if (entries.Count == 0)
         {
-            return baseSize;
+            return BasePayloadSize;
         }
 
-        return baseSize
-             + entries.Sum(entry => 4 // Term
-                                  + 4 // Размер
-                                  + entry.Data.Length);
+        return BasePayloadSize
+             + entries.Sum(entry => SizeOf.Term // Терм записи
+                                  + SizeOf.BufferAligned(entry.Data,
+                                        DataAlignment)); // Размер буфера с данными включая длину
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.AppendEntriesRequest);
-        writer.Write(buffer.Length
-                   - (
-                         sizeof(NodePacketType) // Packet Type 
-                       + sizeof(int)            // Length
-                     ));
 
-        writer.Write(Request.Term.Value);
-        writer.Write(Request.LeaderId.Id);
+        // Буфер, который нам передали должен занимать ровно столько сколько сказали,
+        // поэтому размер нагрузки равен размеру буфера за исключением размера самой нагрузки
+        var packetPayloadLength = buffer.Length - SizeOf.Int32;
+        writer.Write(packetPayloadLength);
+
         writer.Write(Request.LeaderCommit);
-        writer.Write(Request.PrevLogEntryInfo.Term.Value);
+        writer.Write(Request.Term);
+        writer.Write(Request.PrevLogEntryInfo.Term);
         writer.Write(Request.PrevLogEntryInfo.Index);
+        writer.Write(Request.LeaderId);
         writer.Write(Request.Entries.Count);
 
-        var dataStartPosition = writer.Index;
         if (Request.Entries.Count > 0)
         {
             foreach (var entry in Request.Entries)
             {
-                writer.Write(entry.Term.Value);
-                writer.WriteBuffer(entry.Data);
+                writer.Write(entry.Term);
+                writer.WriteBufferAligned(entry.Data, DataAlignment);
             }
         }
-
-        var checkSum = Crc32CheckSum.Compute(buffer[dataStartPosition..writer.Index]);
-        writer.Write(checkSum);
     }
 
     public AppendEntriesRequest Request { get; }
@@ -94,65 +81,54 @@ public class AppendEntriesRequestPacket : NodePacket
     internal int GetDataEndPosition()
     {
         return DataStartPosition
-             + Request.Entries.Sum(entry => 4 // Term
-                                          + 4 // Размер
-                                          + entry.Data.Length);
+             + Request.Entries.Sum(entry => SizeOf.Term                                      // Терм записи
+                                          + SizeOf.BufferAligned(entry.Data, DataAlignment)) // Данные записи
+             + sizeof(uint);                                                                 // Чек-сумма
     }
 
     public new static AppendEntriesRequestPacket Deserialize(Stream stream)
     {
         // Сначала определим полный размер пакета
         // ReSharper disable once RedundantAssignment
-        var streamReader = new StreamBinaryReader(stream);
-        var payloadSize = streamReader.ReadInt32();
+        Span<byte> prefixSpan = stackalloc byte[sizeof(int)];
+        stream.ReadExactly(prefixSpan);
+        var payloadSize = new SpanBinaryReader(prefixSpan).ReadInt32() + sizeof(uint);
 
-        // Запишем все байты и десериализуем пакет
-        var buffer = ArrayPool<byte>.Shared.Rent(payloadSize);
-        try
+        if (payloadSize < 1024) // 1 Кб
         {
-            var data = buffer.AsSpan(0, payloadSize);
-            stream.ReadExactly(data);
-            return DeserializePacketVerifyCheckSum(data);
+            Span<byte> span = stackalloc byte[payloadSize];
+            stream.ReadExactly(span);
+            return DeserializePayload(span, prefixSpan);
         }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+
+        using var buffer = Rent(payloadSize);
+        var data = buffer.GetSpan();
+        stream.ReadExactly(data);
+        return DeserializePayload(data, prefixSpan);
     }
 
     public new static async Task<AppendEntriesRequestPacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        // Сначала определим полный размер пакета
-        // ReSharper disable once RedundantAssignment
-        var streamReader = new StreamBinaryReader(stream);
-        var payloadSize = await streamReader.ReadInt32Async(token);
+        using var prefixBuffer = Rent(sizeof(int));
+        await stream.ReadExactlyAsync(prefixBuffer.GetMemory(), token);
+        var totalPayloadSize = new SpanBinaryReader(prefixBuffer.GetSpan()).ReadInt32();
 
-        // Запишем все байты и десериализуем пакет
-        var buffer = ArrayPool<byte>.Shared.Rent(payloadSize);
-        try
-        {
-            var data = buffer.AsMemory(0, payloadSize);
-            await stream.ReadExactlyAsync(data, token);
-            return DeserializePacketVerifyCheckSum(data.Span);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
+        using var payloadBuffer = Rent(totalPayloadSize + sizeof(uint));
+        await stream.ReadExactlyAsync(payloadBuffer.GetMemory(), token);
+        return DeserializePayload(payloadBuffer.GetSpan(), prefixBuffer.GetSpan());
     }
 
-    private static AppendEntriesRequestPacket DeserializePacketVerifyCheckSum(Span<byte> buffer)
+    private static AppendEntriesRequestPacket DeserializePayload(Span<byte> buffer, Span<byte> prefix)
     {
-        // Сперва валидируем чек-сумму
-        ValidateCheckSum(buffer);
+        VerifyCheckSumRequest(buffer, prefix);
 
         var reader = new SpanBinaryReader(buffer);
 
-        var term = reader.ReadInt32();
-        var leaderId = reader.ReadInt32();
-        var leaderCommit = reader.ReadInt32();
-        var entryTerm = reader.ReadInt32();
-        var entryIndex = reader.ReadInt32();
+        var leaderCommit = reader.ReadLsn();
+        var term = reader.ReadTerm();
+        var lastEntryTerm = reader.ReadTerm();
+        var lastEntryIndex = reader.ReadLsn();
+        var leaderId = reader.ReadNodeId();
         var entriesCount = reader.ReadInt32();
 
         IReadOnlyList<LogEntry> entries;
@@ -165,32 +141,26 @@ public class AppendEntriesRequestPacket : NodePacket
             var list = new List<LogEntry>();
             for (int i = 0; i < entriesCount; i++)
             {
-                var logEntryTerm = reader.ReadInt32();
-                var payload = reader.ReadBuffer();
-                list.Add(new LogEntry(new Term(logEntryTerm), payload));
+                var logEntryTerm = reader.ReadTerm();
+                var payload = reader.ReadBufferAligned(DataAlignment);
+                list.Add(new LogEntry(logEntryTerm, payload));
             }
 
             entries = list;
         }
 
-        return new AppendEntriesRequestPacket(new AppendEntriesRequest(new Term(term), leaderCommit,
-            new NodeId(leaderId), new LogEntryInfo(new Term(entryTerm), entryIndex), entries));
+        return new AppendEntriesRequestPacket(new AppendEntriesRequest(term, leaderCommit, leaderId,
+            new LogEntryInfo(lastEntryTerm, lastEntryIndex), entries));
+    }
 
-        static void ValidateCheckSum(Span<byte> buffer)
+    private static void VerifyCheckSumRequest(Span<byte> payload, Span<byte> payloadSizePrefix)
+    {
+        var calculated = Crc32CheckSum.Compute(payloadSizePrefix);
+        calculated = Crc32CheckSum.Compute(calculated, payload[..^4]);
+        var stored = new SpanBinaryReader(payload[^4..]).ReadUInt32();
+        if (calculated != stored)
         {
-            var crcReader = new SpanBinaryReader(buffer[^4..]);
-            var storedCrc = crcReader.ReadUInt32();
-            const int dataStartPosition = 4  // Терм  
-                                        + 4  // Id лидера  
-                                        + 4  // Коммит лидера
-                                        + 4  // Терм последней записи
-                                        + 4  // Индекс последней записи
-                                        + 4; // Количество записей
-            var calculatedCrc = Crc32CheckSum.Compute(buffer[dataStartPosition..^4]);
-            if (storedCrc != calculatedCrc)
-            {
-                throw new IntegrityException();
-            }
+            throw new IntegrityException();
         }
     }
 }

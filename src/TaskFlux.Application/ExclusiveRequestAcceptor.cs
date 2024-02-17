@@ -14,6 +14,24 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Thread _thread;
 
+    /// <summary>
+    /// Размер очереди запросов
+    /// </summary>
+    public int QueueSize
+    {
+        get
+        {
+            try
+            {
+                return _channel.Count;
+            }
+            catch (ObjectDisposedException)
+            {
+                return 0;
+            }
+        }
+    }
+
     public ExclusiveRequestAcceptor(IConsensusModule<Command, Response> module,
                                     IApplicationLifetime lifetime,
                                     ILogger logger)
@@ -100,6 +118,8 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
                     _logger.Information("Токен сработал. Заканчиваю работу");
                     request.Cancel();
                 }
+
+                Metrics.TotalProcessedCommands.Add(1);
             }
         }
         catch (OperationCanceledException)
@@ -135,6 +155,9 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
     {
         _cts.Dispose();
         _channel.Dispose();
-        _thread.Join();
+        if (_thread.ThreadState is not ThreadState.Unstarted)
+        {
+            _thread.Join();
+        }
     }
 }

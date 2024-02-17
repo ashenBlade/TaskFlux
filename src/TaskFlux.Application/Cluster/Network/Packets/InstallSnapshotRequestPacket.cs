@@ -1,8 +1,8 @@
-using TaskFlux.Consensus.Persistence;
+using TaskFlux.Consensus;
 using TaskFlux.Core;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Consensus.Cluster.Network.Packets;
+namespace TaskFlux.Application.Cluster.Network.Packets;
 
 public sealed class InstallSnapshotRequestPacket : NodePacket
 {
@@ -18,32 +18,28 @@ public sealed class InstallSnapshotRequestPacket : NodePacket
         LastEntry = lastEntry;
     }
 
-    protected override int EstimatePacketSize()
+    protected override int EstimatePayloadSize()
     {
-        return sizeof(NodePacketType) // Маркер
-             + sizeof(int)            // Терм
-             + sizeof(int)            // Id узла
-             + sizeof(uint)           // Последний индекс
-             + sizeof(int);           // Последний терм
+        return PayloadSize;
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
     {
         var writer = new SpanBinaryWriter(buffer);
-        writer.Write(( byte ) NodePacketType.InstallSnapshotRequest);
         writer.Write(Term.Value);
         writer.Write(LeaderId.Id);
         writer.Write(LastEntry.Index);
         writer.Write(LastEntry.Term.Value);
     }
 
+    private const int PayloadSize = SizeOf.Term   // Терм лидера
+                                  + SizeOf.NodeId // Id лидера
+                                  + SizeOf.Lsn    // Последний индекс лидера 
+                                  + SizeOf.Term;  // Последний терм лидера
+
     public new static InstallSnapshotRequestPacket Deserialize(Stream stream)
     {
-        const int packetSize = sizeof(int)  // Терм
-                             + sizeof(int)  // Id лидера
-                             + sizeof(int)  // Последний индекс
-                             + sizeof(int); // Последний терм
-        Span<byte> buffer = stackalloc byte[packetSize];
+        Span<byte> buffer = stackalloc byte[PayloadSize + sizeof(uint)];
         stream.ReadExactly(buffer);
 
         return DeserializePayload(buffer);
@@ -51,26 +47,20 @@ public sealed class InstallSnapshotRequestPacket : NodePacket
 
     private static InstallSnapshotRequestPacket DeserializePayload(Span<byte> buffer)
     {
+        VerifyCheckSum(buffer);
         var reader = new SpanBinaryReader(buffer);
-        var term = reader.ReadInt32();
-        var leaderId = reader.ReadInt32();
-        var lastIndex = reader.ReadInt32();
-        var lastTerm = reader.ReadInt32();
-        return new InstallSnapshotRequestPacket(new Term(term), new NodeId(leaderId),
-            new LogEntryInfo(new Term(lastTerm), lastIndex));
+        var term = reader.ReadTerm();
+        var leaderId = reader.ReadNodeId();
+        var lastIndex = reader.ReadLsn();
+        var lastTerm = reader.ReadTerm();
+        return new InstallSnapshotRequestPacket(term, leaderId,
+            new LogEntryInfo(lastTerm, lastIndex));
     }
 
-    public new static async Task<InstallSnapshotRequestPacket> DeserializeAsync(
-        Stream stream,
-        CancellationToken token)
+    public new static async Task<InstallSnapshotRequestPacket> DeserializeAsync(Stream stream, CancellationToken token)
     {
-        const int packetSize = sizeof(int)  // Терм
-                             + sizeof(int)  // Id лидера
-                             + sizeof(int)  // Последний индекс
-                             + sizeof(int); // Последний терм
-        using var buffer = Rent(packetSize);
+        using var buffer = Rent(PayloadSize + sizeof(uint));
         await stream.ReadExactlyAsync(buffer.GetMemory(), token);
-
         return DeserializePayload(buffer.GetSpan());
     }
 }
