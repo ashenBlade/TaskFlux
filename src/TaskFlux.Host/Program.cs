@@ -1,12 +1,13 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.IO.Abstractions;
+using System.Net;
 using System.Runtime.InteropServices;
 using Serilog;
 using Serilog.Core;
 using TaskFlux.Application;
 using TaskFlux.Application.Cluster;
+using TaskFlux.Application.Cluster.Network;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Cluster.Network;
 using TaskFlux.Consensus.Timers;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
@@ -207,9 +208,7 @@ static IPeer[] ExtractPeers(ClusterOptions serverOptions, NodeId currentNodeId, 
     {
         var endpoint = serverOptions.ClusterPeers[i];
         var id = new NodeId(i);
-        peers[i] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.ClientRequestTimeout,
-            connectionErrorDelay,
-            Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
+        peers[i] = CreatePeer(id, endpoint);
     }
 
     // Все после текущего узла
@@ -217,12 +216,18 @@ static IPeer[] ExtractPeers(ClusterOptions serverOptions, NodeId currentNodeId, 
     {
         var endpoint = serverOptions.ClusterPeers[i];
         var id = new NodeId(i);
-        peers[i - 1] = TcpPeer.Create(currentNodeId, id, endpoint, networkOptions.ClientRequestTimeout,
-            connectionErrorDelay,
-            Log.ForContext("SourceContext", $"TcpPeer({id.Id})"));
+        peers[i - 1] = CreatePeer(id, endpoint);
     }
 
     return peers;
+
+    IPeer CreatePeer(NodeId id, EndPoint endPoint)
+    {
+        IPeer peer = TcpPeer.Create(currentNodeId, id, endPoint, networkOptions.ClientRequestTimeout,
+            connectionErrorDelay, Log.ForContext<TcpPeer>());
+        peer = new ExclusiveAccessPeerDecorator(peer);
+        return peer;
+    }
 }
 
 bool TryValidateOptions(ApplicationOptions options)

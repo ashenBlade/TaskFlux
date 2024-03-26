@@ -1,18 +1,17 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using Serilog;
-using TaskFlux.Application.Cluster.Network;
 using TaskFlux.Application.Cluster.Network.Packets;
+using TaskFlux.Consensus;
 using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
 using TaskFlux.Core;
 
-namespace TaskFlux.Consensus.Cluster.Network;
+namespace TaskFlux.Application.Cluster.Network;
 
 public class TcpPeer : IPeer
 {
@@ -71,8 +70,7 @@ public class TcpPeer : IPeer
         switch (response.PacketType)
         {
             case NodePacketType.AppendEntriesResponse:
-                var appendEntriesResponsePacket = ( AppendEntriesResponsePacket ) response;
-                return appendEntriesResponsePacket.Response;
+                return ( ( AppendEntriesResponsePacket ) response ).Response;
 
             case NodePacketType.AppendEntriesRequest:
             case NodePacketType.ConnectRequest:
@@ -84,12 +82,17 @@ public class TcpPeer : IPeer
             case NodePacketType.InstallSnapshotChunkRequest:
             case NodePacketType.InstallSnapshotChunkResponse:
             case NodePacketType.RetransmitRequest:
+                _logger.Warning("От узла {Id} при отправке AppendEntries получен неожиданный пакет - {ResponseType}",
+                    Id, response.PacketType);
                 throw new UnexpectedPacketException(response, NodePacketType.AppendEntriesResponse);
         }
 
-        throw new InvalidEnumArgumentException(nameof(response.PacketType),
-            ( int ) response.PacketType,
-            typeof(NodePacketType));
+        return ThrowInvalidPacketType<AppendEntriesResponse>(response.PacketType);
+    }
+
+    private static T ThrowInvalidPacketType<T>(NodePacketType unknown)
+    {
+        throw new ArgumentOutOfRangeException(nameof(NodePacketType), unknown, "Неизвестный тип сетевого пакета");
     }
 
     /// <summary>
@@ -102,14 +105,18 @@ public class TcpPeer : IPeer
     {
         Debug.Assert(packet != null, "packet != null", "Отправляемый пакет не должен быть null");
 
+        // Подобная проверка полезна в случаях:
+        // - Это самый первый вызов (т.е. ранее не было подключений)
+        // - Предыдущий вызов был отменен и подключение не было установлено
+        if (!_socket.Connected)
+        {
+            EstablishConnection(token);
+        }
+
         while (true)
         {
-            while (!_socket.Connected)
-            {
-                _logger.Information("Устанавливаю соединение с узлом");
-                EstablishConnection(token);
-            }
-
+            // Предыдущая проверка может быть ложной
+            // В таком случае, поймаем исключение и выполним повторное подключение
             try
             {
                 return SendPacketReturning(packet, token);
@@ -120,16 +127,19 @@ public class TcpPeer : IPeer
             catch (IOException)
             {
             }
+            catch (InvalidOperationException)
+            {
+            }
 
-            token.ThrowIfCancellationRequested();
-            Thread.Sleep(_connectionErrorDelay);
+            WaitConnectionErrorDelay(token);
             UpdateSocketState();
+            EstablishConnection(token);
         }
     }
 
-
     public RequestVoteResponse SendRequestVote(RequestVoteRequest request, CancellationToken token)
     {
+        _logger.Debug("Отправляю RequestVote запрос на узел {Id}", Id);
         var response = SendPacketReconnectingCore(new RequestVoteRequestPacket(request), token);
 
         switch (response.PacketType)
@@ -148,11 +158,13 @@ public class TcpPeer : IPeer
             case NodePacketType.InstallSnapshotChunkRequest:
             case NodePacketType.InstallSnapshotChunkResponse:
             case NodePacketType.RetransmitRequest:
+                _logger.Warning(
+                    "От узла {Id} получен неожиданный пакет при отправке RequestVote запроса - {ResponseType}", Id,
+                    response.PacketType);
                 throw new UnexpectedPacketException(response, NodePacketType.RequestVoteResponse);
         }
 
-        throw new InvalidEnumArgumentException(nameof(response.PacketType), ( int ) response.PacketType,
-            typeof(NodePacketType));
+        return ThrowInvalidPacketType<RequestVoteResponse>(response.PacketType);
     }
 
     public InstallSnapshotResponse SendInstallSnapshot(InstallSnapshotRequest request,
@@ -179,9 +191,10 @@ public class TcpPeer : IPeer
             {
             }
 
-            var waitDelay = ( int ) _connectionErrorDelay.TotalMilliseconds;
-            _logger.Information("Ошибка отправки снапшота. Делаю повторную попытку через {Delay}мс", waitDelay);
-            Thread.Sleep(waitDelay);
+            _logger.Debug("Ошибка отправки снапшота. Делаю повторную попытку через {Delay}", _connectionErrorDelay);
+
+            // Если соединение разорвано, то необходимо полностью переподключиться
+            WaitConnectionErrorDelay(token);
             UpdateSocketState();
             EstablishConnection(token);
         }
@@ -202,12 +215,13 @@ public class TcpPeer : IPeer
         _logger.Information("Отправляю снапшот на узел {NodeId}", Id);
 
         // 1. Отправляем заголовок
-        var headerPacket = new InstallSnapshotRequestPacket(request.Term, request.LeaderId, request.LastEntry);
-        _logger.Debug("Отправляю InstallSnapshotChunk пакет");
 
         // Попытку повторного установления соединения делаем только один раз - при отправке заголовка.
         // Если возникла ошибка, то полностью снапшот отправим в другом запросе
-        var headerResponse = SendPacketReconnectingCore(headerPacket, token);
+        _logger.Debug("Отправляю InstallSnapshotChunk пакет");
+        var headerResponse =
+            SendPacketReconnectingCore(
+                new InstallSnapshotRequestPacket(request.Term, request.LeaderId, request.LastEntry), token);
 
         if (TryGetInstallSnapshotResponse(headerResponse, out var installSnapshotResponse))
         {
@@ -221,11 +235,14 @@ public class TcpPeer : IPeer
             token.ThrowIfCancellationRequested();
             _logger.Debug("Отправляю {Number} чанк данных", chunkNumber);
 
+            // Отправка без переподключения, т.к. если сделать, то узел начнет принимать чанки где-то с середины и вообще не будет знать что происходит
             var chunkResponse = SendPacketReturning(new InstallSnapshotChunkRequestPacket(chunk), token);
             if (TryGetInstallSnapshotResponse(chunkResponse, out installSnapshotResponse))
             {
                 return installSnapshotResponse;
             }
+
+            chunkNumber++;
         }
 
         _logger.Debug("Отправка чанков закончена. Отправляю последний пакет");
@@ -273,12 +290,13 @@ public class TcpPeer : IPeer
         while (true)
         {
             token.ThrowIfCancellationRequested();
+            var stream = NetworkStream;
             try
             {
-                packet.Serialize(NetworkStream);
-
+                packet.Serialize(stream);
+                stream.Flush();
                 token.ThrowIfCancellationRequested();
-                var response = NodePacket.Deserialize(NetworkStream);
+                var response = NodePacket.Deserialize(stream);
                 if (response.PacketType is NodePacketType.RetransmitRequest)
                 {
                     // Повторно отправляем запрос
@@ -293,9 +311,8 @@ public class TcpPeer : IPeer
                                                    SocketErrorCode: SocketError.TimedOut
                                                })
             {
-                _logger.Warning(
-                    "Таймаут ожидания в {TimeoutMs}мс при отправке пакета {PacketType} превышен. Делаю повторную отправку",
-                    _requestTimeout.TotalMilliseconds, packet.PacketType);
+                _logger.Warning("Таймаут ожидания при отправке пакета {PacketType} превышен. Делаю повторную отправку",
+                    packet.PacketType);
             }
         }
     }
@@ -312,55 +329,42 @@ public class TcpPeer : IPeer
     private void EstablishConnection(CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        _logger.Debug("Начинаю устанавливать соединение");
 
-        while (!ConnectCore())
+        while (true)
         {
-            token.ThrowIfCancellationRequested();
-            Thread.Sleep(_connectionErrorDelay);
+            // 1. Подключаемся к узлу - простой Connect на сокете
+            while (!SocketConnect())
+            {
+                _logger.Debug("Не удалось подключиться к узлу. Делаю повторную попытку через {Timeout}",
+                    _connectionErrorDelay);
+                WaitConnectionErrorDelay(token);
+            }
+
+            // 2. Отправляем пакет к уже подключенному узлу
+            if (Authorize(token))
+            {
+                /*
+                 * Если попали сюда, то значит авторизация прошла успешно.
+                 * В случае ошибки будет выкинуто исключение, т.к. эту ситуацию мы обработать не можем
+                 */
+                return;
+            }
+
+            _logger.Debug("Соединение потеряно в момент авторизации. Делаю повторную попытку через {Timeout}",
+                _connectionErrorDelay);
+            WaitConnectionErrorDelay(token);
+
+            // Состояние сокета обновляем, т.к. повторное подключение закрытым сокетом выполнять нельзя
             UpdateSocketState();
         }
 
-        return;
-
-        // Основной метод для подключения
-        bool ConnectCore()
+        bool SocketConnect()
         {
             try
             {
+                _logger.Information("Подключаюсь к узлу {NodeId}", Id);
                 _socket.Connect(_endPoint);
-
-                _logger.Debug("Делаю запрос авторизации");
-                var response = SendPacketReturning(new ConnectRequestPacket(_currentNodeId), token);
-
-                switch (response.PacketType)
-                {
-                    case NodePacketType.ConnectResponse:
-
-                        var connectResponsePacket = ( ConnectResponsePacket ) response;
-                        if (connectResponsePacket.Success)
-                        {
-                            _logger.Debug("Авторизация прошла успешно");
-                            return true;
-                        }
-
-                        throw new AuthenticationException("Ошибка при попытке авторизации на узле");
-
-                    case NodePacketType.ConnectRequest:
-                    case NodePacketType.RequestVoteRequest:
-                    case NodePacketType.RequestVoteResponse:
-                    case NodePacketType.AppendEntriesRequest:
-                    case NodePacketType.AppendEntriesResponse:
-                    case NodePacketType.InstallSnapshotRequest:
-                    case NodePacketType.InstallSnapshotChunkRequest:
-                    case NodePacketType.InstallSnapshotResponse:
-                    case NodePacketType.RetransmitRequest:
-                        throw new UnexpectedPacketException(response, NodePacketType.ConnectResponse);
-
-                    default:
-                        throw new InvalidEnumArgumentException(nameof(response.PacketType), ( int ) response.PacketType,
-                            typeof(NodePacketType));
-                }
+                return true;
             }
             catch (SocketException)
             {
@@ -375,13 +379,64 @@ public class TcpPeer : IPeer
                 /*
                  * Такое иногда может случиться, если использовать закрытый сокет
                  */
+                UpdateSocketState();
                 return false;
             }
+        }
+
+        bool Authorize(CancellationToken ct)
+        {
+            _logger.Information("Авторизуюсь на узле {NodeId}", Id);
+            try
+            {
+                var response = SendPacketReturning(new ConnectRequestPacket(_currentNodeId), ct);
+                switch (response.PacketType)
+                {
+                    case NodePacketType.ConnectResponse:
+
+                        var connectResponsePacket = ( ConnectResponsePacket ) response;
+                        if (connectResponsePacket.Success)
+                        {
+                            _logger.Information("Авторизация прошла успешно");
+                            return true;
+                        }
+
+                        throw new AuthenticationException("Ошибка при попытке авторизации на узле");
+
+                    case NodePacketType.ConnectRequest:
+                    case NodePacketType.RequestVoteRequest:
+                    case NodePacketType.RequestVoteResponse:
+                    case NodePacketType.AppendEntriesRequest:
+                    case NodePacketType.AppendEntriesResponse:
+                    case NodePacketType.InstallSnapshotRequest:
+                    case NodePacketType.InstallSnapshotChunkRequest:
+                    case NodePacketType.InstallSnapshotResponse:
+                    case NodePacketType.RetransmitRequest:
+                        _logger.Warning(
+                            "От узла {NodeId} получен неожиданный пакет: {PacketType}. Ожидался: {ExpectedPacketType}",
+                            Id, response.PacketType, NodePacketType.ConnectResponse);
+                        throw new UnexpectedPacketException(response, NodePacketType.ConnectResponse);
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(response.PacketType), response.PacketType,
+                            "Неизвестный маркер типа пакета");
+                }
+            }
+            catch (SocketException)
+            {
+            }
+            catch (IOException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+
+            return false;
         }
     }
 
     /// <summary>
-    /// Метод для замены старого сокета и NetworkStream, когда соединение было разорвано.
+    /// Метод для замены старого сокета и NetworkStream, когда соединение было разорвано
     /// </summary>
     private void UpdateSocketState()
     {
@@ -407,6 +462,21 @@ public class TcpPeer : IPeer
         socket.ReceiveTimeout = timeout;
 
         return socket;
+    }
+
+    private void WaitConnectionErrorDelay(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        using var _ = token.UnsafeRegister(static o => ( ( Thread ) o! ).Interrupt(), Thread.CurrentThread);
+        try
+        {
+            Thread.Sleep(_connectionErrorDelay);
+        }
+        catch (ThreadInterruptedException)
+        {
+        }
+
+        token.ThrowIfCancellationRequested();
     }
 
     public static TcpPeer Create(NodeId currentNodeId,
