@@ -15,10 +15,13 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     public override NodeId? LeaderId => Id;
     private readonly ILogger _logger;
 
+    // TODO: ожидание когда все записи будут реплицированы, т.е. когда Commit == LastEntry при запуске
+    // Сделать это можно через cts или Signal какой-нибудь
+
     private (PeerProcessorBackgroundJob<TCommand, TResponse> Processor, ITimer Timer)[] _peerProcessors =
         Array.Empty<(PeerProcessorBackgroundJob<TCommand, TResponse>, ITimer)>();
 
-    private readonly IDeltaExtractor<TCommand> _deltaExtractor;
+    private readonly IDeltaExtractor<TResponse> _deltaExtractor;
     private readonly ITimerFactory _timerFactory;
     private IApplication<TCommand, TResponse>? _application;
 
@@ -30,7 +33,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
     internal LeaderState(RaftConsensusModule<TCommand, TResponse> consensusModule,
                          ILogger logger,
-                         IDeltaExtractor<TCommand> deltaExtractor,
+                         IDeltaExtractor<TResponse> deltaExtractor,
                          ITimerFactory timerFactory)
         : base(consensusModule)
     {
@@ -214,7 +217,9 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             "Приложение не было инициализировано на момент обработки запроса");
         _logger.Debug("Получил новую команду: {Command}", command);
 
-        if (_deltaExtractor.TryGetDelta(command, out var delta))
+        var response = _application.Apply(command);
+
+        if (_deltaExtractor.TryGetDelta(response, out var delta))
         {
             // Добавляем команду в буфер
             _logger.Verbose("Добавляю команду в лог");
@@ -259,7 +264,6 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             }
         }
 
-        var response = _application.Apply(command);
         return SubmitResponse<TResponse>.Success(response, true);
     }
 

@@ -7,14 +7,28 @@ namespace TaskFlux.Core.Commands.Dequeue;
 /// </summary>
 public class DequeueResponse : Response
 {
-    public static readonly DequeueResponse Empty = new(false, QueueName.Default, 0, null);
+    public static readonly DequeueResponse Empty = new(false, QueueName.Default, 0, null,
+        persistent: false /* Тут не важно - сохранять или нет */);
 
-    public static DequeueResponse Create(QueueName queueName, long key, byte[] payload) =>
-        new(true, queueName, key, payload);
+    public static DequeueResponse CreatePersistent(QueueName queueName, long key, byte[] payload) =>
+        new(true, queueName, key, payload, persistent: true);
+
+    public static DequeueResponse CreateNonPersistent(QueueName queueName, long key, byte[] payload) =>
+        new(true, queueName, key, payload, persistent: false);
 
     public override ResponseType Type => ResponseType.Dequeue;
 
+    /// <summary>
+    /// Прочитана ли запись
+    /// </summary>
     public bool Success { get; }
+
+    /// <summary>
+    /// Следует ли результат операции сохранять сразу же.
+    /// Используется для получения дельты удаления записи.
+    /// Изначально <c>false</c> 
+    /// </summary>
+    public bool Persistent { get; private set; } = false;
 
     /// <summary>
     /// Название очереди, из которой необходимо читать записи
@@ -31,9 +45,10 @@ public class DequeueResponse : Response
     /// </summary>
     private readonly byte[] _message;
 
-    private DequeueResponse(bool success, QueueName queueName, long key, byte[]? payload)
+    private DequeueResponse(bool success, QueueName queueName, long key, byte[]? payload, bool persistent)
     {
         Success = success;
+        Persistent = persistent;
         _queueName = queueName;
         _key = key;
         _message = payload ?? Array.Empty<byte>();
@@ -54,6 +69,17 @@ public class DequeueResponse : Response
         queueName = QueueName.Default;
         return false;
     }
+
+    /// <summary>
+    /// Выставить флаг <see cref="Persistent"/> в <c>true</c>.
+    /// Тогда результат будет сохранен сразу.
+    /// </summary>
+    public void MakePersistent() => Persistent = true;
+
+    /// <summary>
+    /// Выставить флаг <see cref="Persistent"/> в <c>false</c>
+    /// </summary>
+    public void MakeNonPersistent() => Persistent = false;
 
     public override void Accept(IResponseVisitor visitor)
     {

@@ -445,21 +445,20 @@ internal class ClientRequestProcessor
                 request = await client.ReceiveAsync(cts.Token);
             }
 
-            Debug.Assert(Enum.IsDefined(request.Type), "Enum.IsDefined(request.Type)", "Неизвестный тип пакета {0}",
-                request.Type);
-
             SubmitResponse<Response> submitResponse;
             switch (request.Type)
             {
                 // Если команду все же нужно выполнить - коммитим выполнение и возвращаем ответ
                 case PacketType.AcknowledgeRequest:
                     // Явно указываем, что нужно коммитить
+                    dequeueResponse.MakePersistent();
                     submitResponse =
                         await _requestAcceptor.AcceptAsync(new CommitDequeueCommand(dequeueResponse), token);
                     break;
                 // Иначе возвращаем ее обратно
                 case PacketType.NegativeAcknowledgementRequest:
                     // Коммитить результат не нужно
+                    dequeueResponse.MakeNonPersistent();
                     submitResponse =
                         await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(dequeueResponse), token);
                     break;

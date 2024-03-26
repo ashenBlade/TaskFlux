@@ -59,7 +59,8 @@ public class RequestController(
             return GetInvalidQueueNameResult();
         }
 
-        return await HandleCommandCoreAsync(new DequeueRecordCommand(queueName), token);
+        return await HandleCommandCoreAsync(
+                   new DequeueRecordCommand(queueName, true /* Сразу сохраняем результат операции */), token);
     }
 
     [HttpPost("count")]

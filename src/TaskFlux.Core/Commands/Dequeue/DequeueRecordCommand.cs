@@ -7,11 +7,20 @@ public class DequeueRecordCommand : ModificationCommand
 {
     // Конкретно для этой команды мы используем быстрый путь выполнения - без фиксации результата.
     // Это нужно для использования Ack/Nack команд (at-least-once семантики) - изменения будут зафиксированы другими командами
+    /// <summary>
+    /// Название очереди, из которой необходимо прочитать запись
+    /// </summary>
     public QueueName Queue { get; }
 
-    public DequeueRecordCommand(QueueName queue)
+    /// <summary>
+    /// Следует ли сразу сохранять результат чтения или дополнительно подтверждать (ACK/NACK) 
+    /// </summary>
+    public bool Persistent { get; }
+
+    public DequeueRecordCommand(QueueName queue, bool persistent)
     {
         Queue = queue;
+        Persistent = persistent;
     }
 
     public override Response Apply(IApplication context)
@@ -25,11 +34,16 @@ public class DequeueRecordCommand : ModificationCommand
 
         if (queue.TryDequeue(out var key, out var payload))
         {
-            return DequeueResponse.Create(Queue, key, payload);
+            return GetDequeueResponse(key, payload);
         }
 
         return DequeueResponse.Empty;
     }
+
+    private DequeueResponse GetDequeueResponse(long key, byte[] payload)
+        => Persistent
+               ? DequeueResponse.CreatePersistent(Queue, key, payload)
+               : DequeueResponse.CreateNonPersistent(Queue, key, payload);
 
     public override void Accept(ICommandVisitor visitor)
     {
