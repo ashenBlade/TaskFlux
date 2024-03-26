@@ -40,11 +40,7 @@ internal abstract class ThreadingTimer : ITimer
 
         try
         {
-            var success = _timer.Change(sleepTime, Infinite);
-            if (!success)
-            {
-                throw new Exception("Пошел нахуй - таймер не обновлен");
-            }
+            _timer.Change(sleepTime, Infinite);
         }
         catch (ObjectDisposedException)
         {
