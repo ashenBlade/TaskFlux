@@ -142,12 +142,12 @@ internal class QueueInfo
     }
 
     public (QueueName Name, PriorityQueueCode Code, int? MaxQueueSize, int? MaxPayloadSize, (long, long)? PriorityRange,
-        IReadOnlyCollection<(long Key, byte[] Payload)> Data) ToTuple()
+        IReadOnlyCollection<QueueRecord> Data) ToTuple()
     {
         return ( QueueName, Code, MaxQueueSize, MaxPayloadSize, PriorityRange, new QueueRecordsValuesCollection(this) );
     }
 
-    private class QueueRecordsValuesCollection : IReadOnlyCollection<(long Key, byte[] Data)>
+    private class QueueRecordsValuesCollection : IReadOnlyCollection<QueueRecord>
     {
         private readonly QueueInfo _queueInfo;
 
@@ -156,15 +156,15 @@ internal class QueueInfo
             _queueInfo = queueInfo;
         }
 
-        public IEnumerator<(long Key, byte[] Data)> GetEnumerator()
+        public IEnumerator<QueueRecord> GetEnumerator()
         {
-            foreach (var (key, counters) in _queueInfo._records)
+            foreach (var (priority, counters) in _queueInfo._records)
             {
                 foreach (var counter in counters.Where(c => c.Count > 0))
                 {
                     for (var i = 0; i < counter.Count; i++)
                     {
-                        yield return ( key, counter.Message );
+                        yield return new QueueRecord(priority, counter.Message);
                     }
                 }
             }

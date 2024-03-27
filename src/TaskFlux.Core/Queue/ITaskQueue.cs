@@ -1,5 +1,8 @@
 ﻿namespace TaskFlux.Core.Queue;
 
+/// <summary>
+/// Интерфейс очереди задач
+/// </summary>
 public interface ITaskQueue : IReadOnlyTaskQueue
 {
     /// <summary>
@@ -16,9 +19,7 @@ public interface ITaskQueue : IReadOnlyTaskQueue
     /// <summary>
     /// Получить элемент из очереди
     /// </summary>
-    /// <param name="key">Полученный ключ</param>
-    /// <param name="payload">Полученные данные</param>
+    /// <param name="record">Прочитанная запись</param>
     /// <returns><c>true</c> - элемент получен, <c>false</c> - очередь была пуста и ничего не получено</returns>
-    /// <remarks>Если ничего не получено, то <paramref name="key"/> и <paramref name="payload"/> будут хранить <c>0</c> и <c>null</c></remarks>
-    public bool TryDequeue(out long key, out byte[] payload);
+    public bool TryDequeue(out QueueRecord record);
 }

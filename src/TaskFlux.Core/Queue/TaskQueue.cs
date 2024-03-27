@@ -1,3 +1,4 @@
+using System.Collections;
 using TaskFlux.Core.Policies;
 using TaskFlux.PriorityQueue;
 
@@ -6,10 +7,8 @@ namespace TaskFlux.Core.Queue;
 internal class TaskQueue : ITaskQueue
 {
     public QueueName Name { get; }
-
     public PriorityQueueCode Code => _queue.Code;
     public int Count => _queue.Count;
-
     private TaskQueueMetadata? _metadata;
     public ITaskQueueMetadata Metadata => _metadata ??= CreateMetadata();
 
@@ -37,9 +36,9 @@ internal class TaskQueue : ITaskQueue
     private readonly QueuePolicy[] _policies;
     private readonly IPriorityQueue _queue;
 
-    public IReadOnlyCollection<(long Priority, byte[] Payload)> ReadAllData()
+    public IReadOnlyCollection<QueueRecord> ReadAllData()
     {
-        return _queue.ReadAllData();
+        return new PriorityQueueRecordCollection(_queue.ReadAllData());
     }
 
     public EnqueueResult Enqueue(long key, byte[] payload)
@@ -60,8 +59,40 @@ internal class TaskQueue : ITaskQueue
     }
 
 
-    public bool TryDequeue(out long key, out byte[] payload)
+    public bool TryDequeue(out QueueRecord record)
     {
-        return _queue.TryDequeue(out key, out payload);
+        if (_queue.TryDequeue(out var priority, out var payload))
+        {
+            record = new QueueRecord(priority, payload);
+            return true;
+        }
+
+        record = default;
+        return false;
+    }
+
+    private class PriorityQueueRecordCollection : IReadOnlyCollection<QueueRecord>
+    {
+        private readonly IReadOnlyCollection<(long Key, byte[] Payload)> _queueCollection;
+
+        public PriorityQueueRecordCollection(IReadOnlyCollection<(long Key, byte[] Payload)> queueCollection)
+        {
+            _queueCollection = queueCollection;
+        }
+
+        public IEnumerator<QueueRecord> GetEnumerator()
+        {
+            foreach (var (priority, payload) in _queueCollection)
+            {
+                yield return new QueueRecord(priority, payload);
+            }
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+
+        public int Count => _queueCollection.Count;
     }
 }

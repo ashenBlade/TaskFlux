@@ -14,7 +14,6 @@ public class ReturnRecordCommand : Command
     public DequeueResponse Response { get; }
 
     // Просто возвращаем значение обратно - коммитить ничего не надо
-
     public ReturnRecordCommand(DequeueResponse response)
     {
         Response = response;

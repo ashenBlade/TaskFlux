@@ -32,9 +32,9 @@ public class DequeueRecordCommand : ModificationCommand
             return DefaultErrors.QueueDoesNotExist;
         }
 
-        if (queue.TryDequeue(out var key, out var payload))
+        if (queue.TryDequeue(out var record))
         {
-            return GetDequeueResponse(key, payload);
+            return GetDequeueResponse(record.Priority, record.Payload);
         }
 
         return DequeueResponse.Empty;

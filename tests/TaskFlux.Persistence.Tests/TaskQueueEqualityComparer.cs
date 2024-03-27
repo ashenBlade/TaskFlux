@@ -30,18 +30,18 @@ public class TaskQueueEqualityComparer : IEqualityComparer<ITaskQueue>
             && first.PriorityRange == second.PriorityRange;
     }
 
-    private static bool StoredDataEquals(IReadOnlyCollection<(long, byte[])> first,
-                                         IReadOnlyCollection<(long, byte[])> second)
+    private static bool StoredDataEquals(IReadOnlyCollection<QueueRecord> first,
+                                         IReadOnlyCollection<QueueRecord> second)
     {
         if (first.Count != second.Count)
         {
             return false;
         }
 
-        var x = first.GroupBy(x => x.Item1, x => x.Item2)
+        var x = first.GroupBy(x => x.Priority, x => x.Payload)
                      .OrderBy(x => x.Key)
                      .ToList();
-        var y = second.GroupBy(z => z.Item1, z => z.Item2)
+        var y = second.GroupBy(z => z.Priority, z => z.Payload)
                       .OrderBy(z => z.Key)
                       .ToList();
         if (x.Count != y.Count)

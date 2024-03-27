@@ -1,5 +1,6 @@
 using System.Text;
 using TaskFlux.Core;
+using TaskFlux.Core.Queue;
 using TaskFlux.Persistence.ApplicationState;
 using TaskFlux.Persistence.ApplicationState.Deltas;
 using TaskFlux.PriorityQueue;
@@ -140,10 +141,9 @@ public class DeltaTests
         Assert.Contains(queues, q => q.MaxPayloadSize == maxMessageSize);
     }
 
-    public static object?[][] PriorityRanges => new[]
+    public static object?[][] PriorityRanges => new object?[][]
     {
-        new object?[] {null}, new object?[] {( 1L, 2L )}, new object?[] {( long.MinValue, long.MaxValue )},
-        new object?[] {( -1000L, 1002L )},
+        [null], [( 1L, 2L )], [( long.MinValue, long.MaxValue )], [( -1000L, 1002L )],
     };
 
     [Theory]
@@ -183,8 +183,8 @@ public class DeltaTests
         collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, null, null, null,
             Array.Empty<QueueRecord>());
 
-        var record = ( Key: 1L, Message: "asdfasdfgawpogiuahw"u8.ToArray() );
-        var delta = new AddRecordDelta(queueName, record.Key, record.Message);
+        var record = new QueueRecord(1L, "asdfasdfgawpogiuahw"u8.ToArray());
+        var delta = new AddRecordDelta(queueName, record.Priority, record.Payload);
         delta.Apply(collection);
 
         var (_, _, _, _, _, data) = collection.GetQueuesRaw().Single(x => x.Name == queueName);
@@ -199,8 +199,8 @@ public class DeltaTests
         collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, null, null, null,
             new QueueRecord[] {new(100, "hello, world!"u8.ToArray()), new(-100, "what is going on?"u8.ToArray())});
 
-        var record = ( Key: 1L, Message: "asdfasdfgawpogiuahw"u8.ToArray() );
-        var delta = new AddRecordDelta(queueName, record.Key, record.Message);
+        var record = new QueueRecord(1L, "asdfasdfgawpogiuahw"u8.ToArray());
+        var delta = new AddRecordDelta(queueName, record.Priority, record.Payload);
         delta.Apply(collection);
 
         var (_, _, _, _, _, data) = collection.GetQueuesRaw().Single(x => x.Name == queueName);
@@ -218,22 +218,23 @@ public class DeltaTests
     {
         var queueName = QueueName.Parse("hello_world_queue");
         var collection = new QueueCollection();
-        const long key = 1L;
-        var oldRecord = ( Key: key, Message: "hello, world!"u8.ToArray() );
+        const long priority = 1L;
+        var oldRecord = ( Key: priority, Message: "hello, world!"u8.ToArray() );
         var existingRecords = Enumerable.Range(0, existingCount)
                                         .Select(i =>
                                              new QueueRecord(oldRecord.Key, Encoding.UTF8.GetBytes(i.ToString())))
                                         .ToArray();
         collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, null, null, null, existingRecords);
 
-        var newRecord = oldRecord with {Message = "asdfasdfgawpogiuahw"u8.ToArray()};
-        var delta = new AddRecordDelta(queueName, newRecord.Key, newRecord.Message);
+        (long Priority, byte[] Payload) newRecord = oldRecord with {Message = "asdfasdfgawpogiuahw"u8.ToArray()};
+        var delta = new AddRecordDelta(queueName, newRecord.Priority, newRecord.Payload);
         delta.Apply(collection);
 
         var (_, _, _, _, _, data) = collection.GetQueuesRaw().Single(x => x.Name == queueName);
 
-        var actualData = data.Where(x => x.Key == key).ToArray();
-        Assert.Contains(actualData, x => x.Key == newRecord.Key && x.Payload.SequenceEqual(newRecord.Message));
+        var actualData = data.Where(x => x.Priority == priority).ToArray();
+        Assert.Contains(actualData,
+            x => x.Priority == newRecord.Priority && x.Payload.SequenceEqual(newRecord.Payload));
         Assert.Equal(existingCount + 1, actualData.Length);
     }
 
@@ -247,18 +248,18 @@ public class DeltaTests
     {
         var queueName = QueueName.Parse("hello_world_queue");
         var collection = new QueueCollection();
-        var record = ( Key: 1L, Message: "hello, world!"u8.ToArray() );
+        var record = ( Priority: 1L, Payload: "hello, world!"u8.ToArray() );
         collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, null, null, null,
-            Enumerable.Repeat(record, existingCount).Select(x => new QueueRecord(x.Key, x.Message)).ToArray());
+            Enumerable.Repeat(record, existingCount).Select(x => new QueueRecord(x.Priority, x.Payload)).ToArray());
 
-        var delta = new AddRecordDelta(queueName, record.Key, record.Message);
+        var delta = new AddRecordDelta(queueName, record.Priority, record.Payload);
         delta.Apply(collection);
 
         var (_, _, _, _, _, data) = collection.GetQueuesRaw().Single(x => x.Name == queueName);
 
 
         Assert.Equal(existingCount + 1,
-            data.Count(x => x.Key == record.Key && x.Payload.SequenceEqual(record.Message)));
+            data.Count(x => x.Priority == record.Priority && x.Payload.SequenceEqual(record.Payload)));
     }
 
     [Fact]
@@ -266,15 +267,15 @@ public class DeltaTests
     {
         var queueName = QueueName.Parse("hello_world_queue");
         var collection = new QueueCollection();
-        var record = ( Key: 1L, Message: "asdfasdfgawpogiuahw"u8.ToArray() );
+        var record = new QueueRecord(1L, "asdfasdfgawpogiuahw"u8.ToArray());
         collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, null, null, null,
-            new QueueRecord[] {new QueueRecord(record.Key, record.Message)});
+            new QueueRecord[] {new(record.Priority, record.Payload)});
 
-        var delta = new RemoveRecordDelta(queueName, record.Key, record.Message);
+        var delta = new RemoveRecordDelta(queueName, record.Priority, record.Payload);
         delta.Apply(collection);
 
         var (_, _, _, _, _, data) = collection.GetQueuesRaw().Single(x => x.Name == queueName);
-        Assert.DoesNotContain(data, d => d.Key == record.Key && d.Payload.SequenceEqual(record.Message));
+        Assert.DoesNotContain(data, d => d.Priority == record.Priority && d.Payload.SequenceEqual(record.Payload));
     }
 
     [Theory]
@@ -288,17 +289,17 @@ public class DeltaTests
     {
         var queueName = QueueName.Parse("hello_world_queue");
         var collection = new QueueCollection();
-        var record = ( Key: 1L, Message: "asdfasdfgawpogiuahw"u8.ToArray() );
+        var record = new QueueRecord(1L, "asdfasdfgawpogiuahw"u8.ToArray());
         collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, null, null, null,
-            Enumerable.Range(0, existingCount).Select(_ => new QueueRecord(record.Key, record.Message)).ToArray());
+            Enumerable.Range(0, existingCount).Select(_ => new QueueRecord(record.Priority, record.Payload)).ToArray());
 
-        var delta = new RemoveRecordDelta(queueName, record.Key, record.Message);
+        var delta = new RemoveRecordDelta(queueName, record.Priority, record.Payload);
         delta.Apply(collection);
 
         var (_, _, _, _, _, data) = collection.GetQueuesRaw()
                                               .Single(x => x.Name == queueName);
 
         Assert.Equal(existingCount - 1,
-            data.Count(d => d.Key == record.Key && d.Payload.SequenceEqual(record.Message)));
+            data.Count(d => d.Priority == record.Priority && d.Payload.SequenceEqual(record.Payload)));
     }
 }

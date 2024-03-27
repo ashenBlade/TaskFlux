@@ -50,7 +50,7 @@ public class QueueCollection
         {
             foreach (var record in data)
             {
-                info.Add(record.Key, record.Message);
+                info.Add(record.Priority, record.Payload);
             }
         }
 
@@ -89,7 +89,7 @@ public class QueueCollection
     }
 
     public IReadOnlyCollection<(QueueName Name, PriorityQueueCode Code, int? MaxQueueSize, int? MaxPayloadSize, (long,
-        long)? PriorityRange, IReadOnlyCollection<(long Key, byte[] Payload)> Data)> GetQueuesRaw()
+        long)? PriorityRange, IReadOnlyCollection<QueueRecord> Data)> GetQueuesRaw()
     {
         return new RawQueuesCollection(this);
     }
@@ -102,7 +102,7 @@ public class QueueCollection
     }
 
     private class RawQueuesCollection : IReadOnlyCollection<(QueueName Name, PriorityQueueCode Code, int? MaxQueueSize,
-        int? MaxPayloadSize, (long, long)? PriorityRange, IReadOnlyCollection<(long Key, byte[] Payload)> Data)>
+        int? MaxPayloadSize, (long, long)? PriorityRange, IReadOnlyCollection<QueueRecord> Data)>
     {
         private readonly QueueCollection _collection;
 
@@ -112,7 +112,7 @@ public class QueueCollection
         }
 
         public IEnumerator<(QueueName Name, PriorityQueueCode Code, int? MaxQueueSize, int? MaxPayloadSize, (long, long)
-            ? PriorityRange, IReadOnlyCollection<(long Key, byte[] Payload)> Data)> GetEnumerator()
+            ? PriorityRange, IReadOnlyCollection<QueueRecord> Data)> GetEnumerator()
         {
             return _collection._queues
                               .Select(x => x.Value.ToTuple())

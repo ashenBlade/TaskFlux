@@ -10,7 +10,7 @@ public class StubTaskQueue : ITaskQueue
     private readonly int? _maxSize;
     private readonly (long, long)? _priority;
     private readonly int? _maxPayloadSize;
-    private readonly (long, byte[])[] _data;
+    private readonly QueueRecord[] _data;
     public PriorityQueueCode Code { get; }
     public QueueName Name { get; }
     public int Count => _data.Length;
@@ -21,13 +21,12 @@ public class StubTaskQueue : ITaskQueue
                          int? maxSize = null,
                          (long, long)? priority = null,
                          int? maxPayloadSize = null,
-                         IEnumerable<(long, byte[])>? elements = null)
+                         IEnumerable<QueueRecord>? elements = null)
     {
         _maxSize = maxSize;
         _priority = priority;
         _maxPayloadSize = maxPayloadSize;
-        _data = elements?.ToArray()
-             ?? Array.Empty<(long, byte[])>();
+        _data = elements?.ToArray() ?? Array.Empty<QueueRecord>();
 
         Name = name;
         Code = code;
@@ -41,15 +40,14 @@ public class StubTaskQueue : ITaskQueue
         throw new InvalidOperationException("Нельзя этот методы вызывать во время сериализации");
     }
 
-    public bool TryDequeue(out long key, out byte[] payload)
+    public bool TryDequeue(out QueueRecord record)
     {
         Assert.True(false, "Метод не должен быть вызван при серилазации");
-        key = default;
-        payload = default!;
+        record = default!;
         return false;
     }
 
-    public IReadOnlyCollection<(long Priority, byte[] Payload)> ReadAllData()
+    public IReadOnlyCollection<QueueRecord> ReadAllData()
     {
         return _data;
     }

@@ -21,7 +21,7 @@ public class TaskQueueBuilder
     /// <summary>
     /// Изначальные данные, которые нужно записать в очередь изнчально
     /// </summary>
-    private IEnumerable<(long Key, byte[] Value)>? _payload;
+    private IEnumerable<QueueRecord>? _payload;
 
     /// <summary>
     /// Реализация приоритетной очереди
@@ -50,7 +50,7 @@ public class TaskQueueBuilder
         return this;
     }
 
-    public TaskQueueBuilder WithData(IReadOnlyCollection<(long, byte[])> data)
+    public TaskQueueBuilder WithData(IReadOnlyCollection<QueueRecord> data)
     {
         ArgumentNullException.ThrowIfNull(data);
 
@@ -144,7 +144,7 @@ public class TaskQueueBuilder
         throw new InvalidEnumArgumentException(nameof(_queueCode), ( int ) _queueCode, typeof(PriorityQueueCode));
     }
 
-    private void FillPriorityQueue(IEnumerable<(long, byte[])> payload, IPriorityQueue queue)
+    private void FillPriorityQueue(IEnumerable<QueueRecord> payload, IPriorityQueue queue)
     {
         foreach (var (key, message) in payload)
         {

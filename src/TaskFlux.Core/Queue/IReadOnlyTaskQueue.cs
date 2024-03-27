@@ -2,6 +2,9 @@ using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
 
+/// <summary>
+/// Интерфейс очереди задач только для чтения
+/// </summary>
 public interface IReadOnlyTaskQueue
 {
     /// <summary>
@@ -32,5 +35,5 @@ public interface IReadOnlyTaskQueue
     /// Метод предназначен для сериализации.
     /// Список возвращаемых данных не обязан быть в правильном порядке
     /// </remarks>
-    public IReadOnlyCollection<(long Priority, byte[] Payload)> ReadAllData();
+    public IReadOnlyCollection<QueueRecord> ReadAllData();
 }

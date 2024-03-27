@@ -1,4 +1,5 @@
 using TaskFlux.Core;
+using TaskFlux.Core.Queue;
 using TaskFlux.Persistence.ApplicationState;
 using TaskFlux.PriorityQueue;
 using Xunit;
@@ -52,7 +53,7 @@ public class QueueDataSnapshotSerializerTests
 
     private static readonly QueueName DefaultName = QueueNameParser.Parse("hello");
 
-    private static IEnumerable<(long, byte[])> EmptyQueueData => Enumerable.Empty<(long, byte[])>();
+    private static IEnumerable<QueueRecord> EmptyQueueData => Enumerable.Empty<QueueRecord>();
 
     [Fact]
     public void Serialize__КогдаПереданаПустаяОчередьБезПредела()
@@ -83,18 +84,18 @@ public class QueueDataSnapshotSerializerTests
     public void Serialize__КогдаПереданаОчередьС1ЭлементомБезПредела(long priority, byte[] data)
     {
         AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.Heap4Arity, null, null, null,
-            new[] {( priority, data )}));
+            new QueueRecord[] {new(priority, data)}));
     }
 
     private static readonly Random Random = new Random(87);
 
-    private IEnumerable<(long, byte[])> CreateRandomQueueElements(int count)
+    private IEnumerable<QueueRecord> CreateRandomQueueElements(int count)
     {
         for (int i = 0; i < count; i++)
         {
             var buffer = new byte[Random.Next(0, 100)];
             Random.NextBytes(buffer);
-            yield return ( Random.NextInt64(), buffer );
+            yield return new QueueRecord(Random.NextInt64(), buffer);
         }
     }
 
@@ -126,7 +127,7 @@ public class QueueDataSnapshotSerializerTests
                                         PriorityQueueCode.Heap4Arity,
                                         0,
                                         null, null,
-                                        Array.Empty<(long, byte[])>()));
+                                        EmptyQueueData));
         AssertBase(queues);
     }
 

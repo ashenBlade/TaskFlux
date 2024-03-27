@@ -48,7 +48,7 @@ public static class QueuesSnapshotSerializer
     private class SerializedQueuesSnapshotCollection : IReadOnlyCollection<ReadOnlyMemory<byte>>
     {
         private readonly IEnumerable<(QueueName Name, PriorityQueueCode Code, int? MaxMessageSize, int? MaxPayloadSize,
-            (long, long)? PriorityRange, IReadOnlyCollection<(long, byte[])> Data)> _queues;
+            (long, long)? PriorityRange, IReadOnlyCollection<QueueRecord> Data)> _queues;
 
         /// <summary>
         /// Каждая очередь будет представлять собой отдельный чанк.
@@ -59,7 +59,7 @@ public static class QueuesSnapshotSerializer
 
         public SerializedQueuesSnapshotCollection(
             IEnumerable<(QueueName, PriorityQueueCode, int? MaxMessageSize, int? MaxPayloadSize, (long, long)?
-                PriorityRange, IReadOnlyCollection<(long, byte[])> Data)> queues,
+                PriorityRange, IReadOnlyCollection<QueueRecord> Data)> queues,
             int count)
         {
             Count = count;
@@ -113,7 +113,7 @@ public static class QueuesSnapshotSerializer
                                   int? maxQueueSize,
                                   int? maxMessageSize,
                                   (long, long)? priorityRange,
-                                  IReadOnlyCollection<(long, byte[])> data,
+                                  IReadOnlyCollection<QueueRecord> data,
                                   ref StreamBinaryWriter writer)
     {
         // Название | Реализация | Максимальный размер очереди | Макс. размер сообщения | Диапазон ключей | Данные очереди

@@ -34,10 +34,10 @@ public class StateRestorerTests
         var expected = new ITaskQueue[]
         {
             new StubTaskQueue(QueueName.Default, PriorityQueueCode.Heap4Arity, null, null, null,
-                new (long, byte[])[]
+                new QueueRecord[]
                 {
-                    ( 1, new byte[] {1, 2, 3, 4, 5} ), ( 2, new byte[] {6, 66, 66, 6} ),
-                    ( -1, new byte[] {40, 22, 11, 90} )
+                    new(1, new byte[] {1, 2, 3, 4, 5}), new(2, new byte[] {6, 66, 66, 6}),
+                    new(-1, new byte[] {40, 22, 11, 90}),
                 })
         }.ToHashSet(Comparer);
         var actual = StateRestorer.RestoreState(null,
@@ -63,17 +63,18 @@ public class StateRestorerTests
     [InlineData(10000)]
     public void RestoreState__КогдаДобавляютсяЗаписиСОдинаковымКлючом__ДолженПрименитьОперации(int recordsCount)
     {
-        var key = 1L;
+        var priority = 1L;
         var allData = Enumerable.Range(0, recordsCount)
                                 .Select(SerializeBytes)
                                 .ToArray();
         var expected = new ITaskQueue[]
         {
             new StubTaskQueue(QueueName.Default, PriorityQueueCode.Heap4Arity, null, null, null,
-                allData.Select(d => ( key, d )))
+                allData.Select(d => new QueueRecord(priority, d)))
         }.ToHashSet(Comparer);
         var actual = StateRestorer.RestoreState(null,
-                                   allData.Select(data => new AddRecordDelta(QueueName.Default, key, data).Serialize()))
+                                   allData.Select(data =>
+                                       new AddRecordDelta(QueueName.Default, priority, data).Serialize()))
                                   .BuildQueues()
                                   .ToHashSet(Comparer);
 
@@ -95,7 +96,7 @@ public class StateRestorerTests
         var expected = new ITaskQueue[]
         {
             new StubTaskQueue(QueueName.Default, PriorityQueueCode.Heap4Arity, null, null, null,
-                Enumerable.Repeat(( key, data ), recordsCount))
+                Enumerable.Repeat(new QueueRecord(key, data), recordsCount))
         }.ToHashSet(TaskQueueEqualityComparer.Instance);
         var actual = StateRestorer.RestoreState(null, Enumerable.Repeat(data, recordsCount)
                                                                 .Select(d =>
@@ -114,12 +115,13 @@ public class StateRestorerTests
         var expected = new ITaskQueue[]
         {
             new StubTaskQueue(QueueName.Default, PriorityQueueCode.Heap4Arity, null, null, null,
-                new[]
+                new QueueRecord[]
                 {
-                    ( 1L, "data1"u8.ToArray() ), ( -100L, "hello, world"u8.ToArray() ),
-                    ( 10000000L, "what is "u8.ToArray() ), ( 10000000L, "what is "u8.ToArray() ),
-                    ( 10000000L, "another value"u8.ToArray() ), ( long.MaxValue, "asg345gqe4g(*^#%#"u8.ToArray() ),
-                    ( long.MinValue, "234t(*&Q@%w34t"u8.ToArray() ),
+                    new(1L, "data1"u8.ToArray()), new(-100L, "hello, world"u8.ToArray()),
+                    new(10000000L, "what is "u8.ToArray()), new(10000000L, "what is "u8.ToArray()),
+                    new(10000000L, "another value"u8.ToArray()),
+                    new(long.MaxValue, "asg345gqe4g(*^#%#"u8.ToArray()),
+                    new(long.MinValue, "234t(*&Q@%w34t"u8.ToArray()),
                 })
         };
         var actual = StateRestorer.RestoreState(null, new Delta[]
@@ -152,12 +154,12 @@ public class StateRestorerTests
     {
         var queueToDelete = QueueName.Parse("sample_queue");
         var leftQueue = new StubTaskQueue(QueueName.Default, PriorityQueueCode.Heap4Arity, null, null, null,
-            Array.Empty<(long, byte[])>());
+            Array.Empty<QueueRecord>());
 
         var snapshotQueues = new ITaskQueue[]
         {
             new StubTaskQueue(queueToDelete, PriorityQueueCode.Heap4Arity, null, null, null,
-                new[] {( 1L, "aasdfasdf"u8.ToArray() ), ( 100L, "vasdaedhraerqa(Q#%V"u8.ToArray() )}),
+                new QueueRecord[] {new(1L, "aasdfasdf"u8.ToArray()), new(100L, "vasdaedhraerqa(Q#%V"u8.ToArray())}),
             leftQueue,
         };
 
@@ -178,16 +180,16 @@ public class StateRestorerTests
         var snapshotQueues = new ITaskQueue[]
         {
             new StubTaskQueue(QueueName.Parse("sample_queue"), PriorityQueueCode.Heap4Arity, null, null, null,
-                new[] {( 1L, "aasdfasdf"u8.ToArray() ), ( 100L, "vasdaedhraerqa(Q#%V"u8.ToArray() )}),
+                new QueueRecord[] {new(1L, "aasdfasdf"u8.ToArray()), new(100L, "vasdaedhraerqa(Q#%V"u8.ToArray())}),
             new StubTaskQueue(QueueName.Parse("orders:1002"), PriorityQueueCode.QueueArray, 100000, ( -10L, 10L ),
                 null,
-                new[]
+                new QueueRecord[]
                 {
-                    ( 9L, "hello, world"u8.ToArray() ), ( 9L, "hello, world"u8.ToArray() ),
-                    ( 9L, "hello, world"u8.ToArray() ), ( 9L, "hello, world"u8.ToArray() ),
+                    new(9L, "hello, world"u8.ToArray()), new(9L, "hello, world"u8.ToArray()),
+                    new(9L, "hello, world"u8.ToArray()), new(9L, "hello, world"u8.ToArray()),
                 }),
             new StubTaskQueue(QueueName.Parse("___@Q#%GWSA"), PriorityQueueCode.Heap4Arity, null, null, 123123,
-                Array.Empty<(long, byte[])>())
+                Array.Empty<QueueRecord>())
         };
 
         var actual = StateRestorer.RestoreState(new QueueArraySnapshot(snapshotQueues), Array.Empty<byte[]>())
@@ -200,7 +202,7 @@ public class StateRestorerTests
     public void RestoreState__КогдаЕстьОперацияСозданияНовойОчереди__ДолженСоздатьНовыеОчереди()
     {
         var queueToCreate = new StubTaskQueue(QueueName.Parse("aaaaaaaaaaa"), PriorityQueueCode.Heap4Arity,
-            1000000, null, null, Array.Empty<(long, byte[])>());
+            1000000, null, null, Array.Empty<QueueRecord>());
         var expected = new ITaskQueue[] {queueToCreate,}.ToHashSet(Comparer);
         var snapshot = new QueueCollectionSnapshot(new QueueCollection());
         var actual = StateRestorer.RestoreState(snapshot,
