@@ -7,6 +7,7 @@ using Serilog.Core;
 using TaskFlux.Application;
 using TaskFlux.Application.Cluster;
 using TaskFlux.Application.Cluster.Network;
+using TaskFlux.Application.RecordAwaiter;
 using TaskFlux.Consensus;
 using TaskFlux.Consensus.Timers;
 using TaskFlux.Core;
@@ -190,7 +191,7 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
     var timerFactory = new ThreadingTimerFactory(lower: TimeSpan.FromMilliseconds(1500),
         upper: TimeSpan.FromMilliseconds(2500),
         heartbeatTimeout: TimeSpan.FromMilliseconds(1000));
-    var applicationFactory = new TaskFluxApplicationFactory();
+    var applicationFactory = new TaskFluxApplicationFactory(new ValueTaskSourceQueueSubscriberManagerFactory(128));
 
     return RaftConsensusModule<Command, Response>.Create(nodeId,
         peerGroup, logger, timerFactory,

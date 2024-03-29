@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
+using TaskFlux.Core.Restore;
 using TaskFlux.PriorityQueue;
 using TaskFlux.Utils.Serialization;
 
@@ -22,7 +23,7 @@ public static class QueuesSnapshotSerializer
         return new SerializedQueuesSnapshotCollection(queues.Select(q =>
         {
             var metadata = q.Metadata;
-            return ( q.Name, q.Code, MaxSize: metadata.MaxQueueSize, metadata.MaxPayloadSize, metadata.PriorityRange,
+            return ( q.Name, q.Code, metadata.MaxQueueSize, metadata.MaxPayloadSize, metadata.PriorityRange,
                      q.ReadAllData() );
         }), queues.Count);
     }
@@ -35,20 +36,27 @@ public static class QueuesSnapshotSerializer
         return new ReadOnlyMemory<byte>[] {result};
     }
 
-    public static IEnumerable<ReadOnlyMemory<byte>> Serialize(QueueCollection collection)
+    public static IReadOnlyCollection<ReadOnlyMemory<byte>> Serialize(QueueCollection collection)
     {
         if (collection.IsEmpty)
         {
             return CreateEmptySnapshot();
         }
 
-        return new SerializedQueuesSnapshotCollection(collection.GetQueuesRaw(), collection.Count);
+        return new SerializedQueuesSnapshotCollection(collection.GetAllQueues().Select(ToTuple), collection.Count);
     }
 
+    private static (QueueName Name, PriorityQueueCode Code, int? MaxQueueSize, int? MaxPayloadSize, (long, long)?
+        PriorityRange, IReadOnlyCollection<QueueRecord> Data) ToTuple(this QueueInfo info)
+    {
+        return ( info.QueueName, info.Code, info.MaxQueueSize, info.MaxPayloadSize, info.PriorityRange, info.Data );
+    }
+
+    // TODO: заменить на QueueCollection
     private class SerializedQueuesSnapshotCollection : IReadOnlyCollection<ReadOnlyMemory<byte>>
     {
-        private readonly IEnumerable<(QueueName Name, PriorityQueueCode Code, int? MaxMessageSize, int? MaxPayloadSize,
-            (long, long)? PriorityRange, IReadOnlyCollection<QueueRecord> Data)> _queues;
+        private readonly IEnumerable<(QueueName Name, PriorityQueueCode Code, int? MaxQueueSize, int? MaxPayloadSize, (
+            long, long)? PriorityRange, IReadOnlyCollection<QueueRecord> Data)> _queues;
 
         /// <summary>
         /// Каждая очередь будет представлять собой отдельный чанк.
@@ -58,7 +66,7 @@ public static class QueuesSnapshotSerializer
         public int Count { get; }
 
         public SerializedQueuesSnapshotCollection(
-            IEnumerable<(QueueName, PriorityQueueCode, int? MaxMessageSize, int? MaxPayloadSize, (long, long)?
+            IEnumerable<(QueueName, PriorityQueueCode, int? MaxQueueSize, int? MaxPayloadSize, (long, long)?
                 PriorityRange, IReadOnlyCollection<QueueRecord> Data)> queues,
             int count)
         {
@@ -93,20 +101,6 @@ public static class QueuesSnapshotSerializer
             return GetEnumerator();
         }
     }
-
-    /// <summary>
-    /// Описание структуры формата сериализованной очереди
-    /// </summary>
-    /// <remarks>
-    /// Нужно только для разработки - нигде лучше не использовать
-    /// </remarks>
-    // ReSharper disable once UnusedMember.Local
-    private const string QueueFileFormat = ""
-                                         + "Название (QueueName)\n"
-                                         + "Максимальный размер очереди (Int32, -1 = нет лимита)\n"
-                                         + "Диапазон ключей (Nullable<Pair<long, long>>)\n"
-                                         + "Максимальный размер сообщения (Int32, -1 = нет лимита)\n"
-                                         + "Содержимое очереди (размер + данные)";
 
     private static void Serialize(QueueName name,
                                   PriorityQueueCode code,
@@ -175,22 +169,6 @@ public static class QueuesSnapshotSerializer
             writer.Write(priority);
             writer.WriteBuffer(payload);
         }
-    }
-
-    /// <summary>
-    /// Сериализовать одну очередь, используя переданный <paramref name="writer"/>
-    /// </summary>
-    /// <param name="queue">Очередь, которую нужно сериализовать</param>
-    /// <param name="writer">Объект для записи данных</param>
-    private static void Serialize(IReadOnlyTaskQueue queue, ref StreamBinaryWriter writer)
-    {
-        // Название | Реализация | Максимальный размер очереди | Макс. размер сообщения | Диапазон ключей | Данные очереди
-
-        // 1. Метаданные
-        var metadata = queue.Metadata;
-        Serialize(metadata.QueueName, metadata.Code, metadata.MaxQueueSize, metadata.MaxPayloadSize,
-            metadata.PriorityRange,
-            queue.ReadAllData(), ref writer);
     }
 
     /// <summary>

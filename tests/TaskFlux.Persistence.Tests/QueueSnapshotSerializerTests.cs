@@ -7,7 +7,7 @@ using Xunit;
 namespace TaskFlux.Persistence.Tests;
 
 [Trait("Category", "Serialization")]
-public class QueueDataSnapshotSerializerTests
+public class QueueSnapshotSerializerTests
 {
     private static void AssertBase(StubTaskQueue expected)
     {
@@ -20,10 +20,11 @@ public class QueueDataSnapshotSerializerTests
 
         stream.Position = 0;
         var collection = QueuesSnapshotSerializer.Deserialize(stream);
-        var queues = collection.GetQueuesRaw().ToArray();
+        var queues = collection.GetAllQueues();
         Assert.Single(queues);
-        var (name, code, maxQueueSize, maxPayloadSize, priorityRange, data) = queues.First();
-        var actual = new StubTaskQueue(name, code, maxQueueSize, priorityRange, maxPayloadSize, data);
+        var queueInfo = queues.First();
+        var actual = new StubTaskQueue(queueInfo.QueueName, queueInfo.Code, queueInfo.MaxQueueSize,
+            queueInfo.PriorityRange, queueInfo.MaxPayloadSize, queueInfo.Data);
         Assert.Equal(expected, actual, TaskQueueEqualityComparer.Instance);
     }
 
@@ -40,13 +41,8 @@ public class QueueDataSnapshotSerializerTests
         stream.Position = 0;
 
         var collection = QueuesSnapshotSerializer.Deserialize(stream);
-        var actual = collection.GetQueuesRaw()
-                               .Select(tuple =>
-                                {
-                                    var (name, code, maxQueueSize, maxPayloadSize, priorityRange, data) = tuple;
-                                    return new StubTaskQueue(name, code, maxQueueSize, priorityRange, maxPayloadSize,
-                                        data);
-                                })
+        var actual = collection.GetAllQueues()
+                               .Select(StubTaskQueue.FromQueueInfo)
                                .ToHashSet();
         Assert.Equal(expected, actual, TaskQueueEqualityComparer.Instance);
     }

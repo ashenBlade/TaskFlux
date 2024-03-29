@@ -1,4 +1,5 @@
 using TaskFlux.Consensus;
+using TaskFlux.Core.Restore;
 
 namespace TaskFlux.Persistence.ApplicationState;
 

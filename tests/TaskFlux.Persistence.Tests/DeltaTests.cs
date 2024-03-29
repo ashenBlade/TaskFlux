@@ -1,7 +1,7 @@
 using System.Text;
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
-using TaskFlux.Persistence.ApplicationState;
+using TaskFlux.Core.Restore;
 using TaskFlux.Persistence.ApplicationState.Deltas;
 using TaskFlux.PriorityQueue;
 using Xunit;
@@ -80,10 +80,10 @@ public class DeltaTests
 
         delta.Apply(collection);
 
-        var queues = collection.GetQueuesRaw();
+        var queues = collection.GetAllQueues();
 
         Assert.NotEmpty(queues);
-        Assert.Contains(queues, q => q.Name == name);
+        Assert.Contains(queues, q => q.QueueName == name);
     }
 
     public static IEnumerable<object[]> AllPriorityCodes =>
@@ -98,7 +98,7 @@ public class DeltaTests
 
         delta.Apply(collection);
 
-        var queues = collection.GetQueuesRaw();
+        var queues = collection.GetAllQueues();
 
         Assert.Contains(queues, q => q.Code == code);
     }
@@ -117,7 +117,7 @@ public class DeltaTests
 
         delta.Apply(collection);
 
-        var queues = collection.GetQueuesRaw();
+        var queues = collection.GetAllQueues();
 
         Assert.Contains(queues, q => q.MaxQueueSize == maxQueueSize);
     }
@@ -136,7 +136,7 @@ public class DeltaTests
 
         delta.Apply(collection);
 
-        var queues = collection.GetQueuesRaw();
+        var queues = collection.GetAllQueues();
 
         Assert.Contains(queues, q => q.MaxPayloadSize == maxMessageSize);
     }
@@ -155,10 +155,10 @@ public class DeltaTests
 
         delta.Apply(collection);
 
-        var queues = collection.GetQueuesRaw();
+        var queues = collection.GetAllQueues();
 
-        var (_, _, _, _, priorityRange, _) = queues.Single();
-        Assert.Equal(range, priorityRange);
+        var info = queues.Single();
+        Assert.Equal(range, info.PriorityRange);
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public class DeltaTests
         var delta = new DeleteQueueDelta(queueName);
         delta.Apply(collection);
 
-        Assert.DoesNotContain(collection.GetQueuesRaw(), q => q.Name == queueName);
+        Assert.DoesNotContain(collection.GetAllQueues(), q => q.QueueName == queueName);
     }
 
     [Fact]
@@ -187,8 +187,8 @@ public class DeltaTests
         var delta = new AddRecordDelta(queueName, record.Priority, record.Payload);
         delta.Apply(collection);
 
-        var (_, _, _, _, _, data) = collection.GetQueuesRaw().Single(x => x.Name == queueName);
-        Assert.Single(data, d => d.Equals(record));
+        var info = collection.GetAllQueues().Single(x => x.QueueName == queueName);
+        Assert.Single(info.Data, d => d.Equals(record));
     }
 
     [Fact]
@@ -203,8 +203,8 @@ public class DeltaTests
         var delta = new AddRecordDelta(queueName, record.Priority, record.Payload);
         delta.Apply(collection);
 
-        var (_, _, _, _, _, data) = collection.GetQueuesRaw().Single(x => x.Name == queueName);
-        Assert.Contains(data, d => d.Equals(record));
+        var info = collection.GetAllQueues().Single(x => x.QueueName == queueName);
+        Assert.Contains(info.Data, d => d.Equals(record));
     }
 
     [Theory]
@@ -230,9 +230,9 @@ public class DeltaTests
         var delta = new AddRecordDelta(queueName, newRecord.Priority, newRecord.Payload);
         delta.Apply(collection);
 
-        var (_, _, _, _, _, data) = collection.GetQueuesRaw().Single(x => x.Name == queueName);
+        var info = collection.GetAllQueues().Single(x => x.QueueName == queueName);
 
-        var actualData = data.Where(x => x.Priority == priority).ToArray();
+        var actualData = info.Data.Where(x => x.Priority == priority).ToArray();
         Assert.Contains(actualData,
             x => x.Priority == newRecord.Priority && x.Payload.SequenceEqual(newRecord.Payload));
         Assert.Equal(existingCount + 1, actualData.Length);
@@ -255,11 +255,11 @@ public class DeltaTests
         var delta = new AddRecordDelta(queueName, record.Priority, record.Payload);
         delta.Apply(collection);
 
-        var (_, _, _, _, _, data) = collection.GetQueuesRaw().Single(x => x.Name == queueName);
+        var info = collection.GetAllQueues().Single(x => x.QueueName == queueName);
 
 
         Assert.Equal(existingCount + 1,
-            data.Count(x => x.Priority == record.Priority && x.Payload.SequenceEqual(record.Payload)));
+            info.Data.Count(x => x.Priority == record.Priority && x.Payload.SequenceEqual(record.Payload)));
     }
 
     [Fact]
@@ -274,8 +274,8 @@ public class DeltaTests
         var delta = new RemoveRecordDelta(queueName, record.Priority, record.Payload);
         delta.Apply(collection);
 
-        var (_, _, _, _, _, data) = collection.GetQueuesRaw().Single(x => x.Name == queueName);
-        Assert.DoesNotContain(data, d => d.Priority == record.Priority && d.Payload.SequenceEqual(record.Payload));
+        var info = collection.GetAllQueues().Single(x => x.QueueName == queueName);
+        Assert.DoesNotContain(info.Data, d => d.Priority == record.Priority && d.Payload.SequenceEqual(record.Payload));
     }
 
     [Theory]
@@ -296,10 +296,10 @@ public class DeltaTests
         var delta = new RemoveRecordDelta(queueName, record.Priority, record.Payload);
         delta.Apply(collection);
 
-        var (_, _, _, _, _, data) = collection.GetQueuesRaw()
-                                              .Single(x => x.Name == queueName);
+        var info = collection.GetAllQueues()
+                             .Single(x => x.QueueName == queueName);
 
         Assert.Equal(existingCount - 1,
-            data.Count(d => d.Priority == record.Priority && d.Payload.SequenceEqual(record.Payload)));
+            info.Data.Count(d => d.Priority == record.Priority && d.Payload.SequenceEqual(record.Payload)));
     }
 }

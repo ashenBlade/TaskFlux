@@ -1,5 +1,7 @@
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
+using TaskFlux.Core.Restore;
+using TaskFlux.Core.Waiter;
 using TaskFlux.PriorityQueue;
 using Xunit;
 
@@ -34,7 +36,7 @@ public class StubTaskQueue : ITaskQueue
     }
 
 
-    public EnqueueResult Enqueue(long key, byte[] payload)
+    public EnqueueResult Enqueue(long priority, byte[] payload)
     {
         Assert.True(false, "Метод не должен быть вызван при серилазации");
         throw new InvalidOperationException("Нельзя этот методы вызывать во время сериализации");
@@ -47,9 +49,26 @@ public class StubTaskQueue : ITaskQueue
         return false;
     }
 
+    public IQueueSubscriber GetRecordAwaiter()
+    {
+        return new StubQueueSubscriber();
+    }
+
     public IReadOnlyCollection<QueueRecord> ReadAllData()
     {
         return _data;
+    }
+
+    private class StubQueueSubscriber : IQueueSubscriber
+    {
+        public async ValueTask<QueueRecord> WaitRecordAsync(CancellationToken token)
+        {
+            throw new Exception("Метод не должен быть вызван на стабе очереди");
+        }
+
+        public void Dispose()
+        {
+        }
     }
 
     private class StubMetadata : ITaskQueueMetadata
@@ -67,5 +86,11 @@ public class StubTaskQueue : ITaskQueue
         public int? MaxQueueSize => _parent._maxSize;
         public int? MaxPayloadSize => _parent._maxPayloadSize;
         public (long Min, long Max)? PriorityRange => _parent._priority;
+    }
+
+    public static StubTaskQueue FromQueueInfo(QueueInfo info)
+    {
+        return new StubTaskQueue(info.QueueName, info.Code, info.MaxQueueSize, info.PriorityRange, info.MaxPayloadSize,
+            info.Data);
     }
 }

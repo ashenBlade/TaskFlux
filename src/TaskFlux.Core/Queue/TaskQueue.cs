@@ -1,63 +1,53 @@
 using System.Collections;
 using TaskFlux.Core.Policies;
+using TaskFlux.Core.Waiter;
 using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
 
 internal class TaskQueue : ITaskQueue
 {
-    public QueueName Name { get; }
     public PriorityQueueCode Code => _queue.Code;
+    public QueueName Name { get; }
+    private readonly QueuePolicy[] _policies;
+    private readonly IPriorityQueue _queue;
     public int Count => _queue.Count;
-    private TaskQueueMetadata? _metadata;
-    public ITaskQueueMetadata Metadata => _metadata ??= CreateMetadata();
+    private IQueueSubscriberManager _awaiterManager;
 
-    private TaskQueueMetadata CreateMetadata()
-    {
-        var metadata = new TaskQueueMetadata(this);
-        foreach (var policy in _policies)
-        {
-            policy.Enrich(metadata);
-        }
-
-        return metadata;
-    }
-
-    public TaskQueue(QueueName name, IPriorityQueue queue, QueuePolicy[] policies)
+    public TaskQueue(QueueName name,
+                     IPriorityQueue queue,
+                     QueuePolicy[] policies,
+                     IQueueSubscriberManager awaiterManager)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(policies);
 
         _policies = policies;
+        _awaiterManager = awaiterManager;
         _queue = queue;
         Name = name;
     }
 
-    private readonly QueuePolicy[] _policies;
-    private readonly IPriorityQueue _queue;
-
-    public IReadOnlyCollection<QueueRecord> ReadAllData()
-    {
-        return new PriorityQueueRecordCollection(_queue.ReadAllData());
-    }
-
-    public EnqueueResult Enqueue(long key, byte[] payload)
+    public EnqueueResult Enqueue(long priority, byte[] payload)
     {
         ArgumentNullException.ThrowIfNull(payload);
 
         foreach (var policy in _policies)
         {
-            if (!policy.CanEnqueue(key, payload, this))
+            if (!policy.CanEnqueue(priority, payload, this))
             {
                 return EnqueueResult.PolicyViolation(policy);
             }
         }
 
-        _queue.Enqueue(key, payload);
+        // Вставку в очередь необходимо сделать, только в случае если никто новых записей не ожидает
+        if (!_awaiterManager.TryNotifyRecord(new QueueRecord(priority, payload)))
+        {
+            _queue.Enqueue(priority, payload);
+        }
 
         return EnqueueResult.Success();
     }
-
 
     public bool TryDequeue(out QueueRecord record)
     {
@@ -69,6 +59,17 @@ internal class TaskQueue : ITaskQueue
 
         record = default;
         return false;
+    }
+
+    public IQueueSubscriber GetRecordAwaiter()
+    {
+        // О новых записях не уведомляем, т.к. этот метод должен быть вызван только когда очередь была пуста при вызове TryDequeue
+        return _awaiterManager.GetSubscriber();
+    }
+
+    public IReadOnlyCollection<QueueRecord> ReadAllData()
+    {
+        return new PriorityQueueRecordCollection(_queue.ReadAllData());
     }
 
     private class PriorityQueueRecordCollection : IReadOnlyCollection<QueueRecord>
@@ -94,5 +95,19 @@ internal class TaskQueue : ITaskQueue
         }
 
         public int Count => _queueCollection.Count;
+    }
+
+    private TaskQueueMetadata? _metadata;
+    public ITaskQueueMetadata Metadata => _metadata ??= CreateMetadata();
+
+    private TaskQueueMetadata CreateMetadata()
+    {
+        var metadata = new TaskQueueMetadata(this);
+        foreach (var policy in _policies)
+        {
+            policy.Enrich(metadata);
+        }
+
+        return metadata;
     }
 }

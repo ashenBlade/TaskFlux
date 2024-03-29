@@ -1,5 +1,6 @@
 using System.Buffers;
 using TaskFlux.Core;
+using TaskFlux.Core.Restore;
 using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Persistence.ApplicationState.Deltas;

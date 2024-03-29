@@ -1,12 +1,10 @@
 using System.Collections;
-using TaskFlux.Core;
 using TaskFlux.Core.Queue;
 using TaskFlux.PriorityQueue;
-using TaskFlux.Utils.CheckSum;
 
-namespace TaskFlux.Persistence.ApplicationState;
+namespace TaskFlux.Core.Restore;
 
-internal class QueueInfo
+public class QueueInfo
 {
     public QueueInfo(QueueName queueName,
                      PriorityQueueCode code,
@@ -19,34 +17,51 @@ internal class QueueInfo
         MaxQueueSize = maxQueueSize;
         MaxPayloadSize = maxPayloadSize;
         PriorityRange = priorityRange;
+        Data = new QueueRecordsValuesCollection(this);
     }
 
+    /// <summary>
+    /// Название очереди
+    /// </summary>
     public QueueName QueueName { get; }
+
+    /// <summary>
+    /// Код реализации очереди
+    /// </summary>
     public PriorityQueueCode Code { get; }
+
+    /// <summary>
+    /// Максимальный размер очереди, если есть
+    /// </summary>
     public int? MaxQueueSize { get; }
+
+    /// <summary>
+    /// Максимальный размер нагрузки, если есть
+    /// </summary>
     public int? MaxPayloadSize { get; }
+
+    /// <summary>
+    /// Допустимый диапазон приоритетов, если есть
+    /// </summary>
     public (long, long)? PriorityRange { get; }
 
     /// <summary>
-    /// Отображение ключа на множество его записей.
-    /// Для оптимизации, используем 
+    /// Записи, которые хранятся в очереди
+    /// </summary>
+    /// <remarks>
+    /// Данные хранятся в неупорядоченном виде
+    /// </remarks>
+    public IReadOnlyCollection<QueueRecord> Data { get; }
+
+    /// <summary>
+    /// Отображение ключа на множество его записей, вместо хранения абсолютно всех записей
     /// </summary>
     private readonly Dictionary<long, HashSet<ByteArrayCounter>> _records = new();
 
-    public ITaskQueue Build()
-    {
-        return new TaskQueueBuilder(QueueName, Code)
-              .WithPriorityRange(PriorityRange)
-              .WithMaxQueueSize(MaxQueueSize)
-              .WithMaxPayloadSize(MaxPayloadSize)
-              .WithData(new QueueRecordsValuesCollection(this))
-              .Build();
-    }
-
-    public void Add(long key, byte[] payload)
+    public void Add(long priority, byte[] payload)
     {
         // Если записи с этим ключом уже существуют
-        if (_records.TryGetValue(key, out var existingSet))
+        if (_records.TryGetValue(priority, out var existingSet))
         {
             var counter = new ByteArrayCounter(payload);
 
@@ -65,7 +80,8 @@ internal class QueueInfo
         // Иначе нужно инициализировать новое множество с переданным ключом
         else
         {
-            _records.Add(key, new HashSet<ByteArrayCounter>(new ByteArrayCounterEqualityComparer()) {new(payload)});
+            _records.Add(priority,
+                new HashSet<ByteArrayCounter>(new ByteArrayCounterEqualityComparer()) {new(payload)});
         }
     }
 
@@ -121,7 +137,21 @@ internal class QueueInfo
         public override int GetHashCode()
         {
             // ReSharper disable once NonReadonlyMemberInGetHashCode
-            return _hashcode ??= ( int ) Crc32CheckSum.Compute(Message);
+            return _hashcode ??= ComputeHashCode(Message);
+        }
+
+        private static int ComputeHashCode(ReadOnlySpan<byte> data)
+        {
+            // FNV
+            const uint prime = 0x01000193;
+            var hash = 0x811c9dc5;
+            foreach (var b in data)
+            {
+                hash *= prime;
+                hash ^= b;
+            }
+
+            return unchecked( ( int ) hash );
         }
     }
 
@@ -132,19 +162,13 @@ internal class QueueInfo
             if (ReferenceEquals(left, right)) return true;
             if (ReferenceEquals(left, null)) return false;
             if (ReferenceEquals(right, null)) return false;
-            return left.Message.Length == right.Message.Length && left.Message.SequenceEqual(right.Message);
+            return left.GetHashCode() == right.GetHashCode() && left.Message.SequenceEqual(right.Message);
         }
 
         public int GetHashCode(ByteArrayCounter obj)
         {
             return obj.GetHashCode();
         }
-    }
-
-    public (QueueName Name, PriorityQueueCode Code, int? MaxQueueSize, int? MaxPayloadSize, (long, long)? PriorityRange,
-        IReadOnlyCollection<QueueRecord> Data) ToTuple()
-    {
-        return ( QueueName, Code, MaxQueueSize, MaxPayloadSize, PriorityRange, new QueueRecordsValuesCollection(this) );
     }
 
     private class QueueRecordsValuesCollection : IReadOnlyCollection<QueueRecord>

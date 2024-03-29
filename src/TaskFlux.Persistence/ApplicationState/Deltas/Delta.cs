@@ -1,3 +1,5 @@
+using TaskFlux.Core.Restore;
+
 namespace TaskFlux.Persistence.ApplicationState.Deltas;
 
 /// <summary>
