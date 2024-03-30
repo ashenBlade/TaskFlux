@@ -92,9 +92,20 @@ public class NetworkCommandTests
     [InlineData("")]
     [InlineData("sample-queue")]
     [InlineData("spam:1:123")]
-    public void Dequeue__Serialization(string queue)
+    public void Dequeue__QueueName__Serialization(string queue)
     {
-        AssertBase(new DequeueNetworkCommand(QueueName.Parse(queue)));
+        AssertBase(new DequeueNetworkCommand(QueueName.Parse(queue), 0));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(uint.MaxValue)]
+    [InlineData(1)]
+    [InlineData(1000)]
+    [InlineData(60 * 1000)]
+    public void Dequeue__Timeout__Serialization(uint timeout)
+    {
+        AssertBase(new DequeueNetworkCommand(QueueName.Parse("hello"), timeout));
     }
 
     [Theory]

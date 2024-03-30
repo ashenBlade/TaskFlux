@@ -1,6 +1,6 @@
 using TaskFlux.Core.Queue;
 
-namespace TaskFlux.Core.Waiter;
+namespace TaskFlux.Core.Subscription;
 
 /// <summary>
 /// Менеджер для управления подписчиками очереди

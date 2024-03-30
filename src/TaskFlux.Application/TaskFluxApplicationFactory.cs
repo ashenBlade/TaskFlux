@@ -3,7 +3,7 @@ using TaskFlux.Core;
 using TaskFlux.Core.Commands;
 using TaskFlux.Core.Queue;
 using TaskFlux.Core.Restore;
-using TaskFlux.Core.Waiter;
+using TaskFlux.Core.Subscription;
 using TaskFlux.Persistence.ApplicationState;
 using TaskFlux.Persistence.ApplicationState.Deltas;
 using TaskFlux.PriorityQueue;
@@ -16,7 +16,7 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
 
     public TaskFluxApplicationFactory(IQueueSubscriberManagerFactory queueSubscriberManagerFactory)
     {
-        ArgumentNullException.ThrowIfNull(_queueSubscriberManagerFactory);
+        ArgumentNullException.ThrowIfNull(queueSubscriberManagerFactory);
 
         _queueSubscriberManagerFactory = queueSubscriberManagerFactory;
     }

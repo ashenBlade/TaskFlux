@@ -66,4 +66,9 @@ public class DeltaExtractorResponseVisitor : IResponseVisitor<Delta?>
     {
         return NoDelta;
     }
+
+    public Delta? Visit(QueueSubscriberResponse response)
+    {
+        return NoDelta;
+    }
 }

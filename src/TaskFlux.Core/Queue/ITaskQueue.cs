@@ -1,4 +1,4 @@
-﻿using TaskFlux.Core.Waiter;
+﻿using TaskFlux.Core.Subscription;
 
 namespace TaskFlux.Core.Queue;
 
@@ -28,5 +28,5 @@ public interface ITaskQueue : IReadOnlyTaskQueue
     /// <summary>
     /// Получить ожидателя новой записи в очереди
     /// </summary>
-    public IQueueSubscriber GetRecordAwaiter();
+    public IQueueSubscriber Subscribe();
 }

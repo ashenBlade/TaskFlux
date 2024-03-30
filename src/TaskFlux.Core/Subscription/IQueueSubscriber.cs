@@ -1,6 +1,6 @@
 using TaskFlux.Core.Queue;
 
-namespace TaskFlux.Core.Waiter;
+namespace TaskFlux.Core.Subscription;
 
 /// <summary>
 /// Интерфейс подписчика на запись из очереди.

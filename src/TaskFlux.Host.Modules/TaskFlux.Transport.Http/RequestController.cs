@@ -60,7 +60,8 @@ public class RequestController(
         }
 
         return await HandleCommandCoreAsync(
-                   new DequeueRecordCommand(queueName, true /* Сразу сохраняем результат операции */), token);
+                   ImmediateDequeueCommand.CreatePersistent(queueName), // Сразу сохраняем результат операции  
+                   token);
     }
 
     [HttpPost("count")]
@@ -198,6 +199,11 @@ public class RequestController(
         public void Visit(PolicyViolationResponse response)
         {
             Payload["type"] = "ok";
+        }
+
+        public void Visit(QueueSubscriberResponse response)
+        {
+            throw new InvalidOperationException("HTTP интерфейс пока не поддерживает возможность подписки");
         }
     }
 }

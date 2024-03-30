@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Threading.Tasks.Sources;
 using Microsoft.Extensions.ObjectPool;
 using TaskFlux.Core.Queue;
-using TaskFlux.Core.Waiter;
+using TaskFlux.Core.Subscription;
 
 namespace TaskFlux.Application.RecordAwaiter;
 

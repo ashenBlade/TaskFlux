@@ -29,7 +29,7 @@ public class NetworkCommandEqualityComparer : IEqualityComparer<NetworkCommand>
         left.QueueName == right.QueueName;
 
     private static bool Check(DequeueNetworkCommand left, DequeueNetworkCommand right) =>
-        left.QueueName == right.QueueName;
+        left.QueueName == right.QueueName && left.TimeoutMs == right.TimeoutMs;
 
     private static bool Check(EnqueueNetworkCommand left, EnqueueNetworkCommand right) =>
         left.QueueName == right.QueueName

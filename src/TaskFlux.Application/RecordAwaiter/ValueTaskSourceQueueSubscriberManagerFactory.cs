@@ -1,5 +1,5 @@
 using Microsoft.Extensions.ObjectPool;
-using TaskFlux.Core.Waiter;
+using TaskFlux.Core.Subscription;
 
 namespace TaskFlux.Application.RecordAwaiter;
 

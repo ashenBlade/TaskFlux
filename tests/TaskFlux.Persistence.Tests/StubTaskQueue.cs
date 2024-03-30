@@ -1,7 +1,7 @@
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
 using TaskFlux.Core.Restore;
-using TaskFlux.Core.Waiter;
+using TaskFlux.Core.Subscription;
 using TaskFlux.PriorityQueue;
 using Xunit;
 
@@ -49,7 +49,7 @@ public class StubTaskQueue : ITaskQueue
         return false;
     }
 
-    public IQueueSubscriber GetRecordAwaiter()
+    public IQueueSubscriber Subscribe()
     {
         return new StubQueueSubscriber();
     }

@@ -1,4 +1,4 @@
-namespace TaskFlux.Core.Waiter;
+namespace TaskFlux.Core.Subscription;
 
 /// <summary>
 /// Фабрика для создания новых менеджеров подписчиков очередей

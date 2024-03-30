@@ -1,6 +1,6 @@
 using System.Collections;
 using TaskFlux.Core.Policies;
-using TaskFlux.Core.Waiter;
+using TaskFlux.Core.Subscription;
 using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
@@ -61,7 +61,7 @@ internal class TaskQueue : ITaskQueue
         return false;
     }
 
-    public IQueueSubscriber GetRecordAwaiter()
+    public IQueueSubscriber Subscribe()
     {
         // О новых записях не уведомляем, т.к. этот метод должен быть вызван только когда очередь была пуста при вызове TryDequeue
         return _awaiterManager.GetSubscriber();

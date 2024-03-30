@@ -1,6 +1,6 @@
 using System.ComponentModel;
 using TaskFlux.Core.Policies;
-using TaskFlux.Core.Waiter;
+using TaskFlux.Core.Subscription;
 using TaskFlux.PriorityQueue;
 using TaskFlux.PriorityQueue.Heap;
 using TaskFlux.PriorityQueue.QueueArray;

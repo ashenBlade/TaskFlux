@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using TaskFlux.Core.Restore;
-using TaskFlux.Core.Waiter;
+using TaskFlux.Core.Subscription;
 using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
@@ -162,13 +162,10 @@ public class TaskQueueManager : ITaskQueueManager
             {
                 if (defaultQueueFound)
                 {
-                    if (defaultQueueFound)
-                    {
-                        throw new InvalidDataException("Найдено 2 очереди по умолчанию");
-                    }
-
-                    defaultQueueFound = true;
+                    throw new InvalidDataException("Найдено 2 очереди по умолчанию");
                 }
+
+                defaultQueueFound = true;
             }
 
             var queue = new TaskQueueBuilder(info.QueueName, info.Code, factory)

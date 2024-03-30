@@ -3,7 +3,7 @@ using TaskFlux.Core.Commands.Visitors;
 
 namespace TaskFlux.Core.Commands.Dequeue;
 
-public class DequeueRecordCommand : ModificationCommand
+public class ImmediateDequeueCommand : ModificationCommand
 {
     // Конкретно для этой команды мы используем быстрый путь выполнения - без фиксации результата.
     // Это нужно для использования Ack/Nack команд (at-least-once семантики) - изменения будут зафиксированы другими командами
@@ -17,7 +17,7 @@ public class DequeueRecordCommand : ModificationCommand
     /// </summary>
     public bool Persistent { get; }
 
-    public DequeueRecordCommand(QueueName queue, bool persistent)
+    private ImmediateDequeueCommand(QueueName queue, bool persistent)
     {
         Queue = queue;
         Persistent = persistent;
@@ -54,4 +54,8 @@ public class DequeueRecordCommand : ModificationCommand
     {
         return visitor.Visit(this);
     }
+
+    public static ImmediateDequeueCommand CreateNonPersistent(QueueName queue) => new(queue, persistent: false);
+
+    public static ImmediateDequeueCommand CreatePersistent(QueueName queue) => new(queue, persistent: true);
 }
