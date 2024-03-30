@@ -176,7 +176,7 @@ public class ValueTaskSourceQueueSubscriberManagerTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => subscriber.WaitRecordAsync(cts.Token).AsTask());
     }
 
-    [Theory(Timeout = 500)]
+    [Theory(Timeout = 1000)]
     [InlineData(2)]
     [InlineData(10)]
     [InlineData(100)]

@@ -7,15 +7,15 @@ namespace TaskFlux.Core.Commands.Enqueue;
 public class EnqueueCommand : ModificationCommand
 {
     public QueueName Queue { get; }
-    public long Key { get; }
-    public byte[] Message { get; }
+    public long Priority { get; }
+    public byte[] Payload { get; }
 
-    public EnqueueCommand(long key, byte[] message, QueueName queue)
+    public EnqueueCommand(long priority, byte[] payload, QueueName queue)
     {
-        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(payload);
 
-        Key = key;
-        Message = message;
+        Priority = priority;
+        Payload = payload;
         Queue = queue;
     }
 
@@ -26,14 +26,14 @@ public class EnqueueCommand : ModificationCommand
             return DefaultErrors.QueueDoesNotExist;
         }
 
-        var result = queue.Enqueue(Key, Message);
+        var result = queue.Enqueue(Priority, Payload);
 
         if (result.TryGetViolatedPolicy(out var policy))
         {
             return new PolicyViolationResponse(policy);
         }
 
-        return new EnqueueResponse(Queue, Key, Message);
+        return new EnqueueResponse(Queue, Priority, Payload);
     }
 
     public override void Accept(ICommandVisitor visitor)

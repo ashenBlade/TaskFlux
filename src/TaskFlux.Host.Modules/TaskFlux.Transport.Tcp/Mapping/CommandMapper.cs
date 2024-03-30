@@ -101,8 +101,8 @@ public static class CommandMapper
 
         public Command Visit(EnqueueNetworkCommand command)
         {
-            return new EnqueueCommand(key: command.Key,
-                message: command.Message,
+            return new EnqueueCommand(priority: command.Key,
+                payload: command.Message,
                 queue: QueueName.Parse(command.QueueName));
         }
 
