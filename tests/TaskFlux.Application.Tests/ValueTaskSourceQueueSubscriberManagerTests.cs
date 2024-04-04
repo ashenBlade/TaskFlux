@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
-using System.Text;
 using TaskFlux.Application.RecordAwaiter;
 using TaskFlux.Core.Queue;
 
@@ -10,7 +9,7 @@ namespace TaskFlux.Application.Tests;
 [SuppressMessage("ReSharper", "AccessToDisposedClosure")]
 public class ValueTaskSourceQueueSubscriberManagerTests
 {
-    private static QueueRecord Record(long priority, string payload) => new(priority, Encoding.UTF8.GetBytes(payload));
+    private static QueueRecord Record(ulong id) => new(new RecordId(id), 123, "hello, world"u8.ToArray());
     /*
      * Какие тесты:
      * - Уведомляю одного менеджера - запись уходит его ждуну, а ждуну другого менеджера ничего не приходит, крч, разные менеджеры не зависят от своих
@@ -23,7 +22,7 @@ public class ValueTaskSourceQueueSubscriberManagerTests
     {
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(10);
         var manager = factory.CreateQueueSubscriberManager();
-        var expected = Record(123, "hello, world");
+        var expected = Record(123);
         using var subscriber = manager.GetSubscriber();
         manager.TryNotifyRecord(expected);
 
@@ -38,7 +37,7 @@ public class ValueTaskSourceQueueSubscriberManagerTests
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(10);
         var manager = factory.CreateQueueSubscriberManager();
         using var subscriber = manager.GetSubscriber();
-        var expected = Record(234634, "asdfasdf");
+        var expected = Record(234634);
 
         // Используется для синхронизации, чтобы запись не была добавлена быстрее, чем начало чтения
         var readyToInsertSource = new TaskCompletionSource();
@@ -65,7 +64,7 @@ public class ValueTaskSourceQueueSubscriberManagerTests
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(10);
         var manager = factory.CreateQueueSubscriberManager();
         var records = Enumerable.Range(0, 100)
-                                .Select(i => Record(i, i.ToString()))
+                                .Select(i => Record(( ulong ) i))
                                 .ToList();
 
         await Task.WhenAll(Task.Run(async () =>
@@ -101,7 +100,7 @@ public class ValueTaskSourceQueueSubscriberManagerTests
     {
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(10);
         var manager = factory.CreateQueueSubscriberManager();
-        var expected = Record(123, "hello, world");
+        var expected = Record(123);
 
         // Синхронизируемся - запись должна быть добавлена тогда, когда все ждуны начали чтение
         using var reset = new CountdownEvent(readersCount);
@@ -145,7 +144,7 @@ public class ValueTaskSourceQueueSubscriberManagerTests
     {
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(10);
         var manager = factory.CreateQueueSubscriberManager();
-        var expected = Record(123, "hello, world");
+        var expected = Record(123);
         using var subscriber = manager.GetSubscriber();
 
         var success = manager.TryNotifyRecord(expected);
@@ -158,7 +157,7 @@ public class ValueTaskSourceQueueSubscriberManagerTests
     {
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(10);
         var manager = factory.CreateQueueSubscriberManager();
-        var expected = Record(123, "hello, world");
+        var expected = Record(123);
 
         var success = manager.TryNotifyRecord(expected);
 
@@ -188,7 +187,7 @@ public class ValueTaskSourceQueueSubscriberManagerTests
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(10);
         var manager = factory.CreateQueueSubscriberManager();
         var records = Enumerable.Range(0, 1000)
-                                .Select(i => Record(i, i.ToString()))
+                                .Select(i => Record(( ulong ) i))
                                 .ToArray();
         var queue = new ConcurrentQueue<QueueRecord>(records);
         var readerReady = new ManualResetEvent(false);
@@ -236,7 +235,7 @@ public class ValueTaskSourceQueueSubscriberManagerTests
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(10);
         var mainManager = factory.CreateQueueSubscriberManager();
         using var mainSubscriber = mainManager.GetSubscriber();
-        var record = Record(123, "hello, world");
+        var record = Record(123);
         var signal = new CountdownEvent(managersCount);
         var consumeResultTcs = new TaskCompletionSource<QueueRecord>();
         _ = Enumerable.Range(0, managersCount)
@@ -269,8 +268,8 @@ public class ValueTaskSourceQueueSubscriberManagerTests
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(1);
         var oldManager = factory.CreateQueueSubscriberManager();
         var newManager = factory.CreateQueueSubscriberManager();
-        var oldRecord = Record(-12354, "asdfasdfasdf");
-        var newRecord = Record(4565, "new record");
+        var oldRecord = Record(1);
+        var newRecord = Record(2);
 
         // Работа старого менеджера
         {

@@ -1,4 +1,5 @@
 using TaskFlux.Core;
+using TaskFlux.Core.Policies;
 using TaskFlux.Core.Queue;
 using TaskFlux.Core.Restore;
 using TaskFlux.Core.Subscription;
@@ -16,10 +17,16 @@ public class StubTaskQueue : ITaskQueue
     public PriorityQueueCode Code { get; }
     public QueueName Name { get; }
     public int Count => _data.Length;
+
+    public IReadOnlyList<QueuePolicy> Policies =>
+        throw new InvalidOperationException("Для сериализации политики не нужны");
+
     public ITaskQueueMetadata Metadata { get; }
+    public RecordId LastId { get; }
 
     public StubTaskQueue(QueueName name,
                          PriorityQueueCode code,
+                         RecordId lastId,
                          int? maxSize = null,
                          (long, long)? priority = null,
                          int? maxPayloadSize = null,
@@ -33,13 +40,19 @@ public class StubTaskQueue : ITaskQueue
         Name = name;
         Code = code;
         Metadata = new StubMetadata(this);
+        LastId = lastId;
     }
 
 
-    public EnqueueResult Enqueue(long priority, byte[] payload)
+    public QueueRecord Enqueue(long priority, byte[] payload)
     {
         Assert.True(false, "Метод не должен быть вызван при серилазации");
-        throw new InvalidOperationException("Нельзя этот методы вызывать во время сериализации");
+        throw new InvalidOperationException("Нельзя изменять состояние во время сериализации");
+    }
+
+    public void EnqueueExisting(QueueRecord record)
+    {
+        throw new InvalidOperationException("Нельзя изменять состояние во время сериализации");
     }
 
     public bool TryDequeue(out QueueRecord record)
@@ -61,7 +74,7 @@ public class StubTaskQueue : ITaskQueue
 
     private class StubQueueSubscriber : IQueueSubscriber
     {
-        public async ValueTask<QueueRecord> WaitRecordAsync(CancellationToken token)
+        public ValueTask<QueueRecord> WaitRecordAsync(CancellationToken token)
         {
             throw new Exception("Метод не должен быть вызван на стабе очереди");
         }
@@ -90,7 +103,8 @@ public class StubTaskQueue : ITaskQueue
 
     public static StubTaskQueue FromQueueInfo(QueueInfo info)
     {
-        return new StubTaskQueue(info.QueueName, info.Code, info.MaxQueueSize, info.PriorityRange, info.MaxPayloadSize,
+        return new StubTaskQueue(info.QueueName, info.Code, info.LastId, info.MaxQueueSize, info.PriorityRange,
+            info.MaxPayloadSize,
             info.Data);
     }
 }

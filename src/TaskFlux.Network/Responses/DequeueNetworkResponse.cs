@@ -1,3 +1,4 @@
+using TaskFlux.Core.Queue;
 using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Network.Responses;
@@ -5,22 +6,23 @@ namespace TaskFlux.Network.Responses;
 public sealed class DequeueNetworkResponse : NetworkResponse
 {
     public override NetworkResponseType Type => NetworkResponseType.Dequeue;
-    public (long, byte[])? Data { get; }
+    public QueueRecord? Record { get; }
 
-    public DequeueNetworkResponse((long, byte[])? data)
+    public DequeueNetworkResponse(QueueRecord? record)
     {
-        Data = data;
+        Record = record;
     }
 
     public override async ValueTask SerializeAsync(Stream stream, CancellationToken token)
     {
         var writer = new StreamBinaryWriter(stream);
         await writer.WriteAsync(( byte ) NetworkResponseType.Dequeue, token);
-        if (Data is var (key, data))
+        if (Record is {Id: var id, Priority: var priority, Payload: var payload})
         {
             await writer.WriteAsync(true, token);
-            await writer.WriteAsync(key, token);
-            await writer.WriteBufferAsync(data, token);
+            await writer.WriteAsync(id, token);
+            await writer.WriteAsync(priority, token);
+            await writer.WriteBufferAsync(payload, token);
         }
         else
         {
@@ -28,17 +30,15 @@ public sealed class DequeueNetworkResponse : NetworkResponse
         }
     }
 
-    public bool TryGetResponse(out long key, out byte[] data)
+    public bool TryGetResponse(out QueueRecord record)
     {
-        if (Data is var (k, d))
+        if (Record is { } r)
         {
-            key = k;
-            data = d;
+            record = r;
             return true;
         }
 
-        key = default!;
-        data = default!;
+        record = default;
         return false;
     }
 
@@ -48,9 +48,10 @@ public sealed class DequeueNetworkResponse : NetworkResponse
         var hasData = await reader.ReadBoolAsync(token);
         if (hasData)
         {
-            var key = await reader.ReadInt64Async(token);
-            var data = await reader.ReadBufferAsync(token);
-            return new DequeueNetworkResponse(( key, data ));
+            var id = await reader.ReadUInt64Async(token);
+            var priority = await reader.ReadInt64Async(token);
+            var payload = await reader.ReadBufferAsync(token);
+            return new DequeueNetworkResponse(new QueueRecord(new RecordId(id), priority, payload));
         }
 
         return new DequeueNetworkResponse(null);

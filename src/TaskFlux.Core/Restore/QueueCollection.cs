@@ -6,7 +6,7 @@ using TaskFlux.PriorityQueue;
 namespace TaskFlux.Core.Restore;
 
 /// <summary>
-/// Объект, представляющий собой набор очередей вместе с их данными
+/// Объект, представляющий набор очередей вместе с их данными
 /// </summary>
 public class QueueCollection
 {
@@ -25,7 +25,9 @@ public class QueueCollection
                             int? maxMessageSize,
                             (long, long)? priorityRange)
     {
-        var info = new QueueInfo(name, implementation, maxQueueSize, maxMessageSize, priorityRange);
+        var info = new QueueInfo(name, implementation,
+            RecordId.Start /* Очередь создается новая, поэтому начинаем с самого начала */, maxQueueSize,
+            maxMessageSize, priorityRange);
         AddQueueInfoCore(info);
     }
 
@@ -50,21 +52,14 @@ public class QueueCollection
 
     public void AddExistingQueue(QueueName name,
                                  PriorityQueueCode code,
+                                 RecordId lastRecordId,
                                  int? maxQueueSize,
                                  int? maxMessageSize,
                                  (long, long)? priorityRange,
-                                 IReadOnlyCollection<QueueRecord> data)
+                                 IReadOnlyCollection<QueueRecord> records)
     {
-        var info = new QueueInfo(name, code, maxQueueSize, maxMessageSize, priorityRange);
+        var info = new QueueInfo(name, code, lastRecordId, maxQueueSize, maxMessageSize, priorityRange, records);
         AddQueueInfoCore(info);
-
-        if (data.Count > 0)
-        {
-            foreach (var record in data)
-            {
-                info.Add(record.Priority, record.Payload);
-            }
-        }
     }
 
     private QueueInfo GetRequiredQueueInfo(QueueName name)
@@ -77,16 +72,16 @@ public class QueueCollection
         throw new ArgumentException($"Очередь с названием {name} не найдена");
     }
 
-    public void AddRecord(QueueName name, long priority, byte[] data)
+    public void AddRecord(QueueName name, long priority, byte[] payload)
     {
         var queue = GetRequiredQueueInfo(name);
-        queue.Add(priority, data);
+        queue.Add(priority, payload);
     }
 
-    public void RemoveRecord(QueueName name, long priority, byte[] data)
+    public void RemoveRecord(QueueName name, RecordId id)
     {
         var queue = GetRequiredQueueInfo(name);
-        queue.Remove(priority, data);
+        queue.Remove(id);
     }
 
     public static QueueCollection CreateDefault()

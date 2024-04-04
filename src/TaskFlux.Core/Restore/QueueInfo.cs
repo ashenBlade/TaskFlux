@@ -1,16 +1,39 @@
 using System.Collections;
 using TaskFlux.Core.Queue;
 using TaskFlux.PriorityQueue;
+using InvalidOperationException = System.InvalidOperationException;
 
 namespace TaskFlux.Core.Restore;
 
+/// <summary>
+/// Объект, представляющий информацию об очереди.
+/// По факту - ее слепок, который необходим при сериализации 
+/// </summary>
 public class QueueInfo
 {
     public QueueInfo(QueueName queueName,
                      PriorityQueueCode code,
+                     RecordId lastId,
                      int? maxQueueSize,
                      int? maxPayloadSize,
                      (long, long)? priorityRange)
+    {
+        QueueName = queueName;
+        Code = code;
+        LastId = lastId;
+        MaxQueueSize = maxQueueSize;
+        MaxPayloadSize = maxPayloadSize;
+        PriorityRange = priorityRange;
+        Data = new QueueRecordsValuesCollection(this);
+    }
+
+    public QueueInfo(QueueName queueName,
+                     PriorityQueueCode code,
+                     RecordId lastId,
+                     int? maxQueueSize,
+                     int? maxPayloadSize,
+                     (long, long)? priorityRange,
+                     IReadOnlyCollection<QueueRecord> records)
     {
         QueueName = queueName;
         Code = code;
@@ -18,7 +41,31 @@ public class QueueInfo
         MaxPayloadSize = maxPayloadSize;
         PriorityRange = priorityRange;
         Data = new QueueRecordsValuesCollection(this);
+        ( LastId, _idToRecord ) = BuildRecords(records, lastId);
     }
+
+    private static (RecordId LastId, Dictionary<RecordId, QueueRecordData> Records) BuildRecords(
+        IReadOnlyCollection<QueueRecord> records,
+        RecordId lastId)
+    {
+        var dict = new Dictionary<RecordId, QueueRecordData>(records.Count);
+        foreach (var record in records)
+        {
+            dict.Add(record.Id, record.GetData());
+            // Проверка на всякий случай
+            if (lastId < record.Id)
+            {
+                lastId = record.Id;
+            }
+        }
+
+        return ( lastId, dict );
+    }
+
+    /// <summary>
+    /// Последняя запись назначенная очередью
+    /// </summary>
+    public RecordId LastId { get; private set; }
 
     /// <summary>
     /// Название очереди
@@ -56,118 +103,27 @@ public class QueueInfo
     /// <summary>
     /// Отображение ключа на множество его записей, вместо хранения абсолютно всех записей
     /// </summary>
-    private readonly Dictionary<long, HashSet<ByteArrayCounter>> _records = new();
+    private readonly Dictionary<RecordId, QueueRecordData> _idToRecord = new();
 
     public void Add(long priority, byte[] payload)
     {
-        // Если записи с этим ключом уже существуют
-        if (_records.TryGetValue(priority, out var existingSet))
+        var recordId = LastId.Increment();
+        try
         {
-            var counter = new ByteArrayCounter(payload);
-
-            // И если для этого множества тоже есть массивы с таким же содержимым
-            if (existingSet.TryGetValue(counter, out var existingArray))
-            {
-                // То увеличиваем это количество
-                existingArray.Increment();
-            }
-            else
-            {
-                // Иначе добавляем новую запись
-                existingSet.Add(counter);
-            }
+            _idToRecord.Add(recordId, new QueueRecordData(priority, payload));
+            LastId = recordId;
         }
-        // Иначе нужно инициализировать новое множество с переданным ключом
-        else
+        catch (ArgumentException ae)
         {
-            _records.Add(priority,
-                new HashSet<ByteArrayCounter>(new ByteArrayCounterEqualityComparer()) {new(payload)});
+            throw new InvalidOperationException($"Запись с ID {recordId} уже присутствует в очереди", ae);
         }
     }
 
-    public void Remove(long key, byte[] payload)
+    public void Remove(RecordId id)
     {
-        if (_records.TryGetValue(key, out var existingSet))
+        if (!_idToRecord.Remove(id))
         {
-            var record = new ByteArrayCounter(payload);
-            if (existingSet.TryGetValue(record, out var existingCounter))
-            {
-                // Уменьшаем кол-во элементов для этой записи,
-                // но не удаляем, т.к. возможно дальше будут еще записи с таким же содержимым
-                existingCounter.Decrement();
-            }
-        }
-    }
-
-    private sealed class ByteArrayCounter
-    {
-        public ByteArrayCounter(byte[] message)
-        {
-            Message = message;
-            // Изначально у нас только 1 элемент хранится
-            Count = 1;
-        }
-
-        /// <summary>
-        /// Сообщение из записи
-        /// </summary>
-        public byte[] Message { get; }
-
-        /// <summary>
-        /// Количество элементов этой записи.
-        /// Используем подсчет, вместо целого массива - данные не изменяемы
-        /// </summary>
-        public int Count { get; private set; }
-
-        public void Increment()
-        {
-            Count++;
-        }
-
-        public void Decrement()
-        {
-            if (Count > 0)
-            {
-                Count--;
-            }
-        }
-
-        private int? _hashcode;
-
-        public override int GetHashCode()
-        {
-            // ReSharper disable once NonReadonlyMemberInGetHashCode
-            return _hashcode ??= ComputeHashCode(Message);
-        }
-
-        private static int ComputeHashCode(ReadOnlySpan<byte> data)
-        {
-            // FNV
-            const uint prime = 0x01000193;
-            var hash = 0x811c9dc5;
-            foreach (var b in data)
-            {
-                hash *= prime;
-                hash ^= b;
-            }
-
-            return unchecked( ( int ) hash );
-        }
-    }
-
-    private sealed class ByteArrayCounterEqualityComparer : IEqualityComparer<ByteArrayCounter>
-    {
-        public bool Equals(ByteArrayCounter? left, ByteArrayCounter? right)
-        {
-            if (ReferenceEquals(left, right)) return true;
-            if (ReferenceEquals(left, null)) return false;
-            if (ReferenceEquals(right, null)) return false;
-            return left.GetHashCode() == right.GetHashCode() && left.Message.SequenceEqual(right.Message);
-        }
-
-        public int GetHashCode(ByteArrayCounter obj)
-        {
-            return obj.GetHashCode();
+            throw new InvalidOperationException($"Записи с ID {id} не найдено");
         }
     }
 
@@ -182,15 +138,9 @@ public class QueueInfo
 
         public IEnumerator<QueueRecord> GetEnumerator()
         {
-            foreach (var (priority, counters) in _queueInfo._records)
+            foreach (var (id, data) in _queueInfo._idToRecord)
             {
-                foreach (var counter in counters.Where(c => c.Count > 0))
-                {
-                    for (var i = 0; i < counter.Count; i++)
-                    {
-                        yield return new QueueRecord(priority, counter.Message);
-                    }
-                }
+                yield return new QueueRecord(id, data.Priority, data.Payload);
             }
         }
 
@@ -199,14 +149,20 @@ public class QueueInfo
             return GetEnumerator();
         }
 
-        private int? _count;
+        public int Count => _queueInfo._idToRecord.Count;
+    }
 
-        private int CalculateCount()
+    /// <summary>
+    /// Метод для выставления готовых данных в очередь.
+    /// </summary>
+    /// <param name="records">Записи, которые нужно записать</param>
+    /// <remarks>Используется только для тестов!</remarks>
+    internal void SetDataTest(IEnumerable<QueueRecord> records)
+    {
+        _idToRecord.Clear();
+        foreach (var record in records)
         {
-            // Суммируем по всем одинаковым ключам и количеству различных записей для этих ключей
-            return _queueInfo._records.Sum(r => r.Value.Sum(s => s.Count));
+            _idToRecord[record.Id] = record.GetData();
         }
-
-        public int Count => _count ??= CalculateCount();
     }
 }

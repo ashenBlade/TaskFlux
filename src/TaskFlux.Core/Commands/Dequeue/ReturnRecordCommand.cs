@@ -21,10 +21,10 @@ public class ReturnRecordCommand : Command
 
     public override Response Apply(IApplication application)
     {
-        if (Response.TryGetResult(out var queueName, out var key, out var message)
+        if (Response.TryGetResult(out var queueName, out var record)
          && application.TaskQueueManager.TryGetQueue(queueName, out var queue))
         {
-            queue.Enqueue(key, message);
+            queue.EnqueueExisting(record);
         }
 
         // Если не смогли получить очередь, то это значит, что она была удалена между чтением и коммитом.

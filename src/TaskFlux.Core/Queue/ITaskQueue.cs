@@ -13,10 +13,15 @@ public interface ITaskQueue : IReadOnlyTaskQueue
     /// <param name="priority">Ключ</param>
     /// <param name="payload">Данные</param>
     /// <returns>
-    /// <c>true</c> - значение было добавлено в очередь, <br/>
-    /// <c>false</c> - в очереди нет места для новых элементов
+    /// Новая добавленная запись
     /// </returns>
-    public EnqueueResult Enqueue(long priority, byte[] payload);
+    public QueueRecord Enqueue(long priority, byte[] payload);
+
+    /// <summary>
+    /// Добавить в очередь существующую запись
+    /// </summary>
+    /// <param name="record">Существующая запись</param>
+    public void EnqueueExisting(QueueRecord record);
 
     /// <summary>
     /// Получить элемент из очереди
@@ -26,7 +31,7 @@ public interface ITaskQueue : IReadOnlyTaskQueue
     public bool TryDequeue(out QueueRecord record);
 
     /// <summary>
-    /// Получить ожидателя новой записи в очереди
+    /// Получить подписчика новой записи для очереди
     /// </summary>
     public IQueueSubscriber Subscribe();
 }

@@ -27,12 +27,14 @@ public class DeltaEqualityComparer : IEqualityComparer<Delta>
 
     private bool Equal(AddRecordDelta left, AddRecordDelta right)
     {
-        return left.QueueName == right.QueueName && left.Key == right.Key && left.Message.SequenceEqual(right.Message);
+        return left.QueueName == right.QueueName
+            && left.Priority == right.Priority
+            && left.Payload.SequenceEqual(right.Payload);
     }
 
     private bool Equal(RemoveRecordDelta left, RemoveRecordDelta right)
     {
-        return left.QueueName == right.QueueName && left.Key == right.Key && left.Message.SequenceEqual(right.Message);
+        return left.QueueName == right.QueueName && left.Id == right.Id;
     }
 
     public int GetHashCode(Delta obj)

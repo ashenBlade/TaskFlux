@@ -1,4 +1,5 @@
 using TaskFlux.Core.Commands.Visitors;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Core.Commands.Dequeue;
 
@@ -7,14 +8,14 @@ namespace TaskFlux.Core.Commands.Dequeue;
 /// </summary>
 public class DequeueResponse : Response
 {
-    public static readonly DequeueResponse Empty = new(false, QueueName.Default, 0, null,
+    public static readonly DequeueResponse Empty = new(false, QueueName.Default, default,
         persistent: false /* Тут не важно - сохранять или нет */);
 
-    public static DequeueResponse CreatePersistent(QueueName queueName, long key, byte[] payload) =>
-        new(true, queueName, key, payload, persistent: true);
+    public static DequeueResponse CreatePersistent(QueueName queueName, QueueRecord record) =>
+        new(true, queueName, record, persistent: true);
 
-    public static DequeueResponse CreateNonPersistent(QueueName queueName, long key, byte[] payload) =>
-        new(true, queueName, key, payload, persistent: false);
+    public static DequeueResponse CreateNonPersistent(QueueName queueName, QueueRecord record) =>
+        new(true, queueName, record, persistent: false);
 
     public override ResponseType Type => ResponseType.Dequeue;
 
@@ -28,7 +29,7 @@ public class DequeueResponse : Response
     /// Используется для получения дельты удаления записи.
     /// Изначально <c>false</c> 
     /// </summary>
-    public bool Persistent { get; private set; } = false;
+    public bool Persistent { get; private set; }
 
     /// <summary>
     /// Название очереди, из которой необходимо читать записи
@@ -36,36 +37,28 @@ public class DequeueResponse : Response
     private readonly QueueName _queueName;
 
     /// <summary>
-    /// Прочитанный ключ
+    /// Прочитанная запись
     /// </summary>
-    private readonly long _key;
+    private readonly QueueRecord? _record;
 
-    /// <summary>
-    /// Прочитанное сообщение
-    /// </summary>
-    private readonly byte[] _message;
-
-    private DequeueResponse(bool success, QueueName queueName, long key, byte[]? payload, bool persistent)
+    private DequeueResponse(bool success, QueueName queueName, QueueRecord? record, bool persistent)
     {
         Success = success;
         Persistent = persistent;
         _queueName = queueName;
-        _key = key;
-        _message = payload ?? Array.Empty<byte>();
+        _record = record;
     }
 
-    public bool TryGetResult(out QueueName queueName, out long key, out byte[] payload)
+    public bool TryGetResult(out QueueName queueName, out QueueRecord record)
     {
-        if (Success)
+        if (_record is { } r)
         {
             queueName = _queueName;
-            key = _key;
-            payload = _message;
+            record = r;
             return true;
         }
 
-        key = 0;
-        payload = Array.Empty<byte>();
+        record = default!;
         queueName = QueueName.Default;
         return false;
     }

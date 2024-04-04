@@ -18,26 +18,26 @@ public class DeltaExtractorResponseVisitor : IResponseVisitor<Delta?>
 
     public Delta? Visit(DequeueResponse response)
     {
-        if (response.Persistent && response.TryGetResult(out var queueName, out var key, out var payload))
+        if (response.Persistent && response.TryGetResult(out var queueName, out var record))
         {
-            return new RemoveRecordDelta(queueName, key, payload);
+            return new RemoveRecordDelta(queueName, record.Id);
         }
 
         return NoDelta;
     }
 
-    public Delta? Visit(EnqueueResponse response)
+    public Delta Visit(EnqueueResponse response)
     {
-        return new AddRecordDelta(response.QueueName, response.Key, response.Message);
+        return new AddRecordDelta(response.QueueName, response.Record.Priority, response.Record.Payload);
     }
 
-    public Delta? Visit(CreateQueueResponse response)
+    public Delta Visit(CreateQueueResponse response)
     {
         return new CreateQueueDelta(response.QueueName, response.Code, response.MaxQueueSize, response.MaxMessageSize,
             response.PriorityRange);
     }
 
-    public Delta? Visit(DeleteQueueResponse response)
+    public Delta Visit(DeleteQueueResponse response)
     {
         return new DeleteQueueDelta(response.QueueName);
     }

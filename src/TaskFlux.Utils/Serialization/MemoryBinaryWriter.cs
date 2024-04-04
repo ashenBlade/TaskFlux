@@ -175,4 +175,12 @@ public struct MemoryBinaryWriter
 
     public static int EstimateResultSizeAsQueueName(string name) => sizeof(byte)                       // Размер
                                                                   + Encoding.ASCII.GetByteCount(name); // Длина 
+
+    public void Write(ulong value)
+    {
+        Span<byte> buffer = stackalloc byte[sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64BigEndian(buffer, value);
+        buffer.CopyTo(_buffer.Span[_index..]);
+        _index += sizeof(ulong);
+    }
 }

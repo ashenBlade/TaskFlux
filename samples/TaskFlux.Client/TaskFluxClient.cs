@@ -205,39 +205,7 @@ internal class TaskFluxClient : ITaskFluxClient
             if (networkResponse.Type == NetworkResponseType.Dequeue)
             {
                 var dequeueResponse = ( DequeueNetworkResponse ) networkResponse;
-                if (dequeueResponse.TryGetResponse(out var key, out var message))
-                {
-                    record = new QueueRecord(key, message);
-                    return true;
-                }
-
-                record = default;
-                return false;
-            }
-
-            throw new UnexpectedResponseException(NetworkResponseType.Dequeue, networkResponse.Type);
-        }
-
-        throw new UnexpectedPacketException(PacketType.CommandResponse, response.Type);
-    }
-
-    private static (long Key, byte[] Message) ExtractDequeueResponse(Packet response)
-    {
-        Helpers.CheckNotErrorResponse(response);
-
-        if (response.Type == PacketType.CommandResponse)
-        {
-            var commandResponse = ( CommandResponsePacket ) response;
-            var networkResponse = commandResponse.Response;
-            if (networkResponse.Type == NetworkResponseType.Dequeue)
-            {
-                var dequeueResponse = ( DequeueNetworkResponse ) networkResponse;
-                if (dequeueResponse.TryGetResponse(out var key, out var message))
-                {
-                    return ( key, message );
-                }
-
-                throw new QueueEmptyException();
+                return dequeueResponse.TryGetResponse(out record);
             }
 
             throw new UnexpectedResponseException(NetworkResponseType.Dequeue, networkResponse.Type);

@@ -1,5 +1,6 @@
 using System.Net;
 using TaskFlux.Core;
+using TaskFlux.Core.Queue;
 using TaskFlux.Network.Authorization;
 using TaskFlux.Network.Commands;
 using TaskFlux.Network.Packets;
@@ -38,13 +39,13 @@ public class PacketTests
         await AssertBase(new CommandRequestPacket(command));
     }
 
-    public static IEnumerable<object[]> NetworkResponses => new[]
+    public static IEnumerable<object[]> NetworkResponses => new NetworkResponse[][]
     {
-        new NetworkResponse[] {new CountNetworkResponse(123)},
-        new NetworkResponse[] {new DequeueNetworkResponse(( 123, "asdfasdf"u8.ToArray() ))},
-        new NetworkResponse[] {new ErrorNetworkResponse(2, "какая-то ошибка")},
-        new NetworkResponse[] {new PolicyViolationNetworkResponse(new GenericNetworkQueuePolicy("sample"))},
-        new NetworkResponse[] {new ListQueuesNetworkResponse(Array.Empty<ITaskQueueInfo>())},
+        [new CountNetworkResponse(123)],
+        [new DequeueNetworkResponse(new QueueRecord(new RecordId(1), 123, "asdfasdf"u8.ToArray()))],
+        [new ErrorNetworkResponse(2, "какая-то ошибка")],
+        [new PolicyViolationNetworkResponse(new GenericNetworkQueuePolicy("sample"))],
+        [new ListQueuesNetworkResponse(Array.Empty<ITaskQueueInfo>())],
     };
 
     [Theory(DisplayName = nameof(CommandResponsePacket))]

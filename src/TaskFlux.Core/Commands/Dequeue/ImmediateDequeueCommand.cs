@@ -1,5 +1,6 @@
 using TaskFlux.Core.Commands.Error;
 using TaskFlux.Core.Commands.Visitors;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Core.Commands.Dequeue;
 
@@ -34,16 +35,16 @@ public class ImmediateDequeueCommand : ModificationCommand
 
         if (queue.TryDequeue(out var record))
         {
-            return GetDequeueResponse(record.Priority, record.Payload);
+            return GetDequeueResponse(record);
         }
 
         return DequeueResponse.Empty;
     }
 
-    private DequeueResponse GetDequeueResponse(long key, byte[] payload)
+    private DequeueResponse GetDequeueResponse(QueueRecord record)
         => Persistent
-               ? DequeueResponse.CreatePersistent(Queue, key, payload)
-               : DequeueResponse.CreateNonPersistent(Queue, key, payload);
+               ? DequeueResponse.CreatePersistent(Queue, record)
+               : DequeueResponse.CreateNonPersistent(Queue, record);
 
     public override void Accept(ICommandVisitor visitor)
     {

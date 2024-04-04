@@ -6,7 +6,6 @@ using TaskFlux.Core.Restore;
 using TaskFlux.Core.Subscription;
 using TaskFlux.Persistence.ApplicationState;
 using TaskFlux.Persistence.ApplicationState.Deltas;
-using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Application;
 
@@ -40,16 +39,12 @@ public class TaskFluxApplicationFactory : IApplicationFactory<Command, Response>
     {
         if (snapshot is not null)
         {
-            // TODO: проверить эту десериализацию, т.к. заменил с MemoryStream
-            // Восстанавливаем из снапшота
             using var stream = new SnapshotStream(snapshot);
             return QueuesSnapshotSerializer.Deserialize(stream);
         }
 
         // Создаем новое начальное состояние с единственной очередью по умолчанию
-        var collection = new QueueCollection();
-        collection.CreateQueue(QueueName.Default, PriorityQueueCode.Heap4Arity, null, null, null);
-        return collection;
+        return QueueCollection.CreateDefault();
     }
 
     public ISnapshot CreateSnapshot(ISnapshot? previousState, IEnumerable<byte[]> deltas)

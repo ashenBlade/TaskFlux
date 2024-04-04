@@ -1,20 +1,23 @@
 using TaskFlux.Core.Commands.Visitors;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Core.Commands.Enqueue;
 
 public class EnqueueResponse : Response
 {
-    public EnqueueResponse(QueueName queueName, long key, byte[] message)
+    public override ResponseType Type => ResponseType.Enqueue;
+
+    public EnqueueResponse(QueueName queueName, QueueRecord record)
     {
         QueueName = queueName;
-        Key = key;
-        Message = message;
+        Record = record;
     }
 
-    public override ResponseType Type => ResponseType.Enqueue;
     public QueueName QueueName { get; }
-    public long Key { get; }
-    public byte[] Message { get; }
+    public QueueRecord Record { get; }
+    public long Priority => Record.Priority;
+    public byte[] Payload => Record.Payload;
+    public RecordId Id => Record.Id;
 
     public override void Accept(IResponseVisitor visitor)
     {

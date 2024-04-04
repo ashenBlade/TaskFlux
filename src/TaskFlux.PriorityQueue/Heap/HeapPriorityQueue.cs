@@ -5,7 +5,7 @@ namespace TaskFlux.PriorityQueue.Heap;
 /// <summary>
 /// Реализация приоритетной очереди, использующая 4-арную кучу - в каждом узле хранится 4 элемента, а не 1
 /// </summary>
-public class HeapPriorityQueue : IPriorityQueue
+public class HeapPriorityQueue<TData> : IPriorityQueue<TData>
 {
     /// <summary>
     /// Пороговое значение размера кучи, после которого мы будем проверять размер <see cref="_heap"/> для ее уменьшения при необходимости.
@@ -27,7 +27,7 @@ public class HeapPriorityQueue : IPriorityQueue
     /// Содержит только уникальные ключи.
     /// Для поддержки нескольких значений для одного и того же ключа, используется очередь значений.
     /// </summary>
-    private HeapRecord[] _heap = Array.Empty<HeapRecord>();
+    private HeapRecord<TData>[] _heap = Array.Empty<HeapRecord<TData>>();
 
     /// <summary>
     /// Размер занимаемой длины в массиве.
@@ -40,12 +40,12 @@ public class HeapPriorityQueue : IPriorityQueue
     /// <summary>
     /// Отображение ключа (приоритета) на очередь, которая хранит записи
     /// </summary>
-    private readonly Dictionary<long, ChunkedQueue> _keyToQueue = new();
+    private readonly Dictionary<long, ChunkedQueue<TData>> _keyToQueue = new();
 
     public PriorityQueueCode Code => PriorityQueueCode.Heap4Arity;
     public int Count { get; private set; }
 
-    public void Enqueue(long key, byte[] payload)
+    public void Enqueue(long key, TData payload)
     {
         if (_keyToQueue.TryGetValue(key, out var queue))
         {
@@ -58,7 +58,7 @@ public class HeapPriorityQueue : IPriorityQueue
         }
 
         // Записи с таким ключом еще нет 
-        var record = new HeapRecord(key, payload);
+        var record = new HeapRecord<TData>(key, payload);
 
         // Добавляем и в очередь,
         EnqueueCore(record);
@@ -74,7 +74,7 @@ public class HeapPriorityQueue : IPriorityQueue
     /// Вставить новый элемент в очередь
     /// </summary>
     /// <param name="record">Запись, которую нужно вставить</param>
-    private void EnqueueCore(HeapRecord record)
+    private void EnqueueCore(HeapRecord<TData> record)
     {
         /*
          * 1. Вставляем запись в последний лист дерева
@@ -161,7 +161,7 @@ public class HeapPriorityQueue : IPriorityQueue
 
         if (_size == 0)
         {
-            _heap = new HeapRecord[1];
+            _heap = new HeapRecord<TData>[1];
             return;
         }
 
@@ -172,14 +172,14 @@ public class HeapPriorityQueue : IPriorityQueue
         Array.Resize(ref _heap, _heap.Length * 2);
     }
 
-    public bool TryDequeue(out long key, out byte[] payload)
+    public bool TryDequeue(out long key, out TData payload)
     {
         // Если куча пуста
         if (_size == 0)
         {
             // То очевидно никаких данных в ней нет
             key = default;
-            payload = Array.Empty<byte>();
+            payload = default!;
             return false;
         }
 
@@ -211,12 +211,12 @@ public class HeapPriorityQueue : IPriorityQueue
         }
 
         // Иначе, эта очередь была пуста и нужно очистить данные
-        payload = Array.Empty<byte>();
-        _heap = Array.Empty<HeapRecord>();
+        payload = default!;
+        _heap = Array.Empty<HeapRecord<TData>>();
         return false;
     }
 
-    internal (long Key, byte[] Payload) Dequeue()
+    internal (long Key, TData Payload) Dequeue()
     {
         if (TryDequeue(out var key, out var payload))
         {
@@ -244,7 +244,7 @@ public class HeapPriorityQueue : IPriorityQueue
         // Если в куче был только 1 элемент, то куча может только стать пустой
         if (_size == 1)
         {
-            _heap = Array.Empty<HeapRecord>();
+            _heap = Array.Empty<HeapRecord<TData>>();
             _size = 0;
             return;
         }
@@ -338,14 +338,14 @@ public class HeapPriorityQueue : IPriorityQueue
         return ( parentIndex << 2 ) + 1;
     }
 
-    public IReadOnlyCollection<(long Priority, byte[] Payload)> ReadAllData()
+    public IReadOnlyCollection<(long Priority, TData Data)> ReadAllData()
     {
         if (_size == 0)
         {
-            return Array.Empty<(long, byte[])>();
+            return Array.Empty<(long, TData )>();
         }
 
-        var result = new List<(long, byte[])>();
+        var result = new List<(long, TData)>();
 
         for (var i = 0; i < _size; i++)
         {
@@ -356,18 +356,18 @@ public class HeapPriorityQueue : IPriorityQueue
         return result;
     }
 
-    public IEnumerable<(long, byte[])> ReadAllDataTest()
+    public IEnumerable<(long, TData)> ReadAllDataTest()
     {
         return _heap.SelectMany(x => x.Queue
                                       .GetAllRecordsTest()
                                       .Select(y => ( x.Key, y )));
     }
 
-    public List<(long, byte[])> DequeueAllTest()
+    public List<(long, TData)> DequeueAllTest()
     {
         return DequeueEnumerable().ToList();
 
-        IEnumerable<(long, byte[])> DequeueEnumerable()
+        IEnumerable<(long, TData)> DequeueEnumerable()
         {
             while (TryDequeue(out var key, out var value))
             {

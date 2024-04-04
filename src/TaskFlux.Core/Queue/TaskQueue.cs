@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics;
 using TaskFlux.Core.Policies;
 using TaskFlux.Core.Subscription;
 using TaskFlux.PriorityQueue;
@@ -9,51 +10,68 @@ internal class TaskQueue : ITaskQueue
 {
     public PriorityQueueCode Code => _queue.Code;
     public QueueName Name { get; }
-    private readonly QueuePolicy[] _policies;
-    private readonly IPriorityQueue _queue;
-    public int Count => _queue.Count;
-    private IQueueSubscriberManager _awaiterManager;
 
-    public TaskQueue(QueueName name,
-                     IPriorityQueue queue,
+    private readonly QueuePolicy[] _policies;
+    private readonly IPriorityQueue<PriorityQueueData> _queue;
+    private readonly IQueueSubscriberManager _awaiterManager;
+    public int Count => _queue.Count;
+    public IReadOnlyList<QueuePolicy> Policies => _policies;
+
+    public RecordId LastId { get; private set; }
+
+    public TaskQueue(RecordId lastId,
+                     QueueName name,
+                     IPriorityQueue<PriorityQueueData> queue,
                      QueuePolicy[] policies,
                      IQueueSubscriberManager awaiterManager)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(policies);
+        ArgumentNullException.ThrowIfNull(awaiterManager);
 
         _policies = policies;
         _awaiterManager = awaiterManager;
         _queue = queue;
         Name = name;
+        LastId = lastId;
     }
 
-    public EnqueueResult Enqueue(long priority, byte[] payload)
+    /// <summary>
+    /// Получить новый ID записи и обновить свой последний Id
+    /// </summary>
+    /// <returns>ID для новой записи</returns>
+    private RecordId ObtainNewRecordId() => LastId = LastId.Increment();
+
+    public QueueRecord Enqueue(long priority, byte[] payload)
     {
+        Debug.Assert(payload is not null, "payload is not null");
         ArgumentNullException.ThrowIfNull(payload);
 
-        foreach (var policy in _policies)
-        {
-            if (!policy.CanEnqueue(priority, payload, this))
-            {
-                return EnqueueResult.PolicyViolation(policy);
-            }
-        }
+        var id = ObtainNewRecordId();
+        var record = new QueueRecord(id, priority, payload);
 
         // Вставку в очередь необходимо сделать, только в случае если никто новых записей не ожидает
-        if (!_awaiterManager.TryNotifyRecord(new QueueRecord(priority, payload)))
+        if (!_awaiterManager.TryNotifyRecord(record))
         {
-            _queue.Enqueue(priority, payload);
+            _queue.Enqueue(priority, record.GetPriorityQueueData());
         }
 
-        return EnqueueResult.Success();
+        return record;
+    }
+
+    public void EnqueueExisting(QueueRecord record)
+    {
+        if (!_awaiterManager.TryNotifyRecord(record))
+        {
+            _queue.Enqueue(record.Priority, record.GetPriorityQueueData());
+        }
     }
 
     public bool TryDequeue(out QueueRecord record)
     {
-        if (_queue.TryDequeue(out var priority, out var payload))
+        if (_queue.TryDequeue(out var priority, out var data))
         {
-            record = new QueueRecord(priority, payload);
+            record = new QueueRecord(data.Id, priority, data.Payload);
             return true;
         }
 
@@ -74,18 +92,19 @@ internal class TaskQueue : ITaskQueue
 
     private class PriorityQueueRecordCollection : IReadOnlyCollection<QueueRecord>
     {
-        private readonly IReadOnlyCollection<(long Key, byte[] Payload)> _queueCollection;
+        private readonly IReadOnlyCollection<(long Key, PriorityQueueData IdPayload)> _queueCollection;
 
-        public PriorityQueueRecordCollection(IReadOnlyCollection<(long Key, byte[] Payload)> queueCollection)
+        public PriorityQueueRecordCollection(
+            IReadOnlyCollection<(long Key, PriorityQueueData IdPayload)> queueCollection)
         {
             _queueCollection = queueCollection;
         }
 
         public IEnumerator<QueueRecord> GetEnumerator()
         {
-            foreach (var (priority, payload) in _queueCollection)
+            foreach (var (priority, data) in _queueCollection)
             {
-                yield return new QueueRecord(priority, payload);
+                yield return new QueueRecord(data.Id, priority, data.Payload);
             }
         }
 

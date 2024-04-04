@@ -10,6 +10,7 @@ public interface ITaskQueueBuilder
     ITaskQueueBuilder WithPriorityRange(long min, long max);
     ITaskQueueBuilder WithQueueImplementation(PriorityQueueCode implementation);
     ITaskQueueBuilder WithMaxPayloadSize(int? maxPayloadSize);
+    ITaskQueueBuilder WithLastRecordId(RecordId id);
 
     /// <summary>
     /// Создать очередь с указанными параметрами

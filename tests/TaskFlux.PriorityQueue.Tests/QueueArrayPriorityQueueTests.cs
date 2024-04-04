@@ -1,6 +1,7 @@
 using FluentAssertions;
 using TaskFlux.PriorityQueue.QueueArray;
 using Xunit;
+using QueueArrayPriorityQueue = TaskFlux.PriorityQueue.QueueArray.QueueArrayPriorityQueue<int>;
 
 namespace TaskFlux.PriorityQueue.Tests;
 
@@ -9,26 +10,26 @@ public class QueueArrayPriorityQueueTests
 {
     private static QueueArrayPriorityQueue CreateQueue(long min,
                                                        long max,
-                                                       IEnumerable<(long, byte[])>? payload = null) =>
+                                                       IEnumerable<(long, int)>? payload = null) =>
         payload is null
             ? new(min, max)
             : new(min, max, payload);
 
-    private static readonly byte[] StubPayload = {1, 2, 3, 10, 144};
+    private static readonly int StubPayload = 867654;
 
     [Fact]
     public void Enqueue__КогдаКлюч0_ДиапазонМни10До10__ДолженВставитьЭлемент()
     {
         var queue = CreateQueue(-10, 10);
-        var payload = new byte[] {1, 2, 4,};
-        var key = 0L;
+        var data = 24562456;
+        var priority = 0L;
 
-        queue.Enqueue(key, payload);
+        queue.Enqueue(priority, data);
 
         var allData = queue.ToListUnordered();
         allData
            .Should()
-           .ContainSingle(x => x.Item1 == key && x.Item2.SequenceEqual(payload),
+           .ContainSingle(x => x.Item1 == priority && x.Item2 == data,
                 "В очередь добавлена единственная запись");
     }
 
@@ -49,7 +50,7 @@ public class QueueArrayPriorityQueueTests
 
             allData
                .Should()
-               .ContainSingle(x => x.Item1 == minKey && x.Item2.SequenceEqual(payload),
+               .ContainSingle(x => x.Item1 == minKey && x.Item2 == payload,
                     "Минимальный ключ должен включаться");
         }
 
@@ -63,7 +64,7 @@ public class QueueArrayPriorityQueueTests
             var allData = queue.ToListUnordered();
             allData
                .Should()
-               .ContainSingle(x => x.Item1 == maxKey && x.Item2.SequenceEqual(payload),
+               .ContainSingle(x => x.Item1 == maxKey && x.Item2 == payload,
                     "Максимальный ключ должен включаться");
         }
     }
@@ -73,12 +74,12 @@ public class QueueArrayPriorityQueueTests
     {
         var minKey = -25L;
         var maxKey = 100L;
-        var key = 101L;
+        var priority = 101L;
         var queue = CreateQueue(minKey, maxKey);
 
         // Пока не определился нужно ли задавать конкретное исключение, 
         // поэтому сейчас будем кидать любое исключение 
-        Assert.ThrowsAny<InvalidKeyRangeException>(() => queue.Enqueue(key, StubPayload));
+        Assert.ThrowsAny<InvalidKeyRangeException>(() => queue.Enqueue(priority, StubPayload));
     }
 
     [Fact]
@@ -90,31 +91,31 @@ public class QueueArrayPriorityQueueTests
 
         success
            .Should()
-           .BeFalse("Очередь пуста - нечего брать");
+           .BeFalse("очередь пуста");
     }
 
     [Fact]
     public void TryDequeue__КогдаВОчереди1Элемент__ДолженВернутьЭтотЭлемент()
     {
-        var key = 0L;
-        var payload = new byte[] {1, 56, 11, 80};
+        var priority = 0L;
+        var payload = 75645;
 
-        var record = ( key, payload );
+        var record = ( priority, payload );
         var queue = CreateQueue(-1, 1, new[] {record});
 
-        var success = queue.TryDequeue(out var actualKey, out var actualPayload);
+        var success = queue.TryDequeue(out var actualPriority, out var actualPayload);
 
         success
            .Should()
            .BeTrue("Очередь не была пуста");
 
-        actualKey
+        actualPriority
            .Should()
-           .Be(key, "Вставленный и полученный ключи должны быть одинаковы");
+           .Be(priority, "Вставленный и полученный ключи должны быть одинаковы");
 
         actualPayload
            .Should()
-           .Equal(payload, "Хранящиеся данные не должны быть измненены");
+           .Be(payload, "Хранящиеся данные не должны быть измненены");
     }
 
     [Fact]
@@ -140,8 +141,9 @@ public class QueueArrayPriorityQueueTests
         var min = -10L;
         var max = 10L;
         var queue = CreateQueue(min, max);
+        var random = new Random(111);
         var elements = Enumerable.Range(0, elementsCount)
-                                 .Select(_ => ( Key: Random.Shared.NextInt64(min, max + 1), Data: RandomData() ))
+                                 .Select(_ => ( Priority: random.NextInt64(min, max + 1), Data: random.Next() ))
                                  .ToArray();
 
         foreach (var (key, data) in elements)
@@ -158,14 +160,10 @@ public class QueueArrayPriorityQueueTests
     }
 
     [Fact]
-    public void ЧтениеСОдинмИТемЖеКлючом__ДолжноВозвращатьЭлементыВПорядкеДобавления()
+    public void ЧтениеСОднимИТемЖеКлючом__ДолженВозвращатьЭлементыВПорядкеДобавления()
     {
         var key = 1L;
-        var elements = new (long, byte[])[]
-        {
-            ( key, new byte[] {1} ), ( key, new byte[] {2} ), ( key, new byte[] {3} ), ( key, new byte[] {4} ),
-            ( key, new byte[] {5} ),
-        };
+        var elements = new (long, int)[] {( key, 1 ), ( key, 2 ), ( key, 3 ), ( key, 4 ), ( key, 5 ),};
         var queue = CreateQueue(-10L, 10L);
 
         // Записываем все элементы
@@ -185,11 +183,12 @@ public class QueueArrayPriorityQueueTests
     [Fact]
     public void TryDequeue__КогдаВОчередиНесколькоРазныхКлючей__ДолженВозвращатьЭлеметныСНаибольшимПриоритетом()
     {
-        var expected = ( Key: -9L, Data: new byte[] {6, 6, 3, 2} );
+        var expected = ( Priority: -9L, Data: 8765 );
+        var random = new Random(-1);
         var elements = new[]
         {
-            ( -8L, RandomData() ), ( 5L, RandomData() ), ( 0L, RandomData() ), ( 10L, RandomData() ), expected,
-            ( 1L, RandomData() ),
+            ( -8L, random.Next() ), ( 5L, random.Next() ), ( 0L, random.Next() ), ( 10L, random.Next() ), expected,
+            ( 1L, random.Next() ),
         };
         var queue = CreateQueue(-10L, 10L, elements);
 
@@ -202,11 +201,11 @@ public class QueueArrayPriorityQueueTests
 
         actualKey
            .Should()
-           .Be(expected.Key, "Должна быть получена запись с минимальным ключом");
+           .Be(expected.Priority, "Должна быть получена запись с минимальным ключом");
 
         actualData
            .Should()
-           .Equal(expected.Data, "Полученные данные должны быть равны записанным");
+           .Be(expected.Data, "Полученные данные должны быть равны записанным");
     }
 
     [Fact]
@@ -214,7 +213,7 @@ public class QueueArrayPriorityQueueTests
     {
         // В проядке убывания ключи расположены
         var elements = Enumerable.Range(0, 20)
-                                 .Select(i => ( Key: 10L - i, Data: new[] {( byte ) i, ( byte ) ( i + 1 )} ))
+                                 .Select(i => ( Priority: 10L - i, Data: i ))
                                  .ToArray();
 
         // Ожидаем их чтение в обратном порядке, т.е. по возрастанию
@@ -231,12 +230,5 @@ public class QueueArrayPriorityQueueTests
         actual
            .Should()
            .Equal(expected, "Ключи должны быть расположены в порядке возрастания");
-    }
-
-    private static byte[] RandomData()
-    {
-        var buffer = new byte[Random.Shared.Next(0, 100)];
-        Random.Shared.NextBytes(buffer);
-        return buffer;
     }
 }

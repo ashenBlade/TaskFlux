@@ -14,6 +14,7 @@ public class QueueInfoEqualityComparer : IEqualityComparer<QueueInfo>
         if (x.GetType() != y.GetType()) return false;
         return x.QueueName.Equals(y.QueueName)
             && x.Code == y.Code
+            && x.LastId == y.LastId
             && x.MaxQueueSize == y.MaxQueueSize
             && x.MaxPayloadSize == y.MaxPayloadSize
             && Nullable.Equals(x.PriorityRange, y.PriorityRange)
@@ -22,7 +23,7 @@ public class QueueInfoEqualityComparer : IEqualityComparer<QueueInfo>
 
     public int GetHashCode(QueueInfo obj)
     {
-        return HashCode.Combine(obj.QueueName, ( int ) obj.Code, obj.MaxQueueSize, obj.MaxPayloadSize,
+        return HashCode.Combine(obj.QueueName, obj.Code, obj.LastId, obj.MaxQueueSize, obj.MaxPayloadSize,
             obj.PriorityRange);
     }
 }

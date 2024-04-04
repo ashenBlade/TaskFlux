@@ -23,7 +23,7 @@ public static class QueuesSnapshotSerializer
         return new SerializedQueuesSnapshotCollection(queues.Select(q =>
         {
             var metadata = q.Metadata;
-            return ( q.Name, q.Code, metadata.MaxQueueSize, metadata.MaxPayloadSize, metadata.PriorityRange,
+            return ( q.Name, q.Code, q.LastId, metadata.MaxQueueSize, metadata.MaxPayloadSize, metadata.PriorityRange,
                      q.ReadAllData() );
         }), queues.Count);
     }
@@ -46,16 +46,19 @@ public static class QueuesSnapshotSerializer
         return new SerializedQueuesSnapshotCollection(collection.GetAllQueues().Select(ToTuple), collection.Count);
     }
 
-    private static (QueueName Name, PriorityQueueCode Code, int? MaxQueueSize, int? MaxPayloadSize, (long, long)?
+    private static (QueueName Name, PriorityQueueCode Code, RecordId LastId, int? MaxQueueSize, int? MaxPayloadSize, (
+        long, long)?
         PriorityRange, IReadOnlyCollection<QueueRecord> Data) ToTuple(this QueueInfo info)
     {
-        return ( info.QueueName, info.Code, info.MaxQueueSize, info.MaxPayloadSize, info.PriorityRange, info.Data );
+        return ( info.QueueName, info.Code, info.LastId, info.MaxQueueSize, info.MaxPayloadSize, info.PriorityRange,
+                 info.Data );
     }
 
     // TODO: заменить на QueueCollection
     private class SerializedQueuesSnapshotCollection : IReadOnlyCollection<ReadOnlyMemory<byte>>
     {
-        private readonly IEnumerable<(QueueName Name, PriorityQueueCode Code, int? MaxQueueSize, int? MaxPayloadSize, (
+        private readonly IEnumerable<(QueueName Name, PriorityQueueCode Code, RecordId LastId, int? MaxQueueSize, int?
+            MaxPayloadSize, (
             long, long)? PriorityRange, IReadOnlyCollection<QueueRecord> Data)> _queues;
 
         /// <summary>
@@ -66,7 +69,8 @@ public static class QueuesSnapshotSerializer
         public int Count { get; }
 
         public SerializedQueuesSnapshotCollection(
-            IEnumerable<(QueueName, PriorityQueueCode, int? MaxQueueSize, int? MaxPayloadSize, (long, long)?
+            IEnumerable<(QueueName, PriorityQueueCode, RecordId LastId, int? MaxQueueSize, int? MaxPayloadSize, (long,
+                long)?
                 PriorityRange, IReadOnlyCollection<QueueRecord> Data)> queues,
             int count)
         {
@@ -82,10 +86,10 @@ public static class QueuesSnapshotSerializer
             // Сразу записываем кол-во очередей - отправится с первым же чанком
             writer.Write(Count);
 
-            foreach (var (name, code, maxMessageSize, maxPayloadSize, priorityRange, data) in _queues)
+            foreach (var (name, code, lastId, maxMessageSize, maxPayloadSize, priorityRange, data) in _queues)
             {
                 // Сериализуем очередь
-                Serialize(name, code, maxMessageSize, maxPayloadSize, priorityRange, data, ref writer);
+                Serialize(name, code, lastId, maxMessageSize, maxPayloadSize, priorityRange, data, ref writer);
 
                 // Возвращаем представление очереди
                 yield return memory.ToArray();
@@ -104,6 +108,7 @@ public static class QueuesSnapshotSerializer
 
     private static void Serialize(QueueName name,
                                   PriorityQueueCode code,
+                                  RecordId lastId,
                                   int? maxQueueSize,
                                   int? maxMessageSize,
                                   (long, long)? priorityRange,
@@ -118,6 +123,9 @@ public static class QueuesSnapshotSerializer
 
         // 1.2 Тип реализации
         writer.Write(( int ) code);
+
+        // Последний ID записи
+        writer.Write(lastId);
 
         // 1.3 Максимальный размер очереди
         if (maxQueueSize is { } mqs)
@@ -164,8 +172,9 @@ public static class QueuesSnapshotSerializer
         }
 
         // 2.2 Сами элементы
-        foreach (var (priority, payload) in data)
+        foreach (var (id, priority, payload) in data)
         {
+            writer.Write(id);
             writer.Write(priority);
             writer.WriteBuffer(payload);
         }
@@ -196,6 +205,9 @@ public static class QueuesSnapshotSerializer
             // Реализация
             var implementation = ( PriorityQueueCode ) reader.ReadInt32();
 
+            // ID последней записи
+            var lastId = new RecordId(reader.ReadUInt64());
+
             // Максимальный размер очереди
             int? maxQueueSize = reader.ReadInt32();
             if (maxQueueSize == -1)
@@ -219,12 +231,11 @@ public static class QueuesSnapshotSerializer
                 priorityRange = ( min, max );
             }
 
-
             // Сами элементы
             var count = reader.ReadInt32();
             if (count == 0)
             {
-                collection.AddExistingQueue(name, implementation, maxQueueSize, maxPayloadSize, priorityRange,
+                collection.AddExistingQueue(name, implementation, lastId, maxQueueSize, maxPayloadSize, priorityRange,
                     Array.Empty<QueueRecord>());
                 continue;
             }
@@ -233,12 +244,14 @@ public static class QueuesSnapshotSerializer
 
             for (int j = 0; j < count; j++)
             {
-                var key = reader.ReadInt64();
+                var id = reader.ReadUInt64();
+                var priority = reader.ReadInt64();
                 var payload = reader.ReadBuffer();
-                records.Add(new QueueRecord(key, payload));
+                records.Add(new QueueRecord(new RecordId(id), priority, payload));
             }
 
-            collection.AddExistingQueue(name, implementation, maxQueueSize, maxPayloadSize, priorityRange, records);
+            collection.AddExistingQueue(name, implementation, lastId, maxQueueSize, maxPayloadSize, priorityRange,
+                records);
         }
 
         return collection;

@@ -10,55 +10,64 @@ public struct QueueRecord : IEquatable<QueueRecord>
     /// </summary>
     public QueueRecord()
     {
+        Id = RecordId.Start;
         Priority = 0;
         Payload = Array.Empty<byte>();
     }
 
-    public QueueRecord(long priority, byte[] payload)
+    public QueueRecord(RecordId id, long priority, byte[] payload)
     {
         Debug.Assert(payload is not null, "payload is not null", "Нагрузки записи не должна быть null");
 
+        Id = id;
         Priority = priority;
         Payload = payload;
     }
 
+    /// <summary>
+    /// ID записи
+    /// </summary>
+    public RecordId Id { get; }
+
+    /// <summary>
+    /// Приоритет записи
+    /// </summary>
     public long Priority { get; }
+
+    /// <summary>
+    /// Данные отправленные пользователем
+    /// </summary>
     public byte[] Payload { get; }
+
+    /// <summary>
+    /// Получить <see cref="PriorityQueueData"/> из ID и нагрузки этой записи
+    /// </summary>
+    /// <returns>Данные этой записи</returns>
+    public PriorityQueueData GetPriorityQueueData() => new(Id, Payload);
+
+    public QueueRecordData GetData() => new QueueRecordData(Priority, Payload);
 
     public override string ToString()
     {
-        return "QueueRecord()";
-    }
-
-    private int? _hashCode;
-
-    private int CalculateHashCode()
-    {
-        const int magic = 314159;
-        var initial = ( Payload.Length + Priority ).GetHashCode();
-
-        return Payload.Aggregate(initial, (hashCode, value) => unchecked( hashCode * magic + value ));
+        return $"QueueRecord(Id = {Id.Id})";
     }
 
     public override int GetHashCode()
     {
-        return _hashCode ??= CalculateHashCode();
+        return Id.GetHashCode();
     }
 
     public bool Equals(QueueRecord other)
     {
-        if (_hashCode is { } hc && other._hashCode is { } ohc && hc != ohc)
-        {
-            return false;
-        }
-
-        // TODO: неоптимально - заменить на ID 
-        return Priority == other.Priority
-            && Payload.SequenceEqual(other.Payload);
+        return Id == other.Id;
     }
 
-    public void Deconstruct(out long priority, out byte[] payload)
+    public static bool operator ==(QueueRecord left, QueueRecord right) => left.Equals(right);
+    public static bool operator !=(QueueRecord left, QueueRecord right) => !left.Equals(right);
+
+    public void Deconstruct(out RecordId id, out long priority, out byte[] payload)
     {
+        id = Id;
         priority = Priority;
         payload = Payload;
     }

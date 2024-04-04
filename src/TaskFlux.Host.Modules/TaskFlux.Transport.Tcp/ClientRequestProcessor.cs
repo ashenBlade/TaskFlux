@@ -443,12 +443,11 @@ internal class ClientRequestProcessor
          * - Nack - возвращаем запись обратно
          */
         SubmitResponse<Response> submitResponse;
-        var dequeueResponse = DequeueResponse.CreatePersistent(queue, record.Priority, record.Payload);
+        var dequeueResponse = DequeueResponse.CreatePersistent(queue, record);
         try
         {
             // Запись была получена
-            await client.SendAsync(
-                new CommandResponsePacket(new DequeueNetworkResponse(( record.Priority, record.Payload ))), token);
+            await client.SendAsync(new CommandResponsePacket(new DequeueNetworkResponse(record)), token);
 
             // Ожидаем либо Ack, либо Nack
             Packet request;
@@ -537,8 +536,8 @@ internal class ClientRequestProcessor
         if (response.Type is ResponseType.Dequeue)
         {
             var immediateDequeueResponse = ( DequeueResponse ) response;
-            return immediateDequeueResponse.TryGetResult(out var queue, out var priority, out var payload)
-                       ? ( new QueueRecord(priority, payload), queue )
+            return immediateDequeueResponse.TryGetResult(out var queue, out var record)
+                       ? ( record, queue )
                        : null;
         }
 

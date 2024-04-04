@@ -55,8 +55,8 @@ public class AwaitableDequeueCommand : ModificationCommand
 
     private DequeueResponse CreateDequeueResponse(QueueRecord record) =>
         Persistent
-            ? DequeueResponse.CreatePersistent(Queue, record.Priority, record.Payload)
-            : DequeueResponse.CreateNonPersistent(Queue, record.Priority, record.Payload);
+            ? DequeueResponse.CreatePersistent(Queue, record)
+            : DequeueResponse.CreateNonPersistent(Queue, record);
 
     public static AwaitableDequeueCommand CreatePersistent(QueueName queue, TimeSpan timeout) =>
         new(queue, timeout, true);
