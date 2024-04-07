@@ -48,7 +48,7 @@ public class TaskQueueManager : ITaskQueueManager
     /// </exception>
     /// <exception cref="ArgumentNullException">Какой-то объект в коллекции <paramref name="queues"/> - <c>null</c></exception>
     private TaskQueueManager(Dictionary<QueueName, ITaskQueue> queues,
-                             IQueueSubscriberManagerFactory queueSubscriberManagerFactory)
+        IQueueSubscriberManagerFactory queueSubscriberManagerFactory)
     {
         _queueSubscriberManagerFactory = queueSubscriberManagerFactory;
         _queues = queues;
@@ -140,7 +140,7 @@ public class TaskQueueManager : ITaskQueueManager
     }
 
     public static TaskQueueManager CreateFrom(QueueCollection collection,
-                                              IQueueSubscriberManagerFactory queueSubscriberManagerFactory)
+        IQueueSubscriberManagerFactory queueSubscriberManagerFactory)
     {
         var queues = CreateTaskQueueDictCheck(collection, queueSubscriberManagerFactory);
         return new TaskQueueManager(queues, queueSubscriberManagerFactory);
@@ -169,11 +169,12 @@ public class TaskQueueManager : ITaskQueueManager
             }
 
             var queue = new TaskQueueBuilder(info.QueueName, info.Code, factory)
-                       .WithMaxPayloadSize(info.MaxPayloadSize)
-                       .WithMaxQueueSize(info.MaxQueueSize)
-                       .WithPriorityRange(info.PriorityRange)
-                       .WithData(info.Data)
-                       .Build();
+                .WithMaxPayloadSize(info.MaxPayloadSize)
+                .WithMaxQueueSize(info.MaxQueueSize)
+                .WithPriorityRange(info.PriorityRange)
+                .WithLastRecordId(info.LastId)
+                .WithData(info.Data)
+                .Build();
 
             try
             {
