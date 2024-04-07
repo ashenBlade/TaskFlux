@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Serilog;
 using TaskFlux.Application;
@@ -14,8 +15,8 @@ namespace TaskFlux.Host.Infrastructure;
 public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddNodeStateObserverHostedService(this IServiceCollection sc,
-                                                                       FileSystemPersistenceFacade persistence,
-                                                                       RaftConsensusModule<Command, Response> module)
+        FileSystemPersistenceFacade persistence,
+        RaftConsensusModule<Command, Response> module)
     {
         return sc.AddHostedService(_ =>
             new NodeStateObserverBackgroundService(module, persistence, TimeSpan.FromSeconds(5),
@@ -73,7 +74,8 @@ public static class ServiceCollectionExtensions
 
                         var hostNameOrAddress = parts[0];
                         Log.Debug("Ищу IP адреса для хоста {HostName}", hostNameOrAddress);
-                        var addresses = Dns.GetHostAddresses(hostNameOrAddress);
+                        var addresses = Dns.GetHostAddresses(hostNameOrAddress)
+                            .Where(ip => ip.AddressFamily == AddressFamily.InterNetwork).ToArray();
                         Log.Debug("Найденные адреса для хоста: {IPAddresses}", addresses);
                         foreach (var ip in addresses)
                         {
@@ -88,8 +90,8 @@ public static class ServiceCollectionExtensions
                 }
 
                 var kestrelOptions = new ConfigurationBuilder()
-                                    .AddJsonFile("kestrel.settings.json", optional: true)
-                                    .Build();
+                    .AddJsonFile("kestrel.settings.json", optional: true)
+                    .Build();
                 kestrel.Configure(kestrelOptions, reloadOnChange: true);
             });
         });
