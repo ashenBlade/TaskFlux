@@ -22,15 +22,12 @@ public class NetworkResponseEqualityComparer : IEqualityComparer<NetworkResponse
 
     private static bool Check(DequeueNetworkResponse first, DequeueNetworkResponse second)
     {
-        return (
-                   first.Data is null && second.Data is null
-               )
-            || (
-                   first.Data is var (firstKey, firstData)
-                && second.Data is var (secondKey, secondData)
-                && firstKey == secondKey
-                && firstData.SequenceEqual(secondData)
-               );
+        return ( first.Record is null && second.Record is null )
+            || ( first.Record is var (firstId, firstPriority, firstPayload)
+              && second.Record is var (secondId, secondPriority, secondPayload)
+              && firstId == secondId
+              && firstPriority == secondPriority
+              && firstPayload.SequenceEqual(secondPayload) );
     }
 
     private static bool Check(ListQueuesNetworkResponse first, ListQueuesNetworkResponse second)

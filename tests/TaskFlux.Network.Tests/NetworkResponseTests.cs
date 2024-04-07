@@ -1,4 +1,5 @@
 using TaskFlux.Core;
+using TaskFlux.Core.Queue;
 using TaskFlux.Network.Responses;
 using TaskFlux.Network.Responses.Policies;
 
@@ -35,25 +36,36 @@ public class NetworkResponseTests
     [InlineData(100)]
     [InlineData(long.MaxValue)]
     [InlineData(long.MinValue)]
-    public void Dequeue__Key__Serialization(long key)
+    public void Dequeue__Priority__Serialization(long priority)
     {
+        var id = new RecordId(123);
         var data = "данные в сообщении"u8.ToArray();
-        AssertBase(new DequeueNetworkResponse(( key, data )));
+        AssertBase(new DequeueNetworkResponse(new QueueRecord(id, priority, data)));
     }
 
-    public static IEnumerable<object[]> DequeueData => new[]
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(123)]
+    [InlineData(578645)]
+    [InlineData(ulong.MaxValue)]
+    public void Dequeue__Id__Serialization(ulong id)
     {
-        new object[] {Array.Empty<byte>()}, new object[] {new byte[] {1}}, new object[] {new[] {byte.MaxValue}},
-        new object[] {new[] {byte.MinValue}}, new object[] {new byte[] {1, 2, 3, 4, 5, 6}},
-        new object[] {Enumerable.Range(0, 1024).Select(i => ( byte ) ( i % 256 )).ToArray()},
+        AssertBase(new DequeueNetworkResponse(new QueueRecord(new RecordId(id), 0, "asdfasdfasdf"u8.ToArray())));
+    }
+
+    public static IEnumerable<object[]> DequeuePayload => new object[][]
+    {
+        [Array.Empty<byte>()], [new byte[] {1}], [new[] {byte.MaxValue}], [new[] {byte.MinValue}],
+        [new byte[] {1, 2, 3, 4, 5, 6}], [Enumerable.Range(0, 1024).Select(i => ( byte ) ( i % 256 )).ToArray()],
     };
 
     [Theory]
-    [MemberData(nameof(DequeueData))]
-    public void Dequeue__Data__Serialization(byte[] data)
+    [MemberData(nameof(DequeuePayload))]
+    public void Dequeue__Payload__Serialization(byte[] payload)
     {
-        const long key = 1111;
-        AssertBase(new DequeueNetworkResponse(( key, data )));
+        const long priority = 1111;
+        AssertBase(new DequeueNetworkResponse(new QueueRecord(new RecordId(1), priority, payload)));
     }
 
     [Fact]

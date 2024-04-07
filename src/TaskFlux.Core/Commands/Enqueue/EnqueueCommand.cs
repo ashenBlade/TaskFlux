@@ -1,21 +1,23 @@
 using TaskFlux.Core.Commands.Error;
 using TaskFlux.Core.Commands.PolicyViolation;
 using TaskFlux.Core.Commands.Visitors;
+using TaskFlux.Core.Policies;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Core.Commands.Enqueue;
 
 public class EnqueueCommand : ModificationCommand
 {
     public QueueName Queue { get; }
-    public long Key { get; }
-    public byte[] Message { get; }
+    public long Priority { get; }
+    public byte[] Payload { get; }
 
-    public EnqueueCommand(long key, byte[] message, QueueName queue)
+    public EnqueueCommand(long priority, byte[] payload, QueueName queue)
     {
-        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(payload);
 
-        Key = key;
-        Message = message;
+        Priority = priority;
+        Payload = payload;
         Queue = queue;
     }
 
@@ -26,14 +28,32 @@ public class EnqueueCommand : ModificationCommand
             return DefaultErrors.QueueDoesNotExist;
         }
 
-        var result = queue.Enqueue(Key, Message);
-
-        if (result.TryGetViolatedPolicy(out var policy))
+        if (TryGetViolatedPolicy(queue, Priority, Payload, out var violatedPolicy))
         {
-            return new PolicyViolationResponse(policy);
+            return new PolicyViolationResponse(violatedPolicy);
         }
 
-        return new EnqueueResponse(Queue, Key, Message);
+        var record = queue.Enqueue(Priority, Payload);
+
+        return new EnqueueResponse(Queue, record);
+    }
+
+    private bool TryGetViolatedPolicy(ITaskQueue queue, long priority, byte[] payload, out QueuePolicy violatedPolicy)
+    {
+        if (queue.Policies is {Count: > 0} policies)
+        {
+            foreach (var policy in policies)
+            {
+                if (!policy.CanEnqueue(priority, payload, queue))
+                {
+                    violatedPolicy = policy;
+                    return true;
+                }
+            }
+        }
+
+        violatedPolicy = default!;
+        return false;
     }
 
     public override void Accept(ICommandVisitor visitor)

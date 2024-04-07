@@ -59,7 +59,9 @@ public class RequestController(
             return GetInvalidQueueNameResult();
         }
 
-        return await HandleCommandCoreAsync(new DequeueRecordCommand(queueName), token);
+        return await HandleCommandCoreAsync(
+                   ImmediateDequeueCommand.CreatePersistent(queueName), // Сразу сохраняем результат операции  
+                   token);
     }
 
     [HttpPost("count")]
@@ -132,12 +134,13 @@ public class RequestController(
         public void Visit(DequeueResponse response)
         {
             Payload["type"] = "dequeue";
-            if (response.TryGetResult(out var queueName, out var key, out var message))
+            if (response.TryGetResult(out var queueName, out var record))
             {
                 Payload["ok"] = true;
-                Payload["key"] = key;
                 Payload["queue"] = queueName.Name;
-                Payload["data"] = Convert.ToBase64String(message);
+                Payload["id"] = record.Id.Id;
+                Payload["priority"] = record.Priority;
+                Payload["data"] = Convert.ToBase64String(record.Payload);
             }
             else
             {
@@ -197,6 +200,11 @@ public class RequestController(
         public void Visit(PolicyViolationResponse response)
         {
             Payload["type"] = "ok";
+        }
+
+        public void Visit(QueueSubscriberResponse response)
+        {
+            throw new InvalidOperationException("HTTP интерфейс пока не поддерживает возможность подписки");
         }
     }
 }

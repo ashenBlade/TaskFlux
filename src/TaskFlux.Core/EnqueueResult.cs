@@ -1,19 +1,23 @@
 using System.Diagnostics;
 using TaskFlux.Core.Policies;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Core;
 
+/// <summary>
+/// Результат операции вставки записи в очередь
+/// </summary>
 public sealed class EnqueueResult
 {
-    /// <summary>
-    /// Успешно ли выполнена операция
-    /// </summary>
-    public bool IsSuccess => _violatedPolicy is null;
-
     /// <summary>
     /// Политика, которая была нарушена в результате выполнения команды
     /// </summary>
     private readonly QueuePolicy? _violatedPolicy;
+
+    /// <summary>
+    /// Запись очереди если вставка успешна
+    /// </summary>
+    private readonly QueueRecord? _createdRecord;
 
     /// <summary>
     /// Метод для получения объекта нарушенной политики 
@@ -26,15 +30,22 @@ public sealed class EnqueueResult
      ?? throw new InvalidOperationException(
             "Нельзя получить объект нарушенной политики: результат выполнения успешный");
 
-
-    internal EnqueueResult(QueuePolicy? violatedPolicy)
+    private EnqueueResult(QueuePolicy? violatedPolicy, QueueRecord? record)
     {
         _violatedPolicy = violatedPolicy;
+        _createdRecord = record;
     }
 
-    public bool TryGetResult()
+    public bool TryGetRecord(out QueueRecord record)
     {
-        return _violatedPolicy is null;
+        if (_createdRecord is { } r)
+        {
+            record = r;
+            return true;
+        }
+
+        record = default;
+        return false;
     }
 
     public bool TryGetViolatedPolicy(out QueuePolicy violatedPolicy)
@@ -43,11 +54,9 @@ public sealed class EnqueueResult
         return _violatedPolicy is not null;
     }
 
-    private static readonly EnqueueResult SuccessEnqueueResult = new(null);
-
-    public static EnqueueResult Success()
+    public static EnqueueResult Success(QueueRecord record)
     {
-        return SuccessEnqueueResult;
+        return new EnqueueResult(null, record);
     }
 
     public static EnqueueResult PolicyViolation(QueuePolicy violatedPolicy)
@@ -56,6 +65,6 @@ public sealed class EnqueueResult
             "violatedPolicy is not null",
             "Объект нарушенной политики должен быть указан");
 
-        return new EnqueueResult(violatedPolicy);
+        return new EnqueueResult(violatedPolicy, null);
     }
 }

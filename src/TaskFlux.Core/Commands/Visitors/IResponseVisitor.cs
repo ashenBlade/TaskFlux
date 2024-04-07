@@ -21,6 +21,7 @@ public interface IResponseVisitor
     public void Visit(OkResponse response);
     public void Visit(ListQueuesResponse response);
     public void Visit(PolicyViolationResponse response);
+    public void Visit(QueueSubscriberResponse response);
 }
 
 public interface IResponseVisitor<out T>
@@ -34,4 +35,5 @@ public interface IResponseVisitor<out T>
     public T Visit(OkResponse response);
     public T Visit(ListQueuesResponse response);
     public T Visit(PolicyViolationResponse response);
+    public T Visit(QueueSubscriberResponse response);
 }

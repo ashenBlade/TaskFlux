@@ -1,30 +1,44 @@
 using System.Buffers;
+using System.Diagnostics;
 using TaskFlux.Core;
+using TaskFlux.Core.Queue;
+using TaskFlux.Core.Restore;
 using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Persistence.ApplicationState.Deltas;
 
 public class AddRecordDelta : Delta
 {
-    public AddRecordDelta(QueueName queueName, long key, byte[] message)
+    public AddRecordDelta(QueueName queueName, long priority, byte[] payload)
+    {
+        Debug.Assert(payload is not null, "payload is not null");
+        QueueName = queueName;
+        Priority = priority;
+        Payload = payload;
+    }
+
+    public AddRecordDelta(QueueName queueName, QueueRecordData data)
     {
         QueueName = queueName;
-        Key = key;
-        Message = message;
+        Priority = data.Priority;
+        Payload = data.Payload;
     }
 
     public override DeltaType Type => DeltaType.AddRecord;
     public QueueName QueueName { get; }
-    public long Key { get; }
-    public byte[] Message { get; }
+    public long Priority { get; }
+    public byte[] Payload { get; }
 
     public override byte[] Serialize()
     {
         var bufferSize = sizeof(DeltaType)
+                         // Название очереди
                        + MemoryBinaryWriter.EstimateResultSize(QueueName)
+                         // Приоритет
                        + sizeof(long)
+                         // Данные записи
                        + sizeof(int)
-                       + Message.Length;
+                       + Payload.Length;
 
         var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
         try
@@ -33,8 +47,8 @@ public class AddRecordDelta : Delta
             var writer = new MemoryBinaryWriter(memory);
             writer.Write(DeltaType.AddRecord);
             writer.Write(QueueName);
-            writer.Write(Key);
-            writer.WriteBuffer(Message);
+            writer.Write(Priority);
+            writer.WriteBuffer(Payload);
             return memory.ToArray();
         }
         finally
@@ -47,13 +61,13 @@ public class AddRecordDelta : Delta
     {
         var reader = new SpanBinaryReader(buffer.AsSpan(1));
         var queueName = reader.ReadQueueName();
-        var key = reader.ReadInt64();
-        var message = reader.ReadBuffer();
-        return new AddRecordDelta(queueName, key, message);
+        var priority = reader.ReadInt64();
+        var payload = reader.ReadBuffer();
+        return new AddRecordDelta(queueName, priority, payload);
     }
 
     public override void Apply(QueueCollection queues)
     {
-        queues.AddRecord(QueueName, Key, Message);
+        queues.AddRecord(QueueName, Priority, Payload);
     }
 }

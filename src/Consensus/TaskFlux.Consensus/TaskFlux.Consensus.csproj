@@ -22,7 +22,7 @@
     </ItemGroup>
     
     <ItemGroup>
-      <ProjectReference Include="..\..\TaskFlux.Core\TaskFlux.Core.csproj" />
+        <ProjectReference Include="..\..\TaskFlux.Core\TaskFlux.Core.csproj"/>
         <ProjectReference Include="..\..\TaskFlux.Utils\TaskFlux.Utils.csproj"/>
     </ItemGroup>
 

@@ -9,6 +9,7 @@ public enum ResponseType : byte
 
     // Ответы, специализированные под конкретные ситуации
     Dequeue = ( byte ) 'd',
+    Subscription = ( byte ) 's',
     Count = ( byte ) 'c',
     ListQueues = ( byte ) 'l',
     CreateQueue = ( byte ) 'q',

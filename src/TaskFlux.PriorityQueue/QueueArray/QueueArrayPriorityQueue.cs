@@ -8,7 +8,7 @@ namespace TaskFlux.PriorityQueue.QueueArray;
 /// которая использует массив списков,
 /// где индексами являются ключи записей
 /// </summary>
-public class QueueArrayPriorityQueue : IPriorityQueue
+public class QueueArrayPriorityQueue<TData> : IPriorityQueue<TData>
 {
     /// <summary>
     /// Начальное значение ключа (включительно)
@@ -24,14 +24,14 @@ public class QueueArrayPriorityQueue : IPriorityQueue
     /// Массив из очередей для каждого возможного значения ключа.
     /// Индексы должны корректироваться в соответствии 
     /// </summary>
-    private Queue<byte[]>?[]? _queues;
+    private Queue<TData>?[]? _queues;
 
-    private Queue<byte[]>?[] GetQueues() => _queues ??= CreateEmptyQueueArray();
+    private Queue<TData>?[] GetQueues() => _queues ??= CreateEmptyQueueArray();
 
-    private Queue<byte[]>[] CreateEmptyQueueArray()
+    private Queue<TData>[] CreateEmptyQueueArray()
     {
         // Берем не только элементы между ними, но и границы включительно
-        return new Queue<byte[]>[Max - Min + 1];
+        return new Queue<TData>[Max - Min + 1];
     }
 
     public PriorityQueueCode Code => PriorityQueueCode.QueueArray;
@@ -57,7 +57,7 @@ public class QueueArrayPriorityQueue : IPriorityQueue
     /// <param name="max">Максимальный ключ</param>
     /// <param name="values">Значения для инициализации</param>
     /// <remarks>Порядок в заполняемых значениях не учитывается. Чтобы порядок сохранился, вручную заполняй</remarks>
-    internal QueueArrayPriorityQueue(long min, long max, IEnumerable<(long Key, byte[] Data)> values) : this(min, max)
+    internal QueueArrayPriorityQueue(long min, long max, IEnumerable<(long Key, TData Data)> values) : this(min, max)
     {
         var queues = CreateEmptyQueueArray();
 
@@ -66,7 +66,7 @@ public class QueueArrayPriorityQueue : IPriorityQueue
                                    t => t.Data)
                               .ToDictionary(g => KeyToIndex(g.Key)))
         {
-            queues[k] = new Queue<byte[]>(e);
+            queues[k] = new Queue<TData>(e);
         }
 
         _queues = queues;
@@ -103,14 +103,14 @@ public class QueueArrayPriorityQueue : IPriorityQueue
         return key;
     }
 
-    public void Enqueue(long key, byte[] payload)
+    public void Enqueue(long key, TData payload)
     {
         var index = KeyToIndex(key);
-        var queue = GetQueues()[index] ??= new Queue<byte[]>(1);
+        var queue = GetQueues()[index] ??= new Queue<TData>(1);
         queue.Enqueue(payload);
     }
 
-    public bool TryDequeue(out long key, out byte[] value)
+    public bool TryDequeue(out long key, out TData value)
     {
         var queues = GetQueues();
         for (long i = 0; i < queues.Length; i++)
@@ -129,21 +129,21 @@ public class QueueArrayPriorityQueue : IPriorityQueue
         return false;
     }
 
-    public IReadOnlyCollection<(long Priority, byte[] Payload)> ReadAllData()
+    public IReadOnlyCollection<(long Priority, TData Data)> ReadAllData()
     {
         return new NullableQueueArrayCollection(this);
     }
 
-    private class NullableQueueArrayCollection : IReadOnlyCollection<(long, byte[])>
+    private class NullableQueueArrayCollection : IReadOnlyCollection<(long, TData)>
     {
-        private readonly QueueArrayPriorityQueue _parent;
+        private readonly QueueArrayPriorityQueue<TData> _parent;
 
-        public NullableQueueArrayCollection(QueueArrayPriorityQueue parent)
+        public NullableQueueArrayCollection(QueueArrayPriorityQueue<TData> parent)
         {
             _parent = parent;
         }
 
-        public IEnumerator<(long, byte[])> GetEnumerator()
+        public IEnumerator<(long, TData)> GetEnumerator()
         {
             var queues = _parent._queues;
             if (queues is null)
@@ -172,14 +172,14 @@ public class QueueArrayPriorityQueue : IPriorityQueue
         public int Count => _parent.Count;
     }
 
-    internal List<(long, byte[])> ToListUnordered()
+    internal List<(long, TData)> ToListUnordered()
     {
         if (_queues is null)
         {
-            return new List<(long, byte[])>();
+            return new List<(long, TData)>();
         }
 
-        var result = new List<(long, byte[])>();
+        var result = new List<(long, TData)>();
 
         for (var i = 0; i < _queues.Length; i++)
         {
@@ -198,14 +198,14 @@ public class QueueArrayPriorityQueue : IPriorityQueue
     /// То же самое, что и самому вызывать TryDequeue и сохранять результаты в список
     /// </summary>
     /// <returns>Список из прочитанных элементов очереди</returns>
-    internal List<(long, byte[])> DequeueAll()
+    internal List<(long, TData)> DequeueAll()
     {
         if (_queues is null)
         {
-            return new List<(long, byte[])>();
+            return new List<(long, TData)>();
         }
 
-        var result = new List<(long, byte[])>();
+        var result = new List<(long, TData)>();
 
         for (var i = 0; i < _queues.Length; i++)
         {

@@ -1,3 +1,5 @@
+using TaskFlux.PriorityQueue;
+
 namespace TaskFlux.Core.Queue;
 
 /// <summary>
@@ -22,6 +24,15 @@ public interface ITaskQueueManager : IReadOnlyTaskQueueManager
     /// <returns><c>true</c> - очередь добавлена, <c>false</c> - очередь не добавлена из-за уже существующей очереди с таким-же названием</returns>
     /// <exception cref="ArgumentNullException"><paramref name="taskQueue"/> - <c>null</c></exception>
     public bool TryAddQueue(QueueName name, ITaskQueue taskQueue);
+
+    /// <summary>
+    /// Создать фабрику для создания очередей
+    /// </summary>
+    /// <param name="name">Название очереди</param>
+    /// <param name="code">Код реализации очереди</param>
+    /// <returns>Билдер для новой очереди</returns>
+    /// <remarks>Этот метод создает нового билдера без учета того существует ли очередь с таким же названием или нет. Это нужно проверять заранее</remarks>
+    public ITaskQueueBuilder CreateBuilder(QueueName name, PriorityQueueCode code);
 
     /// <summary>
     /// Удалить очередь с указанным названием

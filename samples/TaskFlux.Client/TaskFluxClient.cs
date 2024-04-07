@@ -2,6 +2,7 @@
 using System.Net.Sockets;
 using TaskFlux.Client.Exceptions;
 using TaskFlux.Core;
+using TaskFlux.Core.Queue;
 using TaskFlux.Network;
 using TaskFlux.Network.Commands;
 using TaskFlux.Network.Packets;
@@ -77,31 +78,39 @@ internal class TaskFluxClient : ITaskFluxClient
     /// <exception cref="QueueEmptyException">Очередь была пуста</exception>
     /// <exception cref="QueueNotExistException">Указанной очереди не существует</exception>
     /// <exception cref="UnexpectedPacketException">От сервера пришел неожиданный пакет</exception>
-    /// <exception cref="UnexpectedResponseException">Сервер отправио неожиданный ответ</exception>
+    /// <exception cref="UnexpectedResponseException">Сервер отправил неожиданный ответ</exception>
     /// <exception cref="NotLeaderException">Узел, с которым велось взаимодействие, перестал быть лидером</exception>
     /// <exception cref="ErrorResponseException">Сервер ответил ошибкой</exception>
     public async Task<(long Key, byte[] Message)> DequeueAsync(QueueName queue, CancellationToken token = default)
     {
         CheckDisposed();
+
         Debug.Assert(_stream is not null, "_stream is not null",
             "Поток соединения null, но проверка CheckDisposed прошла без исключения");
 
-        // 1. Отправляем DequeueRequest
-        var dequeueRequest = new CommandRequestPacket(new DequeueNetworkCommand(queue));
-        await dequeueRequest.SerializeAsync(_stream, token);
+        const uint defaultTimeout = 1000 * 60; // 1 минута
+        while (true)
+        {
+            // 1. Отправляем DequeueRequest
+            var dequeueRequest = new CommandRequestPacket(new DequeueNetworkCommand(queue, defaultTimeout));
+            await dequeueRequest.SerializeAsync(_stream, token);
 
-        // 2. Получаем DequeueResponse
-        var response = await Packet.DeserializeAsync(_stream, token);
-        var (key, message) = ExtractDequeueResponse(response);
+            // 2. Получаем DequeueResponse - либо пустой, либо 
+            var response = await Packet.DeserializeAsync(_stream, token);
+            if (TryExtractDequeueResponse(response, out var record))
+            {
+                // 3. Если ответ получен - ок, коммитим
+                await new AcknowledgeRequestPacket().SerializeAsync(_stream, token);
 
-        // 3. Отправляем Ack
-        await new AcknowledgeRequestPacket().SerializeAsync(_stream, token);
+                // 4. Получаем Ok
+                var ok = await Packet.DeserializeAsync(_stream, token);
 
-        // 4. Получаем Ok
-        var ok = await Packet.DeserializeAsync(_stream, token);
-        ValidateOkResponse(ok);
+                ValidateOkResponse(ok);
+                return ( record.Priority, record.Payload );
+            }
 
-        return ( key, message );
+            // Заходим на новый круг
+        }
     }
 
     /// <summary>
@@ -185,7 +194,7 @@ internal class TaskFluxClient : ITaskFluxClient
         }
     }
 
-    private static (long Key, byte[] Message) ExtractDequeueResponse(Packet response)
+    private static bool TryExtractDequeueResponse(Packet response, out QueueRecord record)
     {
         Helpers.CheckNotErrorResponse(response);
 
@@ -196,12 +205,7 @@ internal class TaskFluxClient : ITaskFluxClient
             if (networkResponse.Type == NetworkResponseType.Dequeue)
             {
                 var dequeueResponse = ( DequeueNetworkResponse ) networkResponse;
-                if (dequeueResponse.TryGetResponse(out var key, out var message))
-                {
-                    return ( key, message );
-                }
-
-                throw new QueueEmptyException();
+                return dequeueResponse.TryGetResponse(out record);
             }
 
             throw new UnexpectedResponseException(NetworkResponseType.Dequeue, networkResponse.Type);

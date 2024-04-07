@@ -6,9 +6,9 @@ using TaskFlux.Core.Exceptions;
 
 namespace TaskFlux.Utils.Serialization;
 
-public struct StreamBinaryReader
+public readonly struct StreamBinaryReader
 {
-    public Stream Stream { get; } = Stream.Null;
+    private Stream Stream { get; } = Stream.Null;
 
     public StreamBinaryReader(Stream stream)
     {
@@ -19,7 +19,7 @@ public struct StreamBinaryReader
     /// Прочитать из очереди сериализованное название очереди
     /// </summary>
     /// <exception cref="EndOfStreamException">Был достигнут конец очереди</exception>
-    /// <exception cref="InvalidQueueNameException">Неправильное серилазованное название очереди</exception>
+    /// <exception cref="InvalidQueueNameException">Неправильное сериализованное название очереди</exception>
     /// <returns>Десериализованное название очереди</returns>
     public QueueName ReadQueueName()
     {
@@ -228,6 +228,36 @@ public struct StreamBinaryReader
         {
             await Stream.ReadExactlyAsync(buffer.AsMemory(0, sizeof(uint)), token);
             return BinaryPrimitives.ReadUInt32BigEndian(buffer.AsSpan(0, sizeof(uint)));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public ulong ReadUInt64()
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(sizeof(ulong));
+        try
+        {
+            var span = buffer.AsSpan(0, sizeof(ulong));
+            Stream.ReadExactly(span);
+            return BinaryPrimitives.ReadUInt64BigEndian(span);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task<ulong> ReadUInt64Async(CancellationToken token)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(sizeof(uint));
+        try
+        {
+            var memory = buffer.AsMemory(0, sizeof(ulong));
+            await Stream.ReadExactlyAsync(memory, token);
+            return BinaryPrimitives.ReadUInt64BigEndian(memory.Span);
         }
         finally
         {

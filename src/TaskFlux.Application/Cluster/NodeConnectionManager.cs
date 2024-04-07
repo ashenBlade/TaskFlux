@@ -8,6 +8,7 @@ using TaskFlux.Application.Cluster.Network.Packets;
 using TaskFlux.Consensus;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
+using ThreadState = System.Threading.ThreadState;
 
 namespace TaskFlux.Application.Cluster;
 
@@ -23,11 +24,11 @@ public class NodeConnectionManager : IDisposable
     private readonly (Thread WorkerThread, Socket Server, CancellationTokenSource Lifetime)? _workerData;
 
     public NodeConnectionManager(string host,
-                                 int port,
-                                 RaftConsensusModule<Command, Response> module,
-                                 TimeSpan requestTimeout,
-                                 IApplicationLifetime lifetime,
-                                 ILogger logger)
+        int port,
+        RaftConsensusModule<Command, Response> module,
+        TimeSpan requestTimeout,
+        IApplicationLifetime lifetime,
+        ILogger logger)
     {
         _host = host;
         _port = port;
@@ -35,7 +36,7 @@ public class NodeConnectionManager : IDisposable
         _requestTimeout = requestTimeout;
         _lifetime = lifetime;
         _logger = logger;
-        _workerData = ( new Thread(ThreadWorker), CreateServerSocket(), new CancellationTokenSource() );
+        _workerData = (new Thread(ThreadWorker), CreateServerSocket(), new CancellationTokenSource());
     }
 
     private Socket CreateServerSocket()
@@ -76,8 +77,8 @@ public class NodeConnectionManager : IDisposable
                 }
             }
             catch (SocketException se) when
-                (se.SocketErrorCode is SocketError.Interrupted      // Close() из Dispose()
-                                    or SocketError.InvalidArgument) // Shutdown(Both) из Stop()
+                (se.SocketErrorCode is SocketError.Interrupted // Close() из Dispose()
+                    or SocketError.InvalidArgument) // Shutdown(Both) из Stop()
             {
                 _logger.Debug("Модуль обработки запросов узлов кластера завершил работу");
             }
@@ -148,16 +149,16 @@ public class NodeConnectionManager : IDisposable
 
     private void BeginNewClientSession(NodeId id, CancellationTokenSource cts, PacketClient client)
     {
-        var requestTimeoutMs = ( int ) _requestTimeout.TotalMilliseconds;
+        var requestTimeoutMs = (int)_requestTimeout.TotalMilliseconds;
         client.Socket.SendTimeout = requestTimeoutMs;
         client.Socket.ReceiveTimeout = requestTimeoutMs;
         client.Socket.NoDelay = true;
 
         var processor = new NodeConnectionProcessor(id, client, _module,
             _logger.ForContext("SourceContext", $"NodeConnectionProcessor({id.Id})"))
-            {
-                CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cts.Token)
-            };
+        {
+            CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cts.Token)
+        };
         _nodes.AddOrUpdate(id,
             static (_, p) => p.Processor,
             static (_, old, arg) =>
@@ -169,7 +170,7 @@ public class NodeConnectionManager : IDisposable
                 old.Dispose();
                 return arg.Processor;
             },
-            ( Processor: processor, Logger: _logger ));
+            (Processor: processor, Logger: _logger));
         _logger.Debug("Начинаю обработку клиента");
         _ = processor.ProcessClientBackground();
     }
@@ -177,9 +178,9 @@ public class NodeConnectionManager : IDisposable
     private static async Task<NodeId?> TryAuthenticateAsync(PacketClient client)
     {
         var packet = await client.ReceiveAsync(CancellationToken.None);
-        if (packet is {PacketType: NodePacketType.ConnectRequest})
+        if (packet is { PacketType: NodePacketType.ConnectRequest })
         {
-            var request = ( ConnectRequestPacket ) packet;
+            var request = (ConnectRequestPacket)packet;
             return request.Id;
         }
 
@@ -196,8 +197,8 @@ public class NodeConnectionManager : IDisposable
 
         _logger.Verbose("Нахожу IP адреса для хоста {Host}", _host);
         var found = Dns.GetHostAddresses(_host)
-                       .Where(a => a.AddressFamily == AddressFamily.InterNetwork)
-                       .ToArray();
+            .Where(a => a.AddressFamily == AddressFamily.InterNetwork)
+            .ToArray();
         if (found.Length == 1)
         {
             var ip = found[0];
@@ -237,7 +238,10 @@ public class NodeConnectionManager : IDisposable
         {
             cts.Dispose();
             server.Dispose();
-            thread.Join();
+            if (thread.ThreadState is not ThreadState.Unstarted)
+            {
+                thread.Join();
+            }
         }
 
         foreach (var (_, node) in _nodes)

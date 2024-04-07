@@ -23,7 +23,7 @@ public class RaftConsensusModule<TCommand, TResponse>
       IDisposable
 {
     private readonly ITimerFactory _timerFactory;
-    private readonly IDeltaExtractor<TCommand> _deltaExtractor;
+    private readonly IDeltaExtractor<TResponse> _deltaExtractor;
     private readonly ILogger _logger;
 
     /// <summary>
@@ -123,7 +123,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         IPersistence persistence,
-        IDeltaExtractor<TCommand> deltaExtractor,
+        IDeltaExtractor<TResponse> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         _timerFactory = timerFactory;
@@ -199,7 +199,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         ITimerFactory timerFactory,
         IBackgroundJobQueue backgroundJobQueue,
         IPersistence persistenceFacade,
-        IDeltaExtractor<TCommand> deltaExtractor,
+        IDeltaExtractor<TResponse> deltaExtractor,
         IApplicationFactory<TCommand, TResponse> applicationFactory)
     {
         var module = new RaftConsensusModule<TCommand, TResponse>(id, peerGroup, logger, timerFactory,

@@ -1,4 +1,5 @@
 using TaskFlux.Core;
+using TaskFlux.Core.Queue;
 using TaskFlux.Persistence.ApplicationState;
 using TaskFlux.PriorityQueue;
 using Xunit;
@@ -6,7 +7,7 @@ using Xunit;
 namespace TaskFlux.Persistence.Tests;
 
 [Trait("Category", "Serialization")]
-public class QueueDataSnapshotSerializerTests
+public class QueueSnapshotSerializerTests
 {
     private static void AssertBase(StubTaskQueue expected)
     {
@@ -19,10 +20,11 @@ public class QueueDataSnapshotSerializerTests
 
         stream.Position = 0;
         var collection = QueuesSnapshotSerializer.Deserialize(stream);
-        var queues = collection.GetQueuesRaw().ToArray();
+        var queues = collection.GetAllQueues();
         Assert.Single(queues);
-        var (name, code, maxQueueSize, maxPayloadSize, priorityRange, data) = queues.First();
-        var actual = new StubTaskQueue(name, code, maxQueueSize, priorityRange, maxPayloadSize, data);
+        var queueInfo = queues.First();
+        var actual = new StubTaskQueue(queueInfo.QueueName, queueInfo.Code, queueInfo.LastId, queueInfo.MaxQueueSize,
+            queueInfo.PriorityRange, queueInfo.MaxPayloadSize, queueInfo.Data);
         Assert.Equal(expected, actual, TaskQueueEqualityComparer.Instance);
     }
 
@@ -39,25 +41,21 @@ public class QueueDataSnapshotSerializerTests
         stream.Position = 0;
 
         var collection = QueuesSnapshotSerializer.Deserialize(stream);
-        var actual = collection.GetQueuesRaw()
-                               .Select(tuple =>
-                                {
-                                    var (name, code, maxQueueSize, maxPayloadSize, priorityRange, data) = tuple;
-                                    return new StubTaskQueue(name, code, maxQueueSize, priorityRange, maxPayloadSize,
-                                        data);
-                                })
+        var actual = collection.GetAllQueues()
+                               .Select(StubTaskQueue.FromQueueInfo)
                                .ToHashSet();
         Assert.Equal(expected, actual, TaskQueueEqualityComparer.Instance);
     }
 
     private static readonly QueueName DefaultName = QueueNameParser.Parse("hello");
 
-    private static IEnumerable<(long, byte[])> EmptyQueueData => Enumerable.Empty<(long, byte[])>();
+    private static IEnumerable<QueueRecord> EmptyQueueData => Enumerable.Empty<QueueRecord>();
 
     [Fact]
     public void Serialize__КогдаПереданаПустаяОчередьБезПредела()
     {
-        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.Heap4Arity, 0, null, null, EmptyQueueData));
+        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.Heap4Arity, RecordId.Start, 0, null, null,
+            EmptyQueueData));
     }
 
     [Theory]
@@ -70,7 +68,8 @@ public class QueueDataSnapshotSerializerTests
     [InlineData(98765423)]
     public void Serialize__КогдаПереданаПустаяОчередьСПределом(int limit)
     {
-        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.Heap4Arity, limit, null, null, EmptyQueueData));
+        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.Heap4Arity, RecordId.Start, limit, null, null,
+            EmptyQueueData));
     }
 
     [Theory]
@@ -82,19 +81,21 @@ public class QueueDataSnapshotSerializerTests
     [InlineData(123123, new byte[] {byte.MaxValue, 1, 2, 3, 4, 5, 6, byte.MinValue})]
     public void Serialize__КогдаПереданаОчередьС1ЭлементомБезПредела(long priority, byte[] data)
     {
-        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.Heap4Arity, null, null, null,
-            new[] {( priority, data )}));
+        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.Heap4Arity, new(2), null, null, null,
+            new QueueRecord[] {new(new(1), priority, data)}));
     }
 
-    private static readonly Random Random = new Random(87);
+    private static readonly Random Random = new(87);
 
-    private IEnumerable<(long, byte[])> CreateRandomQueueElements(int count)
+    private IEnumerable<QueueRecord> CreateRandomQueueElements(int count, int startId)
     {
+        var id = new RecordId(( ulong ) startId);
         for (int i = 0; i < count; i++)
         {
             var buffer = new byte[Random.Next(0, 100)];
             Random.NextBytes(buffer);
-            yield return ( Random.NextInt64(), buffer );
+            yield return new QueueRecord(id, Random.NextInt64(), buffer);
+            id = id.Increment();
         }
     }
 
@@ -107,8 +108,8 @@ public class QueueDataSnapshotSerializerTests
     [InlineData(128)]
     public void Serialize__КогдаЭлементовНесколько(int count)
     {
-        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.QueueArray, 0, null, null,
-            CreateRandomQueueElements(count)));
+        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.QueueArray, new RecordId(( ulong ) count + 1), 0,
+            null, null, CreateRandomQueueElements(count, 0)));
     }
 
     [Theory]
@@ -124,9 +125,10 @@ public class QueueDataSnapshotSerializerTests
                                .Select(i =>
                                     new StubTaskQueue(QueueName.CreateRandom(i),
                                         PriorityQueueCode.Heap4Arity,
+                                        RecordId.Start,
                                         0,
                                         null, null,
-                                        Array.Empty<(long, byte[])>()));
+                                        EmptyQueueData));
         AssertBase(queues);
     }
 
@@ -138,11 +140,11 @@ public class QueueDataSnapshotSerializerTests
     [InlineData(20)]
     public void Serialize__КогдаПереданоНесколькоНеПустыхОчередей__ДолженПравильноДесериализовать(int count)
     {
-        var queues = Enumerable.Range(0, count)
+        var queues = Enumerable.Range(10, count)
                                .Select(i => new StubTaskQueue(QueueName.CreateRandom(i),
-                                    PriorityQueueCode.QueueArray, 0,
+                                    PriorityQueueCode.QueueArray, new RecordId(( ulong ) i + 1), 0,
                                     null, null,
-                                    CreateRandomQueueElements(Random.Next(0, 255))));
+                                    CreateRandomQueueElements(i, 0)));
         AssertBase(queues);
     }
 
@@ -155,13 +157,13 @@ public class QueueDataSnapshotSerializerTests
     public void Serialize__КогдаПереданоНесколькоОграниченныхОчередей__ДолженПравильноДесериализовать(
         int count)
     {
-        var queues = Enumerable.Range(0, count)
+        var queues = Enumerable.Range(10, count)
                                .Select(i =>
                                 {
                                     var limit = Random.Next(0, 255);
-                                    var data = CreateRandomQueueElements(Random.Next(0, limit));
+                                    var data = CreateRandomQueueElements(i, 0);
                                     return new StubTaskQueue(QueueName.CreateRandom(i),
-                                        PriorityQueueCode.Heap4Arity, limit, null,
+                                        PriorityQueueCode.Heap4Arity, new RecordId(( ulong ) i), limit, null,
                                         null,
                                         data);
                                 });
@@ -175,10 +177,10 @@ public class QueueDataSnapshotSerializerTests
     [InlineData(0, 0)]
     [InlineData(long.MinValue / 2, long.MaxValue / 2)]
     [InlineData(0, long.MaxValue)]
-    public void Serialize__КогдаПереданУказанныйДиапазонПриоритетов__ДолженПравильноДесерилазовать(long min, long max)
+    public void Serialize__КогдаПереданУказанныйДиапазонПриоритетов__ДолженПравильноДесериализовать(long min, long max)
     {
         AssertBase(new StubTaskQueue(QueueName.Default,
-            PriorityQueueCode.Heap4Arity,
+            PriorityQueueCode.Heap4Arity, RecordId.Start,
             maxSize: null,
             priority: ( min, max ),
             maxPayloadSize: null,
@@ -195,7 +197,7 @@ public class QueueDataSnapshotSerializerTests
     public void Serialize__КогдаПереданМаксимальныйРазмерСообщения__ДолженПравильноДесериализовать(int maxPayloadSize)
     {
         AssertBase(new StubTaskQueue(QueueName.Default,
-            PriorityQueueCode.QueueArray,
+            PriorityQueueCode.QueueArray, RecordId.Start,
             maxSize: null,
             priority: null,
             maxPayloadSize: maxPayloadSize,

@@ -11,9 +11,9 @@ public class CreateQueueCommand : ModificationCommand
     public QueueName Queue { get; }
     public QueueImplementationDetails Details { get; }
 
-    private ITaskQueue CreateTaskQueue()
+    private ITaskQueue CreateTaskQueue(ITaskQueueManager manager)
     {
-        var builder = new TaskQueueBuilder(Queue, Details.Code);
+        var builder = manager.CreateBuilder(Queue, Details.Code);
 
         if (Details.TryGetMaxQueueSize(out var maxQueueSize))
         {
@@ -56,15 +56,15 @@ public class CreateQueueCommand : ModificationCommand
         ITaskQueue queue;
         try
         {
-            queue = CreateTaskQueue();
+            queue = CreateTaskQueue(manager);
         }
         catch (InvalidOperationException)
         {
             /*
              * Все значения мы проверяем еще на этапе создания QueueImplementationDetails,
-             * поэтому этот вариант маловероятен, но все же лучше перебздеть, чем недобздеть
+             * поэтому этот вариант маловероятен, но все же лучше проверить
              */
-            return new ErrorResponse(ErrorType.Unknown, "Переданные для создания очереди пар*аметры некорректны");
+            return new ErrorResponse(ErrorType.Unknown, "Переданные для создания очереди параметры некорректны");
         }
 
         if (manager.TryAddQueue(Queue, queue))

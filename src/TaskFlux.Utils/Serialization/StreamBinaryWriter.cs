@@ -181,4 +181,34 @@ public struct StreamBinaryWriter
         await WriteAsync(data.Length, token);
         await Stream.WriteAsync(data, token);
     }
+
+    public async Task WriteAsync(ulong value, CancellationToken token)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(sizeof(ulong));
+        try
+        {
+            var memory = buffer.AsMemory(0, sizeof(ulong));
+            BinaryPrimitives.WriteUInt64BigEndian(memory.Span, value);
+            await Stream.WriteAsync(memory, token);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public void Write(ulong value)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(sizeof(ulong));
+        try
+        {
+            var span = buffer.AsSpan(0, sizeof(ulong));
+            BinaryPrimitives.WriteUInt64BigEndian(span, value);
+            Stream.Write(span);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
 }

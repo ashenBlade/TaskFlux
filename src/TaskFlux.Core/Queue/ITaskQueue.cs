@@ -1,24 +1,37 @@
-﻿namespace TaskFlux.Core.Queue;
+﻿using TaskFlux.Core.Subscription;
 
+namespace TaskFlux.Core.Queue;
+
+/// <summary>
+/// Интерфейс очереди задач
+/// </summary>
 public interface ITaskQueue : IReadOnlyTaskQueue
 {
     /// <summary>
     /// Добавить новый элемент в очередь
     /// </summary>
-    /// <param name="key">Ключ</param>
+    /// <param name="priority">Ключ</param>
     /// <param name="payload">Данные</param>
     /// <returns>
-    /// <c>true</c> - значение было добавлено в очередь, <br/>
-    /// <c>false</c> - в очереди нет места для новых элементов
+    /// Новая добавленная запись
     /// </returns>
-    public EnqueueResult Enqueue(long key, byte[] payload);
+    public QueueRecord Enqueue(long priority, byte[] payload);
+
+    /// <summary>
+    /// Добавить в очередь существующую запись
+    /// </summary>
+    /// <param name="record">Существующая запись</param>
+    public void EnqueueExisting(QueueRecord record);
 
     /// <summary>
     /// Получить элемент из очереди
     /// </summary>
-    /// <param name="key">Полученный ключ</param>
-    /// <param name="payload">Полученные данные</param>
+    /// <param name="record">Прочитанная запись</param>
     /// <returns><c>true</c> - элемент получен, <c>false</c> - очередь была пуста и ничего не получено</returns>
-    /// <remarks>Если ничего не получено, то <paramref name="key"/> и <paramref name="payload"/> будут хранить <c>0</c> и <c>null</c></remarks>
-    public bool TryDequeue(out long key, out byte[] payload);
+    public bool TryDequeue(out QueueRecord record);
+
+    /// <summary>
+    /// Получить подписчика новой записи для очереди
+    /// </summary>
+    public IQueueSubscriber Subscribe();
 }

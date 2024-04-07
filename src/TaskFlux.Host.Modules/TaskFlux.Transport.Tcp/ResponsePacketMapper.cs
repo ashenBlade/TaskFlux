@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
 using TaskFlux.Core.Commands.Count;
@@ -34,9 +35,9 @@ public static class ResponsePacketMapper
 
         public Packet Visit(DequeueResponse response)
         {
-            if (response.TryGetResult(out _, out var key, out var data))
+            if (response.TryGetResult(out _, out var record))
             {
-                return new CommandResponsePacket(new DequeueNetworkResponse(( key, data )));
+                return new CommandResponsePacket(new DequeueNetworkResponse(record));
             }
 
             return new CommandResponsePacket(new DequeueNetworkResponse(null));
@@ -117,6 +118,13 @@ public static class ResponsePacketMapper
         public Packet Visit(PolicyViolationResponse response)
         {
             return new CommandResponsePacket(new PolicyViolationNetworkResponse(response.ViolatedPolicy.Accept(this)));
+        }
+
+        public Packet Visit(QueueSubscriberResponse response)
+        {
+            Debug.Assert(false, "false", "Нельзя смаппить ответ подписки");
+            throw new InvalidOperationException(
+                $"Нельзя смаппить {nameof(QueueSubscriberResponse)} команду - необходимо дождаться ответа");
         }
 
         public NetworkQueuePolicy Visit(PriorityRangeQueuePolicy policy)

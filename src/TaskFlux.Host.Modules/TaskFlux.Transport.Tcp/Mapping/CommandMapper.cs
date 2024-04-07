@@ -101,15 +101,21 @@ public static class CommandMapper
 
         public Command Visit(EnqueueNetworkCommand command)
         {
-            return new EnqueueCommand(key: command.Key,
-                message: command.Message,
+            return new EnqueueCommand(priority: command.Key,
+                payload: command.Message,
                 queue: QueueName.Parse(command.QueueName));
         }
 
         public Command Visit(DequeueNetworkCommand command)
         {
-            // Команда Dequeue, посылаемая по сети, не должна быть закоммичена
-            return new DequeueRecordCommand(queue: QueueName.Parse(command.QueueName));
+            // Для каждой команды выставляем флаг Persistent = false - поддержка ACK/NACK механизма
+            return command.TimeoutMs switch
+                   {
+                       DequeueNetworkCommand.NoTimeout => ImmediateDequeueCommand.CreateNonPersistent(
+                           queue: QueueName.Parse(command.QueueName)),
+                       _ => AwaitableDequeueCommand.CreateNonPersistent(queue: QueueName.Parse(command.QueueName),
+                           timeout: TimeSpan.FromMilliseconds(command.TimeoutMs))
+                   };
         }
     }
 }

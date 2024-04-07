@@ -1,4 +1,5 @@
 using TaskFlux.Core.Commands.Visitors;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Core.Commands.Dequeue;
 
@@ -7,14 +8,28 @@ namespace TaskFlux.Core.Commands.Dequeue;
 /// </summary>
 public class DequeueResponse : Response
 {
-    public static readonly DequeueResponse Empty = new(false, QueueName.Default, 0, null);
+    public static readonly DequeueResponse Empty = new(false, QueueName.Default, default,
+        persistent: false /* Тут не важно - сохранять или нет */);
 
-    public static DequeueResponse Create(QueueName queueName, long key, byte[] payload) =>
-        new(true, queueName, key, payload);
+    public static DequeueResponse CreatePersistent(QueueName queueName, QueueRecord record) =>
+        new(true, queueName, record, persistent: true);
+
+    public static DequeueResponse CreateNonPersistent(QueueName queueName, QueueRecord record) =>
+        new(true, queueName, record, persistent: false);
 
     public override ResponseType Type => ResponseType.Dequeue;
 
+    /// <summary>
+    /// Прочитана ли запись
+    /// </summary>
     public bool Success { get; }
+
+    /// <summary>
+    /// Следует ли результат операции сохранять сразу же.
+    /// Используется для получения дельты удаления записи.
+    /// Изначально <c>false</c> 
+    /// </summary>
+    public bool Persistent { get; private set; }
 
     /// <summary>
     /// Название очереди, из которой необходимо читать записи
@@ -22,38 +37,42 @@ public class DequeueResponse : Response
     private readonly QueueName _queueName;
 
     /// <summary>
-    /// Прочитанный ключ
+    /// Прочитанная запись
     /// </summary>
-    private readonly long _key;
+    private readonly QueueRecord? _record;
 
-    /// <summary>
-    /// Прочитанное сообщение
-    /// </summary>
-    private readonly byte[] _message;
-
-    private DequeueResponse(bool success, QueueName queueName, long key, byte[]? payload)
+    private DequeueResponse(bool success, QueueName queueName, QueueRecord? record, bool persistent)
     {
         Success = success;
+        Persistent = persistent;
         _queueName = queueName;
-        _key = key;
-        _message = payload ?? Array.Empty<byte>();
+        _record = record;
     }
 
-    public bool TryGetResult(out QueueName queueName, out long key, out byte[] payload)
+    public bool TryGetResult(out QueueName queueName, out QueueRecord record)
     {
-        if (Success)
+        if (_record is { } r)
         {
             queueName = _queueName;
-            key = _key;
-            payload = _message;
+            record = r;
             return true;
         }
 
-        key = 0;
-        payload = Array.Empty<byte>();
+        record = default!;
         queueName = QueueName.Default;
         return false;
     }
+
+    /// <summary>
+    /// Выставить флаг <see cref="Persistent"/> в <c>true</c>.
+    /// Тогда результат будет сохранен сразу.
+    /// </summary>
+    public void MakePersistent() => Persistent = true;
+
+    /// <summary>
+    /// Выставить флаг <see cref="Persistent"/> в <c>false</c>
+    /// </summary>
+    public void MakeNonPersistent() => Persistent = false;
 
     public override void Accept(IResponseVisitor visitor)
     {

@@ -1,56 +1,71 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using TaskFlux.Core.Policies;
+using TaskFlux.Core.Subscription;
 using TaskFlux.PriorityQueue;
 using TaskFlux.PriorityQueue.Heap;
 using TaskFlux.PriorityQueue.QueueArray;
 
 namespace TaskFlux.Core.Queue;
 
-public class TaskQueueBuilder
+public class TaskQueueBuilder : ITaskQueueBuilder
 {
     /// <summary>
-    /// Реализация очереди, используемая по умолчанию
+    /// Фабрика для создания ждунов
     /// </summary>
-    public const PriorityQueueCode DefaultCode = PriorityQueueCode.Heap4Arity;
+    private readonly IQueueSubscriberManagerFactory _queueSubscriberManagerFactory;
 
     /// <summary>
     /// Название для очереди, которое нужно использовать
     /// </summary>
-    private QueueName? _name;
-
-    /// <summary>
-    /// Изначальные данные, которые нужно записать в очередь изнчально
-    /// </summary>
-    private IEnumerable<(long Key, byte[] Value)>? _payload;
+    private QueueName _name;
 
     /// <summary>
     /// Реализация приоритетной очереди
     /// </summary>
     private PriorityQueueCode _queueCode;
 
-    private int? _maxSize;
-    private (long Min, long Max)? _priorityRange;
+    /// <summary>
+    /// Последний известный Id записи
+    /// </summary>
+    private RecordId _lastRecordId;
+
+    /// <summary>
+    /// Изначальные данные, которые нужно записать в очередь изнчально
+    /// </summary>
+    private IEnumerable<QueueRecord>? _payload;
+
+    /// <summary>
+    /// Максимальный размер очереди
+    /// </summary>
+    private int? _maxQueueSize;
+
+    /// <summary>
+    /// Максимальный размер тела сообщения
+    /// </summary>
     private int? _maxPayloadSize;
 
-    public TaskQueueBuilder(QueueName name, PriorityQueueCode code)
+    /// <summary>
+    /// Разрешенный диапазон приоритетов
+    /// </summary>
+    private (long Min, long Max)? _priorityRange;
+
+    public TaskQueueBuilder(QueueName name,
+                            PriorityQueueCode code,
+                            IQueueSubscriberManagerFactory queueSubscriberManagerFactory)
     {
         _name = name;
         _queueCode = code;
+        _queueSubscriberManagerFactory = queueSubscriberManagerFactory;
     }
 
-    public TaskQueueBuilder(QueueName name)
-    {
-        _name = name;
-        _queueCode = PriorityQueueCode.Heap4Arity;
-    }
-
-    public TaskQueueBuilder WithQueueName(QueueName name)
+    public ITaskQueueBuilder WithQueueName(QueueName name)
     {
         _name = name;
         return this;
     }
 
-    public TaskQueueBuilder WithData(IReadOnlyCollection<(long, byte[])> data)
+    public ITaskQueueBuilder WithData(IReadOnlyCollection<QueueRecord> data)
     {
         ArgumentNullException.ThrowIfNull(data);
 
@@ -58,7 +73,7 @@ public class TaskQueueBuilder
         return this;
     }
 
-    public TaskQueueBuilder WithMaxQueueSize(int? maxSize)
+    public ITaskQueueBuilder WithMaxQueueSize(int? maxSize)
     {
         if (maxSize < 0)
         {
@@ -66,12 +81,12 @@ public class TaskQueueBuilder
                 "Максимальный размер очереди не может быть отрицательным");
         }
 
-        _maxSize = maxSize;
+        _maxQueueSize = maxSize;
         return this;
     }
 
 
-    public TaskQueueBuilder WithPriorityRange(long min, long max)
+    public ITaskQueueBuilder WithPriorityRange(long min, long max)
     {
         if (max < min)
         {
@@ -83,7 +98,7 @@ public class TaskQueueBuilder
         return this;
     }
 
-    public TaskQueueBuilder WithQueueImplementation(PriorityQueueCode implementation)
+    public ITaskQueueBuilder WithQueueImplementation(PriorityQueueCode implementation)
     {
         if (!Enum.IsDefined(implementation))
         {
@@ -95,7 +110,7 @@ public class TaskQueueBuilder
         return this;
     }
 
-    public TaskQueueBuilder WithMaxPayloadSize(int? maxPayloadSize)
+    public ITaskQueueBuilder WithMaxPayloadSize(int? maxPayloadSize)
     {
         if (maxPayloadSize is < 0)
         {
@@ -107,6 +122,12 @@ public class TaskQueueBuilder
         return this;
     }
 
+    public ITaskQueueBuilder WithLastRecordId(RecordId id)
+    {
+        _lastRecordId = id;
+        return this;
+    }
+
     /// <summary>
     /// Создать очередь с указанными параметрами
     /// </summary>
@@ -114,7 +135,6 @@ public class TaskQueueBuilder
     /// <exception cref="InvalidOperationException">Указанный набор параметров представляет неправильную комбинацию</exception>
     public ITaskQueue Build()
     {
-        var name = BuildQueueName();
         var policies = BuildPolicies();
         var queue = BuildPriorityQueue();
 
@@ -123,45 +143,43 @@ public class TaskQueueBuilder
             FillPriorityQueue(payload, queue);
         }
 
-        return new TaskQueue(name, queue, policies);
+        return new TaskQueue(_lastRecordId, _name, queue, policies,
+            _queueSubscriberManagerFactory.CreateQueueSubscriberManager());
     }
 
-    private IPriorityQueue BuildPriorityQueue()
+    private IPriorityQueue<PriorityQueueData> BuildPriorityQueue()
     {
         switch (_queueCode)
         {
             case PriorityQueueCode.Heap4Arity:
-                return new HeapPriorityQueue();
+                return new HeapPriorityQueue<PriorityQueueData>();
             case PriorityQueueCode.QueueArray:
                 if (_priorityRange is var (min, max))
                 {
-                    return new QueueArrayPriorityQueue(min, max);
+                    return new QueueArrayPriorityQueue<PriorityQueueData>(min, max);
                 }
 
                 throw new InvalidOperationException("Диапазон ключей для структуры списка очередей не указан");
         }
 
-        throw new InvalidEnumArgumentException(nameof(_queueCode), ( int ) _queueCode, typeof(PriorityQueueCode));
+        Debug.Assert(Enum.IsDefined(_queueCode), "Enum.IsDefined(_queueCode)",
+            "Некорректный код реализации приоритетной очереди");
+        throw new ArgumentOutOfRangeException(nameof(_queueCode), _queueCode, "Неизвестный код приоритетной очереди");
     }
 
-    private void FillPriorityQueue(IEnumerable<(long, byte[])> payload, IPriorityQueue queue)
+    private void FillPriorityQueue(IEnumerable<QueueRecord> records, IPriorityQueue<PriorityQueueData> queue)
     {
-        foreach (var (key, message) in payload)
+        foreach (var (id, key, message) in records)
         {
-            queue.Enqueue(key, message);
+            queue.Enqueue(key, new PriorityQueueData(id, message));
         }
-    }
-
-    private QueueName BuildQueueName()
-    {
-        return _name ?? throw new InvalidOperationException("Название очереди не проставлено");
     }
 
     private QueuePolicy[] BuildPolicies()
     {
         var result = new List<QueuePolicy>();
 
-        if (_maxSize is { } maxSize)
+        if (_maxQueueSize is { } maxSize)
         {
             result.Add(new MaxQueueSizeQueuePolicy(maxSize));
         }
@@ -177,14 +195,5 @@ public class TaskQueueBuilder
         }
 
         return result.ToArray();
-    }
-
-    /// <summary>
-    /// Создать очередь по умолчанию с нужными выставленными параметрами
-    /// </summary>
-    /// <returns>Очередь по умолчанию</returns>
-    public static ITaskQueue CreateDefault()
-    {
-        return new TaskQueue(QueueName.Default, new HeapPriorityQueue(), Array.Empty<QueuePolicy>());
     }
 }

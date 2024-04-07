@@ -4,7 +4,7 @@ namespace TaskFlux.PriorityQueue.Heap;
 /// Очередь, реализованная в виде связного списка подчанков.
 /// Каждый подчанк является условным массивом
 /// </summary>
-internal class ChunkedQueue
+internal class ChunkedQueue<TData>
 {
     /// <summary>
     /// Максимальный размер чанка, который можно достигнуть без создания следующего подчанка
@@ -28,7 +28,7 @@ internal class ChunkedQueue
         // _queue = null, только когда очередь пуста
         !_queue.HasValue;
 
-    public void Enqueue(byte[] record)
+    public void Enqueue(TData data)
     {
         // Если очередь уже инициализирована
         if (_queue is var (head, tail))
@@ -40,7 +40,7 @@ internal class ChunkedQueue
                 var newTail = new QueueChunk();
 
                 // Добавляем запись в него
-                newTail.Chunk.Enqueue(record);
+                newTail.Chunk.Enqueue(data);
 
                 // Обновляем хвост
                 tail.Next = newTail;
@@ -50,7 +50,7 @@ internal class ChunkedQueue
             else
             {
                 // Добавляем в уже существующий хвост
-                tail.Chunk.Enqueue(record);
+                tail.Chunk.Enqueue(data);
             }
         }
         // Иначе, если она пуста
@@ -60,14 +60,14 @@ internal class ChunkedQueue
             head = new QueueChunk();
 
             // Добавляем в него запись
-            head.Chunk.Enqueue(record);
+            head.Chunk.Enqueue(data);
 
             // Обновляем состояние (изнчально голова и хвост одни и те же)
             _queue = ( head, head );
         }
     }
 
-    public bool TryDequeue(out byte[] payload)
+    public bool TryDequeue(out TData data)
     {
         // Если очередь не пуста
         if (_queue is var (head, tail))
@@ -81,7 +81,7 @@ internal class ChunkedQueue
                 if (head.Chunk.TryDequeue(out var record))
                 {
                     // То возвращаем первую запись из головы
-                    payload = record;
+                    data = record;
 
                     // И если голова стала пуста
                     if (head.Chunk.Count == 0)
@@ -118,7 +118,7 @@ internal class ChunkedQueue
                 {
                     // Очередь стала полностью пуста
                     _queue = null;
-                    payload = default!;
+                    data = default!;
                     return false;
                 }
 
@@ -133,11 +133,11 @@ internal class ChunkedQueue
         }
 
         // Иначе очередь была пуста и вернуть ничего не можем
-        payload = default!;
+        data = default!;
         return false;
     }
 
-    internal IEnumerable<byte[]> GetAllRecordsTest()
+    internal IEnumerable<TData> GetAllRecordsTest()
     {
         if (_queue is var (head, _))
         {
@@ -167,10 +167,10 @@ internal class ChunkedQueue
         /// <remarks>
         /// Используется <see cref="Queue{T}"/>, т.к. внутри реализация использует массив
         /// </remarks>
-        public Queue<byte[]> Chunk { get; } = new();
+        public Queue<TData> Chunk { get; } = new();
     }
 
-    public void CopyTo(long key, List<(long, byte[])> result)
+    public void CopyTo(long key, List<(long, TData)> result)
     {
         if (_queue is ({Chunk.Count: > 0} head, _))
         {

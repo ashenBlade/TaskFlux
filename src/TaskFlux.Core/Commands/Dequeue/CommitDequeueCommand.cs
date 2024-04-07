@@ -1,4 +1,3 @@
-using TaskFlux.Core.Commands.Ok;
 using TaskFlux.Core.Commands.Visitors;
 
 namespace TaskFlux.Core.Commands.Dequeue;
@@ -18,7 +17,9 @@ public class CommitDequeueCommand : ModificationCommand
     public override Response Apply(IApplication application)
     {
         // Эта команда необходима только для репликации самой команды - в ней нет логики
-        return OkResponse.Instance;
+        // На всякий случай делаем команду сохраняемой
+        Response.MakePersistent();
+        return Response;
     }
 
     public override void Accept(ICommandVisitor visitor)

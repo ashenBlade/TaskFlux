@@ -153,4 +153,19 @@ public ref struct SpanBinaryReader
                 e);
         }
     }
+
+    public ulong ReadUInt64()
+    {
+        try
+        {
+            var value = BinaryPrimitives.ReadUInt64BigEndian(_buffer.Slice(_index));
+            _index += sizeof(ulong);
+            return value;
+        }
+        catch (ArgumentOutOfRangeException e)
+        {
+            throw new SerializationException(
+                "Ошибка десериализации ulong: в буфере не осталось нужного количества байт", e);
+        }
+    }
 }
