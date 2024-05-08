@@ -45,7 +45,7 @@ public class RequestController(
 
     private BadRequestObjectResult GetInvalidQueueNameResult()
     {
-        return BadRequest(new CommandResponseDto() {Success = false, Error = "Передано невалидное название очереди"});
+        return BadRequest(new CommandResponseDto() { Success = false, Error = "Передано невалидное название очереди" });
     }
 
 
@@ -60,8 +60,8 @@ public class RequestController(
         }
 
         return await HandleCommandCoreAsync(
-                   ImmediateDequeueCommand.CreatePersistent(queueName), // Сразу сохраняем результат операции  
-                   token);
+            ImmediateDequeueCommand.CreatePersistent(queueName), // Сразу сохраняем результат операции  
+            token);
     }
 
     [HttpPost("count")]
@@ -89,15 +89,15 @@ public class RequestController(
             {
                 var visitor = new HttpResponseJobQueueResponseVisitor();
                 commandResponse.Accept(visitor);
-                return Ok(new CommandResponseDto() {Success = true, Payload = visitor.Payload});
+                return Ok(new CommandResponseDto() { Success = true, Payload = visitor.Payload });
             }
 
             return BadRequest(new CommandResponseDto()
             {
                 Success = false,
                 Error = submitResponse.WasLeader
-                            ? "Неизвестная ошибка"
-                            : "Узел не является лидером",
+                    ? "Неизвестная ошибка"
+                    : "Узел не является лидером",
                 LeaderId = applicationInfo.LeaderId?.Id
             });
         }
@@ -109,16 +109,16 @@ public class RequestController(
     }
 
     private async ValueTask<Response?> TryGetResponseAsync(SubmitResponse<Response> firstResponse,
-                                                           CancellationToken token)
+        CancellationToken token)
     {
         if (firstResponse.TryGetResponse(out var response))
         {
-            if (response is DequeueResponse {Success: true} dr)
+            if (response is DequeueResponse { Success: true } dr)
             {
                 var commitResponse = await requestAcceptor.AcceptAsync(new CommitDequeueCommand(dr), token);
                 return commitResponse.HasValue
-                           ? dr
-                           : null;
+                    ? dr
+                    : null;
             }
 
             return response;
@@ -174,7 +174,7 @@ public class RequestController(
         public void Visit(ErrorResponse response)
         {
             Payload["type"] = "error";
-            Payload["subtype"] = ( byte ) response.ErrorType;
+            Payload["subtype"] = (byte)response.ErrorType;
             Payload["message"] = response.Message;
         }
 
@@ -188,11 +188,11 @@ public class RequestController(
             Payload["type"] = "list-queues";
             Payload["data"] = response.Metadata.ToDictionary(m => m.QueueName, m => new Dictionary<string, object?>()
             {
-                {"count", m.Count},
+                { "count", m.Count },
                 {
                     "limit", m.HasMaxSize
-                                 ? m.MaxQueueSize
-                                 : null
+                        ? m.MaxQueueSize
+                        : null
                 }
             });
         }

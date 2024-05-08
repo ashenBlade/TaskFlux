@@ -1,0 +1,175 @@
+syntax = 'proto3';
+
+package taskflux;
+
+import 'google/protobuf/duration.proto';
+
+/// Common
+message QueueRecord {
+  int64 priority = 1;
+  bytes payload = 2;
+}
+
+message AckMessage {
+  // true - ACK, false - NACK
+  bool ack = 1;
+}
+
+enum ErrorCode {
+  Unknown = 0;
+  InvalidQueueName = 1;
+  QueueDoesNotExist = 2;
+  QueueAlreadyExists = 3;
+  InvalidPriorityRange = 4;
+  InvalidMaxQueueSize = 5;
+  InvalidMaxPayloadSize = 6;
+  PriorityRangeNotSpecified = 7;
+  UnknownPriorityQueueCode = 8;
+}
+
+message ErrorResponse {
+  // Код ошибки
+  ErrorCode code = 1;
+  // Дополнительное сообщение об ошибке
+  optional string message = 2;
+}
+
+message NotLeaderResponse {
+  optional int32 leader_id = 1;
+}
+
+
+/// Enqueue
+message EnqueueRequest {
+  message EnqueueRequestData {
+    // Название очереди
+    string queue = 1;
+    // Запись, которую нужно вставить
+    QueueRecord record = 2;
+  }
+
+  oneof result {
+    EnqueueRequestData data = 1;
+    AckMessage ack = 2;
+  }
+}
+
+message PolicyViolationResponse {
+  string message = 1;
+}
+
+message EnqueueResponse {
+  message EnqueueResponseData {
+    optional PolicyViolationResponse policy_violation = 1;
+  }
+
+  oneof result {
+    EnqueueResponseData data = 1;
+    ErrorResponse error = 2;
+    NotLeaderResponse not_leader = 3;
+  }
+}
+
+/// Dequeue
+message DequeueRequest {
+  message DequeueRequestData {
+    string queue = 1;
+    int32 timeout = 2;
+  }
+
+  oneof operation {
+    DequeueRequestData request = 1;
+    AckMessage ack = 2;
+  }
+}
+
+message DequeueResponse {
+  message DequeueResponseData {
+    optional QueueRecord record = 1;
+  }
+
+  oneof result {
+    DequeueResponseData success = 1;
+    ErrorResponse error = 2;
+    PolicyViolationResponse policy_violation = 3;
+    NotLeaderResponse not_leader = 4;
+  }
+}
+
+/// Delete Queue
+message DeleteQueueRequest {
+  string queue = 1;
+}
+
+message DeleteQueueResponse {
+  // Результат выполнения операции. 
+  // Если error - null, то результат успешный
+  message DeleteQueueResponseData {
+    optional ErrorResponse error = 1;
+  }
+
+  oneof result {
+    DeleteQueueResponseData data = 1;
+    NotLeaderResponse not_leader = 2;
+  }
+}
+
+/// Create Queue
+enum PriorityQueueCode {
+  Heap4 = 0;
+  QueueArray = 1;
+}
+
+message PriorityRange {
+  int64 min = 1;
+  int64 max = 2;
+}
+
+message QueuePolicyInfo {
+  optional int32 max_queue_size = 1;
+  optional int32 max_payload_size = 2;
+  optional PriorityRange priority_range = 3;
+}
+
+message CreateQueueRequest {
+  string queue = 1;
+  PriorityQueueCode code = 2;
+  QueuePolicyInfo policies = 3;
+}
+
+message CreateQueueResponse {
+  message CreateQueueResponseData {
+    optional ErrorResponse error = 1;
+  }
+
+  oneof result {
+    CreateQueueResponseData data = 1;
+    NotLeaderResponse not_leader = 2;
+  }
+}
+
+/// Count
+message GetCountRequest {
+  string queue = 1;
+}
+
+message GetCountResponse {
+  message GetCountResponseData {
+    int32 count = 1;
+  }
+
+  oneof result {
+    GetCountResponseData data = 1;
+    ErrorResponse error = 2;
+    NotLeaderResponse not_leader = 3;
+  }
+}
+
+/// Service
+service TaskFluxService {
+  rpc Enqueue(stream EnqueueRequest) returns (stream EnqueueResponse);
+  rpc Dequeue(stream DequeueRequest) returns (stream DequeueResponse);
+  rpc DeleteQueue(DeleteQueueRequest) returns (DeleteQueueResponse);
+  rpc CreateQueue(CreateQueueRequest) returns (CreateQueueResponse);
+  rpc GetCount(GetCountRequest) returns (GetCountResponse);
+}

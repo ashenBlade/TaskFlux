@@ -29,11 +29,11 @@ internal class ClientRequestProcessor
     private readonly ILogger _logger;
 
     public ClientRequestProcessor(TcpClient client,
-                                  IRequestAcceptor requestAcceptor,
-                                  TcpAdapterOptions options,
-                                  IApplicationInfo applicationInfo,
-                                  IApplicationLifetime lifetime,
-                                  ILogger logger)
+        IRequestAcceptor requestAcceptor,
+        TcpAdapterOptions options,
+        IApplicationInfo applicationInfo,
+        IApplicationLifetime lifetime,
+        ILogger logger)
     {
         _client = client;
         _requestAcceptor = requestAcceptor;
@@ -123,7 +123,7 @@ internal class ClientRequestProcessor
         switch (request.Type)
         {
             case PacketType.AuthorizationRequest:
-                authorizationRequest = ( AuthorizationRequestPacket ) request;
+                authorizationRequest = (AuthorizationRequestPacket)request;
                 break;
             case PacketType.CommandRequest:
             case PacketType.CommandResponse:
@@ -140,7 +140,7 @@ internal class ClientRequestProcessor
                 return false;
             default:
                 Debug.Assert(false, "false", "Получено неизвестное значение типа пакета: {0}", request.Type);
-                throw new ArgumentOutOfRangeException(nameof(request.Type), ( int ) request.Type,
+                throw new ArgumentOutOfRangeException(nameof(request.Type), (int)request.Type,
                     "Неизвестное значение типа пакета");
         }
 
@@ -153,7 +153,7 @@ internal class ClientRequestProcessor
             default:
                 Debug.Assert(false, "false", "Неизвестное значение метода авторизации: {0}", authorizationType);
                 throw new ArgumentOutOfRangeException(nameof(authorizationType),
-                    ( int ) authorizationType, "Неизвестное значение метода авторизации");
+                    (int)authorizationType, "Неизвестное значение метода авторизации");
         }
 
         await client.SendAsync(AuthorizationResponsePacket.Ok, token);
@@ -170,7 +170,7 @@ internal class ClientRequestProcessor
         switch (request.Type)
         {
             case PacketType.BootstrapRequest:
-                bootstrapRequest = ( BootstrapRequestPacket ) request;
+                bootstrapRequest = (BootstrapRequestPacket)request;
                 break;
             case PacketType.CommandRequest:
             case PacketType.CommandResponse:
@@ -236,7 +236,7 @@ internal class ClientRequestProcessor
                 switch (request.Type)
                 {
                     case PacketType.CommandRequest:
-                        await ProcessCommandRequestAsync(client, ( CommandRequestPacket ) request, token);
+                        await ProcessCommandRequestAsync(client, (CommandRequestPacket)request, token);
                         break;
                     case PacketType.ClusterMetadataRequest:
                         await ProcessClusterMetadataRequestAsync(client, token);
@@ -255,7 +255,7 @@ internal class ClientRequestProcessor
                         _logger.Warning("От клиента получен неожиданный тип пакета {PacketType}", request.Type);
                         break;
                     default:
-                        throw new ArgumentOutOfRangeException(nameof(request.Type), ( int ) request.Type,
+                        throw new ArgumentOutOfRangeException(nameof(request.Type), (int)request.Type,
                             "Получен неизвестный тип пакета");
                 }
             }
@@ -267,7 +267,7 @@ internal class ClientRequestProcessor
     }
 
     private async Task ProcessClusterMetadataRequestAsync(TaskFluxClient client,
-                                                          CancellationToken token)
+        CancellationToken token)
     {
         var response = new ClusterMetadataResponsePacket(_applicationInfo.Nodes, _applicationInfo.LeaderId?.Id,
             _applicationInfo.NodeId.Id);
@@ -275,8 +275,8 @@ internal class ClientRequestProcessor
     }
 
     private async Task ProcessCommandRequestAsync(TaskFluxClient client,
-                                                  CommandRequestPacket request,
-                                                  CancellationToken token)
+        CommandRequestPacket request,
+        CancellationToken token)
     {
         switch (request.Command.Type)
         {
@@ -305,7 +305,7 @@ internal class ClientRequestProcessor
         }
         catch (MappingException me)
         {
-            await client.SendAsync(new ErrorResponsePacket(( int ) me.ErrorCode,
+            await client.SendAsync(new ErrorResponsePacket((int)me.ErrorCode,
                     string.Empty /* На данном этапе все коды ясно говорят какая ошибка произошла - доп. сообщений не надо */),
                 token);
             return;
@@ -326,8 +326,8 @@ internal class ClientRequestProcessor
     }
 
     private async Task ProcessEnqueueCommandAsync(TaskFluxClient client,
-                                                  CommandRequestPacket request,
-                                                  CancellationToken token)
+        CommandRequestPacket request,
+        CancellationToken token)
     {
         /*
          * Команда вставки разделена на 2 этапа:
@@ -346,7 +346,7 @@ internal class ClientRequestProcessor
         catch (MappingException me)
         {
             // Указанное пользователем название очереди невалидное
-            await client.SendAsync(new ErrorResponsePacket(( int ) me.ErrorCode, string.Empty), token);
+            await client.SendAsync(new ErrorResponsePacket((int)me.ErrorCode, string.Empty), token);
             return;
         }
 
@@ -395,8 +395,8 @@ internal class ClientRequestProcessor
     }
 
     private async Task ProcessDequeueCommandAsync(TaskFluxClient client,
-                                                  CommandRequestPacket packet,
-                                                  CancellationToken token)
+        CommandRequestPacket packet,
+        CancellationToken token)
     {
         /*
          * На первом шаге, маппим сетевую команду на внутреннюю
@@ -468,9 +468,8 @@ internal class ClientRequestProcessor
                 // Иначе возвращаем ее обратно
                 case PacketType.NegativeAcknowledgementRequest:
                     // Коммитить результат не нужно
-                    dequeueResponse.MakeNonPersistent();
-                    submitResponse =
-                        await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(dequeueResponse), token);
+                    submitResponse = await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(queue, record), token);
+
                     break;
                 case PacketType.CommandRequest:
                 case PacketType.CommandResponse:
@@ -498,7 +497,7 @@ internal class ClientRequestProcessor
         {
             // На случай, если возникло необработанное исключение - необходимо запись вернуть обратно в очередь, иначе можем ее потерять
             // Она останется в логе и появится во время восстановления при рестарте, но в рантайме, сейчас она исчезнет
-            await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(dequeueResponse), token);
+            await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(queue, record), token);
             throw;
         }
 
@@ -535,13 +534,13 @@ internal class ClientRequestProcessor
         // Результат операции получен сразу - возвращаем
         if (response.Type is ResponseType.Dequeue)
         {
-            var immediateDequeueResponse = ( DequeueResponse ) response;
+            var immediateDequeueResponse = (DequeueResponse)response;
             return immediateDequeueResponse.TryGetResult(out var queue, out var record)
-                       ? ( record, queue )
-                       : null;
+                ? (record, queue)
+                : null;
         }
 
-        var subscriptionResponse = ( QueueSubscriberResponse ) response;
+        var subscriptionResponse = (QueueSubscriberResponse)response;
 
         // Необходимо использовать using (точнее, вызывать Dispose), чтобы корректно вернуть подписчика обратно в пул
         using var subscriber = subscriptionResponse.Subscriber;
@@ -550,7 +549,7 @@ internal class ClientRequestProcessor
         try
         {
             var record = await subscriber.WaitRecordAsync(cts.Token);
-            return ( record, subscriptionResponse.Queue );
+            return (record, subscriptionResponse.Queue);
         }
         catch (OperationCanceledException)
         {

@@ -11,8 +11,8 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Consensus\TaskFlux.Consensus\TaskFlux.Consensus.csproj"/>
-        <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Transport.Tcp\TaskFlux.Transport.Tcp.csproj"/>
-        <ProjectReference Include="..\TaskFlux.Host.Modules\TaskFlux.Transport.Http\TaskFlux.Transport.Http.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Transport\TaskFlux.Transport.Tcp\TaskFlux.Transport.Tcp.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Transport\TaskFlux.Transport.Http\TaskFlux.Transport.Http.csproj"/>
     </ItemGroup>
 
     <ItemGroup>
@@ -25,7 +25,7 @@
         <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.7.0"/>
         <PackageReference Include="Serilog" Version="3.0.1"/>
         <PackageReference Include="Serilog.Extensions.Hosting" Version="7.0.0"/>
-      <PackageReference Include="Serilog.Sinks.Console" Version="4.1.0" />
+        <PackageReference Include="Serilog.Sinks.Console" Version="4.1.0"/>
     </ItemGroup>
 
     <ItemGroup>

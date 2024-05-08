@@ -13,13 +13,11 @@ public class TcpAdapterOptions
 
     public const int DefaultBacklogSize = 128;
 
-    [Range(1, int.MaxValue)]
-    public int TcpAdapterBacklogSize { get; set; } = DefaultBacklogSize;
+    [Range(1, int.MaxValue)] public int TcpAdapterBacklogSize { get; set; } = DefaultBacklogSize;
 
     public const int DefaultBufferSize = 2048;
 
-    [Range(1, int.MaxValue)]
-    public int BufferSize { get; set; } = DefaultBufferSize;
+    [Range(1, int.MaxValue)] public int BufferSize { get; set; } = DefaultBufferSize;
 
     public static TimeSpan DefaultIdleTimeout => TimeSpan.FromMinutes(1);
 

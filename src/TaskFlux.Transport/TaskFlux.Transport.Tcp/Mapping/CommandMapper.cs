@@ -70,7 +70,7 @@ public static class CommandMapper
                 case NetworkPriorityQueueCodes.QueueArray:
                     if (command.TryGetPriorityRange(out var min, out var max))
                     {
-                        details = new QueueArrayQueueDetails(( min, max ))
+                        details = new QueueArrayQueueDetails((min, max))
                         {
                             MaxPayloadSize = command.MaxPayloadSize, MaxQueueSize = command.MaxQueueSize,
                         };
@@ -110,12 +110,12 @@ public static class CommandMapper
         {
             // Для каждой команды выставляем флаг Persistent = false - поддержка ACK/NACK механизма
             return command.TimeoutMs switch
-                   {
-                       DequeueNetworkCommand.NoTimeout => ImmediateDequeueCommand.CreateNonPersistent(
-                           queue: QueueName.Parse(command.QueueName)),
-                       _ => AwaitableDequeueCommand.CreateNonPersistent(queue: QueueName.Parse(command.QueueName),
-                           timeout: TimeSpan.FromMilliseconds(command.TimeoutMs))
-                   };
+            {
+                DequeueNetworkCommand.NoTimeout => ImmediateDequeueCommand.CreateNonPersistent(
+                    queue: QueueName.Parse(command.QueueName)),
+                _ => AwaitableDequeueCommand.CreateNonPersistent(queue: QueueName.Parse(command.QueueName),
+                    timeout: TimeSpan.FromMilliseconds(command.TimeoutMs))
+            };
         }
     }
 }

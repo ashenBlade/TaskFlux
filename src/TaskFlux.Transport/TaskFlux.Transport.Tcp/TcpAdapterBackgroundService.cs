@@ -16,10 +16,10 @@ public class TcpAdapterBackgroundService : BackgroundService
     private readonly ILogger _logger;
 
     public TcpAdapterBackgroundService(IRequestAcceptor requestAcceptor,
-                                       TcpAdapterOptions options,
-                                       IApplicationInfo applicationInfo,
-                                       IApplicationLifetime lifetime,
-                                       ILogger logger)
+        TcpAdapterOptions options,
+        IApplicationInfo applicationInfo,
+        IApplicationLifetime lifetime,
+        ILogger logger)
     {
         _requestAcceptor = requestAcceptor;
         _options = options;

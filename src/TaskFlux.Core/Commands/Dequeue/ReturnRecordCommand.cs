@@ -1,5 +1,6 @@
 using TaskFlux.Core.Commands.Ok;
 using TaskFlux.Core.Commands.Visitors;
+using TaskFlux.Core.Queue;
 
 namespace TaskFlux.Core.Commands.Dequeue;
 
@@ -8,27 +9,32 @@ namespace TaskFlux.Core.Commands.Dequeue;
 /// </summary>
 public class ReturnRecordCommand : Command
 {
+    public QueueName Queue { get; }
+
     /// <summary>
     /// Ранее полученный результат выполнения Dequeue команды
     /// </summary>
-    public DequeueResponse Response { get; }
+    public QueueRecord Record { get; }
 
     // Просто возвращаем значение обратно - коммитить ничего не надо
-    public ReturnRecordCommand(DequeueResponse response)
+    public ReturnRecordCommand(QueueName queue, QueueRecord record)
     {
-        Response = response;
+        Queue = queue;
+        Record = record;
     }
 
     public override Response Apply(IApplication application)
     {
-        if (Response.TryGetResult(out var queueName, out var record)
-         && application.TaskQueueManager.TryGetQueue(queueName, out var queue))
+        // Пока клиент обрабатывал сообщение, очередь могли удалить
+        if (application.TaskQueueManager.TryGetQueue(Queue, out var queue))
         {
-            queue.EnqueueExisting(record);
+            queue.EnqueueExisting(Record);
         }
 
-        // Если не смогли получить очередь, то это значит, что она была удалена между чтением и коммитом.
-        // Пока на такое не реагирую, но возможно стоит возвращать какую-нибудь ошибки или типа того
+        /*
+         * Пока в любом случае, возвращаю ОК.
+         * Но может стоит возвращать какое-нибудь отдельное сообщение по типу "очередь удалили"
+         */
         return OkResponse.Instance;
     }
 

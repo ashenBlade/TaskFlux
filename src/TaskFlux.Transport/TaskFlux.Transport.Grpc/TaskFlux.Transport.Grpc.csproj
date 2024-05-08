@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\Consensus\TaskFlux.Consensus\TaskFlux.Consensus.csproj"/>
+        <ProjectReference Include="..\..\TaskFlux.Application\TaskFlux.Application.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.2.5"/>
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Protobuf Include="Proto\taskflux.proto">
+            <GrpcServices>Server</GrpcServices>
+        </Protobuf>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Google.Protobuf" Version="3.25.1"/>
+        <PackageReference Include="Grpc.Core.Api" Version="2.59.0"/>
+        <PackageReference Include="Grpc.Net.Client" Version="2.59.0"/>
+        <PackageReference Include="Grpc.Net.Common" Version="2.59.0"/>
+        <PackageReference Include="Grpc.Tools" Version="2.59.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+
+    <PropertyGroup>
+        <WarningsAsErrors>CS8509</WarningsAsErrors>
+        <NoWarn>1701;1702;CS8524</NoWarn>
+    </PropertyGroup>
+
+</Project>

@@ -29,7 +29,7 @@ public static class ResponsePacketMapper
 
     private class ResponseMapperVisitor
         : IResponseVisitor<Packet>,
-          IQueuePolicyVisitor<NetworkQueuePolicy>
+            IQueuePolicyVisitor<NetworkQueuePolicy>
     {
         public static readonly ResponseMapperVisitor Instance = new();
 
@@ -65,7 +65,7 @@ public static class ResponsePacketMapper
 
         public Packet Visit(ErrorResponse response)
         {
-            return new CommandResponsePacket(new ErrorNetworkResponse(( byte ) response.ErrorType, response.Message));
+            return new CommandResponsePacket(new ErrorNetworkResponse((byte)response.ErrorType, response.Message));
         }
 
         public Packet Visit(OkResponse response)
