@@ -16,13 +16,13 @@ public class AppendEntriesRequestPacket : NodePacket
 
     public override NodePacketType PacketType => NodePacketType.AppendEntriesRequest;
 
-    private const int BasePayloadSize = SizeOf.Int32        // Размер полезной нагрузки
-                                      + SizeOf.Lsn          // Коммит лидера
-                                      + SizeOf.Term         // Терм лидера
-                                      + SizeOf.Term         // Терм предыдущей записи
-                                      + SizeOf.Lsn          // LSN предыдущей записи
-                                      + SizeOf.NodeId       // ID узла лидера
-                                      + SizeOf.ArrayLength; // Количество записей в массиве
+    private const int BasePayloadSize = SizeOf.Int32 // Размер полезной нагрузки
+                                        + SizeOf.Lsn // Коммит лидера
+                                        + SizeOf.Term // Терм лидера
+                                        + SizeOf.Term // Терм предыдущей записи
+                                        + SizeOf.Lsn // LSN предыдущей записи
+                                        + SizeOf.NodeId // ID узла лидера
+                                        + SizeOf.ArrayLength; // Количество записей в массиве
 
     private const int DataAlignment = 8;
 
@@ -36,9 +36,9 @@ public class AppendEntriesRequestPacket : NodePacket
         }
 
         return BasePayloadSize
-             + entries.Sum(entry => SizeOf.Term // Терм записи
-                                  + SizeOf.BufferAligned(entry.Data,
-                                        DataAlignment)); // Размер буфера с данными включая длину
+               + entries.Sum(entry => SizeOf.Term // Терм записи
+                                      + SizeOf.BufferAligned(entry.Data,
+                                          DataAlignment)); // Размер буфера с данными включая длину
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
@@ -81,9 +81,9 @@ public class AppendEntriesRequestPacket : NodePacket
     internal int GetDataEndPosition()
     {
         return DataStartPosition
-             + Request.Entries.Sum(entry => SizeOf.Term                                      // Терм записи
-                                          + SizeOf.BufferAligned(entry.Data, DataAlignment)) // Данные записи
-             + sizeof(uint);                                                                 // Чек-сумма
+               + Request.Entries.Sum(entry => SizeOf.Term // Терм записи
+                                              + SizeOf.BufferAligned(entry.Data, DataAlignment)) // Данные записи
+               + sizeof(uint); // Чек-сумма
     }
 
     public new static AppendEntriesRequestPacket Deserialize(Stream stream)

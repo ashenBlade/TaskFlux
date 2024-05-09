@@ -68,11 +68,11 @@ public class MetadataFile
     /// Файл может быть либо пустым (размер 0), либо этого размера.
     /// Другие значения указывают на беды с башкой
     /// </summary>
-    private const int FileSize = sizeof(int)   // Маркер 
-                               + sizeof(int)   // Версия
-                               + sizeof(long)  // Терм
-                               + sizeof(int)   // Голос
-                               + sizeof(uint); // CRC
+    private const int FileSize = sizeof(int) // Маркер 
+                                 + sizeof(int) // Версия
+                                 + sizeof(long) // Терм
+                                 + sizeof(int) // Голос
+                                 + sizeof(uint); // CRC
 
     internal (Term, NodeId?) ReadStoredDataTest()
     {
@@ -96,11 +96,11 @@ public class MetadataFile
         }
 
         var term = new Term(reader.ReadInt64());
-        var votedFor = ( NodeId? ) ( reader.ReadInt32() switch
-                                     {
-                                         NoVotedFor => null,
-                                         var value  => new NodeId(value)
-                                     } );
+        var votedFor = (NodeId?)(reader.ReadInt32() switch
+        {
+            NoVotedFor => null,
+            var value => new NodeId(value)
+        });
         var storedCheckSum = reader.ReadUInt32();
         var computedCheckSum = Crc32CheckSum.Compute(span[sizeof(int)..^sizeof(uint)]);
         if (storedCheckSum != computedCheckSum)
@@ -109,7 +109,7 @@ public class MetadataFile
                 $"Прочитанная чек-сумма не равна рассчитанная. Рассчитанная: {computedCheckSum}. Прочитанная: {storedCheckSum}");
         }
 
-        return ( term, votedFor );
+        return (term, votedFor);
     }
 
     private static (Term Term, NodeId? VotedFor) InitializeFile(FileSystemStream file)
@@ -122,7 +122,7 @@ public class MetadataFile
             file.Write(span);
             file.Flush(true);
 
-            return ( DefaultTerm, DefaultVotedFor );
+            return (DefaultTerm, DefaultVotedFor);
         }
 
         if (file.Length < FileSize)
@@ -164,7 +164,7 @@ public class MetadataFile
                 $"Прочитанная чек-сумма не равна вычисленной. Вычисленная: {computedCheckSum}. Прочитанная: {storedCheckSum}");
         }
 
-        return ( term, votedFor );
+        return (term, votedFor);
 
         static Term ReadTerm(ref SpanBinaryReader r)
         {
@@ -178,8 +178,8 @@ public class MetadataFile
             catch (ArgumentOutOfRangeException e)
             {
                 throw new InvalidDataException(value is { } t
-                                                   ? $"В файле был записан терм представляющий неверное значение: {t}"
-                                                   : "В файле был записан терм представляющий неверное значение", e);
+                    ? $"В файле был записан терм представляющий неверное значение: {t}"
+                    : "В файле был записан терм представляющий неверное значение", e);
             }
         }
 
@@ -191,16 +191,16 @@ public class MetadataFile
                 var read = r.ReadInt32();
                 value = read;
                 return read switch
-                       {
-                           NoVotedFor => null,
-                           _          => new NodeId(read)
-                       };
+                {
+                    NoVotedFor => null,
+                    _ => new NodeId(read)
+                };
             }
             catch (ArgumentOutOfRangeException e)
             {
                 throw new InvalidDataException(value is { } v
-                                                   ? $"Значение отданного голоса представляет неверное значение: {v}"
-                                                   : "Значение отданного голоса представляет неверное значение", e);
+                    ? $"Значение отданного голоса представляет неверное значение: {v}"
+                    : "Значение отданного голоса представляет неверное значение", e);
             }
         }
     }

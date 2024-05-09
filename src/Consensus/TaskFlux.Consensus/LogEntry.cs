@@ -23,11 +23,11 @@ public record LogEntry(Term Term, byte[] Data)
     /// <returns>Размер записи в файле в байтах</returns>
     public long CalculateFileRecordSize()
     {
-        return sizeof(int)  // Маркер записи
-             + sizeof(long) // Терм
-             + sizeof(uint) // Чек-сумма
-             + sizeof(int)  // Длина данных
-             + Data.Length; // Сами данные
+        return sizeof(int) // Маркер записи
+               + sizeof(long) // Терм
+               + sizeof(uint) // Чек-сумма
+               + sizeof(int) // Длина данных
+               + Data.Length; // Сами данные
     }
 
     /// <summary>
@@ -38,7 +38,7 @@ public record LogEntry(Term Term, byte[] Data)
     public long CalculateRecordSize()
     {
         return sizeof(long) // Терм
-             + sizeof(int)  // Размер данных
-             + Data.Length; // Сами данные
+               + sizeof(int) // Размер данных
+               + Data.Length; // Сами данные
     }
 }

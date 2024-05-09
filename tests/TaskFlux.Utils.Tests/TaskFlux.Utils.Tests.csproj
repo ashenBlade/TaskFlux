@@ -23,7 +23,9 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\TaskFlux.Utils\TaskFlux.Utils.csproj"/>
+        <ProjectReference Include="..\..\src\TaskFlux.Utils\TaskFlux.Utils.CheckSum\TaskFlux.Utils.CheckSum.csproj"/>
+        <ProjectReference Include="..\..\src\TaskFlux.Utils\TaskFlux.Utils.Network\TaskFlux.Utils.Network.csproj"/>
+        <ProjectReference Include="..\..\src\TaskFlux.Utils\TaskFlux.Utils.Serialization\TaskFlux.Utils.Serialization.csproj"/>
     </ItemGroup>
 
 </Project>

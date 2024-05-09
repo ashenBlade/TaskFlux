@@ -1,5 +1,5 @@
-using TaskFlux.Client;
 using TaskFlux.Core;
+using TaskFlux.Transport.Tcp.Client;
 
 namespace InteractiveConsole.Commands;
 

@@ -1,7 +1,7 @@
 using InteractiveConsole.Commands;
-using TaskFlux.Client;
 using TaskFlux.Core;
 using TaskFlux.PriorityQueue;
+using TaskFlux.Transport.Tcp.Client;
 
 namespace InteractiveConsole;
 
@@ -11,12 +11,12 @@ public static class StringCommandParser
 
     private static readonly Dictionary<string, CommandFactory> CommandToFactory = new()
     {
-        {"create", GetCreateQueueCommand},
-        {"delete", GetDeleteQueueCommand},
-        {"enqueue", GetEnqueueCommand},
-        {"dequeue", GetDequeueCommand},
-        {"count", GetCountCommand},
-        {"list", GetListQueuesCommand},
+        { "create", GetCreateQueueCommand },
+        { "delete", GetDeleteQueueCommand },
+        { "enqueue", GetEnqueueCommand },
+        { "dequeue", GetDequeueCommand },
+        { "count", GetCountCommand },
+        { "list", GetListQueuesCommand },
     };
 
     public static UserCommand ParseCommand(string input)
@@ -61,7 +61,7 @@ public static class StringCommandParser
                     i++;
                     break;
                 case "WITHPRIORITYRANGE":
-                    priorityRange = ( long.Parse(args[i + 1]), long.Parse(args[i + 2]) );
+                    priorityRange = (long.Parse(args[i + 1]), long.Parse(args[i + 2]));
                     i += 2;
                     break;
                 case "TYPE":

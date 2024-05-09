@@ -1,7 +1,7 @@
 ﻿using System.Net;
 using InteractiveConsole;
 using Serilog;
-using TaskFlux.Client;
+using TaskFlux.Transport.Tcp.Client;
 
 // ReSharper disable AccessToDisposedClosure
 
@@ -10,14 +10,14 @@ using TaskFlux.Client;
  * Взаимодействие осуществляется через консоль.
  *
  * В данном примере используется кластер из одного узла.
- * Запусить узел можно из docker-compose.yaml, расположенного в директории проекта.
+ * Запустить узел можно из docker-compose.yaml, расположенного в директории проекта.
  */
 
 using var cts = new CancellationTokenSource();
 
 Log.Logger = new LoggerConfiguration()
-            .WriteTo.Console()
-            .CreateLogger();
+    .WriteTo.Console()
+    .CreateLogger();
 
 Console.CancelKeyPress += (_, eventArgs) =>
 {
@@ -28,7 +28,9 @@ Console.CancelKeyPress += (_, eventArgs) =>
 
 var clientFactory = new TaskFluxClientFactory(new EndPoint[]
 {
-    new DnsEndPoint("localhost", 8080), new DnsEndPoint("localhost", 8081), new DnsEndPoint("localhost", 8082),
+    new DnsEndPoint("localhost", 8080),
+    new DnsEndPoint("localhost", 8081),
+    new DnsEndPoint("localhost", 8082),
 });
 
 Log.Logger.Debug($"Создаю клиента");
@@ -61,6 +63,11 @@ while (!cts.IsCancellationRequested)
         continue;
     }
 
+    if (commandString.Equals("exit", StringComparison.InvariantCultureIgnoreCase))
+    {
+        break;
+    }
+
     try
     {
         var command = StringCommandParser.ParseCommand(commandString);
@@ -78,7 +85,6 @@ while (!cts.IsCancellationRequested)
         Console.WriteLine($"Ошибка выполнения команды: {e.Message}");
     }
 }
-
 
 return;
 
@@ -135,6 +141,6 @@ async Task<string?> ReadInputAsync(CancellationToken token)
     var waitTask = Task.Delay(Timeout.Infinite, token);
     await Task.WhenAny(readTask, waitTask);
     return token.IsCancellationRequested
-               ? null
-               : readTask.Result;
+        ? null
+        : readTask.Result;
 }

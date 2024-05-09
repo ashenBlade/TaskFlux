@@ -1,6 +1,5 @@
 using TaskFlux.Application.Cluster.Network;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 using TaskFlux.Utils.Serialization;
 
@@ -20,7 +19,7 @@ public static class SpanBinaryWriterExtensions
 
     public static void Write(ref this SpanBinaryWriter writer, NodePacketType packetType)
     {
-        writer.Write(( byte ) packetType);
+        writer.Write((byte)packetType);
     }
 
     public static void Write(ref this SpanBinaryWriter writer, NodeId nodeId)

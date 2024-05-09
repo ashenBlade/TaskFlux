@@ -27,9 +27,9 @@ public class SnapshotFile
     /// <summary>
     /// Позиция в файле, на которой находится длина данных
     /// </summary>
-    private const int LengthPosition = sizeof(uint)  // Маркер
-                                     + sizeof(long)  // Последний индекс
-                                     + sizeof(long); // Последний терм
+    private const int LengthPosition = sizeof(uint) // Маркер
+                                       + sizeof(long) // Последний индекс
+                                       + sizeof(long); // Последний терм
 
     /// <summary>
     /// Позиция в файле, на которой начинаются сами данные
@@ -67,8 +67,8 @@ public class SnapshotFile
     /// </summary>
     /// <remarks><see cref="LogEntryInfo.Tomb"/> - означает отсутствие снапшота</remarks>
     public LogEntryInfo LastApplied => _snapshotInfo is var (lastApplied, _, _)
-                                           ? lastApplied
-                                           : LogEntryInfo.Tomb;
+        ? lastApplied
+        : LogEntryInfo.Tomb;
 
     /// <summary>
     /// Данные о файле снапшота.
@@ -230,7 +230,7 @@ public class SnapshotFile
                 case SnapshotFileState.Start:
                     break;
                 default:
-                    throw new InvalidEnumArgumentException(nameof(_state), ( int ) _state, typeof(SnapshotFileState));
+                    throw new InvalidEnumArgumentException(nameof(_state), (int)_state, typeof(SnapshotFileState));
             }
 
             // 1. Создаем новый файл снапшота
@@ -264,7 +264,7 @@ public class SnapshotFile
                 try
                 {
                     var stream = file.Open(FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
-                    return ( file, stream );
+                    return (file, stream);
                 }
                 catch (IOException)
                 {
@@ -290,7 +290,7 @@ public class SnapshotFile
                 case SnapshotFileState.Initialized:
                     break;
                 default:
-                    throw new InvalidEnumArgumentException(nameof(_state), ( int ) _state, typeof(SnapshotFileState));
+                    throw new InvalidEnumArgumentException(nameof(_state), (int)_state, typeof(SnapshotFileState));
             }
 
             Debug.Assert(_temporarySnapshotFileStream is not null, "Поток временного файла не должен быть null");
@@ -309,7 +309,7 @@ public class SnapshotFile
 
             _temporarySnapshotFile.MoveTo(_parent._snapshotFile.FullName, true);
 
-            _parent._snapshotInfo = ( _writtenLogEntry.Value, _length, _checkSum );
+            _parent._snapshotInfo = (_writtenLogEntry.Value, _length, _checkSum);
 
             _state = SnapshotFileState.Finished;
         }
@@ -324,7 +324,7 @@ public class SnapshotFile
                 case SnapshotFileState.Initialized:
                     break;
                 default:
-                    throw new InvalidEnumArgumentException(nameof(_state), ( int ) _state, typeof(SnapshotFileState));
+                    throw new InvalidEnumArgumentException(nameof(_state), (int)_state, typeof(SnapshotFileState));
             }
 
             _state = SnapshotFileState.Finished;
@@ -351,7 +351,7 @@ public class SnapshotFile
                     break;
                 default:
                     Debug.Assert(false, $"Неизвестное состояние при записи файла снапшота: {_state}");
-                    throw new InvalidEnumArgumentException(nameof(_state), ( int ) _state, typeof(SnapshotFileState));
+                    throw new InvalidEnumArgumentException(nameof(_state), (int)_state, typeof(SnapshotFileState));
             }
 
             Debug.Assert(_temporarySnapshotFileStream is not null, "Поток файла снапшота не должен быть null");
@@ -374,9 +374,9 @@ public class SnapshotFile
         }
 
         using var stream = file.Open(FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-        const int minHeaderSize = sizeof(uint)  // Маркер 
-                                + sizeof(long)  // Индекс
-                                + sizeof(long); // Терм
+        const int minHeaderSize = sizeof(uint) // Маркер 
+                                  + sizeof(long) // Индекс
+                                  + sizeof(long); // Терм
 
         if (stream.Length < minHeaderSize)
         {
@@ -414,7 +414,7 @@ public class SnapshotFile
                     $"Снапшот отсутствует, но прочитанная чек-сумма не равна сохраненной. Прочитанная: {storedCheckSum}. Ожидаемая: {Crc32CheckSum.InitialValue}");
             }
 
-            return ( new LogEntryInfo(term, index), 0, storedCheckSum );
+            return (new LogEntryInfo(term, index), 0, storedCheckSum);
         }
 
 
@@ -437,7 +437,7 @@ public class SnapshotFile
                 $"Рассчитанная чек-сумма не равна сохраненной. Рассчитанная: {computedCheckSum}. Сохраненная: {storedCheckSum}");
         }
 
-        return ( new LogEntryInfo(term, index), length, storedCheckSum );
+        return (new LogEntryInfo(term, index), length, storedCheckSum);
     }
 
     public static SnapshotFile Initialize(IDirectoryInfo dataDirectory, SnapshotOptions options)
@@ -493,7 +493,7 @@ public class SnapshotFile
                 $"Прочитанная чек-сумма не равна вычисленной. Прочитанная чек-сумма: {storedCheckSum}. Рассчитанная: {computedCheckSum}");
         }
 
-        return ( index, term, data );
+        return (index, term, data);
     }
 
     /// <summary>
@@ -516,7 +516,7 @@ public class SnapshotFile
         var checkSum = Crc32CheckSum.Compute(data);
         writer.Write(checkSum);
 
-        _snapshotInfo = ( new LogEntryInfo(lastTerm, lastIndex), data.Length, checkSum );
+        _snapshotInfo = (new LogEntryInfo(lastTerm, lastIndex), data.Length, checkSum);
         return;
 
         byte[] ReadSnapshotBytes()

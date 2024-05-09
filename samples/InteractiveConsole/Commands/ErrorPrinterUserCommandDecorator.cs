@@ -1,6 +1,6 @@
-using TaskFlux.Client;
-using TaskFlux.Client.Exceptions;
 using TaskFlux.Network.Responses.Policies;
+using TaskFlux.Transport.Tcp.Client;
+using TaskFlux.Transport.Tcp.Client.Exceptions;
 
 namespace InteractiveConsole.Commands;
 
@@ -53,20 +53,20 @@ public class ErrorPrinterUserCommandDecorator : UserCommand
             switch (pve.Policy.Code)
             {
                 case NetworkPolicyCode.Generic:
-                    var genericPolicy = ( GenericNetworkQueuePolicy ) pve.Policy;
+                    var genericPolicy = (GenericNetworkQueuePolicy)pve.Policy;
                     policyMessage = $"{genericPolicy.Message}";
                     break;
                 case NetworkPolicyCode.MaxQueueSize:
-                    var maxQueueSizePolicy = ( MaxQueueSizeNetworkQueuePolicy ) pve.Policy;
+                    var maxQueueSizePolicy = (MaxQueueSizeNetworkQueuePolicy)pve.Policy;
                     policyMessage = $"превышен максимальный размер очереди: ({maxQueueSizePolicy.MaxQueueSize})";
                     break;
                 case NetworkPolicyCode.PriorityRange:
-                    var priorityRangePolicy = ( PriorityRangeNetworkQueuePolicy ) pve.Policy;
+                    var priorityRangePolicy = (PriorityRangeNetworkQueuePolicy)pve.Policy;
                     policyMessage =
                         $"превышен допустимый диапазон ключей: {priorityRangePolicy.Min} - {priorityRangePolicy.Max}";
                     break;
                 case NetworkPolicyCode.MaxMessageSize:
-                    var maxMessageSizePolicy = ( MaxMessageSizeNetworkQueuePolicy ) pve.Policy;
+                    var maxMessageSizePolicy = (MaxMessageSizeNetworkQueuePolicy)pve.Policy;
                     policyMessage =
                         $"превышен максимальный размер сообщения: {maxMessageSizePolicy.MaxMessageSize} байт";
                     break;

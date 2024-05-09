@@ -43,7 +43,7 @@ public class SegmentedFileLog : IDisposable
     /// Общий размер заголовка в байтах: Маркер + Версия
     /// </summary>
     private const int HeaderSizeBytes = sizeof(int)
-                                      + sizeof(int);
+                                        + sizeof(int);
 
     private const long DataStartPosition = HeaderSizeBytes;
 
@@ -98,10 +98,10 @@ public class SegmentedFileLog : IDisposable
         private static int BufferSize => Environment.SystemPageSize;
 
         private LogSegment(SegmentFileName fileName,
-                           IFileInfo file,
-                           List<LogRecord> records,
-                           FileSystemStream? writeStream,
-                           ILogger logger)
+            IFileInfo file,
+            List<LogRecord> records,
+            FileSystemStream? writeStream,
+            ILogger logger)
         {
             _logger = logger;
             FileName = fileName;
@@ -110,7 +110,7 @@ public class SegmentedFileLog : IDisposable
 
             if (writeStream is not null)
             {
-                WriteStreamData = ( writeStream, new BufferedStream(writeStream, BufferSize) );
+                WriteStreamData = (writeStream, new BufferedStream(writeStream, BufferSize));
             }
             else
             {
@@ -172,9 +172,9 @@ public class SegmentedFileLog : IDisposable
         /// <param name="hardLimit">Жесткий предел размера файла лога</param>
         /// <returns>Количество сделанных записей</returns>
         public int InsertRangeOverwrite(IReadOnlyList<LogEntry> entries,
-                                        int startIndex,
-                                        Lsn listStartIndex,
-                                        long hardLimit)
+            int startIndex,
+            Lsn listStartIndex,
+            long hardLimit)
         {
             Debug.Assert(WriteStreamData != null, "WriteStream != null",
                 "Файл сегмента закрыт. Нельзя перезаписывать часть файла");
@@ -208,11 +208,11 @@ public class SegmentedFileLog : IDisposable
 
             // В противном случае, индекс указывает куда-то внутрь лога.
             // Нужно найти позицию, с которой необходимо произвести перезапись
-            var localIndex = ( long ) ( actualStartLsn - LogStartIndex );
+            var localIndex = (long)(actualStartLsn - LogStartIndex);
 
             var (fileStream, bufferedStream) = WriteStreamData.Value;
             // Лог точно не пуст, т.к. если он пуст, то единственное доступное решение - добавить запись в конец (выше)
-            var startPosition = Records[( int ) localIndex].Position;
+            var startPosition = Records[(int)localIndex].Position;
 
             bufferedStream.Position = startPosition;
             var writer = new StreamBinaryWriter(bufferedStream);
@@ -238,7 +238,7 @@ public class SegmentedFileLog : IDisposable
             fileStream.Fsync();
 
             // Обновляем индекс
-            Records.RemoveRange(( int ) localIndex, ( int ) ( Records.Count - localIndex ));
+            Records.RemoveRange((int)localIndex, (int)(Records.Count - localIndex));
             Records.AddRange(newIndexValues);
 
             return newIndexValues.Count;
@@ -302,7 +302,7 @@ public class SegmentedFileLog : IDisposable
         /// <returns>Информация о требуемой записи</returns>
         public LogEntryInfo GetInfoAt(Lsn index)
         {
-            var localIndex = ( int ) ( index - LogStartIndex );
+            var localIndex = (int)(index - LogStartIndex);
             var record = Records[localIndex];
             return new LogEntryInfo(record.Term, index);
         }
@@ -330,8 +330,8 @@ public class SegmentedFileLog : IDisposable
         public long GetEffectiveFileSize()
         {
             return Records.Count > 0
-                       ? Records[^1].GetNextRecordPosition()
-                       : DataStartPosition + sizeof(int); // Меньше чем заголовок + маркер окончания быть не может 
+                ? Records[^1].GetNextRecordPosition()
+                : DataStartPosition + sizeof(int); // Меньше чем заголовок + маркер окончания быть не может 
         }
 
         /// <summary>
@@ -394,8 +394,8 @@ public class SegmentedFileLog : IDisposable
                 "Разрешенный размер прочитанных записей должен быть положительным либо равен NoSizeCheck константе - переданный равен {0}",
                 allowSize);
 
-            var localStart = ( int ) ( start - LogStartIndex );
-            var localEnd = ( int ) ( end - LogStartIndex );
+            var localStart = (int)(start - LogStartIndex);
+            var localEnd = (int)(end - LogStartIndex);
 
             if (localStart < 0)
             {
@@ -457,8 +457,8 @@ public class SegmentedFileLog : IDisposable
             }
 
             written = shouldCheckSize
-                          ? allowSize - leftSize
-                          : -1;
+                ? allowSize - leftSize
+                : -1;
             return entries;
         }
 
@@ -490,10 +490,10 @@ public class SegmentedFileLog : IDisposable
         }
 
         private static LogSegment InitializeCore(IFileInfo fileInfo,
-                                                 SegmentFileName fileName,
-                                                 SegmentedFileLogOptions options,
-                                                 ILogger logger,
-                                                 bool readOnly)
+            SegmentFileName fileName,
+            SegmentedFileLogOptions options,
+            ILogger logger,
+            bool readOnly)
         {
             // Файл открываем в ReadWrite режиме, т.к. может потребоваться восстановление файла (обрезание)
             logger.Debug("Открываю файл {FileName}", fileInfo.FullName);
@@ -607,7 +607,7 @@ public class SegmentedFileLog : IDisposable
                 Span<byte> buffer = stackalloc byte[BufferSize];
 
                 // Пока не достигли конца файла
-                while (( recordStartPosition = file.Position ) < file.Length)
+                while ((recordStartPosition = file.Position) < file.Length)
                 {
                     // | Маркер | Терм | Чек-сумма | Данные |
                     var recordMarker = reader.ReadUInt32();
@@ -720,9 +720,9 @@ public class SegmentedFileLog : IDisposable
         /// </summary>
         /// <returns>Инициализированный файл сегмента лога</returns>
         public static LogSegment InitializeSealed(IFileInfo fileInfo,
-                                                  SegmentFileName fileName,
-                                                  SegmentedFileLogOptions options,
-                                                  ILogger logger)
+            SegmentFileName fileName,
+            SegmentedFileLogOptions options,
+            ILogger logger)
         {
             return InitializeCore(fileInfo, fileName, options, logger, true);
         }
@@ -731,9 +731,9 @@ public class SegmentedFileLog : IDisposable
         /// Инициализировать файл сегмента в Write режиме 
         /// </summary>
         public static LogSegment InitializeTail(IFileInfo fileInfo,
-                                                SegmentFileName fileName,
-                                                SegmentedFileLogOptions options,
-                                                ILogger logger)
+            SegmentFileName fileName,
+            SegmentedFileLogOptions options,
+            ILogger logger)
         {
             return InitializeCore(fileInfo, fileName, options, logger, false);
         }
@@ -782,7 +782,7 @@ public class SegmentedFileLog : IDisposable
                     record.SetPayload(buffer);
                 }
 
-                WriteStreamData = ( fileStream, bufferedStream );
+                WriteStreamData = (fileStream, bufferedStream);
             }
             catch (Exception)
             {
@@ -880,14 +880,14 @@ public class SegmentedFileLog : IDisposable
     /// Записи с этим индексом может и не существовать
     /// </summary>
     public Lsn StartIndex => _sealed.Count > 0
-                                 ? _sealed[0].LogStartIndex
-                                 : _tail.LogStartIndex;
+        ? _sealed[0].LogStartIndex
+        : _tail.LogStartIndex;
 
     private SegmentedFileLog(IDirectoryInfo logDirectory,
-                             List<LogSegment> sealedSegments,
-                             LogSegment tail,
-                             SegmentedFileLogOptions options,
-                             ILogger logger)
+        List<LogSegment> sealedSegments,
+        LogSegment tail,
+        SegmentedFileLogOptions options,
+        ILogger logger)
     {
         _logDirectory = logDirectory;
         _sealed = sealedSegments;
@@ -898,8 +898,8 @@ public class SegmentedFileLog : IDisposable
     }
 
     public static SegmentedFileLog Initialize(IDirectoryInfo dataDirectory,
-                                              ILogger logger,
-                                              SegmentedFileLogOptions options)
+        ILogger logger,
+        SegmentedFileLogOptions options)
     {
         var logDirectory = GetLogDirectory();
 
@@ -1022,7 +1022,7 @@ public class SegmentedFileLog : IDisposable
             {
                 if (SegmentFileName.TryParse(file.Name, out var segmentName))
                 {
-                    files.Add(( file, segmentName ));
+                    files.Add((file, segmentName));
                 }
             }
 
@@ -1031,10 +1031,10 @@ public class SegmentedFileLog : IDisposable
     }
 
     internal static SegmentedFileLog InitializeTest(IDirectoryInfo logDirectory,
-                                                    Lsn startIndex,
-                                                    IReadOnlyList<LogEntry>? tailEntries = null,
-                                                    IReadOnlyList<IReadOnlyList<LogEntry>>? segmentEntries = null,
-                                                    SegmentedFileLogOptions? options = null)
+        Lsn startIndex,
+        IReadOnlyList<LogEntry>? tailEntries = null,
+        IReadOnlyList<IReadOnlyList<LogEntry>>? segmentEntries = null,
+        SegmentedFileLogOptions? options = null)
     {
         Debug.Assert(!startIndex.IsTomb, "!startIndex.IsTomb", "Индекс записи может начинаться только с 0");
         if (!logDirectory.Exists)
@@ -1044,7 +1044,7 @@ public class SegmentedFileLog : IDisposable
 
         var sealedSegments = new List<LogSegment>();
         var index = startIndex;
-        if (segmentEntries is {Count: > 0})
+        if (segmentEntries is { Count: > 0 })
         {
             foreach (var entries in segmentEntries)
             {
@@ -1061,7 +1061,7 @@ public class SegmentedFileLog : IDisposable
         var tailFileName = new SegmentFileName(index);
         var tailFileInfo = GetSegmentFileInfo(logDirectory, tailFileName);
         var tail = LogSegment.InitializeTail(tailFileInfo, tailFileName, GetOptions(), Logger.None);
-        if (tailEntries is {Count: > 0})
+        if (tailEntries is { Count: > 0 })
         {
             tail.SetupTest(tailEntries);
         }
@@ -1203,11 +1203,11 @@ public class SegmentedFileLog : IDisposable
     internal IReadOnlyList<LogEntry> ReadAllTest()
     {
         return _sealed.Append(_tail)
-                      .Aggregate(new List<LogEntry>(), (list, segment) =>
-                       {
-                           list.AddRange(segment.ReadAll(long.MaxValue, out _));
-                           return list;
-                       });
+            .Aggregate(new List<LogEntry>(), (list, segment) =>
+            {
+                list.AddRange(segment.ReadAll(long.MaxValue, out _));
+                return list;
+            });
     }
 
     /// <summary>
@@ -1608,9 +1608,9 @@ public class SegmentedFileLog : IDisposable
 
 
     internal void SetupLogTest(IReadOnlyList<LogEntry> tailEntries,
-                               IReadOnlyList<IReadOnlyList<LogEntry>> sealedSegments,
-                               Lsn? startIndex = null,
-                               Lsn? commitIndex = null)
+        IReadOnlyList<IReadOnlyList<LogEntry>> sealedSegments,
+        Lsn? startIndex = null,
+        Lsn? commitIndex = null)
     {
         _tail.Delete();
         foreach (var s in _sealed)
@@ -1787,11 +1787,11 @@ public class SegmentedFileLog : IDisposable
     internal IReadOnlyList<LogEntry> GetAllEntriesTest()
     {
         return _sealed.Append(_tail)
-                      .Aggregate(new List<LogEntry>(), (entries, segment) =>
-                       {
-                           entries.AddRange(segment.ReadAll(long.MaxValue, out _));
-                           return entries;
-                       });
+            .Aggregate(new List<LogEntry>(), (entries, segment) =>
+            {
+                entries.AddRange(segment.ReadAll(long.MaxValue, out _));
+                return entries;
+            });
     }
 
     public bool TryGetLogEntryInfo(Lsn index, out LogEntryInfo entry)
@@ -1868,8 +1868,8 @@ public class SegmentedFileLog : IDisposable
          */
 
         var tailSize = _tail.GetEffectiveFileSize();
-        return ( _options.LogFileSoftLimit < tailSize && _tail.LastRecordIndex <= CommitIndex )
-            || _options.LogFileHardLimit < tailSize;
+        return (_options.LogFileSoftLimit < tailSize && _tail.LastRecordIndex <= CommitIndex)
+               || _options.LogFileHardLimit < tailSize;
     }
 
     internal void ValidateFileTest()
@@ -1931,7 +1931,7 @@ public class SegmentedFileLog : IDisposable
                 "Нельзя выставить индекс коммита больше, чем индекс последней записи в логе");
         }
 
-        if (commit < ( long ) StartIndex - 1)
+        if (commit < (long)StartIndex - 1)
         {
             throw new ArgumentOutOfRangeException(nameof(commit), commit,
                 "Нельзя выставить индекс коммита меньше, чем предпоследний в логе");
@@ -1959,7 +1959,7 @@ public class SegmentedFileLog : IDisposable
     {
         // Меньше этого
         long size = HeaderSizeBytes // Заголовок  
-                  + sizeof(int);    // Маркер конца
+                    + sizeof(int); // Маркер конца
 
         var entries = new List<LogEntry>();
         var random = new Random();
@@ -2013,7 +2013,7 @@ public class SegmentedFileLog : IDisposable
         }
 
         var toDelete = _sealed.TakeWhile(s => s.LastRecordIndex < index)
-                              .ToList();
+            .ToList();
         toDelete.ForEach(static s => s.Delete());
         _sealed.RemoveRange(0, toDelete.Count);
     }

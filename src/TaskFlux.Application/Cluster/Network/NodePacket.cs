@@ -51,14 +51,14 @@ public abstract class NodePacket
     }
 
     private async Task SendPayloadAsync(Stream stream,
-                                        Memory<byte> payload,
-                                        Memory<byte> checkSum,
-                                        CancellationToken token)
+        Memory<byte> payload,
+        Memory<byte> checkSum,
+        CancellationToken token)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(sizeof(byte));
         try
         {
-            buffer[0] = ( byte ) PacketType;
+            buffer[0] = (byte)PacketType;
             await stream.WriteAsync(buffer.AsMemory(0, 1), token);
             await stream.WriteAsync(payload, token);
             await stream.WriteAsync(checkSum, token);
@@ -72,7 +72,7 @@ public abstract class NodePacket
 
     private void SendPayload(Stream stream, Span<byte> payload, Span<byte> checkSum)
     {
-        stream.WriteByte(( byte ) PacketType);
+        stream.WriteByte((byte)PacketType);
         stream.Write(payload);
         stream.Write(checkSum);
         stream.Flush();
@@ -124,26 +124,26 @@ public abstract class NodePacket
 
         try
         {
-            return ( NodePacketType ) marker switch
-                   {
-                       NodePacketType.AppendEntriesRequest  => AppendEntriesRequestPacket.Deserialize(stream),
-                       NodePacketType.AppendEntriesResponse => AppendEntriesResponsePacket.Deserialize(stream),
-                       NodePacketType.RequestVoteResponse   => RequestVoteResponsePacket.Deserialize(stream),
-                       NodePacketType.RequestVoteRequest    => RequestVoteRequestPacket.Deserialize(stream),
-                       NodePacketType.ConnectRequest        => ConnectRequestPacket.Deserialize(stream),
-                       NodePacketType.ConnectResponse       => ConnectResponsePacket.Deserialize(stream),
-                       NodePacketType.InstallSnapshotChunkRequest => InstallSnapshotChunkRequestPacket.Deserialize(
-                           stream),
-                       NodePacketType.InstallSnapshotResponse => InstallSnapshotResponsePacket.Deserialize(stream),
-                       NodePacketType.InstallSnapshotRequest  => InstallSnapshotRequestPacket.Deserialize(stream),
-                       NodePacketType.RetransmitRequest       => RetransmitRequestPacket.Deserialize(stream),
-                       NodePacketType.InstallSnapshotChunkResponse => InstallSnapshotChunkResponsePacket.Deserialize(
-                           stream),
-                   };
+            return (NodePacketType)marker switch
+            {
+                NodePacketType.AppendEntriesRequest => AppendEntriesRequestPacket.Deserialize(stream),
+                NodePacketType.AppendEntriesResponse => AppendEntriesResponsePacket.Deserialize(stream),
+                NodePacketType.RequestVoteResponse => RequestVoteResponsePacket.Deserialize(stream),
+                NodePacketType.RequestVoteRequest => RequestVoteRequestPacket.Deserialize(stream),
+                NodePacketType.ConnectRequest => ConnectRequestPacket.Deserialize(stream),
+                NodePacketType.ConnectResponse => ConnectResponsePacket.Deserialize(stream),
+                NodePacketType.InstallSnapshotChunkRequest => InstallSnapshotChunkRequestPacket.Deserialize(
+                    stream),
+                NodePacketType.InstallSnapshotResponse => InstallSnapshotResponsePacket.Deserialize(stream),
+                NodePacketType.InstallSnapshotRequest => InstallSnapshotRequestPacket.Deserialize(stream),
+                NodePacketType.RetransmitRequest => RetransmitRequestPacket.Deserialize(stream),
+                NodePacketType.InstallSnapshotChunkResponse => InstallSnapshotChunkResponsePacket.Deserialize(
+                    stream),
+            };
         }
         catch (SwitchExpressionException)
         {
-            throw new UnknownPacketException(( byte ) marker);
+            throw new UnknownPacketException((byte)marker);
         }
     }
 
@@ -161,32 +161,32 @@ public abstract class NodePacket
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        var packetType = ( NodePacketType ) marker;
+        var packetType = (NodePacketType)marker;
         try
         {
             return packetType switch
-                   {
-                       NodePacketType.AppendEntriesRequest => await AppendEntriesRequestPacket.DeserializeAsync(stream,
-                                                                  token),
-                       NodePacketType.AppendEntriesResponse => await AppendEntriesResponsePacket.DeserializeAsync(
-                                                                   stream, token),
-                       NodePacketType.RequestVoteResponse => await RequestVoteResponsePacket.DeserializeAsync(stream,
-                                                                 token),
-                       NodePacketType.RequestVoteRequest => await RequestVoteRequestPacket.DeserializeAsync(stream,
-                                                                token),
-                       NodePacketType.ConnectRequest  => await ConnectRequestPacket.DeserializeAsync(stream, token),
-                       NodePacketType.ConnectResponse => await ConnectResponsePacket.DeserializeAsync(stream, token),
-                       NodePacketType.InstallSnapshotChunkRequest => await InstallSnapshotChunkRequestPacket
-                                                                        .DeserializeAsync(stream, token),
-                       NodePacketType.InstallSnapshotResponse =>
-                           await InstallSnapshotResponsePacket.DeserializeAsync(stream, token),
-                       NodePacketType.InstallSnapshotRequest =>
-                           await InstallSnapshotRequestPacket.DeserializeAsync(stream, token),
-                       NodePacketType.RetransmitRequest =>
-                           await RetransmitRequestPacket.DeserializeAsync(stream, token),
-                       NodePacketType.InstallSnapshotChunkResponse => await InstallSnapshotChunkResponsePacket
-                                                                         .DeserializeAsync(stream, token),
-                   };
+            {
+                NodePacketType.AppendEntriesRequest => await AppendEntriesRequestPacket.DeserializeAsync(stream,
+                    token),
+                NodePacketType.AppendEntriesResponse => await AppendEntriesResponsePacket.DeserializeAsync(
+                    stream, token),
+                NodePacketType.RequestVoteResponse => await RequestVoteResponsePacket.DeserializeAsync(stream,
+                    token),
+                NodePacketType.RequestVoteRequest => await RequestVoteRequestPacket.DeserializeAsync(stream,
+                    token),
+                NodePacketType.ConnectRequest => await ConnectRequestPacket.DeserializeAsync(stream, token),
+                NodePacketType.ConnectResponse => await ConnectResponsePacket.DeserializeAsync(stream, token),
+                NodePacketType.InstallSnapshotChunkRequest => await InstallSnapshotChunkRequestPacket
+                    .DeserializeAsync(stream, token),
+                NodePacketType.InstallSnapshotResponse =>
+                    await InstallSnapshotResponsePacket.DeserializeAsync(stream, token),
+                NodePacketType.InstallSnapshotRequest =>
+                    await InstallSnapshotRequestPacket.DeserializeAsync(stream, token),
+                NodePacketType.RetransmitRequest =>
+                    await RetransmitRequestPacket.DeserializeAsync(stream, token),
+                NodePacketType.InstallSnapshotChunkResponse => await InstallSnapshotChunkResponsePacket
+                    .DeserializeAsync(stream, token),
+            };
         }
         catch (SwitchExpressionException)
         {

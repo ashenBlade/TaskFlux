@@ -1,7 +1,7 @@
 version: '3.0'
 
 services:
-  tflux.1:
+  tflux.0:
     build:
       context: ../../src
       dockerfile: TaskFlux.Host/Dockerfile

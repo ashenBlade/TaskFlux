@@ -1,16 +1,16 @@
 ﻿using System.Diagnostics;
 using System.Net;
 using Serilog;
-using TaskFlux.Client;
-using TaskFlux.Client.Exceptions;
 using TaskFlux.Core;
+using TaskFlux.Transport.Tcp.Client;
+using TaskFlux.Transport.Tcp.Client.Exceptions;
 
 // ReSharper disable once AccessToDisposedClosure
 
 using var totalCts = new CancellationTokenSource();
 Log.Logger = new LoggerConfiguration()
-            .WriteTo.Console()
-            .CreateLogger();
+    .WriteTo.Console()
+    .CreateLogger();
 
 Console.CancelKeyPress += (_, e) =>
 {
@@ -38,7 +38,7 @@ Log.Debug("Запускаю процессы. Время работы: {WorkTime
 
 var watch = Stopwatch.StartNew();
 var results = await Task.WhenAll(RunConsumerAsync(consumer, operationsCts.Token),
-                  RunProducerAsync(producer, operationsCts.Token));
+    RunProducerAsync(producer, operationsCts.Token));
 watch.Stop();
 
 var consumerOperations = results[0];

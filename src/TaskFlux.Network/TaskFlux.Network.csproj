@@ -12,8 +12,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\TaskFlux.Core\TaskFlux.Core.csproj"/>
-        <ProjectReference Include="..\TaskFlux.Utils\TaskFlux.Utils.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Utils\TaskFlux.Utils.CheckSum\TaskFlux.Utils.CheckSum.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Utils\TaskFlux.Utils.Serialization\TaskFlux.Utils.Serialization.csproj"/>
     </ItemGroup>
+
 
 </Project>

@@ -1,4 +1,4 @@
-using TaskFlux.Client;
+using TaskFlux.Transport.Tcp.Client;
 
 namespace InteractiveConsole.Commands;
 

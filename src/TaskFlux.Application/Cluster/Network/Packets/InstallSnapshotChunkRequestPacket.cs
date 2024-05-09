@@ -31,8 +31,8 @@ public class InstallSnapshotChunkRequestPacket : NodePacket
     internal int GetDataEndPosition()
     {
         return SizeOf.PacketType
-             + SizeOf.BufferAligned(Chunk.Span, DataAlignment)
-             + SizeOf.CheckSum;
+               + SizeOf.BufferAligned(Chunk.Span, DataAlignment)
+               + SizeOf.CheckSum;
     }
 
     public new static InstallSnapshotChunkRequestPacket Deserialize(Stream stream)
@@ -87,7 +87,7 @@ public class InstallSnapshotChunkRequestPacket : NodePacket
         }
 
         var alignment = GetAlignment(bufferLength);
-        return new InstallSnapshotChunkRequestPacket(restPayload[..^( alignment + sizeof(uint) )].ToArray());
+        return new InstallSnapshotChunkRequestPacket(restPayload[..^(alignment + sizeof(uint))].ToArray());
 
         static void ValidateChecksum(Span<byte> restPayload, Span<byte> lengthPayload)
         {
