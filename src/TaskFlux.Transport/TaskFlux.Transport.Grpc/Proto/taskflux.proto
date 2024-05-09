@@ -104,13 +104,12 @@ message DeleteQueueRequest {
 message DeleteQueueResponse {
   // Результат выполнения операции. 
   // Если error - null, то результат успешный
-  message DeleteQueueResponseData {
-    optional ErrorResponse error = 1;
-  }
+  message DeleteQueueResponseData {}
 
   oneof result {
     DeleteQueueResponseData data = 1;
-    NotLeaderResponse not_leader = 2;
+    ErrorResponse error = 2;
+    NotLeaderResponse not_leader = 3;
   }
 }
 
@@ -138,13 +137,12 @@ message CreateQueueRequest {
 }
 
 message CreateQueueResponse {
-  message CreateQueueResponseData {
-    optional ErrorResponse error = 1;
-  }
+  message CreateQueueResponseData {}
 
   oneof result {
     CreateQueueResponseData data = 1;
-    NotLeaderResponse not_leader = 2;
+    ErrorResponse error = 2;
+    NotLeaderResponse not_leader = 3;
   }
 }
 

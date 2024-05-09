@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Taskflux;
 using TaskFlux.Core.Commands.Error;
 using TaskFlux.Core.Policies;
+using ErrorResponse = Taskflux.ErrorResponse;
 
 namespace TaskFlux.Transport.Grpc;
 
@@ -13,6 +14,15 @@ internal static class GrpcHelpers
         var errorCode = (ErrorCode)type;
         Debug.Assert(Enum.IsDefined(errorCode), "Enum.IsDefined(errorCode)", "Неизвестный код ошибки для gRPC");
         return errorCode;
+    }
+
+    public static ErrorResponse MapGrpcError(Core.Commands.Error.ErrorResponse response)
+    {
+        return new ErrorResponse()
+        {
+            Code = GrpcHelpers.MapGrpcErrorCode(response.ErrorType),
+            Message = response.Message,
+        };
     }
 
     public static PolicyViolationResponse MapGrpcPolicyViolationResponse(

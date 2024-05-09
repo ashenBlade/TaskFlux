@@ -1,13 +1,18 @@
 ﻿using System.Diagnostics;
 using Google.Protobuf;
 using Grpc.Core;
-using Microsoft.Extensions.Logging;
 using Taskflux;
 using TaskFlux.Application;
 using TaskFlux.Application.Executor;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
+using TaskFlux.Core.Commands.Count;
+using TaskFlux.Core.Commands.CreateQueue;
+using TaskFlux.Core.Commands.CreateQueue.ImplementationDetails;
+using TaskFlux.Core.Commands.DeleteQueue;
 using TaskFlux.Core.Commands.Enqueue;
+using CreateQueueResponse = Taskflux.CreateQueueResponse;
+using DeleteQueueResponse = Taskflux.DeleteQueueResponse;
 using DequeueResponse = Taskflux.DequeueResponse;
 using EnqueueResponse = Taskflux.EnqueueResponse;
 
@@ -24,16 +29,13 @@ public class TaskFluxService : Taskflux.TaskFluxService.TaskFluxServiceBase
 
     private readonly IRequestAcceptor _requestAcceptor;
     private readonly IApplicationInfo _applicationInfo;
-    private readonly ILogger<TaskFluxService> _logger;
 
     public TaskFluxService(
         IRequestAcceptor requestAcceptor,
-        IApplicationInfo applicationInfo,
-        ILogger<TaskFluxService> logger)
+        IApplicationInfo applicationInfo)
     {
         _requestAcceptor = requestAcceptor;
         _applicationInfo = applicationInfo;
-        _logger = logger;
     }
 
     public override async Task Enqueue(IAsyncStreamReader<EnqueueRequest> requestStream,
@@ -118,25 +120,17 @@ public class TaskFluxService : Taskflux.TaskFluxService.TaskFluxServiceBase
                             };
                             break;
                         case ResponseType.Error:
-                            var errorResponse = (Core.Commands.Error.ErrorResponse)response;
-                            error = new ErrorResponse()
-                            {
-                                Code = GrpcHelpers.MapGrpcErrorCode(errorResponse.ErrorType),
-                                Message = errorResponse.Message
-                            };
-                            enqueueResponseData = new EnqueueResponse.Types.EnqueueResponseData()
-                            {
-                                PolicyViolation = null
-                            };
+                            error = GrpcHelpers.MapGrpcError((Core.Commands.Error.ErrorResponse)response);
+                            enqueueResponseData = null;
                             break;
                         case ResponseType.PolicyViolation:
                             var policyResponse = (Core.Commands.PolicyViolation.PolicyViolationResponse)response;
-                            error = null;
-
                             enqueueResponseData = new EnqueueResponse.Types.EnqueueResponseData()
                             {
                                 PolicyViolation = GrpcHelpers.MapGrpcPolicyViolationResponse(policyResponse)
                             };
+
+                            error = null;
                             break;
 
                         case ResponseType.Ok:
@@ -163,8 +157,7 @@ public class TaskFluxService : Taskflux.TaskFluxService.TaskFluxServiceBase
                     enqueueResponseData = null;
                     notLeaderResponse = new NotLeaderResponse()
                     {
-                        LeaderId = _applicationInfo.LeaderId?.Id ??
-                                   0 /* Nullable int почему-то не генерируется, приходится отправлять 0 */
+                        LeaderId = GetGrpcLeaderId()
                     };
                 }
 
@@ -375,7 +368,7 @@ public class TaskFluxService : Taskflux.TaskFluxService.TaskFluxServiceBase
 
     private int GetGrpcLeaderId()
     {
-        return _applicationInfo.LeaderId?.Id ?? 0;
+        return _applicationInfo.LeaderId?.Id ?? 0 /* Nullable int почему-то не генерируется, приходится отправлять 0 */;
     }
 
     private static TimeSpan GetTimeout(int timeout)
@@ -407,4 +400,254 @@ public class TaskFluxService : Taskflux.TaskFluxService.TaskFluxServiceBase
      *
      * Документация, тесты на GRPC (надо ли?)
      */
+
+    private bool TryValidateCreateQueueRequest(CreateQueueRequest request, out (long, long)? priorityRange,
+        out int? maxPayloadSize, out int? maxQueueSize, out QueueName queueName, out ErrorResponse? error)
+    {
+        if (!QueueNameParser.TryParse(request.Queue, out queueName))
+        {
+            error = InvalidQueueNameErrorResponse;
+            priorityRange = default;
+            maxPayloadSize = default;
+            maxQueueSize = default;
+            return false;
+        }
+
+        if (request.Policies.PriorityRange is not null)
+        {
+            var (min, max) = (request.Policies.PriorityRange.Min, request.Policies.PriorityRange.Max);
+            if (max < min)
+            {
+                error = new ErrorResponse()
+                {
+                    Code = ErrorCode.InvalidPriorityRange,
+                    Message = string.Empty,
+                };
+
+                priorityRange = default;
+                maxPayloadSize = default;
+                maxQueueSize = default;
+                return false;
+            }
+
+            priorityRange = (min, max);
+        }
+        else
+        {
+            priorityRange = default;
+        }
+
+        if (request.Policies.HasMaxPayloadSize)
+        {
+            if (request.Policies.MaxPayloadSize < 0)
+            {
+                error = new ErrorResponse()
+                {
+                    Code = ErrorCode.InvalidMaxPayloadSize,
+                    Message = "Максимальный размер тела не может быть отрицательным",
+                };
+
+                maxPayloadSize = default;
+                maxQueueSize = default;
+                return false;
+            }
+
+            maxPayloadSize = request.Policies.MaxPayloadSize;
+        }
+        else
+        {
+            maxPayloadSize = null;
+        }
+
+        if (request.Policies.HasMaxQueueSize)
+        {
+            if (request.Policies.MaxQueueSize < 0)
+            {
+                error = new ErrorResponse()
+                {
+                    Code = ErrorCode.InvalidMaxQueueSize,
+                    Message = "Максимальный размер очередь не может быть отрицательным",
+                };
+                maxPayloadSize = default;
+                maxQueueSize = default;
+                return false;
+            }
+
+            maxQueueSize = request.Policies.MaxQueueSize;
+        }
+        else
+        {
+            maxQueueSize = null;
+        }
+
+        error = null;
+        return false;
+    }
+
+    public override async Task<CreateQueueResponse> CreateQueue(CreateQueueRequest request, ServerCallContext context)
+    {
+        if (!TryValidateCreateQueueRequest(request, out var priorityRange, out var maxPayloadSize, out var maxQueueSize,
+                out var queueName, out var error))
+        {
+            return new CreateQueueResponse()
+            {
+                Error = error
+            };
+        }
+
+        QueueImplementationDetails details;
+        if (request.Code == PriorityQueueCode.QueueArray)
+        {
+            if (priorityRange is not { } range)
+            {
+                return new CreateQueueResponse()
+                {
+                    Error = new ErrorResponse()
+                    {
+                        Code = ErrorCode.PriorityRangeNotSpecified,
+                        Message = "Для типа QueueArray необходимо указать диапазон приоритетов"
+                    }
+                };
+            }
+
+            details = new QueueArrayQueueDetails(range)
+            {
+                MaxPayloadSize = maxPayloadSize,
+                MaxQueueSize = maxQueueSize,
+            };
+        }
+        else
+        {
+            details = new HeapQueueDetails()
+            {
+                MaxPayloadSize = maxPayloadSize,
+                MaxQueueSize = maxQueueSize,
+                PriorityRange = priorityRange,
+            };
+        }
+
+        var command = new CreateQueueCommand(queueName, details);
+        var submitResponse = await _requestAcceptor.AcceptAsync(command, context.CancellationToken);
+        if (submitResponse.TryGetResponse(out var response))
+        {
+            if (response.Type == ResponseType.CreateQueue)
+            {
+                return new CreateQueueResponse()
+                {
+                    Data = new CreateQueueResponse.Types.CreateQueueResponseData(),
+                };
+            }
+
+            if (response.Type == ResponseType.Error)
+            {
+                return new CreateQueueResponse()
+                {
+                    Error = GrpcHelpers.MapGrpcError((Core.Commands.Error.ErrorResponse)response),
+                };
+            }
+
+            Debug.Assert(false, "false", "Неизвестный ответ на команду создания очереди");
+            throw new InvalidOperationException("Неизвестный ответ на команду создания очереди");
+        }
+
+        return new CreateQueueResponse()
+        {
+            NotLeader = new NotLeaderResponse()
+            {
+                LeaderId = GetGrpcLeaderId(),
+            }
+        };
+    }
+
+    public override async Task<DeleteQueueResponse> DeleteQueue(DeleteQueueRequest request, ServerCallContext context)
+    {
+        if (!QueueNameParser.TryParse(request.Queue, out var queueName))
+        {
+            return new DeleteQueueResponse()
+            {
+                Error = InvalidQueueNameErrorResponse,
+            };
+        }
+
+        var command = new DeleteQueueCommand(queueName);
+        var result = await _requestAcceptor.AcceptAsync(command, context.CancellationToken);
+        if (result.TryGetResponse(out var response))
+        {
+            if (response.Type == ResponseType.DeleteQueue)
+            {
+                return new DeleteQueueResponse()
+                {
+                    Data = new DeleteQueueResponse.Types.DeleteQueueResponseData()
+                };
+            }
+
+            if (response.Type == ResponseType.Error)
+            {
+                return new DeleteQueueResponse()
+                {
+                    Error = GrpcHelpers.MapGrpcError((Core.Commands.Error.ErrorResponse)response)
+                };
+            }
+
+            Debug.Assert(false, "false", "Неожиданный ответ от команды удаления очереди: {0} - {1}", response.Type,
+                response);
+            throw new InvalidOperationException($"Неожиданный ответ от команды удаления очереди: {response.Type}");
+        }
+
+        return new DeleteQueueResponse()
+        {
+            NotLeader = new NotLeaderResponse()
+            {
+                LeaderId = GetGrpcLeaderId(),
+            }
+        };
+    }
+
+    public override async Task<GetCountResponse> GetCount(GetCountRequest request, ServerCallContext context)
+    {
+        if (!QueueNameParser.TryParse(request.Queue, out var queueName))
+        {
+            return new GetCountResponse()
+            {
+                Error = InvalidQueueNameErrorResponse,
+            };
+        }
+
+        var command = new CountCommand(queueName);
+        var result = await _requestAcceptor.AcceptAsync(command, context.CancellationToken);
+
+        if (result.TryGetResponse(out var response))
+        {
+            if (response.Type == ResponseType.Count)
+            {
+                var countResponse = (CountResponse)response;
+                return new GetCountResponse()
+                {
+                    Data = new GetCountResponse.Types.GetCountResponseData()
+                    {
+                        Count = countResponse.Count,
+                    }
+                };
+            }
+
+            if (response.Type == ResponseType.Error)
+            {
+                return new GetCountResponse()
+                {
+                    Error = GrpcHelpers.MapGrpcError((Core.Commands.Error.ErrorResponse)response),
+                };
+            }
+
+            Debug.Assert(false, "false", "Неожиданный тип ответа на Count команду: {0} - {1}", response.Type, response);
+            throw new InvalidOperationException($"Неожиданный тип ответа на Count команду: {response.Type}");
+        }
+
+        return new GetCountResponse()
+        {
+            NotLeader = new NotLeaderResponse()
+            {
+                LeaderId = GetGrpcLeaderId(),
+            }
+        };
+    }
 }
