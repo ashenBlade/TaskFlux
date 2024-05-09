@@ -178,7 +178,7 @@ return await lifetime.WaitReturnCode();
 FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
 {
     var fs = new FileSystem();
-    var dataDirectoryInfo = fs.DirectoryInfo.New(Path.Combine(options.WorkingDirectory, "data"));
+    var dataDirectoryInfo = fs.DirectoryInfo.New(Path.Combine(options.DataDirectory, "data"));
     var snapshotOptions = new SnapshotOptions(
         snapshotCreationSegmentsThreshold: options.SnapshotCreationSegmentsThreshold);
     var logOptions = new SegmentedFileLogOptions(softLimit: options.LogFileSoftLimit,

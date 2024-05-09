@@ -561,7 +561,7 @@ internal class ClientRequestProcessor
     private CancellationTokenSource CreateIdleTimeoutCts(CancellationToken token)
     {
         var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
-        cts.CancelAfter(_options.IdleTimeout);
+        cts.CancelAfter(_options.TcpAdapterIdleTimeout);
         return cts;
     }
 }

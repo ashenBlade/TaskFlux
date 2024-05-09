@@ -1,6 +1,5 @@
 using System.ComponentModel.DataAnnotations;
 using System.Net;
-using Microsoft.Extensions.Configuration;
 using TaskFlux.Host.Infrastructure;
 using TaskFlux.Utils.Network;
 
@@ -31,13 +30,7 @@ public class ClusterOptions
 
     private const string DefaultClusterListenHost = "localhost";
 
-    [Required]
-    public string ClusterListenHost { get; init; } = DefaultClusterListenHost;
-
-    public const int DefaultReceiveBufferSize = 2048;
-
-    [Range(1, int.MaxValue)]
-    public int ClusterReceiveBufferSize { get; init; } = DefaultReceiveBufferSize;
+    [Required] public string ClusterListenHost { get; init; } = DefaultClusterListenHost;
 
     public static TimeSpan DefaultRequestTimeout => TimeSpan.FromSeconds(5);
 
@@ -46,7 +39,7 @@ public class ClusterOptions
     public static ClusterOptions FromConfiguration(IConfiguration configuration)
     {
         var endpointsArrayString = configuration.GetValue<string>(nameof(ClusterPeers))
-                                ?? throw new ArgumentException("Не удалось получить адреса узлов кластера");
+                                   ?? throw new ArgumentException("Не удалось получить адреса узлов кластера");
 
         var endpointsRaw = endpointsArrayString.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var peers = new List<EndPoint>();
@@ -74,8 +67,6 @@ public class ClusterOptions
             ClusterListenPort = configuration.GetValue(nameof(ClusterListenPort), DefaultClusterListenPort),
             ClusterNodeId = configuration.GetValue(nameof(ClusterNodeId), 0),
             ClusterRequestTimeout = configuration.GetValue(nameof(ClusterRequestTimeout), DefaultRequestTimeout),
-            ClusterReceiveBufferSize =
-                configuration.GetValue(nameof(ClusterReceiveBufferSize), DefaultReceiveBufferSize)
         };
     }
 }
