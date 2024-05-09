@@ -7,6 +7,7 @@ public class ApplicationOptions
     public ClusterOptions Cluster { get; private set; } = new();
     public NetworkOptions Network { get; private set; } = new();
     public HttpOptions Http { get; private set; } = new();
+    public GrpcOptions Grpc { get; private set; } = new();
     public TcpAdapterOptions TcpModule { get; private set; } = new();
     public LoggingOptions Logging { get; private set; } = new();
     public PersistenceOptions Persistence { get; private set; } = new();
@@ -24,6 +25,7 @@ public class ApplicationOptions
             TcpModule = TcpAdapterOptions.FromConfiguration(configuration),
             Persistence = PersistenceOptions.FromConfiguration(configuration),
             Logging = LoggingOptions.FromConfiguration(configuration),
+            Grpc = GrpcOptions.FromConfiguration(configuration),
         };
     }
 }

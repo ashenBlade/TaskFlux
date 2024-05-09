@@ -6,6 +6,7 @@
     hostname: 'tflux.1'
     ports:
       - '9000:1606'
+      - '9001:1607'
     environment:
       TASKFLUX_CLUSTER_PEERS: 'tflux.1:5000 tflux.2:5000 tflux.3:5000'
       TASKFLUX_CLUSTER_NODE_ID: 0
@@ -13,6 +14,7 @@
       TASKFLUX_CLUSTER_LISTEN_HOST: tflux.1
       TASKFLUX_CLUSTER_DATA_DIRECTORY: /var/lib/tflux
       TASKFLUX_HTTP_LISTEN_ADDRESS: 'tflux.1:1606'
+      TASKFLUX_GRPC_LISTEN_ADDRESS: 'tflux.1:1607'
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
       TASKFLUX_LOG_FILE_SOFT_LIMIT: '33554432'
       TASKFLUX_LOG_FILE_HARD_LIMIT: '67108864'
@@ -28,7 +30,8 @@
       dockerfile: TaskFlux.Host/Dockerfile
     hostname: 'tflux.2'
     ports:
-      - '9001:1606'
+      - '9002:1606'
+      - '9003:1607'
     environment:
       TASKFLUX_CLUSTER_PEERS: 'tflux.1:5000 tflux.2:5000 tflux.3:5000'
       TASKFLUX_CLUSTER_NODE_ID: 1
@@ -36,6 +39,7 @@
       TASKFLUX_CLUSTER_LISTEN_HOST: tflux.2
       TASKFLUX_CLUSTER_DATA_DIRECTORY: /var/lib/tflux
       TASKFLUX_HTTP_LISTEN_ADDRESS: 'tflux.2:1606'
+      TASKFLUX_GRPC_LISTEN_ADDRESS: 'tflux.2:1607'
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
       TASKFLUX_LOG_FILE_SOFT_LIMIT: '33554432'
       TASKFLUX_LOG_FILE_HARD_LIMIT: '67108864'
@@ -51,7 +55,8 @@
       dockerfile: TaskFlux.Host/Dockerfile
     hostname: 'tflux.3'
     ports:
-      - '9002:1606'
+      - '9004:1606'
+      - '9005:1607'
     environment:
       TASKFLUX_CLUSTER_PEERS: 'tflux.1:5000 tflux.2:5000 tflux.3:5000'
       TASKFLUX_CLUSTER_NODE_ID: 2
@@ -59,6 +64,7 @@
       TASKFLUX_CLUSTER_LISTEN_HOST: tflux.3
       TASKFLUX_CLUSTER_DATA_DIRECTORY: /var/lib/tflux
       TASKFLUX_HTTP_LISTEN_ADDRESS: 'tflux.3:1606'
+      TASKFLUX_GRPC_LISTEN_ADDRESS: 'tflux.3:1607'
       TASKFLUX_TCP_ADAPTER_LISTEN_PORT: 2602
       TASKFLUX_LOG_FILE_SOFT_LIMIT: '33554432'
       TASKFLUX_LOG_FILE_HARD_LIMIT: '67108864'

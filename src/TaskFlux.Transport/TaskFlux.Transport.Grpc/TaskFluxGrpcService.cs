@@ -18,7 +18,7 @@ using EnqueueResponse = Taskflux.EnqueueResponse;
 
 namespace TaskFlux.Transport.Grpc;
 
-public class TaskFluxService : Taskflux.TaskFluxService.TaskFluxServiceBase
+public class TaskFluxGrpcService : TaskFluxService.TaskFluxServiceBase
 {
     private static readonly ErrorResponse InvalidQueueNameErrorResponse =
         new()
@@ -30,7 +30,7 @@ public class TaskFluxService : Taskflux.TaskFluxService.TaskFluxServiceBase
     private readonly IRequestAcceptor _requestAcceptor;
     private readonly IApplicationInfo _applicationInfo;
 
-    public TaskFluxService(
+    public TaskFluxGrpcService(
         IRequestAcceptor requestAcceptor,
         IApplicationInfo applicationInfo)
     {
