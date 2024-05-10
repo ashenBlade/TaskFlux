@@ -19,16 +19,16 @@ public class FollowerStateTests
     private Mock<IPersistence> _mockPersistence;
 
     private RaftConsensusModule<int, int> CreateFollowerNode(Term currentTerm,
-                                                             NodeId? votedFor,
-                                                             ITimer? electionTimer = null,
-                                                             IBackgroundJobQueue? jobQueue = null,
-                                                             Action<Mock<IPersistence>>? persistenceFactory = null)
+        NodeId? votedFor,
+        ITimer? electionTimer = null,
+        IBackgroundJobQueue? jobQueue = null,
+        Action<Mock<IPersistence>>? persistenceFactory = null)
     {
         var timerFactory = electionTimer is not null
-                               ? new ConstantTimerFactory(electionTimer)
-                               : Helpers.NullTimerFactory;
+            ? new ConstantTimerFactory(electionTimer)
+            : Helpers.NullTimerFactory;
         var persistence = new Mock<IPersistence>(MockBehavior.Strict)
-           .Apply(m =>
+            .Apply(m =>
             {
                 m.SetupGet(p => p.CurrentTerm).Returns(currentTerm);
                 m.SetupGet(p => p.VotedFor).Returns(votedFor);
@@ -58,7 +58,7 @@ public class FollowerStateTests
         var candidateId = AnotherNodeId;
         using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
         {
-            m.Setup(p => p.VotedFor).Returns(( NodeId? ) null);
+            m.Setup(p => p.VotedFor).Returns((NodeId?)null);
             m.Setup(p => p.IsUpToDate(lastLogEntryInfo)).Returns(true);
             m.Setup(p => p.UpdateState(It.IsAny<Term>(), candidateId)).Verifiable();
         });
@@ -77,7 +77,7 @@ public class FollowerStateTests
         var candidateId = AnotherNodeId;
         using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
         {
-            m.Setup(p => p.VotedFor).Returns(( NodeId? ) null);
+            m.Setup(p => p.VotedFor).Returns((NodeId?)null);
             m.Setup(p => p.IsUpToDate(lastLogEntryInfo)).Returns(true);
             m.Setup(p => p.UpdateState(candidateTerm, It.IsAny<NodeId?>())).Verifiable();
         });
@@ -97,7 +97,7 @@ public class FollowerStateTests
         using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
         {
             m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(true);
-            m.Setup(p => p.VotedFor).Returns(( NodeId? ) null);
+            m.Setup(p => p.VotedFor).Returns((NodeId?)null);
             m.Setup(p => p.UpdateState(It.Is<Term>(t => t == expectedTerm), It.IsAny<NodeId?>()));
         });
 
@@ -118,7 +118,7 @@ public class FollowerStateTests
         {
             m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(true);
             m.Setup(p => p.UpdateState(It.IsAny<Term>(), candidateId)).Verifiable();
-            m.SetupGet(p => p.VotedFor).Returns(( NodeId? ) null);
+            m.SetupGet(p => p.VotedFor).Returns((NodeId?)null);
         });
 
         var request = new RequestVoteRequest(candidateId, expectedTerm, lastLogEntryInfo);
@@ -140,7 +140,7 @@ public class FollowerStateTests
         {
             m.Setup(p => p.IsUpToDate(It.Is<LogEntryInfo>(lei => lei == lastLogEntryInfo))).Returns(false);
             m.Setup(p => p.UpdateState(It.IsAny<Term>(), null)).Verifiable();
-            m.SetupGet(p => p.VotedFor).Returns(( NodeId? ) null);
+            m.SetupGet(p => p.VotedFor).Returns((NodeId?)null);
         });
 
         var request = new RequestVoteRequest(candidateId, expectedTerm, lastLogEntryInfo);
@@ -248,9 +248,8 @@ public class FollowerStateTests
     {
         var oldTerm = new Term(myTerm);
         var lesserTerm = new Term(otherTerm);
-        using var node = CreateFollowerNode(oldTerm, null, persistenceFactory: m =>
-        {
-        });
+        using var node = CreateFollowerNode(oldTerm, null,
+            persistenceFactory: f => { f.SetupGet(p => p.CurrentTerm).Returns(oldTerm); });
 
         var response = node.Handle(new RequestVoteRequest(AnotherNodeId, lesserTerm, new LogEntryInfo(oldTerm, 0)));
 
@@ -267,9 +266,8 @@ public class FollowerStateTests
     {
         var currentTerm = new Term(myTerm);
         var lesserTerm = new Term(otherTerm);
-        using var node = CreateFollowerNode(currentTerm, null, persistenceFactory: _ =>
-        {
-        });
+        using var node = CreateFollowerNode(currentTerm, null,
+            persistenceFactory: f => { f.SetupGet(p => p.CurrentTerm).Returns(currentTerm); });
 
         var response = node.Handle(new RequestVoteRequest(AnotherNodeId, lesserTerm, new LogEntryInfo(currentTerm, 0)));
 
@@ -331,9 +329,9 @@ public class FollowerStateTests
         var term = new Term(1);
         var timer = new Mock<ITimer>(MockBehavior.Loose);
         timer.Setup(x => x.Stop())
-             .Verifiable();
+            .Verifiable();
         timer.Setup(x => x.Schedule())
-             .Verifiable();
+            .Verifiable();
 
         var prevLogEntryInfo = new LogEntryInfo(term, 0);
         var leaderCommit = Lsn.Tomb;
@@ -411,7 +409,7 @@ public class FollowerStateTests
     public void InstallSnapshot__КогдаУстановленУспешно__ДолженВызыватьCommitПослеУстановки()
     {
         var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
-        var snapshotData = new byte[] {1, 2, 3};
+        var snapshotData = new byte[] { 1, 2, 3 };
         var currentTerm = 1;
 
         // Приходится использовать Loose, т.к. нельзя матчить с Span
@@ -420,7 +418,7 @@ public class FollowerStateTests
         using var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
         {
             m.Setup(p => p.CreateSnapshot(It.Is<LogEntryInfo>(lei => lei == lastIncludedEntry)))
-             .Returns(msi);
+                .Returns(msi);
         });
 
         _ = node.Handle(new InstallSnapshotRequest(currentTerm, AnotherNodeId, lastIncludedEntry,
@@ -434,7 +432,7 @@ public class FollowerStateTests
     {
         var currentTerm = new Term(1);
         var lastIncludedEntry = new LogEntryInfo(new Term(2), 10);
-        var snapshotData = new byte[] {1, 2, 3};
+        var snapshotData = new byte[] { 1, 2, 3 };
         var leaderTerm = currentTerm.Increment();
 
         // Приходится использовать Loose, т.к. нельзя матчить с Span
@@ -443,7 +441,7 @@ public class FollowerStateTests
         var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
         {
             m.Setup(p => p.CreateSnapshot(lastIncludedEntry))
-             .Returns(msi);
+                .Returns(msi);
             m.Setup(p => p.UpdateState(leaderTerm, It.IsAny<NodeId?>())).Verifiable();
         });
 
@@ -486,7 +484,7 @@ public class FollowerStateTests
         {
             IEnumerable<ReadOnlyMemory<byte>> StubChunkData()
             {
-                yield return new byte[] {1, 1, 1};
+                yield return new byte[] { 1, 1, 1 };
                 throw new EndOfStreamException("Соединение представим разорвалось и это исключение было выкинуто");
             }
 
@@ -498,7 +496,7 @@ public class FollowerStateTests
         using var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
         {
             m.Setup(p => p.CreateSnapshot(It.Is<LogEntryInfo>(lei => lei == lastIncludedEntry)))
-             .Returns(msi);
+                .Returns(msi);
         });
 
         Assert.Throws<EndOfStreamException>(() =>
@@ -517,7 +515,7 @@ public class FollowerStateTests
         using var node = CreateFollowerNode(nodeTerm, null, persistenceFactory: m =>
         {
             m.Setup(p => p.CreateSnapshot(It.Is<LogEntryInfo>(lei => lei == lastIncludedEntry)))
-             .Throws(new InvalidOperationException("Нельзя даже вызывать этот метод"));
+                .Throws(new InvalidOperationException("Нельзя даже вызывать этот метод"));
         });
 
         var response = node.Handle(new InstallSnapshotRequest(leaderTerm, new NodeId(1), lastIncludedEntry,
@@ -536,7 +534,7 @@ public class FollowerStateTests
         var node = CreateFollowerNode(nodeTerm, null, persistenceFactory: m =>
         {
             m.Setup(p => p.CreateSnapshot(It.Is<LogEntryInfo>(lei => lei == lastIncludedEntry)))
-             .Throws(new InvalidOperationException("Нельзя даже вызывать этот метод"));
+                .Throws(new InvalidOperationException("Нельзя даже вызывать этот метод"));
         });
 
         var ex = Record.Exception(() => node.Handle(new InstallSnapshotRequest(leaderTerm, new NodeId(1),
@@ -556,8 +554,8 @@ public class FollowerStateTests
     {
         var term = new Term(2);
         var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => new LogEntry(term, [( byte ) i]))
-                                .ToArray();
+            .Select(i => new LogEntry(term, [(byte)i]))
+            .ToArray();
 
         var prevLsn = 30;
         var prevLogEntryInfo = new LogEntryInfo(term, prevLsn);
@@ -565,7 +563,7 @@ public class FollowerStateTests
         var node = CreateFollowerNode(term, null, persistenceFactory: m =>
         {
             m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntryInfo)))
-             .Returns(true);
+                .Returns(true);
             m.Setup(p =>
                 p.InsertRange(
                     It.Is<IReadOnlyList<LogEntry>>(x => x.SequenceEqual(entries, new LogEntryEqualityComparer())),
@@ -585,8 +583,8 @@ public class FollowerStateTests
     {
         var term = new Term(2);
         var entries = Enumerable.Range(1, 10)
-                                .Select(i => new LogEntry(term, [( byte ) i]))
-                                .ToArray();
+            .Select(i => new LogEntry(term, [(byte)i]))
+            .ToArray();
 
         var prevLsn = 30;
         var prevLogEntryInfo = new LogEntryInfo(term, prevLsn);
@@ -594,7 +592,7 @@ public class FollowerStateTests
         var node = CreateFollowerNode(term, null, persistenceFactory: m =>
         {
             m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntryInfo)))
-             .Returns(true);
+                .Returns(true);
             m.Setup(p => p.InsertRange(
                 It.Is<IReadOnlyList<LogEntry>>(x => x.SequenceEqual(entries, new LogEntryEqualityComparer())),
                 prevLsn + 1));
@@ -612,8 +610,8 @@ public class FollowerStateTests
     {
         var term = new Term(2);
         var entries = Enumerable.Range(1, 10)
-                                .Select(i => new LogEntry(term, [( byte ) i]))
-                                .ToArray();
+            .Select(i => new LogEntry(term, [(byte)i]))
+            .ToArray();
 
         var prevLsn = 30;
         var prevLogEntryInfo = new LogEntryInfo(term, prevLsn);
@@ -622,7 +620,7 @@ public class FollowerStateTests
         var node = CreateFollowerNode(term, null, persistenceFactory: m =>
         {
             m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntryInfo)))
-             .Returns(true);
+                .Returns(true);
             m.Setup(p => p.InsertRange(
                 It.Is<IReadOnlyList<LogEntry>>(x => x.SequenceEqual(entries, new LogEntryEqualityComparer())),
                 prevLsn + 1));
@@ -640,8 +638,8 @@ public class FollowerStateTests
     {
         var term = new Term(2);
         var entries = Enumerable.Range(1, 10)
-                                .Select(i => new LogEntry(term, [( byte ) i]))
-                                .ToArray();
+            .Select(i => new LogEntry(term, [(byte)i]))
+            .ToArray();
 
         var prevLsn = 30;
         var prevLogEntryInfo = new LogEntryInfo(term, prevLsn);
@@ -650,7 +648,7 @@ public class FollowerStateTests
         var node = CreateFollowerNode(term, null, persistenceFactory: m =>
         {
             m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntryInfo)))
-             .Returns(true);
+                .Returns(true);
             m.Setup(p => p.InsertRange(
                 It.Is<IReadOnlyList<LogEntry>>(x => x.SequenceEqual(entries, new LogEntryEqualityComparer())),
                 prevLsn + 1));
@@ -672,8 +670,8 @@ public class FollowerStateTests
     {
         var term = new Term(2);
         var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => new LogEntry(term, [( byte ) i]))
-                                .ToArray();
+            .Select(i => new LogEntry(term, [(byte)i]))
+            .ToArray();
 
         var prevLsn = 30;
         var prevLogEntryInfo = new LogEntryInfo(term, prevLsn);
@@ -683,14 +681,14 @@ public class FollowerStateTests
         var node = CreateFollowerNode(term, null, persistenceFactory: m =>
         {
             m.Setup(p => p.PrefixMatch(It.Is<LogEntryInfo>(lei => lei == prevLogEntryInfo)))
-             .Returns(true);
+                .Returns(true);
             m.Setup(p =>
                 p.InsertRange(
                     It.Is<IReadOnlyList<LogEntry>>(x => x.SequenceEqual(entries, new LogEntryEqualityComparer())),
                     It.Is<Lsn>(l => l == prevLsn + 1)));
             m.SetupGet(p => p.CommitIndex).Returns(nodeCommitIndex);
             m.Setup(p => p.Commit(It.Is<Lsn>(l => l == requestCommitIndex)));
-            m.Setup(p => p.LastEntry).Returns(prevLogEntryInfo with {Index = requestCommitIndex});
+            m.Setup(p => p.LastEntry).Returns(prevLogEntryInfo with { Index = requestCommitIndex });
             m.Setup(p => p.ShouldCreateSnapshot()).Returns(false);
         });
 
@@ -706,8 +704,8 @@ public class FollowerStateTests
     {
         var term = new Term(2);
         var entries = Enumerable.Range(1, 10)
-                                .Select(i => new LogEntry(term, new[] {( byte ) i}))
-                                .ToArray();
+            .Select(i => new LogEntry(term, new[] { (byte)i }))
+            .ToArray();
 
         var requestPrevEntry = new LogEntryInfo(term.Increment(), entries.Length - 1);
         var node = CreateFollowerNode(term, null, persistenceFactory: m =>
@@ -727,8 +725,8 @@ public class FollowerStateTests
         var term = new Term(2);
         var entriesCount = 10;
         var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => new LogEntry(term, new[] {( byte ) i}))
-                                .ToArray();
+            .Select(i => new LogEntry(term, new[] { (byte)i }))
+            .ToArray();
 
         var requestPrevEntry = new LogEntryInfo(term.Increment(), entries.Length - 1);
         var nodeLastEntry = new LogEntryInfo(term, 30);
@@ -759,8 +757,8 @@ public class FollowerStateTests
         var term = new Term(2);
         var entriesCount = 10;
         var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => new LogEntry(term, new[] {( byte ) i}))
-                                .ToArray();
+            .Select(i => new LogEntry(term, new[] { (byte)i }))
+            .ToArray();
 
         var requestPrevEntry = new LogEntryInfo(term.Increment(), entries.Length - 1);
         var node = CreateFollowerNode(term, null, persistenceFactory: m =>
@@ -782,8 +780,8 @@ public class FollowerStateTests
         var term = new Term(2);
         var entriesCount = 10;
         var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => new LogEntry(term, new[] {( byte ) i}))
-                                .ToArray();
+            .Select(i => new LogEntry(term, new[] { (byte)i }))
+            .ToArray();
 
         var requestPrevEntry = new LogEntryInfo(term.Increment(), entries.Length - 1);
         var node = CreateFollowerNode(term, null, persistenceFactory: m =>
@@ -805,13 +803,11 @@ public class FollowerStateTests
         var lesserTerm = new Term(1);
         var entriesCount = 10;
         var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => new LogEntry(currentTerm, [( byte ) i]))
-                                .ToArray();
+            .Select(i => new LogEntry(currentTerm, [(byte)i]))
+            .ToArray();
 
         var requestPrevEntry = new LogEntryInfo(currentTerm.Increment(), entries.Length - 1);
-        var node = CreateFollowerNode(currentTerm, null, persistenceFactory: _ =>
-        {
-        });
+        var node = CreateFollowerNode(currentTerm, null, persistenceFactory: _ => { });
 
         var response =
             node.Handle(new AppendEntriesRequest(lesserTerm, Lsn.Tomb, AnotherNodeId, requestPrevEntry, entries));
@@ -827,16 +823,16 @@ public class FollowerStateTests
         var lastLogEntry = new LogEntryInfo(currentTerm, 5);
         var prevLogEntry = new LogEntryInfo(currentTerm, 3); // Представим, что нужно затереть 
         var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => new LogEntry(currentTerm, [( byte ) i]))
-                                .ToArray();
+            .Select(i => new LogEntry(currentTerm, [(byte)i]))
+            .ToArray();
 
         var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
         {
             m.Setup(p =>
-                  p.InsertRange(It.Is<IReadOnlyList<LogEntry>>(list =>
-                          list.SequenceEqual(entries, new LogEntryEqualityComparer())),
-                      prevLogEntry.Index + 1))
-             .Verifiable();
+                    p.InsertRange(It.Is<IReadOnlyList<LogEntry>>(list =>
+                            list.SequenceEqual(entries, new LogEntryEqualityComparer())),
+                        prevLogEntry.Index + 1))
+                .Verifiable();
             m.Setup(p => p.PrefixMatch(It.IsAny<LogEntryInfo>())).Returns(true);
             m.SetupGet(p => p.CommitIndex).Returns(Lsn.Tomb);
             m.SetupGet(p => p.LastEntry).Returns(lastLogEntry);
@@ -858,8 +854,8 @@ public class FollowerStateTests
         var oldCommitIndex = 12;
         var newCommitIndex = 15;
         var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => new LogEntry(currentTerm, [( byte ) i]))
-                                .ToArray();
+            .Select(i => new LogEntry(currentTerm, [(byte)i]))
+            .ToArray();
         var requestPrevEntry = new LogEntryInfo(currentTerm.Increment(), entries.Length - 1);
 
         var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>
@@ -888,8 +884,8 @@ public class FollowerStateTests
         var lastEntryIndex = 14;
         var newCommitIndex = 20;
         var entries = Enumerable.Range(1, entriesCount)
-                                .Select(i => new LogEntry(currentTerm, [( byte ) i]))
-                                .ToArray();
+            .Select(i => new LogEntry(currentTerm, [(byte)i]))
+            .ToArray();
 
         var requestPrevEntry = new LogEntryInfo(currentTerm.Increment(), entries.Length - 1);
         var node = CreateFollowerNode(currentTerm, null, persistenceFactory: m =>

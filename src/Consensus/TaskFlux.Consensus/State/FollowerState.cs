@@ -6,7 +6,8 @@ using TaskFlux.Core;
 
 namespace TaskFlux.Consensus.State;
 
-public class FollowerState<TCommand, TResponse>
+public class
+    FollowerState<TCommand, TResponse>
     : State<TCommand, TResponse>
 {
     public override NodeId? LeaderId => _leaderId;
@@ -18,8 +19,8 @@ public class FollowerState<TCommand, TResponse>
     private readonly CancellationTokenSource _cts = new();
 
     internal FollowerState(RaftConsensusModule<TCommand, TResponse> consensusModule,
-                           ITimer electionTimer,
-                           ILogger logger)
+        ITimer electionTimer,
+        ILogger logger)
         : base(consensusModule)
     {
         _electionTimer = electionTimer;
@@ -37,7 +38,8 @@ public class FollowerState<TCommand, TResponse>
         // Мы в более актуальном Term'е
         if (request.CandidateTerm < CurrentTerm)
         {
-            _logger.Verbose("Терм кандидата меньше моего терма. Отклоняю запрос");
+            _logger.Information("От узла {NodeId} получен запрос с меньшим термом - {OldTerm}. Мой терм {MyTerm}",
+                request.CandidateId, request.CandidateId, CurrentTerm);
             return new RequestVoteResponse(CurrentTerm: CurrentTerm, VoteGranted: false);
         }
 
@@ -46,7 +48,7 @@ public class FollowerState<TCommand, TResponse>
         var canVote =
             // Ранее не голосовали
             VotedFor is null
-          ||
+            ||
             // Текущий лидер/кандидат опять посылает этот запрос (почему бы не согласиться)
             VotedFor == request.CandidateId;
 
@@ -54,12 +56,11 @@ public class FollowerState<TCommand, TResponse>
         var isUpToDate = Persistence.IsUpToDate(request.LastLogEntryInfo);
         if (canVote && isUpToDate)
         {
-            _logger.Debug("Голосую за узел {CandidateId}", request.CandidateId);
-
+            _logger.Information("Отдаю голос за узел {CandidateId}", request.CandidateId);
             var newTerm = request.CandidateTerm;
 
             // Для оптимизации состояние обновляем, только если что-то изменилось
-            var shouldUpdateState = !( newTerm == CurrentTerm && request.CandidateId == VotedFor );
+            var shouldUpdateState = !(newTerm == CurrentTerm && request.CandidateId == VotedFor);
             if (shouldUpdateState)
             {
                 Persistence.UpdateState(newTerm, request.CandidateId);
@@ -68,6 +69,8 @@ public class FollowerState<TCommand, TResponse>
             return new RequestVoteResponse(CurrentTerm: newTerm, VoteGranted: true);
         }
 
+        _logger.Information("Узел {NodeId} имеет больший терм, но лог конфликтует - Голос не отдаю",
+            request.CandidateId);
         Term responseTerm;
         if (CurrentTerm < request.CandidateTerm)
         {
@@ -87,20 +90,24 @@ public class FollowerState<TCommand, TResponse>
         if (request.Term < CurrentTerm)
         {
             // Лидер устарел/отстал
+            _logger.Information("Узел {NodeId} отправил AppendEntries, но имеет меньший терм", request.LeaderId);
             return AppendEntriesResponse.Fail(CurrentTerm);
         }
 
         using var _ = ElectionTimerScope.BeginScope(_electionTimer);
         if (CurrentTerm < request.Term)
         {
-            _logger.Information("Получен AppendEntries с большим термом {GreaterTerm}. Старый терм: {CurrentTerm}",
-                request.Term, CurrentTerm);
             // Мы отстали от общего состояния (старый терм)
+            _logger.Information(
+                "От узла {NodeId} получен AppendEntries с большим термом {GreaterTerm}. Старый терм: {CurrentTerm}",
+                request.LeaderId,
+                request.Term, CurrentTerm);
             Persistence.UpdateState(request.Term, null);
         }
 
         if (!Persistence.PrefixMatch(request.PrevLogEntryInfo))
         {
+            _logger.Information("Мой лог и лог узла {NodeId} не совпадают", request.LeaderId);
             return AppendEntriesResponse.Fail(request.Term);
         }
 
@@ -119,7 +126,6 @@ public class FollowerState<TCommand, TResponse>
         if (Persistence.CommitIndex < request.LeaderCommit)
         {
             var commitIndex = Math.Min(request.LeaderCommit, Persistence.LastEntry.Index);
-            _logger.Information("Коммичу запись по индексу {CommitIndex}", commitIndex);
             Persistence.Commit(commitIndex);
         }
         else if (request.LeaderCommit < Persistence.CommitIndex)
@@ -133,8 +139,8 @@ public class FollowerState<TCommand, TResponse>
         {
             _logger.Information("Создаю снапшот приложения");
             var oldSnapshot = Persistence.TryGetSnapshot(out var s, out var _)
-                                  ? s
-                                  : null;
+                ? s
+                : null;
             var deltas = Persistence.ReadCommittedDeltaFromPreviousSnapshot();
             var newSnapshot = ApplicationFactory.CreateSnapshot(oldSnapshot, deltas);
             var lastIncludedEntry = Persistence.GetEntryInfo(Persistence.CommitIndex);
@@ -142,7 +148,6 @@ public class FollowerState<TCommand, TResponse>
         }
 
         _leaderId = request.LeaderId;
-
         return AppendEntriesResponse.Ok(request.Term);
     }
 
@@ -188,7 +193,7 @@ public class FollowerState<TCommand, TResponse>
     }
 
     public override InstallSnapshotResponse Apply(InstallSnapshotRequest request,
-                                                  CancellationToken token = default)
+        CancellationToken token = default)
     {
         if (request.Term < CurrentTerm)
         {
@@ -218,7 +223,7 @@ public class FollowerState<TCommand, TResponse>
             {
                 try
                 {
-                    ( ( CancellationTokenSource ) cts! ).Cancel();
+                    ((CancellationTokenSource)cts!).Cancel();
                 }
                 catch (ObjectDisposedException)
                 {

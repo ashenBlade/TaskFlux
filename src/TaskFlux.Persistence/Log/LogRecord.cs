@@ -13,20 +13,27 @@ internal class LogRecord
 
     public long GetNextRecordPosition()
     {
-        return Position       // Начало в файле
-             + sizeof(int)    // Маркер
-             + sizeof(long)   // Терм
-             + sizeof(uint)   // Чек-сумма
-             + sizeof(int)    // Длина данных
-             + PayloadLength; // Размер данных
+        return Position // Начало в файле
+               + sizeof(int) // Маркер
+               + sizeof(long) // Терм
+               + sizeof(uint) // Чек-сумма
+               + sizeof(int) // Длина данных
+               + PayloadLength; // Размер данных
     }
 
     public long GetDataStartPosition()
     {
-        return Position      // Начало в файле самой записи 
-             + sizeof(int)   // Маркер
-             + sizeof(long)  // Терм
-             + sizeof(uint); // Чек-сумма
+        return Position // Начало в файле самой записи 
+               + sizeof(int) // Маркер
+               + sizeof(long) // Терм
+               + sizeof(uint); // Чек-сумма
+    }
+
+    public long GetCheckSumPosition()
+    {
+        return Position // Начало в файле
+               + sizeof(int) // Маркер
+               + sizeof(long); // Терм
     }
 
     public void ClearPayload()

@@ -98,6 +98,7 @@ public class RaftConsensusModule<TCommand, TResponse>
         var stored = Interlocked.CompareExchange(ref _currentState, newState, oldState);
         if (stored == oldState)
         {
+            _logger.Information("Роль узла изменилась с {OldRole} на {NewRole}", stored.Role, newState.Role);
             stored.Dispose();
             newState.Initialize();
             return true;

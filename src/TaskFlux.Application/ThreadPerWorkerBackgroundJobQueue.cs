@@ -15,9 +15,9 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
         _workers;
 
     public ThreadPerWorkerBackgroundJobQueue(int clusterSize,
-                                             int currentNodeId,
-                                             ILogger logger,
-                                             IApplicationLifetime lifetime)
+        int currentNodeId,
+        ILogger logger,
+        IApplicationLifetime lifetime)
     {
         _logger = logger;
         _lifetime = lifetime;
@@ -38,7 +38,7 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
 
             var thread = new Thread(ThreadWorker);
             var queue = new BlockingCollection<(IBackgroundJob Job, CancellationToken Token)>();
-            array[i] = ( thread, queue );
+            array[i] = (thread, queue);
         }
 
         return array;
@@ -53,6 +53,8 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
                 thread.Start(i);
             }
         }
+
+        _logger.Information("Фоновые потоки обработчики задач запущены");
     }
 
     public void Accept(IBackgroundJob job, CancellationToken token)
@@ -73,7 +75,7 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
 
         try
         {
-            collection.Add(( job, token ), _cts.Token);
+            collection.Add((job, token), _cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -85,7 +87,7 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
 
     private void ThreadWorker(object? o)
     {
-        var nodeId = ( int ) o!;
+        var nodeId = (int)o!;
         var collection = _workers[nodeId]!.Value.Queue;
 
 
@@ -95,6 +97,13 @@ public class ThreadPerWorkerBackgroundJobQueue : IBackgroundJobQueue, IDisposabl
             _logger.Debug("Очередь фоновых задач для узла {NodeId} запускается", nodeId);
             foreach (var (job, jobToken) in collection.GetConsumingEnumerable(token))
             {
+                if (jobToken.IsCancellationRequested)
+                {
+                    _logger.Debug("Задача {Job} для узла {NodeId} отменена пока находилась в очереди задач", job,
+                        nodeId);
+                    continue;
+                }
+
                 _logger.Debug("Получена задача {Job} для узла {NodeId}", job, nodeId);
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(token, jobToken);
                 try

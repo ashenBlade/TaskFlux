@@ -33,8 +33,8 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
     }
 
     public ExclusiveRequestAcceptor(IConsensusModule<Command, Response> module,
-                                    IApplicationLifetime lifetime,
-                                    ILogger logger)
+        IApplicationLifetime lifetime,
+        ILogger logger)
     {
         _module = module;
         _lifetime = lifetime;
@@ -62,25 +62,12 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
     public async Task<SubmitResponse<Response>> AcceptAsync(Command command, CancellationToken token = default)
     {
         var request = new UserRequest(command, token);
-        CancellationTokenRegistration? registration = token.CanBeCanceled
-                                                          ? token.Register(static r => ( ( UserRequest ) r! ).Cancel(),
-                                                              request)
-                                                          : null;
-        try
-        {
-            _logger.Debug("Отправляю запрос в очередь");
-            _channel.Add(request, token);
-            var result = await request.CommandTask;
-            _logger.Debug("Команда выполнилась");
-            return result;
-        }
-        finally
-        {
-            if (registration is { } r)
-            {
-                await r.DisposeAsync();
-            }
-        }
+        await using var registration = token.Register(static r => ((UserRequest)r!).Cancel(), request);
+        _logger.Verbose("Отправляю запрос {@Command} в очередь", command);
+        _channel.Add(request, token);
+        var result = await request.CommandTask;
+        _logger.Debug("Задача команды {@Command} завершилась", command);
+        return result;
     }
 
     private void ThreadWorker()
@@ -98,7 +85,7 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
 
         try
         {
-            _logger.Information("Начинаю читать запросы от пользователей");
+            _logger.Information("Поток обработки команд запущен");
             foreach (var request in _channel.GetConsumingEnumerable(token))
             {
                 if (request.IsCancelled)
@@ -106,7 +93,13 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
                     continue;
                 }
 
-                _logger.Debug("Получен запрос: {@RequestType}", request.Command);
+                if (token.IsCancellationRequested)
+                {
+                    request.Cancel();
+                    continue;
+                }
+
+                _logger.Debug("Получена команда {@RequestType}", request.Command);
 
                 try
                 {
@@ -115,7 +108,6 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
                 }
                 catch (OperationCanceledException)
                 {
-                    _logger.Information("Токен сработал. Заканчиваю работу");
                     request.Cancel();
                 }
 
@@ -127,11 +119,11 @@ public class ExclusiveRequestAcceptor : IRequestAcceptor, IDisposable
         }
         catch (Exception e)
         {
-            _logger.Fatal(e, "Ошибка во время обработки пользовательских запросов");
+            _logger.Fatal(e, "Необработанное исключение поймано во время обработки команды");
             _lifetime.StopAbnormal();
         }
 
-        _logger.Information("Обработчик пользовательских запросов остановлен");
+        _logger.Information("Поток обработчик команд завершился");
     }
 
     public void Start()

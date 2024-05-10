@@ -432,17 +432,28 @@ public class SegmentedFileLog : IDisposable
             }
             else
             {
+                _logger.Information("Открываю сегмент {SegmentFileName} для чтения", File.Name);
                 // Сегмент закрыт - данные нужно прочитать из файла
                 using var file = File.OpenRead();
                 var reader = new StreamBinaryReader(file);
                 for (int i = localStart; i <= localEnd; i++)
                 {
                     var record = Records[i];
-                    var readPosition = record.GetDataStartPosition();
+                    var readPosition = record.GetCheckSumPosition();
                     file.Seek(readPosition, SeekOrigin.Begin);
+                    var storedCheckSum = reader.ReadUInt32();
+                    // После чек-суммы идет буфер с данными
                     var payload = reader.ReadBuffer();
+                    var calculatedCheckSum = Crc32CheckSum.Compute(payload);
+                    if (calculatedCheckSum != storedCheckSum)
+                    {
+                        throw new InvalidDataException(
+                            $"Рассчитанная чек-сумма не равна сохраненной. Сегмент {FileName.GetFileName()}, индекс {LogStartIndex + i}, позиция в файле {record.Position}");
+                    }
+
                     var entry = new LogEntry(record.Term, payload);
-                    entry.SetCheckSum(record.CheckSum);
+                    entry.SetCheckSum(calculatedCheckSum);
+
                     entries.Add(entry);
 
                     if (shouldCheckSize)
@@ -496,7 +507,7 @@ public class SegmentedFileLog : IDisposable
             bool readOnly)
         {
             // Файл открываем в ReadWrite режиме, т.к. может потребоваться восстановление файла (обрезание)
-            logger.Debug("Открываю файл {FileName}", fileInfo.FullName);
+            logger.Debug("Открываю файл {FileName} для чтения и записи", fileInfo.Name);
             var file = fileInfo.Open(FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
 
             var reader = new StreamBinaryReader(file);
@@ -508,7 +519,7 @@ public class SegmentedFileLog : IDisposable
 
                 if (options.PreallocateSegment)
                 {
-                    logger.Debug("Файл пуст - выделяю память под сегмент");
+                    logger.Debug("Файл {SegmentFileName} пуст - инициализирую заголовок", fileInfo.Name);
                     file.SetLength(options.LogFileSoftLimit);
                 }
 
@@ -528,6 +539,7 @@ public class SegmentedFileLog : IDisposable
                 return new LogSegment(fileName, fileInfo, new List<LogRecord>(), file, logger);
             }
 
+            logger.Debug("Начинаю валидацию заголовка сегмента {SegmentFileName}", fileInfo.Name);
             file.Seek(0, SeekOrigin.Begin);
 
             // Валидация заголовка файла
@@ -549,17 +561,18 @@ public class SegmentedFileLog : IDisposable
             }
             catch (EndOfStreamException)
             {
-                logger.Debug(
-                    "Размер файла {FileName} меньше размера заголовка - выполняю первоначальное инициализирование",
+                logger.Information(
+                    "Размер сегмента {FileName} меньше размера заголовка - выполняю первоначальное инициализирование",
                     fileName.GetFileName());
 
                 if (options.PreallocateSegment)
                 {
-                    logger.Debug("Выделяю память под файл сегмента");
+                    // В стандартном API не нашел функции fallocate (или подобной)
+                    logger.Debug("Выделяю память под файл сегмента {SegmentFileName}", file.Name);
                     file.SetLength(options.LogFileSoftLimit);
                 }
 
-                var requiredSize = HeaderSizeBytes + sizeof(int);
+                const int requiredSize = HeaderSizeBytes + sizeof(int);
                 var buffer = ArrayPool<byte>.Shared.Rent(requiredSize);
                 try
                 {
@@ -586,6 +599,7 @@ public class SegmentedFileLog : IDisposable
                 }
             }
 
+            logger.Debug("Начинаю валидацию содержимого сегмента {SegmentFileName}", fileInfo.Name);
             var index = new List<LogRecord>();
             var recordStartPosition = file.Position;
             var success = true;
@@ -687,7 +701,7 @@ public class SegmentedFileLog : IDisposable
                 success = false;
             }
 
-            // Если была обнаружена ошибка при 
+            // Если была обнаружена ошибка при прочтении файла
             if (!success)
             {
                 var resultLength =
@@ -742,7 +756,8 @@ public class SegmentedFileLog : IDisposable
         {
             Debug.Assert(WriteStreamData is not null, "WriteStream is not null",
                 "Если нужно закрыть сегмент, то он обязан быть открыт прежде");
-            // Закрываем поток файла
+            // Закрываем поток файлаa
+            _logger.Debug("Запечатываю сегмент {SegmentFileName}", FileName.GetFileName());
             var (writeStream, bufferedStream) = WriteStreamData.Value;
             bufferedStream.Flush();
             writeStream.Close();
@@ -761,6 +776,7 @@ public class SegmentedFileLog : IDisposable
             // Если указанный лог нужно сделать хвостом, то необходимо открыть файл для записи
             // и восстановить индекс файла
 
+            _logger.Debug("Открываю сегмент {SegmentName} для чтения и записи", File.Name);
             var fileStream = File.Open(FileMode.Open, FileAccess.ReadWrite, FileShare.None);
             try
             {
@@ -1814,11 +1830,16 @@ public class SegmentedFileLog : IDisposable
     /// <param name="commitIndex">Новый индекс коммита</param>
     public void Commit(Lsn commitIndex)
     {
+        if (LastRecordIndex < commitIndex)
+        {
+            throw new ArgumentOutOfRangeException(nameof(commitIndex), commitIndex,
+                "Нельзя выставить индекс коммита больше последнего индекса в лога");
+        }
+
         // Создавать новый сегмент 
         if (CommitIndex < commitIndex)
         {
-            Debug.Assert(commitIndex <= LastRecordIndex, "commitIndex <= LastIndex",
-                "Нельзя выставить индекс коммита больше последнего индекса в лога");
+            _logger.Information("Коммичу запись по индексу {CommitIndex}", commitIndex);
             CommitIndex = commitIndex;
         }
     }

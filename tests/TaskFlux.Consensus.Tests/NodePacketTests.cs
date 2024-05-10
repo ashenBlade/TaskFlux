@@ -1,6 +1,6 @@
 using System.Text;
 using FluentAssertions;
-using TaskFlux.Consensus;
+using TaskFlux.Application.Tests;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.RequestVote;
 using TaskFlux.Consensus.Network.Message;
@@ -8,7 +8,7 @@ using TaskFlux.Consensus.Network.Message.Exceptions;
 using TaskFlux.Consensus.Network.Message.Packets;
 using TaskFlux.Core;
 
-namespace TaskFlux.Application.Tests;
+namespace TaskFlux.Consensus.Tests;
 
 [Trait("Category", "Serialization")]
 public class NodePacketTests
