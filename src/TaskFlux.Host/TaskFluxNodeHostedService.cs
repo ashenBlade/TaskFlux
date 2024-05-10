@@ -1,6 +1,6 @@
 using TaskFlux.Application;
-using TaskFlux.Application.Cluster;
 using TaskFlux.Consensus;
+using TaskFlux.Consensus.Cluster;
 using TaskFlux.Core.Commands;
 using ILogger = Serilog.ILogger;
 
@@ -15,10 +15,10 @@ public class TaskFluxNodeHostedService : IHostedService
     private readonly ThreadPerWorkerBackgroundJobQueue _backgroundJobQueue;
 
     public TaskFluxNodeHostedService(RaftConsensusModule<Command, Response> module,
-                                     ExclusiveRequestAcceptor requestAcceptor,
-                                     ThreadPerWorkerBackgroundJobQueue backgroundJobQueue,
-                                     NodeConnectionManager connectionManager,
-                                     ILogger logger)
+        ExclusiveRequestAcceptor requestAcceptor,
+        ThreadPerWorkerBackgroundJobQueue backgroundJobQueue,
+        NodeConnectionManager connectionManager,
+        ILogger logger)
     {
         _logger = logger;
         _module = module;

@@ -41,16 +41,6 @@ public static class Metrics
             description: "Размер очереди команд");
     }
 
-    public static readonly Histogram<long> RpcDuration = TaskFluxMeter.CreateHistogram<long>(
-        name: "taskflux.rpc.duration",
-        unit: "ms",
-        description: "Длительность RCP запросов");
-
-    public static readonly Counter<long> RpcSentBytes = TaskFluxMeter.CreateCounter<long>(
-        name: "taskflux.rpc.sent_bytes.total",
-        unit: "bytes",
-        description: "Общее количество отправленных байт на другие узлы кластера");
-
     public static void RegisterGcMetrics()
     {
         TaskFluxMeter.CreateObservableGauge(name: "taskflux.gc.duration",
@@ -74,7 +64,7 @@ public static class Metrics
             unit: "bytes",
             description: "Место занимаемое всеми объектами в куче в байтах без учета фрагментации");
 
-        var generations = new[] {"gen0", "gen1", "gen2", "loh", "poh"};
+        var generations = new[] { "gen0", "gen1", "gen2", "loh", "poh" };
 
         IEnumerable<Measurement<long>> GetGcCollectionsCount()
         {

@@ -1,10 +1,11 @@
-using TaskFlux.Consensus;
-using TaskFlux.Consensus.Cluster.Network.Exceptions;
+using TaskFlux.Application.Cluster;
+using TaskFlux.Consensus.Cluster;
 using TaskFlux.Consensus.Commands.AppendEntries;
+using TaskFlux.Consensus.Network.Message.Exceptions;
 using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Application.Cluster.Network.Packets;
+namespace TaskFlux.Consensus.Network.Message.Packets;
 
 public class AppendEntriesRequestPacket : NodePacket
 {

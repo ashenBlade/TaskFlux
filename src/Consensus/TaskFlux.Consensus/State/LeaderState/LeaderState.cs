@@ -32,9 +32,9 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     private readonly CancellationTokenSource _lifetimeCts = new();
 
     internal LeaderState(RaftConsensusModule<TCommand, TResponse> consensusModule,
-                         ILogger logger,
-                         IDeltaExtractor<TResponse> deltaExtractor,
-                         ITimerFactory timerFactory)
+        ILogger logger,
+        IDeltaExtractor<TResponse> deltaExtractor,
+        ITimerFactory timerFactory)
         : base(consensusModule)
     {
         _logger = logger;
@@ -83,8 +83,8 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
 
         _logger.Information("Восстанавливаю предыдущее состояние");
         var oldSnapshot = Persistence.TryGetSnapshot(out var s, out _)
-                              ? s
-                              : null;
+            ? s
+            : null;
         var deltas = Persistence.ReadDeltaFromPreviousSnapshot();
         _application = ApplicationFactory.Restore(oldSnapshot, deltas);
     }
@@ -106,10 +106,10 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
             var peer = peers[i];
             var info = replicationStates[i];
             var processor = new PeerProcessorBackgroundJob<TCommand, TResponse>(peer,
-                _logger.ForContext("SourceContext", $"PeerProcessor({peer.Id.Id})"), CurrentTerm, info,
+                _logger, CurrentTerm, info,
                 replicationWatcher, this);
             var timer = _timerFactory.CreateHeartbeatTimer();
-            processors[i] = ( processor, timer );
+            processors[i] = (processor, timer);
         }
 
         return processors;
@@ -199,7 +199,7 @@ public class LeaderState<TCommand, TResponse> : State<TCommand, TResponse>
     }
 
     public override InstallSnapshotResponse Apply(InstallSnapshotRequest request,
-                                                  CancellationToken token = default)
+        CancellationToken token = default)
     {
         if (request.Term < CurrentTerm)
         {

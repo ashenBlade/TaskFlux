@@ -1,4 +1,4 @@
-namespace TaskFlux.Consensus.Cluster.Network.Exceptions;
+namespace TaskFlux.Consensus.Network.Message.Exceptions;
 
 /// <summary>
 /// Исключение возникающее когда обнаруживается ошибка при проверки целостности полученного пакета.

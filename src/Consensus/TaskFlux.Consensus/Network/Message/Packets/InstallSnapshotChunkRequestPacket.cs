@@ -1,8 +1,8 @@
-using TaskFlux.Consensus.Cluster.Network.Exceptions;
+using TaskFlux.Consensus.Network.Message.Exceptions;
 using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Application.Cluster.Network.Packets;
+namespace TaskFlux.Consensus.Network.Message.Packets;
 
 public class InstallSnapshotChunkRequestPacket : NodePacket
 {

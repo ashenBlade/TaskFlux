@@ -3,15 +3,14 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using Serilog;
-using TaskFlux.Application.Cluster.Network.Packets;
-using TaskFlux.Consensus;
-using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
 using TaskFlux.Consensus.Commands.RequestVote;
+using TaskFlux.Consensus.Network.Message.Exceptions;
+using TaskFlux.Consensus.Network.Message.Packets;
 using TaskFlux.Core;
 
-namespace TaskFlux.Application.Cluster.Network;
+namespace TaskFlux.Consensus.Network.Message;
 
 public class TcpPeer : IPeer
 {
@@ -45,13 +44,13 @@ public class TcpPeer : IPeer
     public NodeId Id { get; }
 
     private TcpPeer(Socket socket,
-                    EndPoint endPoint,
-                    NodeId nodeId,
-                    NodeId currentNodeId,
-                    TimeSpan requestTimeout,
-                    TimeSpan connectionErrorDelay,
-                    Lazy<NetworkStream> lazy,
-                    ILogger logger)
+        EndPoint endPoint,
+        NodeId nodeId,
+        NodeId currentNodeId,
+        TimeSpan requestTimeout,
+        TimeSpan connectionErrorDelay,
+        Lazy<NetworkStream> lazy,
+        ILogger logger)
     {
         Id = nodeId;
         _socket = socket;
@@ -70,7 +69,7 @@ public class TcpPeer : IPeer
         switch (response.PacketType)
         {
             case NodePacketType.AppendEntriesResponse:
-                return ( ( AppendEntriesResponsePacket ) response ).Response;
+                return ((AppendEntriesResponsePacket)response).Response;
 
             case NodePacketType.AppendEntriesRequest:
             case NodePacketType.ConnectRequest:
@@ -145,7 +144,7 @@ public class TcpPeer : IPeer
         switch (response.PacketType)
         {
             case NodePacketType.RequestVoteResponse:
-                var requestVoteResponsePacket = ( RequestVoteResponsePacket ) response;
+                var requestVoteResponsePacket = (RequestVoteResponsePacket)response;
                 return requestVoteResponsePacket.Response;
 
             case NodePacketType.AppendEntriesRequest:
@@ -168,7 +167,7 @@ public class TcpPeer : IPeer
     }
 
     public InstallSnapshotResponse SendInstallSnapshot(InstallSnapshotRequest request,
-                                                       CancellationToken token)
+        CancellationToken token)
     {
         // Проверка через Connected плохая, но неплохо для начала.
         // Если соединение все же было разорвано, то заметим это при отправке заголовка
@@ -209,7 +208,7 @@ public class TcpPeer : IPeer
     /// <param name="token">Токен отмены</param>
     /// <returns>Конечный ответ сервера</returns>
     private InstallSnapshotResponse SendInstallSnapshotCore(InstallSnapshotRequest request,
-                                                            CancellationToken token)
+        CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
         _logger.Information("Отправляю снапшот на узел {NodeId}", Id);
@@ -259,7 +258,7 @@ public class TcpPeer : IPeer
         {
             if (packet.PacketType is NodePacketType.InstallSnapshotResponse)
             {
-                response = new InstallSnapshotResponse(( ( InstallSnapshotResponsePacket ) packet ).CurrentTerm);
+                response = new InstallSnapshotResponse(((InstallSnapshotResponsePacket)packet).CurrentTerm);
                 return true;
             }
 
@@ -307,9 +306,9 @@ public class TcpPeer : IPeer
             }
             catch (IOException io)
                 when (io.GetBaseException() is SocketException
-                                               {
-                                                   SocketErrorCode: SocketError.TimedOut
-                                               })
+                      {
+                          SocketErrorCode: SocketError.TimedOut
+                      })
             {
                 _logger.Warning("Таймаут ожидания при отправке пакета {PacketType} превышен. Делаю повторную отправку",
                     packet.PacketType);
@@ -394,7 +393,7 @@ public class TcpPeer : IPeer
                 {
                     case NodePacketType.ConnectResponse:
 
-                        var connectResponsePacket = ( ConnectResponsePacket ) response;
+                        var connectResponsePacket = (ConnectResponsePacket)response;
                         if (connectResponsePacket.Success)
                         {
                             _logger.Information("Авторизация прошла успешно");
@@ -457,7 +456,7 @@ public class TcpPeer : IPeer
         // Таймауты на чтение и отправку должны выставляться, т.к. 
         // если соединение внезапно разорвется и таймаут не будет выставлен,
         // то можем встрять в вечном ожидании - если таймаут произошел, то просто заново отправим пакет
-        var timeout = ( int ) requestTimeout.TotalMilliseconds;
+        var timeout = (int)requestTimeout.TotalMilliseconds;
         socket.SendTimeout = timeout;
         socket.ReceiveTimeout = timeout;
 
@@ -467,7 +466,7 @@ public class TcpPeer : IPeer
     private void WaitConnectionErrorDelay(CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        using var _ = token.UnsafeRegister(static o => ( ( Thread ) o! ).Interrupt(), Thread.CurrentThread);
+        using var _ = token.UnsafeRegister(static o => ((Thread)o!).Interrupt(), Thread.CurrentThread);
         try
         {
             Thread.Sleep(_connectionErrorDelay);
@@ -480,11 +479,11 @@ public class TcpPeer : IPeer
     }
 
     public static TcpPeer Create(NodeId currentNodeId,
-                                 NodeId nodeId,
-                                 EndPoint endPoint,
-                                 TimeSpan requestTimeout,
-                                 TimeSpan connectionErrorDelay,
-                                 ILogger logger)
+        NodeId nodeId,
+        EndPoint endPoint,
+        TimeSpan requestTimeout,
+        TimeSpan connectionErrorDelay,
+        ILogger logger)
     {
         var socket = CreateSocket(requestTimeout);
         var lazyStream = new Lazy<NetworkStream>(() => new NetworkStream(socket));

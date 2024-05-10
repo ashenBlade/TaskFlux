@@ -19,8 +19,7 @@ public static class ServiceCollectionExtensions
         RaftConsensusModule<Command, Response> module)
     {
         return sc.AddHostedService(_ =>
-            new NodeStateObserverBackgroundService(module, persistence, TimeSpan.FromSeconds(5),
-                Log.ForContext("SourceContext", "StateObserver")));
+            new NodeStateObserverBackgroundService(module, persistence, TimeSpan.FromSeconds(5), Log.Logger));
     }
 
     public static IServiceCollection AddTcpRequestModule(this IServiceCollection sc, IApplicationLifetime lifetime)
@@ -29,7 +28,7 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<ApplicationOptions>().TcpModule,
             sp.GetRequiredService<IApplicationInfo>(),
             lifetime,
-            Log.ForContext<TcpAdapterBackgroundService>()));
+            Log.Logger));
     }
 
     public static IWebHostBuilder ConfigureTaskFluxKestrel(this IWebHostBuilder web, HttpOptions httpOptions,

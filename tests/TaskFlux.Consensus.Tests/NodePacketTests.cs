@@ -1,11 +1,11 @@
 using System.Text;
 using FluentAssertions;
-using TaskFlux.Application.Cluster.Network;
-using TaskFlux.Application.Cluster.Network.Packets;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Consensus.Commands.RequestVote;
+using TaskFlux.Consensus.Network.Message;
+using TaskFlux.Consensus.Network.Message.Exceptions;
+using TaskFlux.Consensus.Network.Message.Packets;
 using TaskFlux.Core;
 
 namespace TaskFlux.Application.Tests;
@@ -24,7 +24,7 @@ public class NodePacketTests
             stream.Position = 0;
             var actual = NodePacket.Deserialize(stream);
             actual.Should()
-                  .Be(expected, PacketEqualityComparer.Instance);
+                .Be(expected, PacketEqualityComparer.Instance);
         }
 
         // Асинхронно
@@ -34,7 +34,7 @@ public class NodePacketTests
             stream.Position = 0;
             var actual = NodePacket.DeserializeAsync(stream, CancellationToken.None).GetAwaiter().GetResult();
             actual.Should()
-                  .Be(expected, PacketEqualityComparer.Instance);
+                .Be(expected, PacketEqualityComparer.Instance);
         }
     }
 
@@ -42,7 +42,7 @@ public class NodePacketTests
     {
         // Не трогаем байт маркера
         var index = Random.Shared.Next(start, end);
-        var bitToInvert = ( byte ) ( 1 << Random.Shared.Next(0, 8) );
+        var bitToInvert = (byte)(1 << Random.Shared.Next(0, 8));
         array[index] ^= bitToInvert;
     }
 
@@ -68,9 +68,9 @@ public class NodePacketTests
             var buffer = stream.ToArray();
             InvertRandomBit(buffer, start, end);
             Assert.ThrowsAnyAsync<IntegrityException>(() =>
-                       NodePacket.DeserializeAsync(new MemoryStream(buffer), CancellationToken.None))
-                  .GetAwaiter()
-                  .GetResult();
+                    NodePacket.DeserializeAsync(new MemoryStream(buffer), CancellationToken.None))
+                .GetAwaiter()
+                .GetResult();
         }
     }
 
@@ -117,8 +117,8 @@ public class NodePacketTests
     }
 
     public static IEnumerable<object[]> LongWithBoolPairwise =>
-        new long[] {1, 123, long.MaxValue, 123, 1 << 8, 1 << 8 + 1, 1 << 15, 1 << 30, ( 1L << 54 ) + 54}
-           .SelectMany(i => new object[][] { [i, true], [i, false]});
+        new long[] { 1, 123, long.MaxValue, 123, 1 << 8, 1 << 8 + 1, 1 << 15, 1 << 30, (1L << 54) + 54 }
+            .SelectMany(i => new object[][] { [i, true], [i, false] });
 
     [Theory]
     [MemberData(nameof(LongWithBoolPairwise))]
@@ -153,7 +153,7 @@ public class NodePacketTests
         string command)
     {
         var appendEntries = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId),
-            new LogEntryInfo(new Term(logTerm), logIndex), new[] {Entry(logEntryTerm, command),});
+            new LogEntryInfo(new Term(logTerm), logIndex), new[] { Entry(logEntryTerm, command), });
         AssertBase(new AppendEntriesRequestPacket(appendEntries));
     }
 
@@ -175,17 +175,17 @@ public class NodePacketTests
     {
         var expected = Entry(logEntryTerm, command);
         var request = new AppendEntriesRequest(new Term(term), leaderCommit, new NodeId(leaderId),
-            new LogEntryInfo(new Term(logTerm), logIndex), new[] {expected});
+            new LogEntryInfo(new Term(logTerm), logIndex), new[] { expected });
         AssertBase(new AppendEntriesRequestPacket(request));
     }
 
     public static IEnumerable<object[]> СериализацияAppendEntriesСНесколькимиКомандами = new object[][]
     {
-        [1, 1, 1, 1, 1, new[] {Entry(1, "payload"), Entry(2, "hello"), Entry(3, "world")}],
-        [2, 1, 1, 5, 2, new[] {Entry(5, ""), Entry(3, "    ")}],
+        [1, 1, 1, 1, 1, new[] { Entry(1, "payload"), Entry(2, "hello"), Entry(3, "world") }],
+        [2, 1, 1, 5, 2, new[] { Entry(5, ""), Entry(3, "    ") }],
         [
             32, 31, 21, 11, 20,
-            new[] {Entry(1, "payload"), Entry(2, "hello"), Entry(3, "world"), Entry(4, "Привет мир")}
+            new[] { Entry(1, "payload"), Entry(2, "hello"), Entry(3, "world"), Entry(4, "Привет мир") }
         ],
         [
             long.MaxValue, Lsn.TombIndex, Term.StartTerm, Lsn.TombIndex, 0,
@@ -266,15 +266,15 @@ public class NodePacketTests
 
     [Theory]
     [InlineData(new byte[] { })]
-    [InlineData(new byte[] {0})]
-    [InlineData(new[] {byte.MaxValue})]
-    [InlineData(new byte[] {1})]
-    [InlineData(new byte[] {1, 2})]
-    [InlineData(new byte[] {1, 2, 3})]
-    [InlineData(new byte[] {1, 2, 3, 4})]
-    [InlineData(new byte[] {255, 254, 253, 252})]
-    [InlineData(new byte[] {255, 254, 253, 252, 251})]
-    [InlineData(new byte[] {1, 1, 2, 44, 128, 88, 33, 2})]
+    [InlineData(new byte[] { 0 })]
+    [InlineData(new[] { byte.MaxValue })]
+    [InlineData(new byte[] { 1 })]
+    [InlineData(new byte[] { 1, 2 })]
+    [InlineData(new byte[] { 1, 2, 3 })]
+    [InlineData(new byte[] { 1, 2, 3, 4 })]
+    [InlineData(new byte[] { 255, 254, 253, 252 })]
+    [InlineData(new byte[] { 255, 254, 253, 252, 251 })]
+    [InlineData(new byte[] { 1, 1, 2, 44, 128, 88, 33, 2 })]
     public void InstallSnapshotChunk__ДолженДесериализоватьТакуюЖеКоманду(byte[] data)
     {
         AssertBase(new InstallSnapshotChunkRequestPacket(data));
@@ -299,7 +299,7 @@ public class NodePacketTests
     {
         var packet = new AppendEntriesRequestPacket(new AppendEntriesRequest(new Term(123), 1234,
             new NodeId(2), new LogEntryInfo(new Term(34), 1242),
-            new LogEntry[] {new(new Term(32), new byte[] {1, 2, 6, 4, 31, 200, 55})}));
+            new LogEntry[] { new(new Term(32), new byte[] { 1, 2, 6, 4, 31, 200, 55 }) }));
         AssertIntegrityExceptionBase(packet, AppendEntriesRequestPacket.DataStartPosition,
             packet.GetDataEndPosition());
     }

@@ -1,11 +1,10 @@
 using System.Net.Sockets;
 using Serilog;
-using TaskFlux.Application.Cluster.Network;
-using TaskFlux.Application.Cluster.Network.Exceptions;
-using TaskFlux.Application.Cluster.Network.Packets;
 using TaskFlux.Consensus;
-using TaskFlux.Consensus.Cluster.Network.Exceptions;
 using TaskFlux.Consensus.Commands.InstallSnapshot;
+using TaskFlux.Consensus.Network.Message;
+using TaskFlux.Consensus.Network.Message.Exceptions;
+using TaskFlux.Consensus.Network.Message.Packets;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
 
@@ -107,11 +106,11 @@ public class NodeConnectionProcessor(
             switch (packet.PacketType)
             {
                 case NodePacketType.AppendEntriesRequest:
-                    return await ProcessAppendEntriesAsync(( AppendEntriesRequestPacket ) packet, token);
+                    return await ProcessAppendEntriesAsync((AppendEntriesRequestPacket)packet, token);
                 case NodePacketType.RequestVoteRequest:
-                    return await ProcessRequestVoteAsync(( RequestVoteRequestPacket ) packet, token);
+                    return await ProcessRequestVoteAsync((RequestVoteRequestPacket)packet, token);
                 case NodePacketType.InstallSnapshotRequest:
-                    return await ProcessInstallSnapshotAsync(( InstallSnapshotRequestPacket ) packet, token);
+                    return await ProcessInstallSnapshotAsync((InstallSnapshotRequestPacket)packet, token);
                 default:
                     Logger.Error("От клиента получен неожиданный тип пакета: {PacketType}. Закрываю соединение",
                         packet.PacketType);

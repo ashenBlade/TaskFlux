@@ -1,9 +1,7 @@
-using TaskFlux.Consensus;
-using TaskFlux.Consensus.Persistence;
 using TaskFlux.Core;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Application.Cluster;
+namespace TaskFlux.Consensus.Cluster;
 
 public static class SpanBinaryReaderExtensions
 {

@@ -1,7 +1,7 @@
-using TaskFlux.Consensus;
+using TaskFlux.Consensus.Cluster;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Application.Cluster.Network.Packets;
+namespace TaskFlux.Consensus.Network.Message.Packets;
 
 public class InstallSnapshotResponsePacket : NodePacket
 {

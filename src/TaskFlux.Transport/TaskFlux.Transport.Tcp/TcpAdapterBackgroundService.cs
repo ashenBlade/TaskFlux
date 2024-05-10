@@ -46,8 +46,7 @@ public class TcpAdapterBackgroundService : BackgroundService
             {
                 var client = await listener.AcceptTcpClientAsync(token);
                 var processor = new ClientRequestProcessor(client, _requestAcceptor, _options, _applicationInfo,
-                    _lifetime,
-                    Log.ForContext<ClientRequestProcessor>());
+                    _lifetime, _logger);
                 _ = processor.ProcessAsync(token);
             }
         }

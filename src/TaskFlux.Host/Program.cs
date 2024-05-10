@@ -4,11 +4,12 @@ using System.Net;
 using System.Runtime.InteropServices;
 using Serilog;
 using Serilog.Core;
+using Serilog.Formatting.Compact;
 using TaskFlux.Application;
-using TaskFlux.Application.Cluster;
-using TaskFlux.Application.Cluster.Network;
 using TaskFlux.Application.RecordAwaiter;
 using TaskFlux.Consensus;
+using TaskFlux.Consensus.Cluster;
+using TaskFlux.Consensus.Network.Message;
 using TaskFlux.Consensus.Timers;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
@@ -21,6 +22,7 @@ using TaskFlux.Persistence.Snapshot;
 using TaskFlux.Transport.Grpc;
 using TaskFlux.Transport.Http;
 using TaskFlux.Utils.Network;
+using IApplicationLifetime = TaskFlux.Application.IApplicationLifetime;
 
 var lifetime = new HostApplicationLifetime();
 
@@ -36,8 +38,7 @@ var logLevelSwitch = new LoggingLevelSwitch();
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.ControlledBy(logLevelSwitch)
     .Enrich.FromLogContext()
-    .WriteTo.Console()
-    .Enrich.WithProperty("SourceContext", "Main") // Это для глобального логера
+    .WriteTo.Console(new RenderedCompactJsonFormatter())
     .CreateBootstrapLogger();
 
 PosixSignalRegistration? sigTermRegistration = null;
@@ -83,7 +84,7 @@ try
     using var jobQueue = CreateJobQueue(options, lifetime);
     using var consensusModule = CreateRaftConsensusModule(nodeId, peers, persistence, jobQueue);
     using var requestAcceptor = CreateRequestAcceptor(consensusModule, lifetime);
-    using var connectionManager = CreateClusterNodeConnectionManager(options, consensusModule, lifetime);
+    using var connectionManager = CreateClusterNodeConnectionManager(options, consensusModule);
     var taskFluxHostedService =
         CreateTaskFluxHostedService(consensusModule, requestAcceptor, jobQueue, connectionManager);
 
@@ -136,13 +137,9 @@ try
             })
             .UseSerilog((ctx, serilog) =>
             {
-                serilog
-                    .MinimumLevel.ControlledBy(logLevelSwitch)
-                    .Enrich.FromLogContext()
-                    .WriteTo.Console()
-                    .Enrich.WithProperty("SourceContext", "Main")
-                    .ReadFrom.Configuration(ctx.Configuration);
-            })
+                // Переопределяем базовые настройки
+                serilog.ReadFrom.Configuration(ctx.Configuration);
+            }, preserveStaticLogger: true, writeToProviders: true)
             .ConfigureServices((_, services) =>
             {
                 services.AddOpenTelemetry()
@@ -181,7 +178,7 @@ finally
     Log.CloseAndFlush();
 }
 
-Log.Information("Приложение закрывается");
+Log.Information("Ожидаю завершения работы компонентов");
 return await lifetime.WaitReturnCode();
 
 FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
@@ -195,7 +192,7 @@ FileSystemPersistenceFacade InitializePersistence(PersistenceOptions options)
         preallocateSegment: true,
         maxReadEntriesSize: options.ReplicationMaxSendSize);
     return FileSystemPersistenceFacade.Initialize(dataDirectory: dataDirectoryInfo,
-        logger: Log.ForContext<FileSystemPersistenceFacade>(),
+        logger: Log.Logger,
         snapshotOptions: snapshotOptions,
         logOptions: logOptions);
 }
@@ -205,7 +202,6 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
     FileSystemPersistenceFacade persistence,
     IBackgroundJobQueue jobQueue)
 {
-    var logger = Log.Logger.ForContext("SourceContext", "ConsensusModule");
     var deltaExtractor = new TaskFluxDeltaExtractor();
     var peerGroup = new PeerGroup(peers);
     var timerFactory = new ThreadingTimerFactory(lower: TimeSpan.FromMilliseconds(1500),
@@ -214,7 +210,7 @@ RaftConsensusModule<Command, Response> CreateRaftConsensusModule(NodeId nodeId,
     var applicationFactory = new TaskFluxApplicationFactory(new ValueTaskSourceQueueSubscriberManagerFactory(128));
 
     return RaftConsensusModule<Command, Response>.Create(nodeId,
-        peerGroup, logger, timerFactory,
+        peerGroup, Log.Logger, timerFactory,
         jobQueue, persistence,
         deltaExtractor, applicationFactory);
 }
@@ -245,7 +241,7 @@ static IPeer[] ExtractPeers(ClusterOptions serverOptions, NodeId currentNodeId, 
     IPeer CreatePeer(NodeId id, EndPoint endPoint)
     {
         IPeer peer = TcpPeer.Create(currentNodeId, id, endPoint, networkOptions.ClientRequestTimeout,
-            connectionErrorDelay, Log.ForContext<TcpPeer>());
+            connectionErrorDelay, Log.Logger);
         peer = new ExclusiveAccessPeerDecorator(peer);
         return peer;
     }
@@ -310,24 +306,21 @@ ThreadPerWorkerBackgroundJobQueue CreateJobQueue(ApplicationOptions applicationO
 {
     return new ThreadPerWorkerBackgroundJobQueue(applicationOptions.Cluster.ClusterPeers.Length,
         applicationOptions.Cluster.ClusterNodeId,
-        Log.ForContext("SourceContext", "BackgroundJobQueue"), hostApplicationLifetime);
+        Log.Logger, hostApplicationLifetime);
 }
 
 ExclusiveRequestAcceptor CreateRequestAcceptor(RaftConsensusModule<Command, Response> raftConsensusModule,
-    HostApplicationLifetime lifetime1)
+    IApplicationLifetime lifetime1)
 {
-    return new ExclusiveRequestAcceptor(raftConsensusModule, lifetime1,
-        Log.ForContext("SourceContext", "RequestAcceptor"));
+    return new ExclusiveRequestAcceptor(raftConsensusModule, lifetime1, Log.Logger);
 }
 
 NodeConnectionManager CreateClusterNodeConnectionManager(ApplicationOptions applicationOptions,
-    RaftConsensusModule<Command, Response> consensusModule,
-    HostApplicationLifetime hostApplicationLifetime1)
+    RaftConsensusModule<Command, Response> consensusModule)
 {
     return new NodeConnectionManager(applicationOptions.Cluster.ClusterListenHost,
         applicationOptions.Cluster.ClusterListenPort,
-        consensusModule, applicationOptions.Network.ClientRequestTimeout,
-        hostApplicationLifetime1, Log.ForContext<NodeConnectionManager>());
+        consensusModule, applicationOptions.Network.ClientRequestTimeout, Log.Logger);
 }
 
 TaskFluxNodeHostedService CreateTaskFluxHostedService(RaftConsensusModule<Command, Response> consensusModule,
@@ -336,5 +329,5 @@ TaskFluxNodeHostedService CreateTaskFluxHostedService(RaftConsensusModule<Comman
     NodeConnectionManager nodeConnectionManager)
 {
     return new TaskFluxNodeHostedService(consensusModule, exclusiveRequestAcceptor, jobQueue,
-        nodeConnectionManager, Log.ForContext<TaskFluxNodeHostedService>());
+        nodeConnectionManager, Log.Logger);
 }

@@ -1,6 +1,6 @@
-using TaskFlux.Application.Cluster.Network;
-using TaskFlux.Application.Cluster.Network.Packets;
 using TaskFlux.Consensus;
+using TaskFlux.Consensus.Network.Message;
+using TaskFlux.Consensus.Network.Message.Packets;
 
 namespace TaskFlux.Application.Cluster;
 
@@ -23,8 +23,8 @@ public class NetworkSnapshot : ISnapshot
             var packet = _client.Receive();
             switch (packet)
             {
-                case {PacketType: NodePacketType.InstallSnapshotChunkRequest}:
-                    var installChunkPacket = ( InstallSnapshotChunkRequestPacket ) packet;
+                case { PacketType: NodePacketType.InstallSnapshotChunkRequest }:
+                    var installChunkPacket = (InstallSnapshotChunkRequestPacket)packet;
                     if (installChunkPacket.Chunk.IsEmpty)
                     {
                         yield break;

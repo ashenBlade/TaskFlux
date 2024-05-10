@@ -1,8 +1,8 @@
-using TaskFlux.Consensus;
+using TaskFlux.Consensus.Cluster;
 using TaskFlux.Core;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Application.Cluster.Network.Packets;
+namespace TaskFlux.Consensus.Network.Message.Packets;
 
 public sealed class InstallSnapshotRequestPacket : NodePacket
 {
@@ -32,10 +32,10 @@ public sealed class InstallSnapshotRequestPacket : NodePacket
         writer.Write(LastEntry.Term.Value);
     }
 
-    private const int PayloadSize = SizeOf.Term   // Терм лидера
-                                  + SizeOf.NodeId // Id лидера
-                                  + SizeOf.Lsn    // Последний индекс лидера 
-                                  + SizeOf.Term;  // Последний терм лидера
+    private const int PayloadSize = SizeOf.Term // Терм лидера
+                                    + SizeOf.NodeId // Id лидера
+                                    + SizeOf.Lsn // Последний индекс лидера 
+                                    + SizeOf.Term; // Последний терм лидера
 
     public new static InstallSnapshotRequestPacket Deserialize(Stream stream)
     {

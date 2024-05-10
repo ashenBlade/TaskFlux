@@ -1,6 +1,4 @@
-using TaskFlux.Application.Cluster.Network;
-
-namespace TaskFlux.Consensus.Cluster.Network.Exceptions;
+namespace TaskFlux.Consensus.Network.Message.Exceptions;
 
 public class UnexpectedPacketException : Exception
 {

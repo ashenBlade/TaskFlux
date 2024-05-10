@@ -1,8 +1,9 @@
 using System.Buffers;
+using TaskFlux.Consensus.Cluster;
 using TaskFlux.Consensus.Commands.RequestVote;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Application.Cluster.Network.Packets;
+namespace TaskFlux.Consensus.Network.Message.Packets;
 
 public class RequestVoteResponsePacket : NodePacket
 {
@@ -28,7 +29,7 @@ public class RequestVoteResponsePacket : NodePacket
     }
 
     private const int PayloadSize = SizeOf.Term
-                                  + SizeOf.Bool;
+                                    + SizeOf.Bool;
 
     public new static RequestVoteResponsePacket Deserialize(Stream stream)
     {

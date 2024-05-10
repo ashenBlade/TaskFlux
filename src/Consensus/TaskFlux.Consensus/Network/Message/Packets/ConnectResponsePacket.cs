@@ -1,7 +1,7 @@
 using System.Runtime.CompilerServices;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Application.Cluster.Network.Packets;
+namespace TaskFlux.Consensus.Network.Message.Packets;
 
 public class ConnectResponsePacket : NodePacket
 {

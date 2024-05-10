@@ -3,14 +3,14 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using Serilog;
-using TaskFlux.Application.Cluster.Network;
-using TaskFlux.Application.Cluster.Network.Packets;
-using TaskFlux.Consensus;
+using TaskFlux.Application.Cluster;
+using TaskFlux.Consensus.Network.Message;
+using TaskFlux.Consensus.Network.Message.Packets;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
 using ThreadState = System.Threading.ThreadState;
 
-namespace TaskFlux.Application.Cluster;
+namespace TaskFlux.Consensus.Cluster;
 
 public class NodeConnectionManager : IDisposable
 {
@@ -18,7 +18,6 @@ public class NodeConnectionManager : IDisposable
     private readonly int _port;
     private readonly RaftConsensusModule<Command, Response> _module;
     private readonly TimeSpan _requestTimeout;
-    private readonly IApplicationLifetime _lifetime;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<NodeId, NodeConnectionProcessor> _nodes = new();
     private readonly (Thread WorkerThread, Socket Server, CancellationTokenSource Lifetime)? _workerData;
@@ -27,14 +26,12 @@ public class NodeConnectionManager : IDisposable
         int port,
         RaftConsensusModule<Command, Response> module,
         TimeSpan requestTimeout,
-        IApplicationLifetime lifetime,
         ILogger logger)
     {
         _host = host;
         _port = port;
         _module = module;
         _requestTimeout = requestTimeout;
-        _lifetime = lifetime;
         _logger = logger;
         _workerData = (new Thread(ThreadWorker), CreateServerSocket(), new CancellationTokenSource());
     }
@@ -86,7 +83,7 @@ public class NodeConnectionManager : IDisposable
         catch (Exception e)
         {
             _logger.Fatal(e, "Поймано необработанное исключение во время обработки подключений узлов кластера");
-            _lifetime.StopAbnormal();
+            throw;
         }
     }
 
@@ -155,7 +152,7 @@ public class NodeConnectionManager : IDisposable
         client.Socket.NoDelay = true;
 
         var processor = new NodeConnectionProcessor(id, client, _module,
-            _logger.ForContext("SourceContext", $"NodeConnectionProcessor({id.Id})"))
+            _logger)
         {
             CancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cts.Token)
         };

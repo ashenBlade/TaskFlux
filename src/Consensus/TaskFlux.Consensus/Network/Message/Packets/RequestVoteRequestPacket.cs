@@ -1,9 +1,9 @@
 using System.Buffers;
-using TaskFlux.Consensus;
+using TaskFlux.Consensus.Cluster;
 using TaskFlux.Consensus.Commands.RequestVote;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Application.Cluster.Network.Packets;
+namespace TaskFlux.Consensus.Network.Message.Packets;
 
 public class RequestVoteRequestPacket : NodePacket
 {
@@ -18,9 +18,9 @@ public class RequestVoteRequestPacket : NodePacket
     protected override int EstimatePayloadSize()
     {
         return SizeOf.NodeId // Id узла
-             + SizeOf.Term   // Терм узла кандидата
-             + SizeOf.Term   // Терм последней записи
-             + SizeOf.Lsn;   // Индекс последней записи
+               + SizeOf.Term // Терм узла кандидата
+               + SizeOf.Term // Терм последней записи
+               + SizeOf.Lsn; // Индекс последней записи
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
@@ -33,9 +33,9 @@ public class RequestVoteRequestPacket : NodePacket
     }
 
     private const int PayloadSize = SizeOf.NodeId // Id узла кандидата
-                                  + SizeOf.Term   // Терм узла кандидата
-                                  + SizeOf.Term   // Терм последней записи
-                                  + SizeOf.Lsn;   // Индекс последней записи
+                                    + SizeOf.Term // Терм узла кандидата
+                                    + SizeOf.Term // Терм последней записи
+                                    + SizeOf.Lsn; // Индекс последней записи
 
     public new static RequestVoteRequestPacket Deserialize(Stream stream)
     {

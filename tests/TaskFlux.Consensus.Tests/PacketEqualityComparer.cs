@@ -1,5 +1,6 @@
-using TaskFlux.Application.Cluster.Network;
-using TaskFlux.Application.Cluster.Network.Packets;
+using TaskFlux.Consensus.Network.Message;
+using TaskFlux.Consensus.Network.Message.Packets;
+using TaskFlux.Consensus.Tests.Infrastructure;
 
 #pragma warning disable CS8767 // Nullability of reference types in type of parameter doesn't match implicitly implemented member (possibly because of nullability attributes).
 
@@ -11,17 +12,17 @@ public class PacketEqualityComparer : IEqualityComparer<NodePacket>
 
     public bool Equals(NodePacket x, NodePacket y)
     {
-        return Check(( dynamic ) x, ( dynamic ) y);
+        return Check((dynamic)x, (dynamic)y);
     }
 
     private bool Check(AppendEntriesRequestPacket first, AppendEntriesRequestPacket second)
     {
-        var (f, s) = ( first.Request, second.Request );
+        var (f, s) = (first.Request, second.Request);
         return f.Term == s.Term
-            && f.LeaderCommit == s.LeaderCommit
-            && f.LeaderId == s.LeaderId
-            && f.PrevLogEntryInfo == s.PrevLogEntryInfo
-            && f.Entries.SequenceEqual(s.Entries, LogEntryEqualityComparer.Instance);
+               && f.LeaderCommit == s.LeaderCommit
+               && f.LeaderId == s.LeaderId
+               && f.PrevLogEntryInfo == s.PrevLogEntryInfo
+               && f.Entries.SequenceEqual(s.Entries, LogEntryEqualityComparer.Instance);
     }
 
     private static bool Check(AppendEntriesResponsePacket first, AppendEntriesResponsePacket second)
@@ -32,14 +33,14 @@ public class PacketEqualityComparer : IEqualityComparer<NodePacket>
     private static bool Check(RequestVoteRequestPacket first, RequestVoteRequestPacket second)
     {
         return first.Request.CandidateTerm == second.Request.CandidateTerm
-            && first.Request.CandidateId == second.Request.CandidateId
-            && first.Request.LastLogEntryInfo == second.Request.LastLogEntryInfo;
+               && first.Request.CandidateId == second.Request.CandidateId
+               && first.Request.LastLogEntryInfo == second.Request.LastLogEntryInfo;
     }
 
     private static bool Check(RequestVoteResponsePacket first, RequestVoteResponsePacket second)
     {
         return first.Response.VoteGranted == second.Response.VoteGranted
-            && first.Response.CurrentTerm == second.Response.CurrentTerm;
+               && first.Response.CurrentTerm == second.Response.CurrentTerm;
     }
 
     private static bool Check(ConnectRequestPacket first, ConnectRequestPacket second)
@@ -55,15 +56,15 @@ public class PacketEqualityComparer : IEqualityComparer<NodePacket>
     private static bool Check(InstallSnapshotRequestPacket first, InstallSnapshotRequestPacket second)
     {
         return first.LeaderId == second.LeaderId
-            && first.Term == second.Term
-            && first.LastEntry == second.LastEntry;
+               && first.Term == second.Term
+               && first.LastEntry == second.LastEntry;
     }
 
     private static bool Check(InstallSnapshotChunkRequestPacket first, InstallSnapshotChunkRequestPacket second)
     {
         return first.Chunk
-                    .ToArray()
-                    .SequenceEqual(second.Chunk.ToArray());
+            .ToArray()
+            .SequenceEqual(second.Chunk.ToArray());
     }
 
     private static bool Check(InstallSnapshotResponsePacket first, InstallSnapshotResponsePacket second)
@@ -76,6 +77,6 @@ public class PacketEqualityComparer : IEqualityComparer<NodePacket>
 
     public int GetHashCode(NodePacket obj)
     {
-        return ( int ) obj.PacketType;
+        return (int)obj.PacketType;
     }
 }

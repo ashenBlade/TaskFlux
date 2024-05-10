@@ -1,4 +1,4 @@
-namespace TaskFlux.Application.Cluster.Network;
+namespace TaskFlux.Consensus.Network.Message;
 
 internal static class SizeOf
 {
@@ -17,8 +17,8 @@ internal static class SizeOf
         sizeof(int) + buffer.Length + GetAlignment(buffer.Length, alignment);
 
     private static int GetAlignment(int length, int alignment) => alignment == 0
-                                                                      ? 0
-                                                                      : length % alignment;
+        ? 0
+        : length % alignment;
 
     public static int Buffer(ReadOnlySpan<byte> buffer) => sizeof(int) + buffer.Length;
     public static int Buffer(ReadOnlyMemory<byte> buffer) => sizeof(int) + buffer.Length;

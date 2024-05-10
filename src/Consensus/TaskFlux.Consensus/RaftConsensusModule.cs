@@ -20,7 +20,7 @@ namespace TaskFlux.Consensus;
 [DebuggerDisplay("Роль: {CurrentRole}; Терм: {CurrentTerm}; Id: {Id}")]
 public class RaftConsensusModule<TCommand, TResponse>
     : IConsensusModule<TCommand, TResponse>,
-      IDisposable
+        IDisposable
 {
     private readonly ITimerFactory _timerFactory;
     private readonly IDeltaExtractor<TResponse> _deltaExtractor;
@@ -70,7 +70,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     private State<TCommand, TResponse> GetCurrentStateCheck()
     {
         return _currentState
-            ?? throw new ArgumentNullException(nameof(_currentState), "Текущее состояние еще не проставлено");
+               ?? throw new ArgumentNullException(nameof(_currentState), "Текущее состояние еще не проставлено");
     }
 
     internal void SetStateTest(State<TCommand, TResponse> state)
@@ -93,7 +93,7 @@ public class RaftConsensusModule<TCommand, TResponse>
     /// <param name="newState">Новое состояние</param>
     /// <param name="oldState">Старое состояние</param>
     public bool TryUpdateState(State<TCommand, TResponse> newState,
-                               State<TCommand, TResponse> oldState)
+        State<TCommand, TResponse> oldState)
     {
         var stored = Interlocked.CompareExchange(ref _currentState, newState, oldState);
         if (stored == oldState)
@@ -161,19 +161,19 @@ public class RaftConsensusModule<TCommand, TResponse>
     {
         return new FollowerState<TCommand, TResponse>(this,
             _timerFactory.CreateElectionTimer(),
-            _logger.ForContext("SourceContext", "Raft(Follower)"));
+            _logger);
     }
 
     public State<TCommand, TResponse> CreateLeaderState()
     {
-        return new LeaderState<TCommand, TResponse>(this, _logger.ForContext("SourceContext", "Raft(Leader)"),
+        return new LeaderState<TCommand, TResponse>(this, _logger,
             _deltaExtractor, _timerFactory);
     }
 
     public State<TCommand, TResponse> CreateCandidateState()
     {
         return new CandidateState<TCommand, TResponse>(this, _timerFactory.CreateElectionTimer(),
-            _logger.ForContext("SourceContext", "Raft(Candidate)"));
+            _logger);
     }
 
     public override string ToString()

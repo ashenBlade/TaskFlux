@@ -1,5 +1,5 @@
-using TaskFlux.Application.Cluster.Network;
 using TaskFlux.Consensus;
+using TaskFlux.Consensus.Network.Message;
 using TaskFlux.Core;
 using TaskFlux.Utils.Serialization;
 

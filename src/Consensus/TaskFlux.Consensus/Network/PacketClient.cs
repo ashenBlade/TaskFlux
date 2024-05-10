@@ -1,5 +1,5 @@
 using System.Net.Sockets;
-using TaskFlux.Application.Cluster.Network;
+using TaskFlux.Consensus.Network.Message;
 
 namespace TaskFlux.Application.Cluster;
 

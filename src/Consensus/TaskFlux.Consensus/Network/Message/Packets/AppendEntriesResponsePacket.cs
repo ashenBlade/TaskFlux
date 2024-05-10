@@ -1,7 +1,9 @@
+using TaskFlux.Application.Cluster;
+using TaskFlux.Consensus.Cluster;
 using TaskFlux.Consensus.Commands.AppendEntries;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Application.Cluster.Network.Packets;
+namespace TaskFlux.Consensus.Network.Message.Packets;
 
 public class AppendEntriesResponsePacket : NodePacket
 {
@@ -10,8 +12,8 @@ public class AppendEntriesResponsePacket : NodePacket
 
     protected override int EstimatePayloadSize()
     {
-        return SizeOf.Bool  // Success
-             + SizeOf.Term; // Term
+        return SizeOf.Bool // Success
+               + SizeOf.Term; // Term
     }
 
     protected override void SerializeBuffer(Span<byte> buffer)
@@ -26,8 +28,8 @@ public class AppendEntriesResponsePacket : NodePacket
         Response = response;
     }
 
-    private const int PayloadSize = SizeOf.Bool  // Success
-                                  + SizeOf.Term; // Терм узла
+    private const int PayloadSize = SizeOf.Bool // Success
+                                    + SizeOf.Term; // Терм узла
 
     public new static AppendEntriesResponsePacket Deserialize(Stream stream)
     {

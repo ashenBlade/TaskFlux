@@ -1,13 +1,12 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using TaskFlux.Application.Cluster.Network.Exceptions;
-using TaskFlux.Application.Cluster.Network.Packets;
-using TaskFlux.Consensus.Cluster.Network.Exceptions;
+using TaskFlux.Consensus.Network.Message.Exceptions;
+using TaskFlux.Consensus.Network.Message.Packets;
 using TaskFlux.Utils.CheckSum;
 using TaskFlux.Utils.Serialization;
 
-namespace TaskFlux.Application.Cluster.Network;
+namespace TaskFlux.Consensus.Network.Message;
 
 public abstract class NodePacket
 {

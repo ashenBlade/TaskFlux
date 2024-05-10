@@ -1,6 +1,6 @@
 using System.Buffers;
 
-namespace TaskFlux.Application.Cluster.Network;
+namespace TaskFlux.Consensus.Network.Message;
 
 internal readonly struct RentedBuffer : IDisposable
 {
