@@ -38,7 +38,7 @@ Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
     .WriteTo.Console()
     .Enrich.WithProperty("SourceContext", "Main") // Это для глобального логера
-    .CreateLogger();
+    .CreateBootstrapLogger();
 
 PosixSignalRegistration? sigTermRegistration = null;
 try
@@ -103,13 +103,13 @@ try
     IHost BuildHost()
     {
         return new HostBuilder()
-            .UseSerilog()
             .ConfigureHostConfiguration(host =>
                 host.AddEnvironmentVariables("DOTNET_")
                     .AddCommandLine(args))
             .ConfigureAppConfiguration(app =>
                 app.AddEnvironmentVariables()
-                    .AddCommandLine(args))
+                    .AddCommandLine(args)
+                    .AddJsonFile("appsettings.json", optional: true))
             .ConfigureWebHost(web =>
             {
                 web.UseKestrel();
@@ -133,6 +133,15 @@ try
                         }
                     });
                 });
+            })
+            .UseSerilog((ctx, serilog) =>
+            {
+                serilog
+                    .MinimumLevel.ControlledBy(logLevelSwitch)
+                    .Enrich.FromLogContext()
+                    .WriteTo.Console()
+                    .Enrich.WithProperty("SourceContext", "Main")
+                    .ReadFrom.Configuration(ctx.Configuration);
             })
             .ConfigureServices((_, services) =>
             {
