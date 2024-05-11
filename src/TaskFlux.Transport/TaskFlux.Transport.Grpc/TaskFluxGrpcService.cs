@@ -55,8 +55,6 @@ public class TaskFluxGrpcService : TaskFluxService.TaskFluxServiceBase
         {
             if (record is null)
             {
-                // TODO: Dockerfile исправить
-
                 // Это должна быть команда вставки
                 var data = GetEnqueueRequestData(enqueueRequest);
                 if (!QueueNameParser.TryParse(data.Queue, out var queueName))
@@ -101,36 +99,34 @@ public class TaskFluxGrpcService : TaskFluxService.TaskFluxServiceBase
                 var command = new EnqueueCommand(r.Priority, r.Payload.ToByteArray(), queueName);
                 var result = await _requestAcceptor.AcceptAsync(command, token);
 
-                ErrorResponse? error;
-                EnqueueResponse.Types.EnqueueResponseData? enqueueResponseData;
-                NotLeaderResponse? notLeaderResponse;
-
+                /*
+                 * В сообщениях используется oneof (protobuf).
+                 * В текущей реализации генератора кода, если свойство из oneof присваивается,
+                 * то дискриминатор (XXXCase) выставляется либо в тип свойства, либо в None, если передан null.
+                 *
+                 * Поэтому создаем ответ здесь и выставляем необходимые поля в процессе работы.
+                 */
+                var grpcResponse = new EnqueueResponse();
                 if (result.TryGetResponse(out var response))
                 {
-                    notLeaderResponse = null;
-
                     switch (response.Type)
                     {
                         case ResponseType.Enqueue:
                             // Никакой ошибки, вставка успешна
-                            error = null;
-                            enqueueResponseData = new EnqueueResponse.Types.EnqueueResponseData()
+                            grpcResponse.Data = new EnqueueResponse.Types.EnqueueResponseData()
                             {
                                 PolicyViolation = null
                             };
                             break;
                         case ResponseType.Error:
-                            error = GrpcHelpers.MapGrpcError((Core.Commands.Error.ErrorResponse)response);
-                            enqueueResponseData = null;
+                            grpcResponse.Error = GrpcHelpers.MapGrpcError((Core.Commands.Error.ErrorResponse)response);
                             break;
                         case ResponseType.PolicyViolation:
                             var policyResponse = (Core.Commands.PolicyViolation.PolicyViolationResponse)response;
-                            enqueueResponseData = new EnqueueResponse.Types.EnqueueResponseData()
+                            grpcResponse.Data = new EnqueueResponse.Types.EnqueueResponseData()
                             {
                                 PolicyViolation = GrpcHelpers.MapGrpcPolicyViolationResponse(policyResponse)
                             };
-
-                            error = null;
                             break;
 
                         case ResponseType.Ok:
@@ -153,20 +149,13 @@ public class TaskFluxGrpcService : TaskFluxService.TaskFluxServiceBase
                 }
                 else
                 {
-                    error = null;
-                    enqueueResponseData = null;
-                    notLeaderResponse = new NotLeaderResponse()
+                    grpcResponse.NotLeader = new NotLeaderResponse()
                     {
                         LeaderId = GetGrpcLeaderId()
                     };
                 }
 
-                await responseStream.WriteAsync(new EnqueueResponse()
-                {
-                    Data = enqueueResponseData,
-                    Error = error,
-                    NotLeader = notLeaderResponse,
-                }, token);
+                await responseStream.WriteAsync(grpcResponse, token);
                 record = null;
             }
         }
@@ -224,14 +213,11 @@ public class TaskFluxGrpcService : TaskFluxService.TaskFluxServiceBase
                 var exec = new DequeueExecutor(_requestAcceptor, queueName, GetTimeout(data.Timeout));
                 await exec.PerformDequeueAsync(token);
 
-                DequeueResponse.Types.DequeueResponseData? dequeueResponseData;
-                ErrorResponse? errorResponse;
-                PolicyViolationResponse? policyViolationResponse;
-                NotLeaderResponse? notLeader;
+                var response = new DequeueResponse();
 
                 if (exec.TryGetRecord(out var record))
                 {
-                    dequeueResponseData = new DequeueResponse.Types.DequeueResponseData()
+                    response.Success = new DequeueResponse.Types.DequeueResponseData()
                     {
                         Record = new QueueRecord()
                         {
@@ -239,62 +225,37 @@ public class TaskFluxGrpcService : TaskFluxService.TaskFluxServiceBase
                             Payload = ByteString.CopyFrom(record.Payload.AsSpan())
                         }
                     };
-                    errorResponse = null;
-                    policyViolationResponse = null;
-                    notLeader = null;
                     executor = exec;
                 }
                 else if (exec.IsEmptyResult())
                 {
-                    dequeueResponseData = new DequeueResponse.Types.DequeueResponseData()
+                    response.Success = new DequeueResponse.Types.DequeueResponseData()
                     {
                         Record = null
                     };
-                    errorResponse = null;
-                    policyViolationResponse = null;
-                    notLeader = null;
                 }
                 else if (exec.TryGetPolicyViolation(out var policyViolation))
                 {
-                    policyViolationResponse = GrpcHelpers.MapGrpcPolicyViolationResponse(policyViolation);
-                    dequeueResponseData = null;
-                    errorResponse = null;
-                    notLeader = null;
+                    response.PolicyViolation = GrpcHelpers.MapGrpcPolicyViolationResponse(policyViolation);
                 }
                 else if (exec.TryGetError(out var error))
                 {
-                    errorResponse = new ErrorResponse()
+                    response.Error = new ErrorResponse()
                     {
                         Code = GrpcHelpers.MapGrpcErrorCode(error.ErrorType),
                         Message = error.Message
                     };
-                    policyViolationResponse = null;
-                    dequeueResponseData = null;
-                    notLeader = null;
                 }
                 else if (!exec.WasLeader())
                 {
-                    notLeader = new NotLeaderResponse()
+                    Debug.Assert(!exec.WasLeader(), "!exec.WasLeader()");
+                    response.NotLeader = new NotLeaderResponse()
                     {
                         LeaderId = GetGrpcLeaderId()
                     };
-                    policyViolationResponse = null;
-                    errorResponse = null;
-                    dequeueResponseData = null;
-                }
-                else
-                {
-                    Debug.Assert(false, "false", "Неизвестный результат работы dequeue исполнителя");
-                    throw new InvalidOperationException("Неизвестный результат работы исполнителя dequeue");
                 }
 
-                await responseStream.WriteAsync(new DequeueResponse()
-                {
-                    Error = errorResponse,
-                    NotLeader = notLeader,
-                    Success = dequeueResponseData,
-                    PolicyViolation = policyViolationResponse,
-                }, token);
+                await responseStream.WriteAsync(response, token);
             }
             else
             {
@@ -366,9 +327,11 @@ public class TaskFluxGrpcService : TaskFluxService.TaskFluxServiceBase
         }
     }
 
+    private const int UnknownLeaderId = -1;
+
     private int GetGrpcLeaderId()
     {
-        return _applicationInfo.LeaderId?.Id ?? 0 /* Nullable int почему-то не генерируется, приходится отправлять 0 */;
+        return _applicationInfo.LeaderId?.Id ?? UnknownLeaderId;
     }
 
     private static TimeSpan GetTimeout(int timeout)
@@ -391,15 +354,6 @@ public class TaskFluxGrpcService : TaskFluxService.TaskFluxServiceBase
 
         return TimeSpan.FromMilliseconds(timeout);
     }
-
-    /*
-     * TODO:
-     * - Create Queue
-     * - Delete Queue
-     * - Get Count
-     *
-     * Документация, тесты на GRPC (надо ли?)
-     */
 
     private bool TryValidateCreateQueueRequest(CreateQueueRequest request, out (long, long)? priorityRange,
         out int? maxPayloadSize, out int? maxQueueSize, out QueueName queueName, out ErrorResponse? error)

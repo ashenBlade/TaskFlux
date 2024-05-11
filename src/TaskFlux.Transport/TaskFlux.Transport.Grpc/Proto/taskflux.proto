@@ -35,7 +35,8 @@ message ErrorResponse {
 }
 
 message NotLeaderResponse {
-  optional int32 leader_id = 1;
+  // Id узла, либо -1, если неизвестен
+  int32 leader_id = 1;
 }
 
 
