@@ -20,7 +20,7 @@ public class DequeueExecutor
     /// Если null, то запуска еще не производилось
     /// </summary>
     private (QueueRecord? Record, ErrorResponse? Error, PolicyViolationResponse? PolicyViolation, bool WasLeader)?
-        _result = null;
+        _result;
 
     public DequeueExecutor(IRequestAcceptor requestAcceptor, QueueName queue, TimeSpan timeout)
     {
@@ -208,5 +208,22 @@ public class DequeueExecutor
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Вернуть запись обратно в очередь.
+    /// </summary>
+    /// <param name="token">Токен отмены</param>
+    public async ValueTask ReturnRecordBack(CancellationToken token)
+    {
+        if (_result is var (record, _, _, _))
+        {
+            if (record is { } r)
+            {
+                await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(_queue, r), token);
+            }
+
+            _result = null;
+        }
     }
 }

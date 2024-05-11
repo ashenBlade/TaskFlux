@@ -2,10 +2,11 @@ using System.Diagnostics;
 using System.Net.Sockets;
 using Serilog;
 using TaskFlux.Application;
-using TaskFlux.Consensus;
+using TaskFlux.Application.Executor;
 using TaskFlux.Core;
 using TaskFlux.Core.Commands;
 using TaskFlux.Core.Commands.Dequeue;
+using TaskFlux.Core.Commands.Error;
 using TaskFlux.Core.Queue;
 using TaskFlux.Network;
 using TaskFlux.Network.Authorization;
@@ -22,13 +23,16 @@ namespace TaskFlux.Transport.Tcp;
 internal class ClientRequestProcessor
 {
     private readonly TcpClient _client;
+    private readonly Guid _clientId;
     private readonly TcpAdapterOptions _options;
     private readonly IRequestAcceptor _requestAcceptor;
     private readonly IApplicationInfo _applicationInfo;
     private readonly IApplicationLifetime _lifetime;
     private readonly ILogger _logger;
 
-    public ClientRequestProcessor(TcpClient client,
+    public ClientRequestProcessor(
+        TcpClient client,
+        Guid clientId,
         IRequestAcceptor requestAcceptor,
         TcpAdapterOptions options,
         IApplicationInfo applicationInfo,
@@ -36,6 +40,7 @@ internal class ClientRequestProcessor
         ILogger logger)
     {
         _client = client;
+        _clientId = clientId;
         _requestAcceptor = requestAcceptor;
         _options = options;
         _logger = logger;
@@ -112,6 +117,7 @@ internal class ClientRequestProcessor
     /// <returns><c>true</c> - клиент настроен успешно, <c>false</c> - иначе</returns>
     private async Task<bool> AcceptSetupClientAsync(TaskFluxClient client, CancellationToken token)
     {
+        _logger.Debug("Начинаю процесс авторизации клиента");
         // 1. Авторизация
         Packet request;
         using (var cts = CreateIdleTimeoutCts(token))
@@ -398,40 +404,43 @@ internal class ClientRequestProcessor
         CommandRequestPacket packet,
         CancellationToken token)
     {
-        /*
-         * На первом шаге, маппим сетевую команду на внутреннюю
-         * Для чтения есть только 2 команды, которые могут появиться:
-         * - Immediate - читаем сразу, без ожидания
-         * - Awaitable - если не смогли прочитать, то подписываемся на очередь
-         *
-         * Сейчас нам не важно, какая именно команда была получена.
-         * Главное - выполнить ее, т.к. опираться будем уже на результат
-         */
-        var command = CommandMapper.Map(packet.Command);
-        var submitResult = await _requestAcceptor.AcceptAsync(command, token);
-
-        if (submitResult.TryGetResponse(out var response) is false)
+        var dequeueRequest = (DequeueNetworkCommand)packet.Command;
+        // var submitResult = await _requestAcceptor.AcceptAsync(command, token);
+        if (!QueueNameParser.TryParse(dequeueRequest.QueueName, out var queueName))
         {
-            // Узел команды обрабатывать не может: не лидер/перестали им быть
+            await client.SendAsync(ResponsePacketMapper.MapResponse(DefaultErrors.InvalidQueueName), token);
+            return;
+        }
+
+        var executor = new DequeueExecutor(_requestAcceptor, queueName,
+            TimeSpan.FromMilliseconds(dequeueRequest.TimeoutMs));
+        await executor.PerformDequeueAsync(token);
+
+        if (executor.TryGetRecord(out var record))
+        {
+            await client.SendAsync(new CommandResponsePacket(new DequeueNetworkResponse(record)), token);
+            /* Без return - продолжаем работу */
+        }
+        else if (executor.IsEmptyResult())
+        {
+            await client.SendAsync(new CommandResponsePacket(new DequeueNetworkResponse(null)), token);
+            return;
+        }
+        else if (executor.TryGetError(out var error))
+        {
+            await client.SendAsync(ResponsePacketMapper.MapResponse(error), token);
+            return;
+        }
+        else if (executor.TryGetPolicyViolation(out var policy))
+        {
+            await client.SendAsync(ResponsePacketMapper.MapResponse(policy), token);
+            return;
+        }
+        else
+        {
+            Debug.Assert(!executor.WasLeader(), "!executor.WasLeader()",
+                "Единственный оставшийся вариант - узел не лидер");
             await client.SendAsync(new NotLeaderPacket(_applicationInfo.LeaderId?.Id), token);
-            return;
-        }
-
-        // Чтение завершилось неуспешно: возникла ошибка, политика нарушилась и т.д.
-        // В любом случае, отправляем ответ и прекращаем работу
-        if (response.Type is not (ResponseType.Dequeue or ResponseType.Subscription))
-        {
-            await client.SendAsync(ResponsePacketMapper.MapResponse(response), token);
-            return;
-        }
-
-        // Получаем нашу запись: либо сразу, либо через подписку (функция обрабатывает обе ситуации)
-        var result = await TryExtractRecordAsync(response, token);
-        if (result is not var (record, queue))
-        {
-            // Очередь была пуста и ничего прочитать не смогли
-            // Возвращаем пустой ответ и прекращаем работу
-            await client.SendAsync(ResponsePacketMapper.MapResponse(DequeueResponse.Empty), token);
             return;
         }
 
@@ -442,13 +451,9 @@ internal class ClientRequestProcessor
          * - Ack - коммитим чтение
          * - Nack - возвращаем запись обратно
          */
-        SubmitResponse<Response> submitResponse;
-        var dequeueResponse = DequeueResponse.CreatePersistent(queue, record);
+        var success = true;
         try
         {
-            // Запись была получена
-            await client.SendAsync(new CommandResponsePacket(new DequeueNetworkResponse(record)), token);
-
             // Ожидаем либо Ack, либо Nack
             Packet request;
             using (var cts = CreateIdleTimeoutCts(token))
@@ -460,16 +465,11 @@ internal class ClientRequestProcessor
             {
                 // Если команду все же нужно выполнить - коммитим выполнение и возвращаем ответ
                 case PacketType.AcknowledgeRequest:
-                    // Явно указываем, что нужно коммитить
-                    dequeueResponse.MakePersistent();
-                    submitResponse =
-                        await _requestAcceptor.AcceptAsync(new CommitDequeueCommand(dequeueResponse), token);
+                    success = await executor.TryAckAsync(token);
                     break;
                 // Иначе возвращаем ее обратно
                 case PacketType.NegativeAcknowledgementRequest:
-                    // Коммитить результат не нужно
-                    submitResponse = await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(queue, record), token);
-
+                    success = await executor.TryNackAsync(token);
                     break;
                 case PacketType.CommandRequest:
                 case PacketType.CommandResponse:
@@ -481,6 +481,7 @@ internal class ClientRequestProcessor
                 case PacketType.BootstrapResponse:
                 case PacketType.ClusterMetadataRequest:
                 case PacketType.ClusterMetadataResponse:
+                case PacketType.Ok:
                     throw new UnexpectedPacketException(request, PacketType.AcknowledgeRequest);
                 default:
                     Debug.Assert(Enum.IsDefined(request.Type), "Enum.IsDefined(request.Type)",
@@ -497,13 +498,13 @@ internal class ClientRequestProcessor
         {
             // На случай, если возникло необработанное исключение - необходимо запись вернуть обратно в очередь, иначе можем ее потерять
             // Она останется в логе и появится во время восстановления при рестарте, но в рантайме, сейчас она исчезнет
-            await _requestAcceptor.AcceptAsync(new ReturnRecordCommand(queue, record), token);
+            await executor.ReturnRecordBack(token);
             throw;
         }
 
         // Отправляем клиенту результат операции
         // Если ответ есть, то единственный вариант - OkResponse
-        if (submitResponse.HasValue)
+        if (success)
         {
             // В любом случае (Ack/Nack) отвечаем OK
             await client.SendAsync(OkPacket.Instance, token);

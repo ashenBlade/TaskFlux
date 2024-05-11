@@ -45,8 +45,9 @@ public class TcpAdapterBackgroundService : BackgroundService
             while (token.IsCancellationRequested is false)
             {
                 var client = await listener.AcceptTcpClientAsync(token);
-                var processor = new ClientRequestProcessor(client, _requestAcceptor, _options, _applicationInfo,
-                    _lifetime, _logger);
+                var id = Guid.NewGuid();
+                var processor = new ClientRequestProcessor(client, id, _requestAcceptor, _options, _applicationInfo,
+                    _lifetime, _logger.ForContext("clientId", id));
                 _ = processor.ProcessAsync(token);
             }
         }
