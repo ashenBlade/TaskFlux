@@ -103,7 +103,7 @@ static IEnumerable<string> GetCommandDescriptions()
                         VALUES... - разделенные пробелом слова, которые будут добавлены в нагрузку
                  """;
     yield return """
-                 - dequeue [QUEUE_NAME] - получить элемент из очереди
+                  - dequeue [QUEUE_NAME] - получить элемент из очереди
                         QUEUE_NAME - название очереди. Пропустить, если использовать стандартную
                  """;
     yield return """
@@ -133,6 +133,7 @@ static IEnumerable<string> GetCommandDescriptions()
 async Task<string?> ReadInputAsync(CancellationToken token)
 {
     // Консольные ReadAsync всегда блокирующие, нужны отдельные таски
+    Console.Write("$> ");
     var readTask = Task.Run(Console.ReadLine);
     var waitTask = Task.Delay(Timeout.Infinite, token);
     await Task.WhenAny(readTask, waitTask);
