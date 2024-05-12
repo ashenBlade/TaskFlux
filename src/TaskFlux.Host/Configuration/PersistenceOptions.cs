@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using Microsoft.Extensions.Configuration;
 
 namespace TaskFlux.Host.Configuration;
 
@@ -8,7 +7,7 @@ public class PersistenceOptions
     public static readonly string DefaultDataDirectory = Path.Combine("/var", "lib", "tflux");
 
     [Required(ErrorMessage = "Рабочая директория не указана")]
-    public string WorkingDirectory { get; set; } = DefaultDataDirectory;
+    public string DataDirectory { get; set; } = DefaultDataDirectory;
 
     public const long DefaultLogFileSoftLimit = 1024 * 1024 * 16; /* 16 Мб */
 
@@ -32,7 +31,7 @@ public class PersistenceOptions
     {
         return new PersistenceOptions()
         {
-            WorkingDirectory = configuration.GetValue(nameof(WorkingDirectory), DefaultDataDirectory)!,
+            DataDirectory = configuration.GetValue(nameof(DataDirectory), DefaultDataDirectory)!,
             LogFileSoftLimit = configuration.GetValue(nameof(LogFileSoftLimit), DefaultLogFileSoftLimit),
             LogFileHardLimit = configuration.GetValue(nameof(LogFileHardLimit), DefaultLogFileHardLimit),
             SnapshotCreationSegmentsThreshold = configuration.GetValue(nameof(SnapshotCreationSegmentsThreshold),

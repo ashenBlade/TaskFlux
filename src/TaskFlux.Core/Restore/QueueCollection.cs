@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Diagnostics;
 using TaskFlux.Core.Queue;
+using TaskFlux.Domain;
 using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Restore;
@@ -20,10 +21,10 @@ public class QueueCollection
     public int Count => _queues.Count;
 
     public void CreateQueue(QueueName name,
-                            PriorityQueueCode implementation,
-                            int? maxQueueSize,
-                            int? maxMessageSize,
-                            (long, long)? priorityRange)
+        PriorityQueueCode implementation,
+        int? maxQueueSize,
+        int? maxMessageSize,
+        (long, long)? priorityRange)
     {
         var info = new QueueInfo(name, implementation,
             RecordId.Start /* Очередь создается новая, поэтому начинаем с самого начала */, maxQueueSize,
@@ -51,12 +52,12 @@ public class QueueCollection
     }
 
     public void AddExistingQueue(QueueName name,
-                                 PriorityQueueCode code,
-                                 RecordId lastRecordId,
-                                 int? maxQueueSize,
-                                 int? maxMessageSize,
-                                 (long, long)? priorityRange,
-                                 IReadOnlyCollection<QueueRecord> records)
+        PriorityQueueCode code,
+        RecordId lastRecordId,
+        int? maxQueueSize,
+        int? maxMessageSize,
+        (long, long)? priorityRange,
+        IReadOnlyCollection<QueueRecord> records)
     {
         var info = new QueueInfo(name, code, lastRecordId, maxQueueSize, maxMessageSize, priorityRange, records);
         AddQueueInfoCore(info);
@@ -86,7 +87,7 @@ public class QueueCollection
 
     public static QueueCollection CreateDefault()
     {
-        return new QueueCollection() {_queues = {{Defaults.QueueName, Defaults.CreateDefaultQueueInfo()}}};
+        return new QueueCollection() { _queues = { { Defaults.QueueName, Defaults.CreateDefaultQueueInfo() } } };
     }
 
     public IReadOnlyCollection<QueueInfo> GetAllQueues()

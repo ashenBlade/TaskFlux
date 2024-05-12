@@ -1,4 +1,4 @@
-using TaskFlux.Client;
+using TaskFlux.Transport.Tcp.Client;
 
 namespace InteractiveConsole.Commands;
 
@@ -29,12 +29,12 @@ public class ListQueuesUserCommand : UserCommand
     private static (string Key, string Value) GetPolicyName(string key, string value)
     {
         return key switch
-               {
-                   "max-queue-size"   => ( "Максимальный размер очереди", GetHumanReadableSize(value) ),
-                   "priority-range"   => ( "Диапазон ключей", GetPriorityRangeValue(value) ),
-                   "max-payload-size" => ( "Максимальный размер сообщения", GetHumanReadableSize(value) ),
-                   _                  => ( key, value )
-               };
+        {
+            "max-queue-size" => ("Максимальный размер очереди", GetHumanReadableSize(value)),
+            "priority-range" => ("Диапазон ключей", GetPriorityRangeValue(value)),
+            "max-payload-size" => ("Максимальный размер сообщения", GetHumanReadableSize(value)),
+            _ => (key, value)
+        };
 
         static string GetPriorityRangeValue(string range)
         {
@@ -52,7 +52,7 @@ public class ListQueuesUserCommand : UserCommand
                 return $"{value} байт";
             }
 
-            var kb = ( ( double ) sizeBytes ) / 1024;
+            var kb = ((double)sizeBytes) / 1024;
             if (kb < 1024)
             {
                 return $"{Math.Round(kb, 1)} Кб";

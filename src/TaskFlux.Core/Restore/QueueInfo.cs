@@ -1,5 +1,6 @@
 using System.Collections;
 using TaskFlux.Core.Queue;
+using TaskFlux.Domain;
 using TaskFlux.PriorityQueue;
 using InvalidOperationException = System.InvalidOperationException;
 
@@ -12,11 +13,11 @@ namespace TaskFlux.Core.Restore;
 public class QueueInfo
 {
     public QueueInfo(QueueName queueName,
-                     PriorityQueueCode code,
-                     RecordId lastId,
-                     int? maxQueueSize,
-                     int? maxPayloadSize,
-                     (long, long)? priorityRange)
+        PriorityQueueCode code,
+        RecordId lastId,
+        int? maxQueueSize,
+        int? maxPayloadSize,
+        (long, long)? priorityRange)
     {
         QueueName = queueName;
         Code = code;
@@ -28,12 +29,12 @@ public class QueueInfo
     }
 
     public QueueInfo(QueueName queueName,
-                     PriorityQueueCode code,
-                     RecordId lastId,
-                     int? maxQueueSize,
-                     int? maxPayloadSize,
-                     (long, long)? priorityRange,
-                     IReadOnlyCollection<QueueRecord> records)
+        PriorityQueueCode code,
+        RecordId lastId,
+        int? maxQueueSize,
+        int? maxPayloadSize,
+        (long, long)? priorityRange,
+        IReadOnlyCollection<QueueRecord> records)
     {
         QueueName = queueName;
         Code = code;
@@ -41,7 +42,7 @@ public class QueueInfo
         MaxPayloadSize = maxPayloadSize;
         PriorityRange = priorityRange;
         Data = new QueueRecordsValuesCollection(this);
-        ( LastId, _idToRecord ) = BuildRecords(records, lastId);
+        (LastId, _idToRecord) = BuildRecords(records, lastId);
     }
 
     private static (RecordId LastId, Dictionary<RecordId, QueueRecordData> Records) BuildRecords(
@@ -59,7 +60,7 @@ public class QueueInfo
             }
         }
 
-        return ( lastId, dict );
+        return (lastId, dict);
     }
 
     /// <summary>

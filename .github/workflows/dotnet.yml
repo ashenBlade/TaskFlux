@@ -1,0 +1,25 @@
+name: .NET
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Настройка .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+    - name: Восстановление зависимостей
+      run: dotnet restore
+    - name: Сборка
+      run: dotnet build --no-restore
+    - name: Тестирование
+      run: dotnet test --no-build --verbosity normal

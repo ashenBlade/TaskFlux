@@ -2,6 +2,7 @@ using System.Text;
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
 using TaskFlux.Core.Restore;
+using TaskFlux.Domain;
 using TaskFlux.Persistence.ApplicationState.Deltas;
 using TaskFlux.PriorityQueue;
 using Xunit;
@@ -20,22 +21,22 @@ public class DeltaTests
 
     public static IEnumerable<object?[]> CreateQueueDeltaSerialization => new[]
     {
-        new object?[] {"", 0, 0, 0, null},
-        new object?[] {"hello,world", 123, 123321, 12415, ( 14124L, 1423523452L )},
-        new object?[] {"orders:1:2023", 1, null, null, null},
-        new object?[] {"USERS_KNOWN________&", 10, 100, 1024 * 2, ( -10L, 10L )},
+        new object?[] { "", 0, 0, 0, null },
+        new object?[] { "hello,world", 123, 123321, 12415, (14124L, 1423523452L) },
+        new object?[] { "orders:1:2023", 1, null, null, null },
+        new object?[] { "USERS_KNOWN________&", 10, 100, 1024 * 2, (-10L, 10L) },
     };
 
     [Theory]
     [MemberData(nameof(CreateQueueDeltaSerialization))]
     public void CreateQueueDelta__Serialization(string queueName,
-                                                int implementation,
-                                                int maxQueueSize,
-                                                int maxMessageSize,
-                                                (long, long)? priorityRange)
+        int implementation,
+        int maxQueueSize,
+        int maxMessageSize,
+        (long, long)? priorityRange)
     {
         AssertSerializationBase(new CreateQueueDelta(QueueNameParser.Parse(queueName),
-            ( PriorityQueueCode ) implementation,
+            (PriorityQueueCode)implementation,
             maxQueueSize, maxMessageSize,
             priorityRange));
     }
@@ -66,9 +67,9 @@ public class DeltaTests
 
     [Theory]
     [InlineData(new byte[] { })]
-    [InlineData(new byte[] {1})]
-    [InlineData(new byte[] {1, 2, 3, 4, 5, 6, 7})]
-    [InlineData(new byte[] {255, 0, 1, 34, 66})]
+    [InlineData(new byte[] { 1 })]
+    [InlineData(new byte[] { 1, 2, 3, 4, 5, 6, 7 })]
+    [InlineData(new byte[] { 255, 0, 1, 34, 66 })]
     public void AddRecordDelta__Payload__Serialization(byte[] payload)
     {
         AssertSerializationBase(new AddRecordDelta(QueueName.Default, new QueueRecordData(0, payload)));
@@ -124,7 +125,7 @@ public class DeltaTests
     }
 
     public static IEnumerable<object[]> AllPriorityCodes =>
-        Enum.GetValues<PriorityQueueCode>().Select(x => new object[] {x});
+        Enum.GetValues<PriorityQueueCode>().Select(x => new object[] { x });
 
     [Theory]
     [MemberData(nameof(AllPriorityCodes))]
@@ -180,7 +181,7 @@ public class DeltaTests
 
     public static object?[][] PriorityRanges => new object?[][]
     {
-        [null], [( 1L, 2L )], [( long.MinValue, long.MaxValue )], [( -1000L, 1002L )],
+        [null], [(1L, 2L)], [(long.MinValue, long.MaxValue)], [(-1000L, 1002L)],
     };
 
     [Theory]
@@ -213,10 +214,10 @@ public class DeltaTests
     }
 
     private static QueueRecord CreateRecord(int id, long priority, string payload) =>
-        new(new(( ulong ) id), priority, Encoding.UTF8.GetBytes(payload));
+        new(new((ulong)id), priority, Encoding.UTF8.GetBytes(payload));
 
     private static QueueRecord CreateRecord(int id, long priority, byte[] payload) =>
-        new(new(( ulong ) id), priority, payload);
+        new(new((ulong)id), priority, payload);
 
     [Fact]
     public void AddRecordDelta__Apply__КогдаОчередьПуста__ДолженДобавитьНовуюЗапись()
@@ -240,7 +241,7 @@ public class DeltaTests
         var queueName = QueueName.Parse("hello_world_queue");
 
         var collection = new QueueCollection();
-        var existingRecords = new QueueRecord[] {CreateRecord(1, 123, "hasdfasdf"), CreateRecord(3, 35353, "aaaa"),};
+        var existingRecords = new QueueRecord[] { CreateRecord(1, 123, "hasdfasdf"), CreateRecord(3, 35353, "aaaa"), };
         collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, new RecordId(3), null, null, null,
             existingRecords);
         var recordToAdd = new QueueRecord(new RecordId(4), 1L, "asdfasdfgawpogiuahw"u8.ToArray());
@@ -265,9 +266,9 @@ public class DeltaTests
         var collection = new QueueCollection();
         var newRecord = CreateRecord(existingCount + 1, 123, "hello, world");
         var existingRecords = Enumerable.Range(1, existingCount)
-                                        .Select(i => CreateRecord(i, newRecord.Priority, i.ToString()))
-                                        .ToArray();
-        collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, new RecordId(( ulong ) existingCount),
+            .Select(i => CreateRecord(i, newRecord.Priority, i.ToString()))
+            .ToArray();
+        collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, new RecordId((ulong)existingCount),
             null, null, null, existingRecords);
 
         var delta = new AddRecordDelta(queueName, newRecord.GetData());
@@ -289,9 +290,9 @@ public class DeltaTests
         int existingCount)
     {
         var queueName = QueueName.Parse("hello_world_queue");
-        var record = new QueueRecord(new RecordId(( ulong ) existingCount + 1), 1L, "hello, world!"u8.ToArray());
+        var record = new QueueRecord(new RecordId((ulong)existingCount + 1), 1L, "hello, world!"u8.ToArray());
         var collection = new QueueCollection();
-        collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, new RecordId(( ulong ) existingCount),
+        collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, new RecordId((ulong)existingCount),
             null, null, null,
             Enumerable.Range(0, existingCount).Select(x => CreateRecord(x, record.Priority, record.Payload)).ToArray());
 
@@ -310,13 +311,13 @@ public class DeltaTests
         var record = new QueueRecord(new RecordId(1),
             1L, "asdfasdfgawpogiuahw"u8.ToArray());
         collection.AddExistingQueue(queueName, PriorityQueueCode.Heap4Arity, new RecordId(2), null, null, null,
-            new[] {record});
+            new[] { record });
 
         var delta = new RemoveRecordDelta(queueName, record.Id);
         delta.Apply(collection);
 
         var info = collection.GetAllQueues()
-                             .Single(x => x.QueueName == queueName);
+            .Single(x => x.QueueName == queueName);
         Assert.DoesNotContain(info.Data, r => r == record);
     }
 }

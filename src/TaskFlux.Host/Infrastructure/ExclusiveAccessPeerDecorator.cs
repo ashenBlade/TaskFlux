@@ -9,13 +9,14 @@ namespace TaskFlux.Host.Infrastructure;
 public class ExclusiveAccessPeerDecorator : IPeer
 {
     private readonly IPeer _peer;
-    private object _locker = new();
+    private readonly object _locker = new();
 
     public ExclusiveAccessPeerDecorator(IPeer peer)
     {
         _peer = peer;
     }
 
+    // ReSharper disable once InconsistentlySynchronizedField
     public NodeId Id => _peer.Id;
 
     public AppendEntriesResponse SendAppendEntries(AppendEntriesRequest request, CancellationToken token)

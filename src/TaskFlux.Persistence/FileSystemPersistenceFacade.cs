@@ -39,11 +39,11 @@ public class FileSystemPersistenceFacade : IPersistence, IDisposable
     private readonly SnapshotFile _snapshot;
 
     public LogEntryInfo LastEntry => _log.TryGetLastLogEntry(out var lastLog)
-                                         ? lastLog
-                                         : _snapshot.TryGetLastEntryInfo(out var snapshotEntry)
-                                             ? snapshotEntry
-                                             : throw new InvalidDataException(
-                                                   "Не удалось получить данные о последней записи");
+        ? lastLog
+        : _snapshot.TryGetLastEntryInfo(out var snapshotEntry)
+            ? snapshotEntry
+            : throw new InvalidDataException(
+                "Не удалось получить данные о последней записи");
 
     public Lsn CommitIndex => _log.CommitIndex;
     public Term CurrentTerm => _metadata.Term;
@@ -53,9 +53,9 @@ public class FileSystemPersistenceFacade : IPersistence, IDisposable
     public MetadataFile Metadata => _metadata;
 
     internal FileSystemPersistenceFacade(SegmentedFileLog log,
-                                         MetadataFile metadata,
-                                         SnapshotFile snapshot,
-                                         ILogger logger)
+        MetadataFile metadata,
+        SnapshotFile snapshot,
+        ILogger logger)
     {
         _log = log;
         _metadata = metadata;
@@ -64,9 +64,9 @@ public class FileSystemPersistenceFacade : IPersistence, IDisposable
     }
 
     public static FileSystemPersistenceFacade Initialize(IDirectoryInfo dataDirectory,
-                                                         ILogger logger,
-                                                         SnapshotOptions snapshotOptions,
-                                                         SegmentedFileLogOptions logOptions)
+        ILogger logger,
+        SnapshotOptions snapshotOptions,
+        SegmentedFileLogOptions logOptions)
     {
         CheckDataDirectory();
         var metadata = InitializeMetadata();
@@ -111,9 +111,9 @@ public class FileSystemPersistenceFacade : IPersistence, IDisposable
             {
                 throw new InvalidDataException(
                     $"Индекс последней записи в снапшоте гораздо меньше начального индекса лога. "
-                  + $"Индекс снапшота {lastSnapshotIndex}. "
-                  + $"Начальный индекс лога {log.StartIndex}. "
-                  + $"Состояние восстановить невозможно");
+                    + $"Индекс снапшота {lastSnapshotIndex}. "
+                    + $"Начальный индекс лога {log.StartIndex}. "
+                    + $"Состояние восстановить невозможно");
             }
 
             if (log.LastRecordIndex < lastSnapshotIndex)
@@ -162,7 +162,7 @@ public class FileSystemPersistenceFacade : IPersistence, IDisposable
             try
             {
                 // ReSharper disable once ContextualLoggerProblem
-                return SegmentedFileLog.Initialize(dataDirectory, logger.ForContext<SegmentedFileLog>(), logOptions);
+                return SegmentedFileLog.Initialize(dataDirectory, logger, logOptions);
             }
             catch (Exception e)
             {
@@ -292,13 +292,13 @@ public class FileSystemPersistenceFacade : IPersistence, IDisposable
     /// <param name="commitIndex">Индекс коммита</param>
     /// <param name="startLsn">Начальный индекс в логе</param>
     internal void SetupTest(IReadOnlyList<LogEntry>? logEntries = null,
-                            (Term term, Lsn lastIncludedIndex, ISnapshot snapshot)? snapshotData = null,
-                            Lsn? commitIndex = null,
-                            Lsn? startLsn = null)
+        (Term term, Lsn lastIncludedIndex, ISnapshot snapshot)? snapshotData = null,
+        Lsn? commitIndex = null,
+        Lsn? startLsn = null)
     {
         SetupTest(logEntries: logEntries is not null
-                                  ? ( logEntries, Array.Empty<IReadOnlyList<LogEntry>>() )
-                                  : null,
+                ? (logEntries, Array.Empty<IReadOnlyList<LogEntry>>())
+                : null,
             snapshotData,
             commitIndex,
             startLsn);
@@ -411,8 +411,8 @@ public class FileSystemPersistenceFacade : IPersistence, IDisposable
         private readonly FileSystemPersistenceFacade _parent;
 
         public FileSystemSnapshotInstaller(ISnapshotFileWriter snapshotFileWriter,
-                                           Lsn lastIndex,
-                                           FileSystemPersistenceFacade parent)
+            Lsn lastIndex,
+            FileSystemPersistenceFacade parent)
         {
             _snapshotFileWriter = snapshotFileWriter;
             _lastIndex = lastIndex;
@@ -478,8 +478,8 @@ public class FileSystemPersistenceFacade : IPersistence, IDisposable
         lock (_lock)
         {
             var startIndex = Snapshot.TryGetIncludedIndex(out var s)
-                                 ? s + 1
-                                 : _log.StartIndex;
+                ? s + 1
+                : _log.StartIndex;
 
             var endIndex = CommitIndex;
 

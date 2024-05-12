@@ -3,6 +3,7 @@ using TaskFlux.Core.Policies;
 using TaskFlux.Core.Queue;
 using TaskFlux.Core.Restore;
 using TaskFlux.Core.Subscription;
+using TaskFlux.Domain;
 using TaskFlux.PriorityQueue;
 using Xunit;
 
@@ -25,12 +26,12 @@ public class StubTaskQueue : ITaskQueue
     public RecordId LastId { get; }
 
     public StubTaskQueue(QueueName name,
-                         PriorityQueueCode code,
-                         RecordId lastId,
-                         int? maxSize = null,
-                         (long, long)? priority = null,
-                         int? maxPayloadSize = null,
-                         IEnumerable<QueueRecord>? elements = null)
+        PriorityQueueCode code,
+        RecordId lastId,
+        int? maxSize = null,
+        (long, long)? priority = null,
+        int? maxPayloadSize = null,
+        IEnumerable<QueueRecord>? elements = null)
     {
         _maxSize = maxSize;
         _priority = priority;

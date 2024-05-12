@@ -1,7 +1,7 @@
 using System.Buffers;
 using TaskFlux.Core;
-using TaskFlux.Core.Queue;
 using TaskFlux.Core.Restore;
+using TaskFlux.Domain;
 using TaskFlux.Utils.Serialization;
 
 namespace TaskFlux.Persistence.ApplicationState.Deltas;
@@ -22,9 +22,9 @@ public class RemoveRecordDelta : Delta
     {
         var bufferSize = sizeof(DeltaType)
                          // Название очереди
-                       + MemoryBinaryWriter.EstimateResultSize(QueueName)
+                         + MemoryBinaryWriter.EstimateResultSize(QueueName)
                          // ID записи
-                       + sizeof(ulong);
+                         + sizeof(ulong);
 
         var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
         try

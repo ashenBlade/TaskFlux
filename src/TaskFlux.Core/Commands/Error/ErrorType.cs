@@ -26,32 +26,27 @@ public enum ErrorType : int
     QueueAlreadyExists = 3,
 
     /// <summary>
-    /// При создании очереди был указан неверный набор параметров
-    /// </summary>
-    PriorityRangeViolation = 4,
-
-    /// <summary>
     /// Указано некорректное значение диапазона приоритетов
     /// </summary>
-    InvalidPriorityRange = 5,
+    InvalidPriorityRange = 4,
 
     /// <summary>
     /// Указано некорректное значение максимального размера очереди
     /// </summary>
-    InvalidMaxQueueSize = 6,
+    InvalidMaxQueueSize = 5,
 
     /// <summary>
     /// Указано некорректное значение максимального размера сообщения
     /// </summary>
-    InvalidMaxPayloadSize = 7,
+    InvalidMaxPayloadSize = 6,
 
     /// <summary>
     /// Диапазон приоритетов не указан
     /// </summary>
-    PriorityRangeNotSpecified = 8,
+    PriorityRangeNotSpecified = 7,
 
     /// <summary>
     /// Получен неизвестный код приоритетной очереди
     /// </summary>
-    UnknownPriorityQueueCode = 9,
+    UnknownPriorityQueueCode = 8,
 }

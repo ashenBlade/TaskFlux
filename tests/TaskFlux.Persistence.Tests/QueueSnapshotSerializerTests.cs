@@ -1,5 +1,5 @@
 using TaskFlux.Core;
-using TaskFlux.Core.Queue;
+using TaskFlux.Domain;
 using TaskFlux.Persistence.ApplicationState;
 using TaskFlux.PriorityQueue;
 using Xunit;
@@ -11,7 +11,7 @@ public class QueueSnapshotSerializerTests
 {
     private static void AssertBase(StubTaskQueue expected)
     {
-        var serialized = QueuesSnapshotSerializer.Serialize(new[] {expected});
+        var serialized = QueuesSnapshotSerializer.Serialize(new[] { expected });
         var stream = new MemoryStream();
         foreach (var memory in serialized)
         {
@@ -42,8 +42,8 @@ public class QueueSnapshotSerializerTests
 
         var collection = QueuesSnapshotSerializer.Deserialize(stream);
         var actual = collection.GetAllQueues()
-                               .Select(StubTaskQueue.FromQueueInfo)
-                               .ToHashSet();
+            .Select(StubTaskQueue.FromQueueInfo)
+            .ToHashSet();
         Assert.Equal(expected, actual, TaskQueueEqualityComparer.Instance);
     }
 
@@ -74,22 +74,22 @@ public class QueueSnapshotSerializerTests
 
     [Theory]
     [InlineData(0, new byte[0])]
-    [InlineData(1, new byte[] {123})]
-    [InlineData(-1, new[] {byte.MaxValue})]
-    [InlineData(long.MaxValue, new byte[] {byte.MaxValue, 0, 0, 0, 0, 0, 0, 0})]
-    [InlineData(long.MinValue, new byte[] {5, 65, 22, 75, 97, 32, 200})]
-    [InlineData(123123, new byte[] {byte.MaxValue, 1, 2, 3, 4, 5, 6, byte.MinValue})]
+    [InlineData(1, new byte[] { 123 })]
+    [InlineData(-1, new[] { byte.MaxValue })]
+    [InlineData(long.MaxValue, new byte[] { byte.MaxValue, 0, 0, 0, 0, 0, 0, 0 })]
+    [InlineData(long.MinValue, new byte[] { 5, 65, 22, 75, 97, 32, 200 })]
+    [InlineData(123123, new byte[] { byte.MaxValue, 1, 2, 3, 4, 5, 6, byte.MinValue })]
     public void Serialize__КогдаПереданаОчередьС1ЭлементомБезПредела(long priority, byte[] data)
     {
         AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.Heap4Arity, new(2), null, null, null,
-            new QueueRecord[] {new(new(1), priority, data)}));
+            new QueueRecord[] { new(new(1), priority, data) }));
     }
 
     private static readonly Random Random = new(87);
 
     private IEnumerable<QueueRecord> CreateRandomQueueElements(int count, int startId)
     {
-        var id = new RecordId(( ulong ) startId);
+        var id = new RecordId((ulong)startId);
         for (int i = 0; i < count; i++)
         {
             var buffer = new byte[Random.Next(0, 100)];
@@ -108,7 +108,7 @@ public class QueueSnapshotSerializerTests
     [InlineData(128)]
     public void Serialize__КогдаЭлементовНесколько(int count)
     {
-        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.QueueArray, new RecordId(( ulong ) count + 1), 0,
+        AssertBase(new StubTaskQueue(DefaultName, PriorityQueueCode.QueueArray, new RecordId((ulong)count + 1), 0,
             null, null, CreateRandomQueueElements(count, 0)));
     }
 
@@ -122,13 +122,13 @@ public class QueueSnapshotSerializerTests
     public void Serialize__КогдаПереданоНесколькоПустыхОчередей__ДолженПравильноДесериализовать(int count)
     {
         var queues = Enumerable.Range(0, count)
-                               .Select(i =>
-                                    new StubTaskQueue(QueueName.CreateRandom(i),
-                                        PriorityQueueCode.Heap4Arity,
-                                        RecordId.Start,
-                                        0,
-                                        null, null,
-                                        EmptyQueueData));
+            .Select(i =>
+                new StubTaskQueue(QueueName.CreateRandom(i),
+                    PriorityQueueCode.Heap4Arity,
+                    RecordId.Start,
+                    0,
+                    null, null,
+                    EmptyQueueData));
         AssertBase(queues);
     }
 
@@ -141,10 +141,10 @@ public class QueueSnapshotSerializerTests
     public void Serialize__КогдаПереданоНесколькоНеПустыхОчередей__ДолженПравильноДесериализовать(int count)
     {
         var queues = Enumerable.Range(10, count)
-                               .Select(i => new StubTaskQueue(QueueName.CreateRandom(i),
-                                    PriorityQueueCode.QueueArray, new RecordId(( ulong ) i + 1), 0,
-                                    null, null,
-                                    CreateRandomQueueElements(i, 0)));
+            .Select(i => new StubTaskQueue(QueueName.CreateRandom(i),
+                PriorityQueueCode.QueueArray, new RecordId((ulong)i + 1), 0,
+                null, null,
+                CreateRandomQueueElements(i, 0)));
         AssertBase(queues);
     }
 
@@ -158,15 +158,15 @@ public class QueueSnapshotSerializerTests
         int count)
     {
         var queues = Enumerable.Range(10, count)
-                               .Select(i =>
-                                {
-                                    var limit = Random.Next(0, 255);
-                                    var data = CreateRandomQueueElements(i, 0);
-                                    return new StubTaskQueue(QueueName.CreateRandom(i),
-                                        PriorityQueueCode.Heap4Arity, new RecordId(( ulong ) i), limit, null,
-                                        null,
-                                        data);
-                                });
+            .Select(i =>
+            {
+                var limit = Random.Next(0, 255);
+                var data = CreateRandomQueueElements(i, 0);
+                return new StubTaskQueue(QueueName.CreateRandom(i),
+                    PriorityQueueCode.Heap4Arity, new RecordId((ulong)i), limit, null,
+                    null,
+                    data);
+            });
         AssertBase(queues);
     }
 
@@ -182,7 +182,7 @@ public class QueueSnapshotSerializerTests
         AssertBase(new StubTaskQueue(QueueName.Default,
             PriorityQueueCode.Heap4Arity, RecordId.Start,
             maxSize: null,
-            priority: ( min, max ),
+            priority: (min, max),
             maxPayloadSize: null,
             elements: null));
     }

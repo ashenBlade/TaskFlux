@@ -1,4 +1,5 @@
 ﻿using TaskFlux.Core.Subscription;
+using TaskFlux.Domain;
 
 namespace TaskFlux.Core.Queue;
 

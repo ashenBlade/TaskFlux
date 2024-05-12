@@ -1,7 +1,8 @@
 ﻿using System.Net;
 using InteractiveConsole;
 using Serilog;
-using TaskFlux.Client;
+using TaskFlux.Transport.Tcp.Client;
+using TaskFlux.Utils.Network;
 
 // ReSharper disable AccessToDisposedClosure
 
@@ -10,26 +11,23 @@ using TaskFlux.Client;
  * Взаимодействие осуществляется через консоль.
  *
  * В данном примере используется кластер из одного узла.
- * Запусить узел можно из docker-compose.yaml, расположенного в директории проекта.
+ * Запустить узел можно из docker-compose.yaml, расположенного в директории проекта.
  */
 
 using var cts = new CancellationTokenSource();
 
-Log.Logger = new LoggerConfiguration()
-            .WriteTo.Console()
-            .CreateLogger();
-
 Console.CancelKeyPress += (_, eventArgs) =>
 {
-    Log.Logger.Information($"Нажат Ctrl-C. Закрываю приложение");
     cts.Cancel();
     eventArgs.Cancel = true;
 };
 
-var clientFactory = new TaskFluxClientFactory(new EndPoint[]
+if (!TryGetEndpoints(out var endpoints))
 {
-    new DnsEndPoint("localhost", 8080), new DnsEndPoint("localhost", 8081), new DnsEndPoint("localhost", 8082),
-});
+    return 1;
+}
+
+var clientFactory = new TaskFluxClientFactory(endpoints);
 
 Log.Logger.Debug($"Создаю клиента");
 await using var client = await clientFactory.ConnectAsync(cts.Token);
@@ -61,6 +59,11 @@ while (!cts.IsCancellationRequested)
         continue;
     }
 
+    if (commandString.Equals("exit", StringComparison.InvariantCultureIgnoreCase))
+    {
+        break;
+    }
+
     try
     {
         var command = StringCommandParser.ParseCommand(commandString);
@@ -79,8 +82,7 @@ while (!cts.IsCancellationRequested)
     }
 }
 
-
-return;
+return 0;
 
 static void PrintHelp()
 {
@@ -101,7 +103,7 @@ static IEnumerable<string> GetCommandDescriptions()
                         VALUES... - разделенные пробелом слова, которые будут добавлены в нагрузку
                  """;
     yield return """
-                 - dequeue [QUEUE_NAME] - получить элемент из очереди
+                  - dequeue [QUEUE_NAME] - получить элемент из очереди
                         QUEUE_NAME - название очереди. Пропустить, если использовать стандартную
                  """;
     yield return """
@@ -131,10 +133,38 @@ static IEnumerable<string> GetCommandDescriptions()
 async Task<string?> ReadInputAsync(CancellationToken token)
 {
     // Консольные ReadAsync всегда блокирующие, нужны отдельные таски
+    Console.Write("$> ");
     var readTask = Task.Run(Console.ReadLine);
     var waitTask = Task.Delay(Timeout.Infinite, token);
     await Task.WhenAny(readTask, waitTask);
     return token.IsCancellationRequested
-               ? null
-               : readTask.Result;
+        ? null
+        : readTask.Result;
+}
+
+bool TryGetEndpoints(out EndPoint[] endpoints)
+{
+    if (args.Length == 0)
+    {
+        Console.WriteLine(
+            $"Необходимо передать адреса узлов кластера: {AppDomain.CurrentDomain.FriendlyName} [АДРЕС ...]");
+        endpoints = default!;
+        return false;
+    }
+
+    endpoints = new EndPoint[args.Length];
+    for (var i = 0; i < endpoints.Length; i++)
+    {
+        try
+        {
+            endpoints[i] = EndPointHelpers.ParseEndPoint(args[i]);
+        }
+        catch (ArgumentException ae)
+        {
+            Console.WriteLine($"Ошибка парсинга адреса {args[i]}");
+            return false;
+        }
+    }
+
+    return true;
 }

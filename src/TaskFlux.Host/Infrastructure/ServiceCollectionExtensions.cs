@@ -19,8 +19,7 @@ public static class ServiceCollectionExtensions
         RaftConsensusModule<Command, Response> module)
     {
         return sc.AddHostedService(_ =>
-            new NodeStateObserverBackgroundService(module, persistence, TimeSpan.FromSeconds(5),
-                Log.ForContext("SourceContext", "StateObserver")));
+            new NodeStateObserverBackgroundService(module, persistence, TimeSpan.FromSeconds(5), Log.Logger));
     }
 
     public static IServiceCollection AddTcpRequestModule(this IServiceCollection sc, IApplicationLifetime lifetime)
@@ -29,64 +28,33 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<ApplicationOptions>().TcpModule,
             sp.GetRequiredService<IApplicationInfo>(),
             lifetime,
-            Log.ForContext<TcpAdapterBackgroundService>()));
+            Log.Logger));
     }
 
-    public static IWebHostBuilder ConfigureTaskFluxKestrel(this IWebHostBuilder web, HttpOptions httpOptions)
+    public static IWebHostBuilder ConfigureTaskFluxKestrel(this IWebHostBuilder web, HttpOptions httpOptions,
+        GrpcOptions grpcOptions)
     {
-        web.UseKestrel();
         web.ConfigureServices(sp =>
         {
             sp.Configure<KestrelServerOptions>(kestrel =>
             {
-                if (!string.IsNullOrWhiteSpace(httpOptions.HttpListenAddress))
+                if (httpOptions.HttpEnabled)
                 {
-                    const int defaultHttpPort = 1606;
-                    var address = httpOptions.HttpListenAddress;
-                    var addressesToBind = new List<IPEndPoint>();
-                    if (IPEndPoint.TryParse(address, out var ipEndPoint))
-                    {
-                        if (ipEndPoint.Port == 0)
-                        {
-                            // Скорее всего 0 означает, что порт не был указан
-                            Log.Information("Порт для HTTP запросов не указан. Выставляю в {DefaultHttpPort}",
-                                defaultHttpPort);
-                            ipEndPoint.Port = defaultHttpPort;
-                        }
+                    ConfigureHttp(kestrel, httpOptions);
+                }
+                else
+                {
+                    Log.Information("Пропускаю настройку HTTP модуля");
+                }
 
-                        addressesToBind.Add(ipEndPoint);
-                    }
-                    else
-                    {
-                        // Если адрес - не IP, то парсим как DNS хост
-                        var parts = address.Split(':');
-                        int port;
-                        if (parts.Length != 1)
-                        {
-                            port = int.Parse(parts[1]);
-                        }
-                        else
-                        {
-                            Log.Information("Порт для HTTP запросов не указан. Выставляю в {DefaultHttpPort}",
-                                defaultHttpPort);
-                            port = defaultHttpPort;
-                        }
 
-                        var hostNameOrAddress = parts[0];
-                        Log.Debug("Ищу IP адреса для хоста {HostName}", hostNameOrAddress);
-                        var addresses = Dns.GetHostAddresses(hostNameOrAddress)
-                            .Where(ip => ip.AddressFamily == AddressFamily.InterNetwork).ToArray();
-                        Log.Debug("Найденные адреса для хоста: {IPAddresses}", addresses);
-                        foreach (var ip in addresses)
-                        {
-                            addressesToBind.Add(new IPEndPoint(ip, port));
-                        }
-                    }
-
-                    foreach (var ep in addressesToBind)
-                    {
-                        kestrel.Listen(ep);
-                    }
+                if (grpcOptions.GrpcEnabled)
+                {
+                    ConfigureGrpc(kestrel, grpcOptions);
+                }
+                else
+                {
+                    Log.Information("Пропускаю настройку gRPC модуля");
                 }
 
                 var kestrelOptions = new ConfigurationBuilder()
@@ -96,5 +64,70 @@ public static class ServiceCollectionExtensions
             });
         });
         return web;
+    }
+
+    private static void ConfigureHttp(KestrelServerOptions kestrel, HttpOptions http)
+    {
+        const int defaultHttpPort = 1606;
+        var addressesToBind = ExtractIpEndpoints(http.HttpListenAddress ?? "localhost", defaultHttpPort);
+        Log.Information("Адреса для HTTP запросов: {HttpEndpoints}", addressesToBind);
+        foreach (var ep in addressesToBind)
+        {
+            kestrel.Listen(ep);
+        }
+    }
+
+    private static void ConfigureGrpc(KestrelServerOptions kestrel, GrpcOptions grpc)
+    {
+        const int defaultGrpcPort = 1607;
+        var toBind = ExtractIpEndpoints(grpc.GrpcListenAddress ?? "localhost", defaultGrpcPort);
+        Log.Information("Адреса для gRPC запросов: {GrpcEndpoints}", toBind);
+        foreach (var ip in toBind)
+        {
+            kestrel.Listen(ip, static l =>
+            {
+                // gRPC использует HTTP2
+                l.Protocols = HttpProtocols.Http2;
+            });
+        }
+    }
+
+    private static List<IPEndPoint> ExtractIpEndpoints(string address, int defaultPort)
+    {
+        var addressesToBind = new List<IPEndPoint>();
+        if (IPEndPoint.TryParse(address, out var ipEndPoint))
+        {
+            if (ipEndPoint.Port == 0)
+            {
+                // Скорее всего 0 означает, что порт не был указан
+                ipEndPoint.Port = defaultPort;
+            }
+
+            addressesToBind.Add(ipEndPoint);
+        }
+        else
+        {
+            // Если адрес - не IP, то парсим как DNS хост
+            var parts = address.Split(':');
+            int port;
+            if (parts.Length != 1)
+            {
+                port = int.Parse(parts[1]);
+            }
+            else
+            {
+                port = defaultPort;
+            }
+
+            var hostNameOrAddress = parts[0];
+            var addresses = Dns.GetHostAddresses(hostNameOrAddress)
+                .Where(ip => ip.AddressFamily == AddressFamily.InterNetwork).ToArray();
+            foreach (var ip in addresses)
+            {
+                addressesToBind.Add(new IPEndPoint(ip, port));
+            }
+        }
+
+        return addressesToBind;
     }
 }
