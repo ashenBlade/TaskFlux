@@ -2,8 +2,8 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Threading.Tasks.Sources;
 using Microsoft.Extensions.ObjectPool;
-using TaskFlux.Core.Queue;
 using TaskFlux.Core.Subscription;
+using TaskFlux.Domain;
 
 namespace TaskFlux.Application.RecordAwaiter;
 
@@ -96,7 +96,7 @@ public class ValueTaskSourceQueueSubscriberManager : IQueueSubscriberManager
             _token = token;
             _tokenRegistration = token.Register(static o =>
             {
-                var recordAwaiter = ( QueueSubscriber ) o!;
+                var recordAwaiter = (QueueSubscriber)o!;
                 Debug.Assert(recordAwaiter is not null, "recordAwaiter is not null");
                 recordAwaiter._source.SetException(new OperationCanceledException(recordAwaiter._token));
             }, this);
@@ -167,9 +167,9 @@ public class ValueTaskSourceQueueSubscriberManager : IQueueSubscriberManager
         }
 
         public void OnCompleted(Action<object?> continuation,
-                                object? state,
-                                short token,
-                                ValueTaskSourceOnCompletedFlags flags)
+            object? state,
+            short token,
+            ValueTaskSourceOnCompletedFlags flags)
         {
             _source.OnCompleted(continuation, state, token, flags);
         }

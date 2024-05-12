@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using TaskFlux.Core.Policies;
-using TaskFlux.Core.Queue;
+using TaskFlux.Domain;
 
 namespace TaskFlux.Core;
 
@@ -27,7 +27,7 @@ public sealed class EnqueueResult
     /// </exception>
     public QueuePolicy ViolatedPolicy =>
         _violatedPolicy
-     ?? throw new InvalidOperationException(
+        ?? throw new InvalidOperationException(
             "Нельзя получить объект нарушенной политики: результат выполнения успешный");
 
     private EnqueueResult(QueuePolicy? violatedPolicy, QueueRecord? record)

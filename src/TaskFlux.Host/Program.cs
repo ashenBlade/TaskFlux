@@ -156,7 +156,7 @@ try
 
                 // Модуль для HTTP запросов
                 services.AddControllers()
-                    .AddApplicationPart(typeof(RequestController).Assembly);
+                    .AddApplicationPart(typeof(QueuesController).Assembly);
 
                 // Модуль для запросов по своему протоколу
                 services.AddTcpRequestModule(lifetime);

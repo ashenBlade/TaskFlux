@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using TaskFlux.Core.Policies;
 using TaskFlux.Core.Subscription;
+using TaskFlux.Domain;
 using TaskFlux.PriorityQueue;
 using TaskFlux.PriorityQueue.Heap;
 using TaskFlux.PriorityQueue.QueueArray;
@@ -51,8 +52,8 @@ public class TaskQueueBuilder : ITaskQueueBuilder
     private (long Min, long Max)? _priorityRange;
 
     public TaskQueueBuilder(QueueName name,
-                            PriorityQueueCode code,
-                            IQueueSubscriberManagerFactory queueSubscriberManagerFactory)
+        PriorityQueueCode code,
+        IQueueSubscriberManagerFactory queueSubscriberManagerFactory)
     {
         _name = name;
         _queueCode = code;
@@ -94,7 +95,7 @@ public class TaskQueueBuilder : ITaskQueueBuilder
                 $"Наименьшее значение приоритета не может быть больше максимального. Получен диапазон: {min} - {max}");
         }
 
-        _priorityRange = ( min, max );
+        _priorityRange = (min, max);
         return this;
     }
 
@@ -102,7 +103,7 @@ public class TaskQueueBuilder : ITaskQueueBuilder
     {
         if (!Enum.IsDefined(implementation))
         {
-            throw new InvalidEnumArgumentException(nameof(implementation), ( int ) implementation,
+            throw new InvalidEnumArgumentException(nameof(implementation), (int)implementation,
                 typeof(PriorityQueueCode));
         }
 

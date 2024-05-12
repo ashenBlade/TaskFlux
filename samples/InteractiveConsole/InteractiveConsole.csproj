@@ -14,6 +14,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <ProjectReference Include="..\..\src\TaskFlux.PriorityQueue\TaskFlux.PriorityQueue.csproj"/>
         <ProjectReference Include="..\..\src\TaskFlux.Transport\TaskFlux.Transport.Tcp.Client\TaskFlux.Transport.Tcp.Client.csproj"/>
     </ItemGroup>
 

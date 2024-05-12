@@ -5,7 +5,7 @@ using TaskFlux.Core.Commands;
 using TaskFlux.Core.Commands.Dequeue;
 using TaskFlux.Core.Commands.Error;
 using TaskFlux.Core.Commands.PolicyViolation;
-using TaskFlux.Core.Queue;
+using TaskFlux.Domain;
 
 namespace TaskFlux.Application.Executor;
 

@@ -40,7 +40,7 @@ public class EnqueueCommand : ModificationCommand
 
     private bool TryGetViolatedPolicy(ITaskQueue queue, long priority, byte[] payload, out QueuePolicy violatedPolicy)
     {
-        if (queue.Policies is {Count: > 0} policies)
+        if (queue.Policies is { Count: > 0 } policies)
         {
             foreach (var policy in policies)
             {

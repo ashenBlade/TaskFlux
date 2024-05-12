@@ -3,6 +3,7 @@ using TaskFlux.Consensus;
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
 using TaskFlux.Core.Restore;
+using TaskFlux.Domain;
 using TaskFlux.Persistence.ApplicationState;
 using TaskFlux.Persistence.ApplicationState.Deltas;
 using TaskFlux.PriorityQueue;
@@ -17,7 +18,7 @@ public class StateRestorerTests
     private static readonly ISnapshot ZeroQueuesSnapshot = new QueueCollectionSnapshot(new QueueCollection());
 
     private static QueueRecord CreateRecord(int id, long priority, string data) =>
-        new(new RecordId(( ulong ) id), priority, Encoding.UTF8.GetBytes(data));
+        new(new RecordId((ulong)id), priority, Encoding.UTF8.GetBytes(data));
 
     [Fact]
     public void RestoreState__КогдаСнапшотаИДельтНет__ДолженВернутьОднуОчередьПоУмолчанию()
@@ -33,12 +34,12 @@ public class StateRestorerTests
     }
 
     private static QueueInfo CreateQueueInfo(QueueName name,
-                                             PriorityQueueCode code,
-                                             RecordId lastId,
-                                             int? maxQueueSize,
-                                             int? maxPayloadSize,
-                                             (long, long)? priorityRange,
-                                             IEnumerable<QueueRecord> records)
+        PriorityQueueCode code,
+        RecordId lastId,
+        int? maxQueueSize,
+        int? maxPayloadSize,
+        (long, long)? priorityRange,
+        IEnumerable<QueueRecord> records)
     {
         var queueInfo = new QueueInfo(name, code, lastId, maxQueueSize, maxPayloadSize, priorityRange);
         queueInfo.SetDataTest(records);
@@ -53,21 +54,21 @@ public class StateRestorerTests
     public void RestoreState__КогдаТолькоОперацииДобавленияВОчередьПоУмолчанию__ДолженПрименитьОперации(
         int recordsCount)
     {
-        var lastId = new RecordId(( ulong ) recordsCount);
+        var lastId = new RecordId((ulong)recordsCount);
         var random = new Random(745643);
         var records = Enumerable.Range(1, recordsCount)
-                                .Select(i => new QueueRecord(new RecordId(( ulong ) i), random.NextInt64(),
-                                     random.ByteArray(32)))
-                                .ToArray();
+            .Select(i => new QueueRecord(new RecordId((ulong)i), random.NextInt64(),
+                random.ByteArray(32)))
+            .ToArray();
         var expected = CreateQueueInfo(QueueName.Default, PriorityQueueCode.Heap4Arity, lastId, null, null, null,
             records);
         var deltas = records.Select(r => new AddRecordDelta(QueueName.Default, r.Priority, r.Payload).Serialize())
-                            .ToArray();
+            .ToArray();
         random.Shuffle(deltas);
 
         var actual = StateRestorer.RestoreState(null, deltas)
-                                  .GetAllQueues()
-                                  .Single();
+            .GetAllQueues()
+            .Single();
 
         Assert.Equal(expected, actual, Comparer);
     }
@@ -83,20 +84,20 @@ public class StateRestorerTests
     {
         const long priority = 1L;
 
-        var lastId = new RecordId(( ulong ) recordsCount);
+        var lastId = new RecordId((ulong)recordsCount);
         var random = new Random(675645324);
         var records = Enumerable.Range(1, recordsCount)
-                                .Select(i =>
-                                     new QueueRecord(new RecordId(( ulong ) i), priority, random.ByteArray(128)))
-                                .ToArray();
+            .Select(i =>
+                new QueueRecord(new RecordId((ulong)i), priority, random.ByteArray(128)))
+            .ToArray();
         var expected = CreateQueueInfo(QueueName.Default, PriorityQueueCode.Heap4Arity, lastId, null, null, null,
             records);
 
         var actual = StateRestorer.RestoreState(null,
-                                   records.Select(record =>
-                                       new AddRecordDelta(QueueName.Default, record.GetData()).Serialize()))
-                                  .GetAllQueues()
-                                  .Single();
+                records.Select(record =>
+                    new AddRecordDelta(QueueName.Default, record.GetData()).Serialize()))
+            .GetAllQueues()
+            .Single();
 
         Assert.Equal(expected, actual, Comparer);
     }
@@ -112,22 +113,22 @@ public class StateRestorerTests
     public void RestoreState__КогдаДобавляютсяЗаписиСОдинаковымиКлючамиИОдинаковымиДанными__ДолженПрименитьОперации(
         int recordsCount)
     {
-        var lastId = new RecordId(( ulong ) recordsCount);
+        var lastId = new RecordId((ulong)recordsCount);
         const long priority = 1L;
         var random = new Random(87347834);
         var data = random.ByteArray(64);
 
         var records = Enumerable.Range(1, recordsCount)
-                                .Select(i => new QueueRecord(new RecordId(( ulong ) i), priority, data))
-                                .ToArray();
+            .Select(i => new QueueRecord(new RecordId((ulong)i), priority, data))
+            .ToArray();
 
         var queueInfo = CreateQueueInfo(QueueName.Default, PriorityQueueCode.Heap4Arity, lastId, null, null, null,
             records);
         var actual = StateRestorer
-                    .RestoreState(null,
-                         records.Select(r => new AddRecordDelta(QueueName.Default, r.GetData()).Serialize()))
-                    .GetAllQueues()
-                    .Single();
+            .RestoreState(null,
+                records.Select(r => new AddRecordDelta(QueueName.Default, r.GetData()).Serialize()))
+            .GetAllQueues()
+            .Single();
 
         Assert.Equal(actual, queueInfo, Comparer);
     }
@@ -170,8 +171,8 @@ public class StateRestorerTests
             new RemoveRecordDelta(QueueName.Default, new RecordId(1)),
         };
         var actual = StateRestorer.RestoreState(null, deltas.Select(x => x.Serialize()))
-                                  .GetAllQueues()
-                                  .Single();
+            .GetAllQueues()
+            .Single();
 
         Assert.Equal(expected, actual, Comparer);
     }
@@ -201,10 +202,10 @@ public class StateRestorerTests
         }.ToHashSet(Comparer);
 
         var actual = StateRestorer.RestoreState(new QueueArraySnapshot(snapshotQueues),
-                                   new Delta[] {new DeleteQueueDelta(queueToDelete),}
-                                      .Select(x => x.Serialize()))
-                                  .GetAllQueues()
-                                  .ToHashSet(Comparer);
+                new Delta[] { new DeleteQueueDelta(queueToDelete), }
+                    .Select(x => x.Serialize()))
+            .GetAllQueues()
+            .ToHashSet(Comparer);
 
         Assert.Single(actual);
         Assert.Equal(expected, actual, Comparer);
@@ -221,7 +222,7 @@ public class StateRestorerTests
                     new(new RecordId(1222), 1L, "aasdfasdf"u8.ToArray()),
                     new(new RecordId(23455), 100L, "vasdaedhraerqa(Q#%V"u8.ToArray())
                 }),
-            new(QueueName.Parse("orders:1002"), PriorityQueueCode.QueueArray, new RecordId(123), 100000, ( -10L, 10L ),
+            new(QueueName.Parse("orders:1002"), PriorityQueueCode.QueueArray, new RecordId(123), 100000, (-10L, 10L),
                 null,
                 new QueueRecord[]
                 {
@@ -235,13 +236,13 @@ public class StateRestorerTests
                 Array.Empty<QueueRecord>())
         };
         var expected = snapshotQueues.Select(tq => CreateQueueInfo(tq.Name, tq.Code, tq.LastId,
-                                          tq.Metadata.MaxQueueSize,
-                                          tq.Metadata.MaxPayloadSize, tq.Metadata.PriorityRange, tq.ReadAllData()))
-                                     .ToHashSet(Comparer);
+                tq.Metadata.MaxQueueSize,
+                tq.Metadata.MaxPayloadSize, tq.Metadata.PriorityRange, tq.ReadAllData()))
+            .ToHashSet(Comparer);
 
         var actual = StateRestorer.RestoreState(new QueueArraySnapshot(snapshotQueues), Array.Empty<byte[]>())
-                                  .GetAllQueues()
-                                  .ToHashSet(Comparer);
+            .GetAllQueues()
+            .ToHashSet(Comparer);
 
         Assert.Equal(expected, actual, Comparer);
     }
@@ -253,18 +254,18 @@ public class StateRestorerTests
     public void RestoreState__КогдаЕстьОперацииСозданияНовойОчереди__ДолженСоздатьНовыеОчереди(int newQueuesCount)
     {
         var expected = Enumerable.Range(0, newQueuesCount)
-                                 .Select(i => CreateQueueInfo(QueueName.Parse(i.ToString()),
-                                      PriorityQueueCode.Heap4Arity, RecordId.Start, i, null, null,
-                                      Array.Empty<QueueRecord>()))
-                                 .ToHashSet(Comparer);
+            .Select(i => CreateQueueInfo(QueueName.Parse(i.ToString()),
+                PriorityQueueCode.Heap4Arity, RecordId.Start, i, null, null,
+                Array.Empty<QueueRecord>()))
+            .ToHashSet(Comparer);
 
         var actual = StateRestorer.RestoreState(ZeroQueuesSnapshot,
-                                   expected.Select(qi =>
-                                       new CreateQueueDelta(qi.QueueName, qi.Code, qi.MaxQueueSize, qi.MaxPayloadSize,
-                                               qi.PriorityRange)
-                                          .Serialize()))
-                                  .GetAllQueues()
-                                  .ToHashSet(Comparer);
+                expected.Select(qi =>
+                    new CreateQueueDelta(qi.QueueName, qi.Code, qi.MaxQueueSize, qi.MaxPayloadSize,
+                            qi.PriorityRange)
+                        .Serialize()))
+            .GetAllQueues()
+            .ToHashSet(Comparer);
 
         Assert.Equal(expected, actual, Comparer);
     }
@@ -274,17 +275,17 @@ public class StateRestorerTests
     {
         var queueToDelete = CreateQueueInfo(QueueName.Parse("hello_world"), PriorityQueueCode.Heap4Arity,
             RecordId.Start, 15343, null,
-            ( -10, 10 ), Array.Empty<QueueRecord>());
+            (-10, 10), Array.Empty<QueueRecord>());
 
         var actual = StateRestorer.RestoreState(ZeroQueuesSnapshot,
-                                   new Delta[]
-                                   {
-                                       new CreateQueueDelta(queueToDelete.QueueName, queueToDelete.Code,
-                                           queueToDelete.MaxQueueSize, queueToDelete.MaxPayloadSize,
-                                           queueToDelete.PriorityRange),
-                                       new DeleteQueueDelta(queueToDelete.QueueName),
-                                   }.Select(i => i.Serialize()))
-                                  .GetAllQueues();
+                new Delta[]
+                {
+                    new CreateQueueDelta(queueToDelete.QueueName, queueToDelete.Code,
+                        queueToDelete.MaxQueueSize, queueToDelete.MaxPayloadSize,
+                        queueToDelete.PriorityRange),
+                    new DeleteQueueDelta(queueToDelete.QueueName),
+                }.Select(i => i.Serialize()))
+            .GetAllQueues();
 
         Assert.DoesNotContain(queueToDelete, actual, Comparer);
     }

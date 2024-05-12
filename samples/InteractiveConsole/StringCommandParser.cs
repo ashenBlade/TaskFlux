@@ -1,5 +1,6 @@
 using InteractiveConsole.Commands;
 using TaskFlux.Core;
+using TaskFlux.Domain;
 using TaskFlux.PriorityQueue;
 using TaskFlux.Transport.Tcp.Client;
 

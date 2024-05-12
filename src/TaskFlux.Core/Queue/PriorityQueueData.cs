@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using TaskFlux.Domain;
 
 namespace TaskFlux.Core.Queue;
 
@@ -23,7 +24,7 @@ public readonly record struct PriorityQueueData
 
     public bool Equals(PriorityQueueData? other)
     {
-        return other is {Id: var id} && id == Id;
+        return other is { Id: var id } && id == Id;
     }
 
     public override int GetHashCode()

@@ -1,6 +1,7 @@
 using TaskFlux.Core.Policies;
 using TaskFlux.Core.Restore;
 using TaskFlux.Core.Subscription;
+using TaskFlux.Domain;
 using TaskFlux.PriorityQueue;
 using TaskFlux.PriorityQueue.Heap;
 

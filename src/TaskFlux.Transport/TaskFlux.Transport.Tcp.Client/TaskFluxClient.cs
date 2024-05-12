@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Net.Sockets;
 using TaskFlux.Core;
-using TaskFlux.Core.Queue;
+using TaskFlux.Domain;
 using TaskFlux.Network;
 using TaskFlux.Network.Commands;
 using TaskFlux.Network.Packets;

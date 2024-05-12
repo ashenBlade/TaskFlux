@@ -7,7 +7,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\TaskFlux.Network\TaskFlux.Network.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Transport.Tcp.Common\TaskFlux.Transport.Tcp.Common.csproj"/>
     </ItemGroup>
 
 </Project>

@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using TaskFlux.Application.RecordAwaiter;
-using TaskFlux.Core.Queue;
+using TaskFlux.Domain;
 
 namespace TaskFlux.Application.Tests;
 
@@ -64,8 +64,8 @@ public class ValueTaskSourceQueueSubscriberManagerTests
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(10);
         var manager = factory.CreateQueueSubscriberManager();
         var records = Enumerable.Range(0, 100)
-                                .Select(i => Record(( ulong ) i))
-                                .ToList();
+            .Select(i => Record((ulong)i))
+            .ToList();
 
         await Task.WhenAll(Task.Run(async () =>
         {
@@ -111,22 +111,22 @@ public class ValueTaskSourceQueueSubscriberManagerTests
         });
         var dequeued = 0;
         var tasks = Enumerable.Range(0, readersCount)
-                              .Select(_ => Task.Run(async () =>
-                               {
-                                   using var awaiter = manager.GetSubscriber();
-                                   reset.Signal();
-                                   var record = await awaiter.WaitRecordAsync();
-                                   Assert.Equal(expected, record);
-                                   var old = Interlocked.Exchange(ref dequeued, 1);
-                                   if (old != 0)
-                                   {
-                                       throw new NeverThrownException("Прочитано больше 1 записи");
-                                   }
+            .Select(_ => Task.Run(async () =>
+            {
+                using var awaiter = manager.GetSubscriber();
+                reset.Signal();
+                var record = await awaiter.WaitRecordAsync();
+                Assert.Equal(expected, record);
+                var old = Interlocked.Exchange(ref dequeued, 1);
+                if (old != 0)
+                {
+                    throw new NeverThrownException("Прочитано больше 1 записи");
+                }
 
-                                   // Подождем на всякий случай
-                                   await Task.Delay(100);
-                               }))
-                              .ToArray();
+                // Подождем на всякий случай
+                await Task.Delay(100);
+            }))
+            .ToArray();
         await Task.WhenAny(tasks);
 
         foreach (var task in tasks)
@@ -182,27 +182,27 @@ public class ValueTaskSourceQueueSubscriberManagerTests
     [InlineData(200)]
     public async Task
         TryNotifyRecord__КогдаНесколькоУведомленийИЕдинственныйПодписчик__ЗаписиДолжныБытьПрочитаныКорректно(
-        int writersCount)
+            int writersCount)
     {
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(10);
         var manager = factory.CreateQueueSubscriberManager();
         var records = Enumerable.Range(0, 1000)
-                                .Select(i => Record(( ulong ) i))
-                                .ToArray();
+            .Select(i => Record((ulong)i))
+            .ToArray();
         var queue = new ConcurrentQueue<QueueRecord>(records);
         var readerReady = new ManualResetEvent(false);
         var writerThreads = Enumerable.Range(0, writersCount)
-                                      .Select(_ => new Thread(() =>
-                                       {
-                                           readerReady.WaitOne();
-                                           while (queue.TryDequeue(out var record))
-                                           {
-                                               while (!manager.TryNotifyRecord(record))
-                                               {
-                                               }
-                                           }
-                                       }))
-                                      .ToArray();
+            .Select(_ => new Thread(() =>
+            {
+                readerReady.WaitOne();
+                while (queue.TryDequeue(out var record))
+                {
+                    while (!manager.TryNotifyRecord(record))
+                    {
+                    }
+                }
+            }))
+            .ToArray();
         Array.ForEach(writerThreads, t => t.Start());
 
         var actual = await Task.Run(async () =>
@@ -230,7 +230,7 @@ public class ValueTaskSourceQueueSubscriberManagerTests
     [InlineData(100)]
     public async Task
         WaitRecord__КогдаЕстьНесколькоПодписчиковПринадлежащихРазнымМенеджерам__ЗаписьДолжнаПрийтиПодписчикуКоторыйПринадлежитУведомленныйМенеджер(
-        int managersCount)
+            int managersCount)
     {
         var factory = new ValueTaskSourceQueueSubscriberManagerFactory(10);
         var mainManager = factory.CreateQueueSubscriberManager();
@@ -239,16 +239,16 @@ public class ValueTaskSourceQueueSubscriberManagerTests
         var signal = new CountdownEvent(managersCount);
         var consumeResultTcs = new TaskCompletionSource<QueueRecord>();
         _ = Enumerable.Range(0, managersCount)
-                      .Select(_ => Task.Run(async () =>
-                       {
-                           var manager = factory.CreateQueueSubscriberManager();
-                           using var additionalSubscriber = manager.GetSubscriber();
-                           signal.Signal();
-                           await additionalSubscriber.WaitRecordAsync();
-                           consumeResultTcs.SetException(
-                               new NeverThrownException("Подписчик другого менеджера получил запись"));
-                       }))
-                      .ToArray();
+            .Select(_ => Task.Run(async () =>
+            {
+                var manager = factory.CreateQueueSubscriberManager();
+                using var additionalSubscriber = manager.GetSubscriber();
+                signal.Signal();
+                await additionalSubscriber.WaitRecordAsync();
+                consumeResultTcs.SetException(
+                    new NeverThrownException("Подписчик другого менеджера получил запись"));
+            }))
+            .ToArray();
         _ = Task.Run(async () =>
         {
             signal.Wait();

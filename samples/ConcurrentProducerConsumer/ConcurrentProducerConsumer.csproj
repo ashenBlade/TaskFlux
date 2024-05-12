@@ -13,7 +13,6 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\TaskFlux.Network\TaskFlux.Network.csproj"/>
         <ProjectReference Include="..\..\src\TaskFlux.Transport\TaskFlux.Transport.Tcp.Client\TaskFlux.Transport.Tcp.Client.csproj"/>
         <ProjectReference Include="..\TaskFlux.Transport.Tcp.Client\TaskFlux.Transport.Tcp.Client.csproj"/>
     </ItemGroup>

@@ -4,6 +4,7 @@ using TaskFlux.Core.Commands.Error;
 using TaskFlux.Core.Commands.PolicyViolation;
 using TaskFlux.Core.Policies;
 using TaskFlux.Core.Queue;
+using TaskFlux.Domain;
 using TaskFlux.PriorityQueue;
 using Xunit;
 
@@ -22,7 +23,7 @@ public class EnqueueCommandTests
         var queue = new Mock<ITaskQueue>().Apply(m =>
         {
             m.Setup(q => q.Enqueue(It.IsAny<long>(), It.IsAny<byte[]>()))
-             .Returns(record);
+                .Returns(record);
         });
         var application = CreateApplication(new EnqueueTaskQueueManager(queue.Object));
 
@@ -39,7 +40,7 @@ public class EnqueueCommandTests
         var queue = new Mock<ITaskQueue>().Apply(m =>
         {
             m.Setup(q => q.Enqueue(It.IsAny<long>(), It.IsAny<byte[]>()))
-             .Returns(record);
+                .Returns(record);
         });
         var application = CreateApplication(new EnqueueTaskQueueManager(queue.Object));
 
@@ -57,7 +58,7 @@ public class EnqueueCommandTests
         var manager = new Mock<ITaskQueueManager>(MockBehavior.Strict).Apply(m =>
         {
             m.Setup(x => x.TryGetQueue(It.Is(queueName, QueueNameComparer), out It.Ref<ITaskQueue>.IsAny))
-             .Returns(false);
+                .Returns(false);
         });
 
         var result = command.Apply(new TaskFluxApplication(manager.Object));
@@ -75,30 +76,24 @@ public class EnqueueCommandTests
         var violatedPolicy = new Mock<MaxQueueSizeQueuePolicy>(() => new MaxQueueSizeQueuePolicy(123)).Apply(m =>
         {
             m.Setup(p =>
-                  p.CanEnqueue(It.IsAny<long>(), It.IsAny<IReadOnlyList<byte>>(), It.IsAny<IReadOnlyTaskQueue>()))
-             .Returns(false);
+                    p.CanEnqueue(It.IsAny<long>(), It.IsAny<IReadOnlyList<byte>>(), It.IsAny<IReadOnlyTaskQueue>()))
+                .Returns(false);
         });
         var successPolicies = Enumerable.Range(0, additionalPolicies)
-                                        .Select(i => new Mock<MaxQueueSizeQueuePolicy>(i).Apply(m =>
-                                             m.Setup(p => p.CanEnqueue(It.IsAny<long>(),
-                                                   It.IsAny<IReadOnlyList<byte>>(), It.IsAny<IReadOnlyTaskQueue>()))
-                                              .Returns(true)));
+            .Select(i => new Mock<MaxQueueSizeQueuePolicy>(i).Apply(m =>
+                m.Setup(p => p.CanEnqueue(It.IsAny<long>(),
+                        It.IsAny<IReadOnlyList<byte>>(), It.IsAny<IReadOnlyTaskQueue>()))
+                    .Returns(true)));
         var policies = successPolicies.Append(violatedPolicy)
-                                      .Select(x => x.Object)
-                                      .Cast<QueuePolicy>()
-                                      .ToArray();
-        var queue = new Mock<ITaskQueue>().Apply(m =>
-        {
-            m.SetupGet(q => q.Policies).Returns(policies);
-        });
+            .Select(x => x.Object)
+            .Cast<QueuePolicy>()
+            .ToArray();
+        var queue = new Mock<ITaskQueue>().Apply(m => { m.SetupGet(q => q.Policies).Returns(policies); });
         var manager = new Mock<ITaskQueueManager>().Apply(m =>
         {
             m.Setup(x => x.TryGetQueue(It.IsAny<QueueName>(), out It.Ref<ITaskQueue>.IsAny))
-             .Callback((QueueName _, out ITaskQueue foundQueue) =>
-              {
-                  foundQueue = queue.Object;
-              })
-             .Returns(true);
+                .Callback((QueueName _, out ITaskQueue foundQueue) => { foundQueue = queue.Object; })
+                .Returns(true);
         });
 
         var result = command.Apply(CreateApplication(manager.Object));
@@ -113,26 +108,23 @@ public class EnqueueCommandTests
         var violatedPolicy = new Mock<MaxQueueSizeQueuePolicy>(() => new MaxQueueSizeQueuePolicy(123)).Apply(m =>
         {
             m.Setup(p =>
-                  p.CanEnqueue(It.IsAny<long>(), It.IsAny<IReadOnlyList<byte>>(), It.IsAny<IReadOnlyTaskQueue>()))
-             .Returns(false);
+                    p.CanEnqueue(It.IsAny<long>(), It.IsAny<IReadOnlyList<byte>>(), It.IsAny<IReadOnlyTaskQueue>()))
+                .Returns(false);
         });
         var queue = new Mock<ITaskQueue>().Apply(m =>
         {
-            m.SetupGet(q => q.Policies).Returns(new QueuePolicy[] {violatedPolicy.Object});
+            m.SetupGet(q => q.Policies).Returns(new QueuePolicy[] { violatedPolicy.Object });
         });
         var manager = new Mock<ITaskQueueManager>().Apply(m =>
         {
             m.Setup(x => x.TryGetQueue(It.IsAny<QueueName>(), out It.Ref<ITaskQueue>.IsAny))
-             .Callback((QueueName _, out ITaskQueue foundQueue) =>
-              {
-                  foundQueue = queue.Object;
-              })
-             .Returns(true);
+                .Callback((QueueName _, out ITaskQueue foundQueue) => { foundQueue = queue.Object; })
+                .Returns(true);
         });
 
         var result = command.Apply(CreateApplication(manager.Object));
 
-        var policy = ( ( PolicyViolationResponse ) result ).ViolatedPolicy;
+        var policy = ((PolicyViolationResponse)result).ViolatedPolicy;
         Assert.Equal(violatedPolicy.Object, policy, QueuePolicyEqualityComparer.Comparer);
     }
 
@@ -198,6 +190,6 @@ public class EnqueueCommandTests
 
     private static IApplication CreateApplication(ITaskQueueManager manager) =>
         new Mock<IApplication>()
-           .Apply(m => m.SetupGet(x => x.TaskQueueManager).Returns(manager))
-           .Object;
+            .Apply(m => m.SetupGet(x => x.TaskQueueManager).Returns(manager))
+            .Object;
 }

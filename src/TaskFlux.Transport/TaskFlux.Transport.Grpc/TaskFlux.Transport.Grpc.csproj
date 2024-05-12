@@ -7,7 +7,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\Consensus\TaskFlux.Consensus\TaskFlux.Consensus.csproj"/>
         <ProjectReference Include="..\..\TaskFlux.Application\TaskFlux.Application.csproj"/>
     </ItemGroup>
 

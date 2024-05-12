@@ -1,4 +1,5 @@
 using TaskFlux.Core.Queue;
+using TaskFlux.Domain;
 
 namespace TaskFlux.Persistence.Tests;
 
@@ -9,10 +10,10 @@ public class TaskQueueEqualityComparer : IEqualityComparer<ITaskQueue>
     public bool Equals(ITaskQueue? x, ITaskQueue? y)
     {
         return x is not null
-            && y is not null
-            && x.Name.Equals(y.Name)
-            && MetadataEquals(x.Metadata, y.Metadata)
-            && StoredDataEquals(x.ReadAllData(), y.ReadAllData());
+               && y is not null
+               && x.Name.Equals(y.Name)
+               && MetadataEquals(x.Metadata, y.Metadata)
+               && StoredDataEquals(x.ReadAllData(), y.ReadAllData());
     }
 
     public int GetHashCode(ITaskQueue obj)
@@ -23,15 +24,15 @@ public class TaskQueueEqualityComparer : IEqualityComparer<ITaskQueue>
     private static bool MetadataEquals(ITaskQueueMetadata first, ITaskQueueMetadata second)
     {
         return first.QueueName.Equals(second.QueueName)
-            && first.MaxQueueSize == second.MaxQueueSize
-            && first.Count == second.Count
-            && first.HasMaxSize == second.HasMaxSize
-            && first.MaxPayloadSize == second.MaxPayloadSize
-            && first.PriorityRange == second.PriorityRange;
+               && first.MaxQueueSize == second.MaxQueueSize
+               && first.Count == second.Count
+               && first.HasMaxSize == second.HasMaxSize
+               && first.MaxPayloadSize == second.MaxPayloadSize
+               && first.PriorityRange == second.PriorityRange;
     }
 
     private static bool StoredDataEquals(IReadOnlyCollection<QueueRecord> first,
-                                         IReadOnlyCollection<QueueRecord> second)
+        IReadOnlyCollection<QueueRecord> second)
     {
         if (first.Count != second.Count)
         {
@@ -39,11 +40,11 @@ public class TaskQueueEqualityComparer : IEqualityComparer<ITaskQueue>
         }
 
         var x = first.GroupBy(x => x.Priority, x => x.Payload)
-                     .OrderBy(x => x.Key)
-                     .ToList();
+            .OrderBy(x => x.Key)
+            .ToList();
         var y = second.GroupBy(z => z.Priority, z => z.Payload)
-                      .OrderBy(z => z.Key)
-                      .ToList();
+            .OrderBy(z => z.Key)
+            .ToList();
         if (x.Count != y.Count)
         {
             return false;

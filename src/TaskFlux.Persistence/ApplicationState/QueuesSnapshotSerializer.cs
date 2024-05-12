@@ -2,6 +2,7 @@
 using TaskFlux.Core;
 using TaskFlux.Core.Queue;
 using TaskFlux.Core.Restore;
+using TaskFlux.Domain;
 using TaskFlux.PriorityQueue;
 using TaskFlux.Utils.Serialization;
 
@@ -23,8 +24,8 @@ public static class QueuesSnapshotSerializer
         return new SerializedQueuesSnapshotCollection(queues.Select(q =>
         {
             var metadata = q.Metadata;
-            return ( q.Name, q.Code, q.LastId, metadata.MaxQueueSize, metadata.MaxPayloadSize, metadata.PriorityRange,
-                     q.ReadAllData() );
+            return (q.Name, q.Code, q.LastId, metadata.MaxQueueSize, metadata.MaxPayloadSize, metadata.PriorityRange,
+                q.ReadAllData());
         }), queues.Count);
     }
 
@@ -33,7 +34,7 @@ public static class QueuesSnapshotSerializer
         var result = new byte[sizeof(int)];
         var writer = new MemoryBinaryWriter(result);
         writer.Write(0);
-        return new ReadOnlyMemory<byte>[] {result};
+        return new ReadOnlyMemory<byte>[] { result };
     }
 
     public static IReadOnlyCollection<ReadOnlyMemory<byte>> Serialize(QueueCollection collection)
@@ -50,8 +51,8 @@ public static class QueuesSnapshotSerializer
         long, long)?
         PriorityRange, IReadOnlyCollection<QueueRecord> Data) ToTuple(this QueueInfo info)
     {
-        return ( info.QueueName, info.Code, info.LastId, info.MaxQueueSize, info.MaxPayloadSize, info.PriorityRange,
-                 info.Data );
+        return (info.QueueName, info.Code, info.LastId, info.MaxQueueSize, info.MaxPayloadSize, info.PriorityRange,
+            info.Data);
     }
 
     // TODO: заменить на QueueCollection
@@ -107,13 +108,13 @@ public static class QueuesSnapshotSerializer
     }
 
     private static void Serialize(QueueName name,
-                                  PriorityQueueCode code,
-                                  RecordId lastId,
-                                  int? maxQueueSize,
-                                  int? maxMessageSize,
-                                  (long, long)? priorityRange,
-                                  IReadOnlyCollection<QueueRecord> data,
-                                  ref StreamBinaryWriter writer)
+        PriorityQueueCode code,
+        RecordId lastId,
+        int? maxQueueSize,
+        int? maxMessageSize,
+        (long, long)? priorityRange,
+        IReadOnlyCollection<QueueRecord> data,
+        ref StreamBinaryWriter writer)
     {
         // Название | Реализация | Максимальный размер очереди | Макс. размер сообщения | Диапазон ключей | Данные очереди
 
@@ -122,7 +123,7 @@ public static class QueuesSnapshotSerializer
         writer.Write(name);
 
         // 1.2 Тип реализации
-        writer.Write(( int ) code);
+        writer.Write((int)code);
 
         // Последний ID записи
         writer.Write(lastId);
@@ -203,7 +204,7 @@ public static class QueuesSnapshotSerializer
             var name = reader.ReadQueueName();
 
             // Реализация
-            var implementation = ( PriorityQueueCode ) reader.ReadInt32();
+            var implementation = (PriorityQueueCode)reader.ReadInt32();
 
             // ID последней записи
             var lastId = new RecordId(reader.ReadUInt64());
@@ -228,7 +229,7 @@ public static class QueuesSnapshotSerializer
             {
                 var min = reader.ReadInt64();
                 var max = reader.ReadInt64();
-                priorityRange = ( min, max );
+                priorityRange = (min, max);
             }
 
             // Сами элементы

@@ -24,7 +24,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\Consensus\TaskFlux.Consensus\TaskFlux.Consensus.csproj"/>
+        <ProjectReference Include="..\..\src\TaskFlux.Consensus\TaskFlux.Consensus.csproj"/>
     </ItemGroup>
 
 </Project>

@@ -11,10 +11,12 @@ using TaskFlux.Core.Commands.CreateQueue;
 using TaskFlux.Core.Commands.CreateQueue.ImplementationDetails;
 using TaskFlux.Core.Commands.DeleteQueue;
 using TaskFlux.Core.Commands.Enqueue;
+using TaskFlux.Domain;
 using CreateQueueResponse = Taskflux.CreateQueueResponse;
 using DeleteQueueResponse = Taskflux.DeleteQueueResponse;
 using DequeueResponse = Taskflux.DequeueResponse;
 using EnqueueResponse = Taskflux.EnqueueResponse;
+using QueueRecord = Taskflux.QueueRecord;
 
 namespace TaskFlux.Transport.Grpc;
 

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.Serialization;
 using System.Text;
 using TaskFlux.Core;
+using TaskFlux.Domain;
 
 namespace TaskFlux.Utils.Serialization;
 

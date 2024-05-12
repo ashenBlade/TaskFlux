@@ -2,6 +2,7 @@ using System.Collections;
 using System.Diagnostics;
 using TaskFlux.Core.Policies;
 using TaskFlux.Core.Subscription;
+using TaskFlux.Domain;
 using TaskFlux.PriorityQueue;
 
 namespace TaskFlux.Core.Queue;
@@ -20,10 +21,10 @@ internal class TaskQueue : ITaskQueue
     public RecordId LastId { get; private set; }
 
     public TaskQueue(RecordId lastId,
-                     QueueName name,
-                     IPriorityQueue<PriorityQueueData> queue,
-                     QueuePolicy[] policies,
-                     IQueueSubscriberManager awaiterManager)
+        QueueName name,
+        IPriorityQueue<PriorityQueueData> queue,
+        QueuePolicy[] policies,
+        IQueueSubscriberManager awaiterManager)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(policies);

@@ -10,9 +10,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Consensus\TaskFlux.Consensus\TaskFlux.Consensus.csproj"/>
         <ProjectReference Include="..\TaskFlux.Transport\TaskFlux.Transport.Grpc\TaskFlux.Transport.Grpc.csproj"/>
-        <ProjectReference Include="..\TaskFlux.Transport\TaskFlux.Transport.Tcp\TaskFlux.Transport.Tcp.csproj"/>
+        <ProjectReference Include="..\TaskFlux.Transport\TaskFlux.Transport.Tcp.Server\TaskFlux.Transport.Tcp.Server.csproj"/>
         <ProjectReference Include="..\TaskFlux.Transport\TaskFlux.Transport.Http\TaskFlux.Transport.Http.csproj"/>
         <ProjectReference Include="..\TaskFlux.Utils\TaskFlux.Utils.Network\TaskFlux.Utils.Network.csproj"/>
     </ItemGroup>
