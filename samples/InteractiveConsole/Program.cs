@@ -2,6 +2,7 @@
 using InteractiveConsole;
 using Serilog;
 using TaskFlux.Transport.Tcp.Client;
+using TaskFlux.Utils.Network;
 
 // ReSharper disable AccessToDisposedClosure
 
@@ -15,23 +16,18 @@ using TaskFlux.Transport.Tcp.Client;
 
 using var cts = new CancellationTokenSource();
 
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .CreateLogger();
-
 Console.CancelKeyPress += (_, eventArgs) =>
 {
-    Log.Logger.Information($"Нажат Ctrl-C. Закрываю приложение");
     cts.Cancel();
     eventArgs.Cancel = true;
 };
 
-var clientFactory = new TaskFluxClientFactory(new EndPoint[]
+if (!TryGetEndpoints(out var endpoints))
 {
-    new DnsEndPoint("localhost", 8080),
-    // new DnsEndPoint("localhost", 8081),
-    // new DnsEndPoint("localhost", 8082),
-});
+    return 1;
+}
+
+var clientFactory = new TaskFluxClientFactory(endpoints);
 
 Log.Logger.Debug($"Создаю клиента");
 await using var client = await clientFactory.ConnectAsync(cts.Token);
@@ -86,7 +82,7 @@ while (!cts.IsCancellationRequested)
     }
 }
 
-return;
+return 0;
 
 static void PrintHelp()
 {
@@ -143,4 +139,31 @@ async Task<string?> ReadInputAsync(CancellationToken token)
     return token.IsCancellationRequested
         ? null
         : readTask.Result;
+}
+
+bool TryGetEndpoints(out EndPoint[] endpoints)
+{
+    if (args.Length == 0)
+    {
+        Console.WriteLine(
+            $"Необходимо передать адреса узлов кластера: {AppDomain.CurrentDomain.FriendlyName} [АДРЕС ...]");
+        endpoints = default!;
+        return false;
+    }
+
+    endpoints = new EndPoint[args.Length];
+    for (var i = 0; i < endpoints.Length; i++)
+    {
+        try
+        {
+            endpoints[i] = EndPointHelpers.ParseEndPoint(args[i]);
+        }
+        catch (ArgumentException ae)
+        {
+            Console.WriteLine($"Ошибка парсинга адреса {args[i]}");
+            return false;
+        }
+    }
+
+    return true;
 }
